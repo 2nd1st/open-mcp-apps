@@ -1,0 +1,49 @@
+[
+  {
+    "items": []
+  },
+  {
+    "items": [
+      {
+        "id": "expense-1",
+        "group": "Alex",
+        "position": 0,
+        "fields": {
+          "desc": "Dinner",
+          "amount": 84
+        },
+        "version": 1
+      },
+      {
+        "id": "expense-2",
+        "group": "Maya",
+        "position": 0,
+        "fields": {
+          "desc": "Museum tickets",
+          "amount": 42
+        },
+        "version": 1
+      },
+      {
+        "id": "expense-3",
+        "group": "Jordan",
+        "position": 0,
+        "fields": {
+          "desc": "Taxi",
+          "amount": 30
+        },
+        "version": 1
+      },
+      {
+        "id": "expense-4",
+        "group": "Alex",
+        "position": 1,
+        "fields": {
+          "desc": "Snacks",
+          "amount": 15
+        },
+        "version": 1
+      }
+    ]
+  }
+]

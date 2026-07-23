@@ -1,0 +1,4 @@
+[
+  { "items": [] },
+  { "items": [ { "id": "s1", "group": "", "position": 1, "fields": { "key": "widget_poll_seconds", "value": 20 }, "version": 1 } ] }
+]

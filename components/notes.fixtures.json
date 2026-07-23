@@ -1,0 +1,49 @@
+[
+  {
+    "items": []
+  },
+  {
+    "items": [
+      {
+        "id": "note-1",
+        "group": "",
+        "position": 0,
+        "fields": {
+          "text": "Call the venue before Friday",
+          "color": "yellow"
+        },
+        "version": 1
+      },
+      {
+        "id": "note-2",
+        "group": "",
+        "position": 1,
+        "fields": {
+          "text": "Launch idea:\nInvite early users to a live demo",
+          "color": "blue"
+        },
+        "version": 1
+      },
+      {
+        "id": "note-3",
+        "group": "",
+        "position": 2,
+        "fields": {
+          "text": "Pick up basil, lemons, and pasta",
+          "color": "green"
+        },
+        "version": 1
+      },
+      {
+        "id": "note-4",
+        "group": "",
+        "position": 3,
+        "fields": {
+          "text": "Remember to send the revised proposal",
+          "color": "rose"
+        },
+        "version": 1
+      }
+    ]
+  }
+]

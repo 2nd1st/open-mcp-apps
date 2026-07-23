@@ -1,0 +1,42 @@
+[
+  {
+    "items": []
+  },
+  {
+    "items": [
+      {
+        "id": "focus-1",
+        "group": "",
+        "position": 0,
+        "fields": {
+          "label": "Project planning",
+          "minutes": 25,
+          "completed_at": "2026-07-22T00:15:00.000Z"
+        },
+        "version": 1
+      },
+      {
+        "id": "focus-2",
+        "group": "",
+        "position": 1,
+        "fields": {
+          "label": "Write API documentation",
+          "minutes": 50,
+          "completed_at": "2026-07-22T02:40:00.000Z"
+        },
+        "version": 1
+      },
+      {
+        "id": "focus-3",
+        "group": "",
+        "position": 2,
+        "fields": {
+          "label": "Inbox cleanup",
+          "minutes": 15,
+          "completed_at": "2026-07-22T05:05:00.000Z"
+        },
+        "version": 1
+      }
+    ]
+  }
+]

@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 14px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #app { max-width: 540px; margin: 0 auto; }
+  .bar { display: flex; align-items: center; margin-bottom: 8px; }
+  .bar strong { font-size: var(--font-heading-sm-size, 17px); }
+  #label { margin-left: auto; color: var(--color-text-secondary); font-size: var(--font-text-sm-size); font-variant-numeric: tabular-nums; }
+  .progress { height: 6px; border-radius: var(--border-radius-full); background: var(--color-background-tertiary); overflow: hidden; margin-bottom: 10px; }
+  #fill { height: 100%; width: 0; background: var(--color-background-inverse); transition: width .3s; }
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-lg); overflow: hidden; }
+  li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--color-border-secondary); }
+  li:first-child { border-top: none; }
+  li:hover { background: var(--color-background-secondary); }
+  li.empty { justify-content: center; color: var(--color-text-tertiary); padding: 22px; }
+  li input[type=checkbox] { width: 17px; height: 17px; }
+  .t { flex: 1; }
+  li.done .t { text-decoration: line-through; color: var(--color-text-tertiary); }
+  .x { border: none; background: none; color: var(--color-text-tertiary); cursor: pointer; font-size: 15px; opacity: 0; }
+  li:hover .x { opacity: 1; }
+  .x:hover { color: var(--color-text-danger); }
+  form { display: flex; gap: 8px; margin-top: 10px; }
+  input[type=text] { flex: 1; padding: 9px 12px; border-radius: var(--border-radius-md); border: 1px solid var(--color-border-primary); background: transparent; color: inherit; font: inherit; }
+  input[type=text]:focus { outline: none; border-color: var(--color-ring-primary); }
+  button[type=submit] { padding: 9px 15px; border-radius: var(--border-radius-md); border: none;
+    background: var(--color-background-inverse); color: var(--color-text-inverse); font: inherit; font-weight: 600; cursor: pointer; }
+</style>
+</head>
+<body>
+  <div id="app">
+    <div class="bar"><strong>Todos</strong><span id="label"></span></div>
+    <div class="progress"><div id="fill"></div></div>
+    <ul id="list"></ul>
+    <form id="f"><input type="text" id="t" placeholder="Add a todo…" autocomplete="off"><button type="submit">Add</button></form>
+  </div>
+  <script type="module">
+    function render(state) {
+      const items = state.items;
+      const done = items.filter((i) => i.fields.done).length;
+      document.getElementById("label").textContent = items.length ? `${done}/${items.length} done` : "empty";
+      document.getElementById("fill").style.width = items.length ? (done / items.length) * 100 + "%" : "0";
+      const ul = document.getElementById("list");
+      ul.innerHTML = "";
+      if (!items.length) {
+        const li = document.createElement("li");
+        li.className = "empty";
+        li.textContent = "No todos yet — add one below.";
+        ul.appendChild(li);
+      }
+      for (const it of items) {
+        const li = document.createElement("li");
+        if (it.fields.done) li.className = "done";
+        const cb = Object.assign(document.createElement("input"), { type: "checkbox", checked: !!it.fields.done });
+        cb.onchange = () => oma.updateItem(it.id, { done: !it.fields.done });
+        const span = Object.assign(document.createElement("span"), { textContent: it.fields.title, className: "t" });
+        const x = Object.assign(document.createElement("button"), { textContent: "×", className: "x", title: "Delete" });
+        x.onclick = () => oma.deleteItem(it.id);
+        li.append(cb, span, x);
+        ul.appendChild(li);
+      }
+    }
+    oma.ready(render);
+    oma.onChange(render);
+    document.getElementById("f").onsubmit = (e) => {
+      e.preventDefault();
+      const t = document.getElementById("t");
+      if (t.value.trim()) oma.addItem({ fields: { title: t.value.trim() } });
+      t.value = "";
+    };
+  </script>
+</body>
+</html>

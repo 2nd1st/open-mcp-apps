@@ -1,0 +1,1070 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<!-- @OMA_SYSTEM_CSS -->
+<style>
+  /* component-specific styles; the shared system kit is inlined at seed time via the marker above */
+  .pane { display: none; }
+  .pane.on { display: block; }
+  #tabs { margin-bottom: 12px; }
+  header { margin-bottom: 10px; }
+  #saved[hidden] { display: none; }
+  #saved .k-icon { width: 12px; height: 12px; vertical-align: -2px; }
+  h3 { margin: 16px 0 4px; font-size: var(--font-text-md-size, 14px); }
+  .note { margin: 0 0 6px; }
+  .oh { margin: 14px 0 2px; font-weight: 600; }
+  .prow { display: flex; align-items: center; gap: 10px; min-height: 38px; padding: 6px 0; border-bottom: 1px solid var(--color-border-secondary); }
+  .prow.foot { border-bottom: none; }
+  .lbl { flex: 1; min-width: 0; }
+  .lbl small { display: block; color: var(--color-text-tertiary); font-size: 11.5px; margin-top: 2px; }
+  input.k-field[type=number] { width: 84px; }
+  input.k-field[type=text] { width: 170px; }
+  .ibtn { padding: 4px 6px; }
+  .spc { width: 28px; flex: none; }
+  .roval { max-width: 240px; }
+  details.comp { border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-md, 10px); padding: 0 12px; margin-bottom: 8px; }
+  details.comp summary { display: flex; align-items: center; gap: 7px; min-height: 40px; cursor: pointer; font-weight: 600; list-style: none; }
+  details.comp summary::-webkit-details-marker { display: none; }
+  details.comp summary .chev { display: inline-flex; color: var(--color-text-tertiary); rotate: -90deg; transition: rotate var(--k-t) var(--k-spring); }
+  details.comp[open] summary .chev { rotate: 0deg; }
+  details.comp summary .k-dot { width: 6px; height: 6px; background: var(--k-accent); }
+  details.comp > .prow:last-child { border-bottom: none; }
+  .stat { display: flex; gap: 18px; flex-wrap: wrap; margin: 8px 0 14px; }
+  .stat div { text-align: center; }
+  .stat b { display: block; font-size: 22px; }
+  .stat span { color: var(--color-text-tertiary); font-size: 11.5px; }
+  .pane p, .pane li { color: var(--color-text-secondary); font-size: var(--font-text-sm-size); line-height: 1.55; }
+  .pane ul { margin: 4px 0; padding-left: 18px; }
+  code { background: var(--color-background-secondary); border-radius: 4px; padding: 1px 5px; font-family: var(--font-mono); font-size: 12px; }
+  .muted { color: var(--color-text-tertiary); }
+  /* Library grid (design-system §7) */
+  #library.pane { position: relative; min-height: 380px; }
+  #lib-grid { --pv-scale: .3; }
+  .lib-thumb { position: relative; aspect-ratio: 16/10; overflow: hidden; border-radius: calc(var(--border-radius-lg, 14px) - 4px); border: 1px solid var(--color-border-secondary); background: var(--color-background-primary); }
+  .lib-thumb > iframe { width: 720px; height: 450px; border: 0; position: absolute; top: 0; left: 0; transform: scale(var(--pv-scale, .3)); transform-origin: 0 0; pointer-events: none; }
+  .lib-thumb > .k-skel { position: absolute; inset: 0; border-radius: 0; }
+  .lib-desc { margin-top: 4px; min-height: 2.6em; }
+  /* kit classes set their own display, which beats the UA [hidden] rule — restate it */
+  #lib-cats[hidden], #d-cat[hidden], #d-open[hidden], #lib-none[hidden] { display: none; }
+  .lib-drawer { position: absolute; inset: 0 0 0 auto; width: min(340px, 94%); z-index: 5; background: var(--color-background-primary); border-left: 1px solid var(--color-border-primary); box-shadow: var(--shadow-lg, var(--shadow-sm)); padding: var(--k-s4); overflow: auto; transition: translate var(--k-t-slow) var(--k-ease), opacity var(--k-t-slow); }
+  @starting-style { .lib-drawer { translate: 24px 0; opacity: 0; } }   /* enhancement; instant elsewhere */
+  #pv { width: 100%; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); height: 300px; background: transparent; }
+  #d-hist { margin: 0; padding-left: 18px; font-size: 11.5px; }
+  #d-hist li { margin: 2px 0; }
+</style>
+</head>
+<body>
+  <header class="k-row">
+    <h1 class="k-h1">Settings</h1>
+    <span class="k-grow"></span>
+    <span id="saved" class="k-badge ok" hidden><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8.5l3.7 3.7 7.3-8.4"/></svg>Saved</span>
+  </header>
+  <div class="k-tabs" id="tabs">
+    <button class="k-tab on" data-p="prefs"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M8.5 2.5v4M2.5 11.5h2M7.5 11.5h6M4.5 9.5v4"/></svg>Preferences</button>
+    <button class="k-tab" data-p="guide"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 12.5V3.5a2 2 0 0 1 2-2h7v13h-7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h7"/></svg>Guide</button>
+    <button class="k-tab" data-p="about"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 1.5v3.5M10.5 1.5v3.5M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12v2.5"/></svg>About</button>
+    <button class="k-tab" data-p="library"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5H7V7H2.5zM9 2.5h4.5V7H9zM2.5 9H7v4.5H2.5zM9 9h4.5v4.5H9z"/></svg>Library</button>
+  </div>
+
+  <div class="pane on" id="prefs">
+    <h3 style="margin-top:2px">Shared</h3>
+    <p class="k-mut note">Apply to every component. A component section below can override any of them for itself.</p>
+    <div id="shared-rows"></div>
+    <div id="comps-wrap" hidden>
+      <h3>Components</h3>
+      <div id="comp-secs"></div>
+    </div>
+    <div id="orphans" hidden></div>
+  </div>
+
+  <div class="pane" id="guide">
+    <h3>How to use it</h3>
+    <ul>
+      <li>Just say <code>show my kanban</code> / <code>open my todo</code> — the AI calls <code>open_component</code> to render it.</li>
+      <li>Say <code>what data do I have</code> — the AI uses <code>data_collections</code> to list every collection; <code>open the dashboard</code> for an overview.</li>
+      <li>Want a tool that doesn't exist? Say <code>make me an X</code> — the AI reads the authoring guide, writes it, saves it to your local registry, and reuses it forever.</li>
+      <li>One component can bind to different data: <code>open my work collection with kanban</code>.</li>
+      <li>Let the AI operate for you: <code>mark "research the spec" done</code> — any open widget auto-refreshes.</li>
+    </ul>
+    <h3>Where the data lives</h3>
+    <p>All in one SQLite file on your machine (<code>open-mcp-app.db</code>), with a full append-only change history. Delete that file to reset everything.</p>
+    <h3>Mental model</h3>
+    <p>Components are just the "skin" (reusable views); the data is the substance (collections). You and the AI edit the same data — close the chat and it's still there.</p>
+  </div>
+
+  <div class="pane" id="about">
+    <div class="stat"><div><b id="a-comps" class="k-num">–</b><span>components</span></div><div><b id="a-colls" class="k-num">–</b><span>collections</span></div><div><b id="a-items" class="k-num">–</b><span>items</span></div></div>
+    <p><b>open-mcp-apps</b> — give your AI a persistent workbench.<br>
+    An open engine on the MCP Apps standard (<code>ui://</code>): the AI creates, persists and reuses interactive components over data you own.</p>
+    <p class="muted">MIT · github.com/2nd1st/open-mcp-apps (publishing soon) · host: <span id="a-host">–</span></p>
+  </div>
+
+  <div class="pane" id="library">
+    <div class="k-row" style="margin-bottom:10px">
+      <input class="k-field k-grow" id="lib-q" type="search" placeholder="Search components…" aria-label="Search components">
+    </div>
+    <div class="k-row" id="lib-cats" style="flex-wrap:wrap;margin-bottom:12px" hidden></div>
+    <div class="k-grid" id="lib-grid"></div>
+    <div class="k-empty" id="lib-none" hidden>
+      <svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path stroke="var(--color-text-tertiary)" stroke-width="2" d="M28 8a19 19 0 1 1 0 38 19 19 0 0 1 0-38zM42 41l13 13"/>
+        <path stroke="var(--k-accent)" stroke-width="2" d="M53 8l1.4 4.6 4.6 1.4-4.6 1.4L53 20l-1.4-4.6-4.6-1.4 4.6-1.4z"/>
+      </svg>
+      <b>No match</b>
+      <span>Try fewer words — or just ask the AI to build it. It takes about a minute.</span>
+    </div>
+    <p class="muted" style="margin-top:14px">Community library — coming in v0.2: browse portable components, search by scene, one-click install, submit yours back. Sandboxed and content-hash pinned.</p>
+
+    <aside class="lib-drawer" id="lib-drawer" hidden>
+      <header class="k-row">
+        <b class="k-grow k-ellip" id="d-name"></b>
+        <span class="k-badge info" id="d-ver"></span>
+        <button class="k-btn ghost ibtn" id="d-close" aria-label="Close"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+      </header>
+      <p class="k-sub" id="d-desc" style="margin:8px 0 10px"></p>
+      <div class="k-row" style="flex-wrap:wrap">
+        <span class="k-chip on" id="d-cat" hidden></span>
+        <span class="k-mut k-num" id="d-meta"></span>
+      </div>
+      <div id="d-live" hidden>
+        <p class="muted" style="margin:12px 0 6px">Live preview — real data, real writes.</p>
+        <iframe id="pv" sandbox="allow-scripts" title="Component preview"></iframe>
+      </div>
+      <h4 class="k-sub" style="margin:14px 0 4px">History</h4>
+      <ol id="d-hist" class="k-mut"></ol>
+      <p id="d-err" class="k-sub" style="color:var(--k-bad)" hidden></p>
+      <footer class="k-row" style="margin-top:14px;flex-wrap:wrap">
+        <button class="k-btn" id="d-open"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12 12 4M5.5 4H12v6.5"/></svg>Open in chat</button>
+        <button class="k-btn sec" id="d-preview"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9l7.5-4.5z"/></svg><span id="d-pv-lbl">Preview</span></button>
+        <span class="k-grow"></span>
+        <button class="k-btn danger" id="d-delete"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4"/></svg><span id="d-del-lbl">Delete</span></button>
+      </footer>
+    </aside>
+  </div>
+
+  <script type="module">
+    // ---- shared preference registry — mirrors docs/settings-design.md §5 verbatim ----
+    const SHARED_PREFS = [
+      { key: "locale", type: "string", label: "Locale", default: "auto", maxlength: 35,
+        desc: "BCP-47 tag, or \"auto\" to use the environment's language." },
+      { key: "week_start", type: "enum", label: "Week starts on", default: "monday",
+        options: ["monday", "sunday", "saturday"], desc: "Calendars and habit grids start the week here." },
+      { key: "date_format", type: "enum", label: "Date format", default: "auto",
+        options: ["auto", "yyyy-mm-dd", "dd/mm/yyyy", "mm/dd/yyyy"], desc: "\"auto\" follows the locale." },
+      { key: "currency", type: "string", label: "Currency", default: "USD", maxlength: 8,
+        desc: "ISO-4217 code for money-formatting components." },
+      { key: "density", type: "enum", label: "Density", default: "comfortable",
+        options: ["comfortable", "compact"], desc: "Compact means tighter paddings and rows." },
+      { key: "confirm_delete", type: "boolean", label: "Confirm before delete", default: true,
+        desc: "Widgets ask before destructive deletes." },
+      { key: "widget_poll_seconds", type: "number", label: "Widget auto-refresh (seconds)", default: 20, min: 5, max: 300, step: 5,
+        desc: "How often visible widgets pull fresh data (read by the shell). Override per component below." },
+    ];
+    const SHARED_KEYS = new Set(SHARED_PREFS.map((s) => s.key));
+    const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
+    const RESERVED = (k) => /^(security_|_)/.test(k) || /^(security|policy):/.test(k);
+
+// coercePref — kept byte-identical to src/shell-runtime.js (settings-design §2.1); embedded
+// verbatim into the preview BRIDGE below via toString(). Do not reformat or re-indent.
+function coercePref(v, fallback) {
+  const t = typeof fallback;
+  if (t === "boolean") {
+    if (v === true  || v === "true"  || v === 1) return true;
+    if (v === false || v === "false" || v === 0) return false;
+    return fallback;                                   // "25", "yes", {…} → fallback
+  }
+  if (t === "number") {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    if (typeof v === "boolean") return v ? 1 : 0;
+    return fallback;                                   // "abc", "", {…} → fallback
+  }
+  if (t === "string") {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return fallback;                                   // objects only via raw rows → fallback
+  }
+  return v === undefined ? fallback : v;               // exotic fallback type: raw pass-through
+}
+
+    // ---- tiny DOM + icon helpers (icon paths from docs/design-system.md §3) ----
+    const ICONS = {
+      refresh: "M13.5 8A5.5 5.5 0 1 1 11.89 4.11M13.5 1.5v3h-3",
+      trash: "M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4",
+      chevron: "M3.5 6l4.5 4.5L12.5 6",
+    };
+    const icon = (n) => `<svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
+    const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+    const jstr = (v) => { const s = JSON.stringify(v); return s === undefined ? "" : s; };
+    const optVal = (o) => (typeof o === "string" ? o : o && typeof o === "object" ? o.value : undefined);
+    const optLabel = (o) => (typeof o === "string" ? o : String(o.label !== undefined ? o.label : o.value).slice(0, 60));
+
+    const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    function countUp(el, to, from = Number(el.textContent) || 0) {
+      if (REDUCE || Math.abs(to - from) < 2) { el.textContent = to; return; }
+      const t0 = performance.now();
+      (function tick(t) {
+        const p = Math.min((t - t0) / 500, 1), e = 1 - (1 - p) ** 3;   // ease-out cubic
+        el.textContent = Math.round(from + (to - from) * e);
+        if (p < 1) requestAnimationFrame(tick);
+      })(t0);
+    }
+
+    for (const t of document.querySelectorAll("#tabs .k-tab")) t.onclick = () => {
+      document.querySelectorAll("#tabs .k-tab").forEach((x) => x.classList.toggle("on", x === t));
+      document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.id === t.dataset.p));
+      if (t.dataset.p === "library") libEntrance();   // first-open entrance stagger (design-system §8.0 gating)
+    };
+
+    // ---- stored-settings access (the settings collection IS our bound collection) ----
+    let compsCache = [];
+    const manifests = new Map();     // name -> {settings, uses_shared} | null (malformed/absent)
+    const openSecs = new Set();      // <details> open state survives re-renders
+
+    const curStored = (group, key) => { let f; for (const it of oma.state.items) if (it.group === group && it.fields && it.fields.key === key) f = it; return f; };  // last in snapshot order wins
+    function groupItems(group) {
+      const m = new Map();           // key -> item (last-wins over duplicates)
+      for (const it of oma.state.items) if (it.group === group && it.fields && typeof it.fields.key === "string") m.set(it.fields.key, it);
+      return m;
+    }
+
+    let savedT;
+    function flashSaved() {
+      const s = document.getElementById("saved");
+      s.hidden = false;
+      s.classList.remove("k-pop"); void s.offsetWidth; s.classList.add("k-pop");
+      clearTimeout(savedT); savedT = setTimeout(() => { s.hidden = true; }, 1600);
+    }
+    // Save-on-change; updates are last-write-wins (no expected_version — settings-design §4.2/§2.6).
+    async function setSetting(group, key, value) {
+      const it = curStored(group, key);
+      if (it) {
+        const r = await oma.callTool("data_update_item", { command_id: crypto.randomUUID(), id: it.id, fields: { value }, actor: "human" });
+        if (r && r.isError) await oma.addItem({ group, fields: { key, value } });   // concurrently deleted → re-create
+        else await oma.refresh();    // callTool bypasses applySnapshot — pull our own snapshot back
+      } else {
+        await oma.addItem({ group, fields: { key, value } });
+      }
+      flashSaved();
+    }
+    async function delSetting(id) { await oma.deleteItem(id); flashSaved(); }   // reset = DELETE the item, never write the default
+
+    // ---- form rendering (settings-design §4.2 control mapping) ----
+    function matchesType(v, def) {
+      if (def.type === "boolean") return typeof v === "boolean";
+      if (def.type === "number") return typeof v === "number" && Number.isFinite(v);
+      if (def.type === "string") return typeof v === "string";
+      if (def.type === "enum") return typeof v === "string" && def.options.map(optVal).includes(v);
+      return false;
+    }
+    function lbl(text, desc) {
+      const s = el("span", "lbl"); s.append(el("span", null, text));   // textContent only — manifest text is untrusted
+      if (desc) s.append(el("small", null, desc));
+      return s;
+    }
+    function controlFor(def, current, commit) {
+      if (def.type === "boolean") {
+        const c = el("input", "k-switch"); c.type = "checkbox"; c.checked = current === true;
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => commit(c.checked);
+        return c;
+      }
+      if (def.type === "number") {
+        const c = el("input", "k-field"); c.type = "number"; c.value = current;
+        for (const a of ["min", "max", "step"]) if (typeof def[a] === "number") c[a] = def[a];
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => {
+          let n = Number(c.value);
+          if (!Number.isFinite(n)) { c.value = current; return; }
+          if (typeof def.min === "number") n = Math.max(def.min, n);
+          if (typeof def.max === "number") n = Math.min(def.max, n);
+          commit(n);
+        };
+        return c;
+      }
+      if (def.type === "enum") {
+        const c = el("select", "k-field");
+        for (const o of def.options) { const op = el("option", null, optLabel(o)); op.value = optVal(o); c.append(op); }
+        c.value = String(current);
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => commit(c.value);
+        return c;
+      }
+      const c = el("input", "k-field"); c.type = "text"; c.value = current;
+      c.maxLength = Number.isInteger(def.maxlength) && def.maxlength >= 1 && def.maxlength <= 4096 ? def.maxlength : 4096;
+      c.setAttribute("aria-label", def.label);
+      c.onblur = () => { if (c.value !== String(current)) commit(c.value); };
+      c.onkeydown = (e) => { if (e.key === "Enter") c.blur(); };
+      return c;
+    }
+    function resetBtn(it) {
+      const b = el("button", "k-btn ghost ibtn");
+      b.innerHTML = icon("refresh");
+      b.title = "Reset to default (deletes the stored value)";
+      b.onclick = () => delSetting(it.id);
+      return b;
+    }
+    function prefRow(def, group) {
+      const it = curStored(group, def.key);
+      const row = el("div", "prow");
+      row.append(lbl(def.label, def.desc));
+      let cur = coercePref(it ? it.fields.value : undefined, def.default);
+      if (def.type === "enum" && !def.options.map(optVal).includes(cur)) cur = def.default;
+      const ctl = controlFor(def, cur, (v) => setSetting(group, def.key, v));
+      ctl.dataset.pk = group + "\u0000" + def.key;   // identity for draft/focus restore across re-renders
+      row.append(ctl);
+      row.append(it ? resetBtn(it) : el("span", "spc"));
+      return row;
+    }
+    function rawRow(it, note) {
+      const key = it.fields.key;
+      const row = el("div", "prow");
+      const ro = RESERVED(key);
+      row.append(lbl(key, note || (ro ? "Reserved key (read-only)." : "Stored value (undeclared) — edited as JSON.")));
+      if (ro) { row.append(el("span", "k-code k-ellip roval", jstr(it.fields.value))); row.append(el("span", "spc")); return row; }
+      const c = el("input", "k-field"); c.type = "text"; c.value = jstr(it.fields.value);
+      c.dataset.pk = it.group + "\u0000" + key;
+      c.setAttribute("aria-label", key);
+      c.onblur = () => {
+        if (c.value === jstr(it.fields.value)) return;
+        let v; try { v = JSON.parse(c.value); } catch { v = c.value; }   // fallback: store as string
+        setSetting(it.group, key, v);
+      };
+      c.onkeydown = (e) => { if (e.key === "Enter") c.blur(); };
+      row.append(c);
+      const del = el("button", "k-btn ghost ibtn"); del.innerHTML = icon("trash"); del.title = "Delete this stored value";
+      del.onclick = () => delSetting(it.id);
+      row.append(del);
+      return row;
+    }
+    function orphanRow(it) {
+      const row = el("div", "prow");
+      row.append(lbl(it.group + " · " + it.fields.key));
+      row.append(el("span", "k-code k-ellip roval", jstr(it.fields.value)));
+      if (RESERVED(it.fields.key)) { row.append(el("span", "spc")); return row; }
+      const del = el("button", "k-btn ghost ibtn"); del.innerHTML = icon("trash"); del.title = "Delete";
+      del.onclick = () => delSetting(it.id);
+      row.append(del);
+      return row;
+    }
+    function sectionFooter(name, mf, g, declared) {
+      const overridden = new Set([...g.keys()].filter((k) => SHARED_KEYS.has(k)));
+      const usable = (k) => !overridden.has(k) && !declared.has(k);
+      const us = ((mf && mf.uses_shared) || []).filter((k) => SHARED_KEYS.has(k) && usable(k));
+      const rest = SHARED_PREFS.map((s) => s.key).filter((k) => usable(k) && !us.includes(k));
+      const f = el("div", "prow foot");
+      if (us.length || rest.length) {
+        const sel = el("select", "k-field");
+        sel.setAttribute("aria-label", "Override a shared setting for " + name);
+        const ph = el("option", null, "Override a shared setting…"); ph.value = ""; sel.append(ph);
+        const grp = (label, keys) => { const og = document.createElement("optgroup"); og.label = label; for (const k of keys) { const o = el("option", null, k); o.value = k; og.append(o); } sel.append(og); };
+        if (us.length) grp("Used by this component", us);            // uses_shared keys listed first
+        if (rest.length) grp(us.length ? "All shared settings" : "Shared settings", rest);
+        sel.onchange = () => {
+          const k = sel.value; if (!k) return;
+          const def = SHARED_PREFS.find((s) => s.key === k);
+          const gl = curStored("", k);
+          setSetting(name, k, coercePref(gl ? gl.fields.value : undefined, def.default));   // created at the current effective value
+          sel.value = "";
+        };
+        f.append(sel);
+      }
+      if (g.size) {
+        const ra = el("button", "k-btn ghost", "Reset all");
+        ra.title = "Delete every stored value in this section";
+        ra.onclick = async () => { for (const it of g.values()) if (!RESERVED(it.fields.key)) await oma.deleteItem(it.id); flashSaved(); };
+        f.append(el("span", "k-grow"), ra);
+      }
+      return f.children.length ? f : null;
+    }
+    // One <details> per component with any of {parsed manifest, stored keys, uses_shared};
+    // meta components (settings, dashboard) included — "meta" is not a preference concept.
+    function compSection(name) {
+      const mf = manifests.get(name) || null;
+      const g = groupItems(name);
+      if (!mf && !g.size) return null;
+      const declared = new Set(((mf && mf.settings) || []).map((s) => s.key));
+      const d = el("details", "comp");
+      if (openSecs.has(name)) d.open = true;
+      d.addEventListener("toggle", () => { if (d.open) openSecs.add(name); else openSecs.delete(name); });
+      const sum = el("summary");
+      const chev = el("span", "chev"); chev.innerHTML = icon("chevron");
+      sum.append(chev, el("span", null, name));
+      if (g.size) { const dot = el("span", "k-dot"); dot.title = "Has customized values"; sum.append(dot); }
+      d.append(sum);
+      for (const def of (mf && mf.settings) || []) {
+        const it = g.get(def.key);
+        if (it && !matchesType(it.fields.value, def))
+          d.append(rawRow(it, "Stored value doesn't match the declared type (" + def.type + ") — fix or delete."));
+        else d.append(prefRow({ ...def, desc: def.description }, name));
+      }
+      for (const sp of SHARED_PREFS) if (!declared.has(sp.key) && g.has(sp.key)) d.append(prefRow(sp, name));   // shared-key overrides render with the proper control
+      for (const [k, it] of g) if (!declared.has(k) && !SHARED_KEYS.has(k)) d.append(rawRow(it));
+      const foot = sectionFooter(name, mf, g, declared);
+      if (foot) d.append(foot);
+      return d;
+    }
+    function renderShared(box) {
+      box.innerHTML = "";
+      for (const def of SHARED_PREFS) box.append(prefRow(def, ""));
+      const strays = [...groupItems("")].filter(([k]) => !SHARED_KEYS.has(k));
+      if (strays.length) {
+        box.append(el("h4", "k-sub oh", "Other global keys"));
+        for (const [, it] of strays) box.append(rawRow(it));
+      }
+    }
+    function renderOrphans(box) {
+      box.innerHTML = ""; box.hidden = true;
+      if (!compsCache.length) return;   // can't judge "registered" before the registry loads
+      const names = new Set(compsCache.map((c) => c.name));
+      const rows = new Map();           // group\0key -> item (last-wins)
+      for (const it of oma.state.items) {
+        if (it.group === "" || names.has(it.group) || !it.fields || typeof it.fields.key !== "string") continue;
+        rows.set(it.group + "\u0000" + it.fields.key, it);
+      }
+      if (!rows.size) return;
+      box.hidden = false;
+      box.append(el("h3", null, "Orphaned"));
+      box.append(el("p", "k-mut note", "Stored under a group that matches no installed component (renamed or removed)."));
+      for (const it of rows.values()) box.append(orphanRow(it));
+    }
+    function renderPrefs() {
+      // an external settings write can repaint mid-edit — carry the focused field's draft across
+      const ae = document.activeElement;
+      const draft = ae && ae.tagName === "INPUT" && ae.dataset.pk !== undefined && (ae.type === "text" || ae.type === "number")
+        ? { pk: ae.dataset.pk, value: ae.value, ss: ae.selectionStart, se: ae.selectionEnd } : null;
+      renderShared(document.getElementById("shared-rows"));
+      const wrap = document.getElementById("comps-wrap"), secs = document.getElementById("comp-secs");
+      secs.innerHTML = "";
+      for (const c of [...compsCache].sort((a, b) => a.name.localeCompare(b.name))) { const s = compSection(c.name); if (s) secs.append(s); }
+      wrap.hidden = !secs.children.length;
+      renderOrphans(document.getElementById("orphans"));
+      if (draft) {
+        const c = [...document.querySelectorAll("input[data-pk]")].find((x) => x.dataset.pk === draft.pk);
+        if (c) { c.value = draft.value; c.focus({ preventScroll: true }); try { c.setSelectionRange(draft.ss, draft.se); } catch { /* number inputs */ } }
+      }
+    }
+    function render(state) {
+      document.getElementById("a-host").textContent = state.host || "unknown";
+      renderPrefs();
+      pushPv();        // preview open → keep its child's prefs fresh (settings-design §2.7)
+      pushAllThumbs(); // same parity for every live thumbnail (design-system §7.3)
+    }
+
+    let migrated = false;
+    // Lazy migration (settings-design §4.2): retired global dashboard_poll_seconds
+    // → (group:"dashboard", widget_poll_seconds), clamped to [5,300]. Idempotent per mount:
+    // the retired row is deleted whenever it still exists, even if the override already does.
+    async function migrate() {
+      if (migrated) return; migrated = true;
+      const old = curStored("", "dashboard_poll_seconds");
+      if (!old) return;
+      try {
+        if (!curStored("dashboard", "widget_poll_seconds")) {
+          const n = Math.max(5, Math.min(300, Number(old.fields.value) || 20));
+          await oma.addItem({ group: "dashboard", fields: { key: "widget_poll_seconds", value: n } });
+        }
+        for (const it of oma.state.items.filter((i) => i.group === "" && i.fields && i.fields.key === "dashboard_poll_seconds")) await oma.deleteItem(it.id);
+      } catch { /* retried on next mount */ }
+    }
+
+    // ---- manifest parsing (settings-design §3.3) — the manifest is UNTRUSTED input ----
+    function validEntry(e) {
+      if (!e || typeof e !== "object") return false;
+      if (typeof e.key !== "string" || !KEY_RE.test(e.key) || RESERVED(e.key)) return false;
+      if (!["boolean", "number", "enum", "string"].includes(e.type)) return false;
+      if (typeof e.label !== "string" || !e.label || e.label.length > 60) return false;
+      if (e.description !== undefined && (typeof e.description !== "string" || e.description.length > 200)) return false;
+      if (e.type === "boolean") return typeof e.default === "boolean";
+      if (e.type === "number") {
+        if (typeof e.default !== "number" || !Number.isFinite(e.default)) return false;
+        for (const a of ["min", "max", "step"]) if (e[a] !== undefined && !Number.isFinite(e[a])) return false;   // JSON "1e999" → Infinity
+        return !(typeof e.min === "number" && typeof e.max === "number" && e.min > e.max);
+      }
+      if (e.type === "string") return typeof e.default === "string";
+      if (!Array.isArray(e.options) || !e.options.length || e.options.length > 12) return false;
+      const vals = e.options.map(optVal);
+      return vals.every((v) => typeof v === "string" && v.length <= 120) && vals.includes(e.default);
+    }
+    function parseManifest(html) {
+      try {
+        const doc = new DOMParser().parseFromString(html, "text/html");
+        const el = doc.getElementById("oma-manifest");
+        if (!el || el.type !== "application/json") return null;
+        const m = JSON.parse(el.textContent);
+        if (m.manifest_version !== 1 || !Array.isArray(m.settings)) return null;
+        return { settings: m.settings.filter(validEntry).slice(0, 24),
+                 uses_shared: Array.isArray(m.uses_shared) ? m.uses_shared.filter((k) => typeof k === "string") : [] };
+      } catch { return null; }
+    }
+
+    // ---- srcdoc children: shared bridge + CSP (thumbnails AND the drawer's live preview).
+    // Every runner srcdoc gets a network kill-switch CSP meta prepended (security-model v0.2).
+    // coercePref is interpolated via toString() so the bridge copy stays byte-identical.
+    const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'">`;
+    const BRIDGE = `<script>(function(){
+      var S={collection:null,items:[],version:0,component:null,host:null};
+      var readyCbs=[],changeCbs=[],prefCbs=[],isReady=false,seq=0,pending={};
+      var P=null;
+${coercePref.toString()}
+      function firePref(k,v,o,s){prefCbs.forEach(function(cb){try{cb({key:k,value:v,oldValue:o,scope:s})}catch(e){}})}
+      function req(m,a){return new Promise(function(res,rej){var id=++seq;pending[id]=[res,rej];
+        parent.postMessage({omaPv:true,id:id,method:m,args:a},"*");})}
+      window.addEventListener("message",function(ev){var d=ev.data||{};
+        if(d.omaPvResult&&pending[d.id]){var p=pending[d.id];delete pending[d.id];d.error?p[1](new Error(d.error)):p[0](d.result);}
+        if(d.omaPvSnapshot&&d.snapshot){
+          var pc=false;
+          if(d.prefs&&typeof d.prefs==="object"){
+            var CK=d.compKeys||{};
+            if(P===null){P=d.prefs;}
+            else{var old=P;P=d.prefs;var k;
+              for(k in P)if(!(k in old)||old[k]!==P[k]){firePref(k,P[k],old[k],CK[k]?"component":"global");pc=true;}
+              for(k in old)if(!(k in P)){firePref(k,undefined,old[k],"global");pc=true;}}
+          }
+          var ch=d.snapshot.version!==S.version||pc;S=Object.assign(S,d.snapshot);
+          if(!isReady){isReady=true;readyCbs.splice(0).forEach(function(cb){try{cb(S)}catch(e){}});}
+          else if(ch){changeCbs.forEach(function(cb){try{cb(S)}catch(e){}});}}
+      });
+      window.oma={ get state(){return S}, ready:function(cb){isReady?cb(S):readyCbs.push(cb)}, onChange:function(cb){changeCbs.push(cb)},
+        addItem:function(o){return req("addItem",o||{})}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f})},
+        moveItem:function(id,g,p){return req("moveItem",{id:id,group:g,position:p})}, deleteItem:function(id){return req("deleteItem",{id:id})},
+        refresh:function(){return req("refresh",{})}, callTool:function(n,a){return req("callTool",{name:n,args:a})},
+        pref:function(k,f){ return (P && k in P) ? coercePref(P[k], f) : f },
+        onPrefChange:function(cb){prefCbs.push(cb)},
+        setPref:function(k,v){return req("setPref",{key:k,value:v})},
+        sendMessage:function(t){return req("sendMessage",{text:t})}, updateContext:function(t){return req("updateContext",{text:t})},
+        get toolInput(){return {}}, get host(){return S.host}, get standalone(){return false} };
+      window.kiosk=window.oma;
+      var ro=new ResizeObserver(function(){parent.postMessage({omaPvHeight:true,h:document.documentElement.scrollHeight},"*")});
+      window.addEventListener("load",function(){ro.observe(document.body)});
+    })();<\/script>`;
+    // pvGen: stale async results from a previous selection are dropped.
+    // pvTier/pvCaps: trust tier + engine-computed caps of the CURRENT preview (component_html
+    // returns them, security-model §2.3) — enforced at the preview's postMessage chokepoint.
+    let pvName = null, pvSnap = null, pvGen = 0, pvTier = "local", pvCaps = {};
+    const pv = document.getElementById("pv");
+
+    // Children are separate documents — the host's injected design tokens don't reach them.
+    // Extract the COMPUTED values from our own root (host-injected if present, shell
+    // fallbacks otherwise) and re-emit them as :root CSS for the child.
+    const TOKEN_NAMES = [
+      ...["background", "text", "border"].flatMap((k) => ["primary", "secondary", "tertiary", "inverse", "ghost", "info", "danger", "success", "warning", "disabled"].map((v) => `--color-${k}-${v}`)),
+      ...["primary", "secondary", "inverse", "info", "danger", "success", "warning"].map((v) => `--color-ring-${v}`),
+      "--font-sans", "--font-mono", "--font-weight-normal", "--font-weight-medium", "--font-weight-semibold", "--font-weight-bold",
+      ...["xs", "sm", "md", "lg"].flatMap((s) => [`--font-text-${s}-size`, `--font-text-${s}-line-height`]),
+      ...["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].flatMap((s) => [`--font-heading-${s}-size`, `--font-heading-${s}-line-height`]),
+      ...["xs", "sm", "md", "lg", "xl", "full"].map((s) => `--border-radius-${s}`),
+      "--border-width-regular", "--shadow-hairline", "--shadow-sm", "--shadow-md", "--shadow-lg",
+    ];
+    function tokenCSS() {
+      const cs = getComputedStyle(document.documentElement);
+      let vars = "";
+      for (const n of TOKEN_NAMES) { const v = cs.getPropertyValue(n).trim(); if (v) vars += `${n}:${v};`; }
+      return `<style data-oma="tokens">:root{${vars}}html{color-scheme:${cs.colorScheme || "light dark"}}body{font-family:var(--font-sans);color:var(--color-text-primary)}</style>`;
+    }
+    // CSP-FIRST document construction: the component's own markup is UNTRUSTED — a hostile
+    // document can put a <script> BEFORE its <head> (or shape markup so a head-anchored
+    // replace lands late), and any script parsed ahead of the CSP meta runs with the network
+    // still open. So never anchor on the component's <head>: ALWAYS build the outer document
+    // ourselves, CSP_META as the literal first child of <head>, and the component's markup
+    // ENTIRELY in <body> — the parser folds its nested <html>/<head>/<body> tags and its
+    // styles/scripts still run from there, strictly after the CSP is in force.
+    function injectDoc(html) {
+      return "<!DOCTYPE html><html><head>" + CSP_META + "<meta charset=\"UTF-8\">" + tokenCSS() + BRIDGE + "</head><body>" + html + "</body></html>";
+    }
+
+    // Merged pref map for a srcdoc child (child group over global, last row wins) —
+    // computed from OUR live state.items: the settings app is bound to the settings collection.
+    function childPrefs(name) {
+      const base = {}, over = {};
+      for (const it of oma.state.items) {
+        const k = it.fields && it.fields.key;
+        if (typeof k !== "string") continue;
+        if (it.group === "") base[k] = it.fields.value;
+        else if (it.group === name) over[k] = it.fields.value;
+      }
+      const compKeys = {};
+      for (const k in over) compKeys[k] = 1;      // layer provenance — the bridge derives onPrefChange scope from it
+      return { merged: Object.assign(base, over), compKeys };
+    }
+    function pushPv() {
+      if (!pvName || !pvSnap || !pv.contentWindow) return;
+      const p = childPrefs(pvName);
+      pv.contentWindow.postMessage({ omaPvSnapshot: true, snapshot: pvSnap, prefs: p.merged, compKeys: p.compKeys }, "*");
+    }
+
+    // ================= Library tab (design-system §7): grid + thumbs + drawer =================
+    let libCat = "", libEntered = false, drawerComp = null;
+    const libGrid = document.getElementById("lib-grid");
+    const thumbs = new Map();   // thumb contentWindow -> {name, snap, iframe}
+    const hueOf = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 6; };
+    const kb = (n) => (n / 1024).toFixed(1) + "k";
+    function ago(ts) {
+      const t = Date.parse(ts || "");
+      if (!Number.isFinite(t)) return "";
+      const m = Math.max(0, (Date.now() - t) / 60000);
+      if (m < 1) return "just now";
+      if (m < 60) return Math.floor(m) + "m ago";
+      if (m < 1440) return Math.floor(m / 60) + "h ago";
+      if (m < 43200) return Math.floor(m / 1440) + "d ago";
+      return Math.floor(m / 43200) + "mo ago";
+    }
+
+    // One ResizeObserver on the grid — all thumbs share a width, one scale var (§7.3).
+    const VIRTUAL_W = 720;   // real widget width: thumbs lay out exactly like a live widget, scaled down
+    function updateScale() {
+      const t = libGrid.querySelector(".lib-card:not([hidden]) .lib-thumb");
+      if (t && t.clientWidth) libGrid.style.setProperty("--pv-scale", (t.clientWidth / VIRTUAL_W).toFixed(4));
+    }
+    new ResizeObserver(updateScale).observe(libGrid);
+
+    // Lazy thumb mount: srcdoc iframes ignore loading="lazy", so an IntersectionObserver
+    // mounts each thumb as its card approaches the viewport; a k-skel covers it until load.
+    const thumbIO = new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        thumbIO.unobserve(en.target);
+        mountThumb(en.target);
+      }
+    }, { rootMargin: "120px" });
+
+    async function mountThumb(th) {
+      const name = th.dataset.name;
+      try {
+        const sc = (await oma.callTool("component_html", { name }))?.structuredContent || {};
+        if (!th.isConnected) return;   // grid re-rendered while the source was in flight
+        const f = document.createElement("iframe");
+        f.setAttribute("sandbox", "allow-scripts");
+        f.tabIndex = -1;                            // inert: a thumbnail is a picture (§7.3)
+        f.setAttribute("aria-hidden", "true");
+        f.srcdoc = injectDoc(sc.html || "");
+        f.onload = async () => {
+          th.querySelector(".k-skel")?.remove();
+          if (!f.contentWindow) return;
+          // tier rides on the thumb record — no tier at all (an engine predating tiers) counts
+          // as "local", matching the universal loader's tier branch (shell.mjs)
+          const t = { name, snap: null, iframe: f, tier: sc.tier == null ? "local" : sc.tier };
+          thumbs.set(f.contentWindow, t);
+          const r = await oma.callTool("data_list", { collection: name });   // the ONE parent-pushed snapshot
+          if (r?.structuredContent && thumbs.get(f.contentWindow) === t) { t.snap = r.structuredContent; pushThumb(t); }
+        };
+        th.append(f);
+      } catch { /* source fetch failed — skeleton stays, honestly unfinished */ }
+    }
+    function pushThumb(t) {
+      if (!t.snap || !t.iframe.contentWindow) return;
+      const p = childPrefs(t.name);   // same merged-prefs computation as the drawer preview (§2.7 parity)
+      t.iframe.contentWindow.postMessage({ omaPvSnapshot: true, snapshot: t.snap, prefs: p.merged, compKeys: p.compKeys }, "*");
+    }
+    function pushAllThumbs() { for (const t of thumbs.values()) pushThumb(t); }
+
+    // Control-plane denylist — PERMANENT and tier-independent: no srcdoc child (thumbnail or
+    // drawer preview) may rewrite security policy or mutate the component registry, even a
+    // trusted local one. A preview renders components; it never administers them.
+    // Keep in sync with src/shell.mjs CONTROL_PLANE_DENY: named tools + any future library_* tool.
+    const CONTROL_PLANE = new Set(["security_set", "delete_component", "save_component", "library_install"]);
+    const isControlPlane = (n) => { const t = String(n || "").trim().toLowerCase(); return CONTROL_PLANE.has(t) || t.indexOf("library_") === 0; };
+
+    // ---- thumb bridge = the READ-ONLY caps preset (design-system §7.3, normative) ----
+    // callTool is allowlist-EXACT and tier-aware; every write-shaped method rejects; chat
+    // methods resolve null silently (a thumb must never speak to the chat); refresh answers
+    // from cache. component_html/get_component are NEVER thumb-callable, any tier — a
+    // thumbnail is a picture and has no business reading any component's source.
+    const THUMB_TOOLS = new Set(["data_list", "data_collections", "list_components"]);
+    const THUMB_RO = "preview thumbnails are read-only";
+    window.addEventListener("message", async (ev) => {
+      const t = thumbs.get(ev.source);
+      if (!t || !t.iframe.contentWindow) return;
+      const d = ev.data || {};
+      if (d.omaPvHeight) return;   // fixed virtual height — thumbs ignore height reports (§7.3)
+      if (!d.omaPv) return;
+      const post = (msg) => t.iframe.contentWindow.postMessage(Object.assign({ omaPvResult: true, id: d.id }, msg), "*");
+      switch (d.method) {
+        case "sendMessage":
+        case "updateContext": post({ result: null }); return;                  // silent no-op
+        case "refresh": post({ result: t.snap }); pushThumb(t); return;         // cached snapshot only — no host traffic
+        case "callTool": {
+          const ca = d.args || {};
+          const tn = String(ca.name || "");
+          const ta = Object.assign({}, ca.args || {});
+          if (isControlPlane(tn)) { post({ error: THUMB_RO }); return; }   // hard-deny, every tier
+          if (t.tier === "local") {
+            // local/system tier: the RO allowlist keeps system-component thumbnails rendering
+            // (the dashboard's overview legitimately needs data_collections); source reads
+            // stay denied even here.
+            if (!THUMB_TOOLS.has(tn)) { post({ error: THUMB_RO }); return; }
+          } else {
+            // non-local tier: only its own bound snapshot — data_list FORCED to the thumb's
+            // collection; enumeration (data_collections/list_components) and source reads
+            // are denied entirely.
+            if (tn !== "data_list") { post({ error: THUMB_RO }); return; }
+            ta.collection = t.name;
+          }
+          try { post({ result: await oma.callTool(tn, ta) }); }
+          catch (e) { post({ error: String(e && e.message || e) }); }
+          return;
+        }
+        default: post({ error: THUMB_RO });   // addItem/updateItem/moveItem/deleteItem/setPref/unknown → all writes
+      }
+    });
+
+    // ---- grid rendering: search field + category chips + k-cards ----
+    function renderCats() {
+      const row = document.getElementById("lib-cats");
+      row.innerHTML = "";
+      const cats = [...new Set(compsCache.map((c) => c.category_id).filter(Boolean))].sort();
+      row.hidden = !cats.length;   // no categories anywhere → the whole chip row disappears
+      if (!cats.length) { libCat = ""; return; }
+      if (libCat && !cats.includes(libCat)) libCat = "";
+      const mk = (label, val) => {
+        const b = el("button", "k-chip" + (libCat === val ? " on" : ""), label);
+        b.onclick = () => { libCat = val; renderCats(); applyLibFilter(); };
+        return b;
+      };
+      row.append(mk("All", ""));
+      for (const c of cats) row.append(mk(c, c));
+    }
+    function applyLibFilter() {
+      const q = document.getElementById("lib-q").value.trim().toLowerCase();
+      let visible = 0;
+      for (const card of libGrid.querySelectorAll(".lib-card")) {
+        const c = card._comp;
+        const ok = (!q || (c.name + " " + (c.description || "")).toLowerCase().includes(q))
+          && (!libCat || c.category_id === libCat);
+        card.hidden = !ok;
+        if (ok) visible++;
+      }
+      document.getElementById("lib-none").hidden = visible > 0 || !compsCache.length;
+      updateScale();
+    }
+    function libCard(c, idx) {
+      const card = el("article", "k-card is-click lib-card");
+      card.tabIndex = 0;
+      card.dataset.name = c.name;
+      card.style.setProperty("--i", idx);
+      card._comp = c;
+      const th = el("div", "lib-thumb");
+      th.dataset.name = c.name;
+      th.append(el("div", "k-skel"));
+      card.append(th);
+      const tr = el("div", "k-row"); tr.style.marginTop = "8px";
+      tr.append(el("b", "k-ellip k-grow", c.name), el("span", "k-badge", "v" + c.version));
+      card.append(tr);
+      card.append(el("div", "k-mut k-ellip2 lib-desc", c.description || ""));
+      const meta = el("div", "k-row"); meta.style.marginTop = "6px";
+      const dot = el("span", "k-dot"); dot.style.background = `var(--k-hue-${hueOf(c.name)})`;
+      meta.append(dot, el("span", "k-mut k-num", [kb(c.html_size), ago(c.updated_at)].filter(Boolean).join(" · ")));
+      card.append(meta);
+      card.onclick = () => openDrawer(c);
+      card.onkeydown = (e) => { if (e.key === "Enter") openDrawer(c); };
+      thumbIO.observe(th);
+      return card;
+    }
+    // Every component in the registry gets a LIVE thumb — settings/dashboard included
+    // (settings recurses at most one level: thumbs are inert, so a nested Library tab
+    // can never activate; its default Preferences pane renders from allowlisted RO calls —
+    // manifest source reads are thumb-denied, so declared entries degrade to stored rows).
+    function renderLibrary() {
+      thumbs.clear();
+      renderCats();
+      libGrid.innerHTML = "";
+      compsCache.forEach((c, i) => libGrid.append(libCard(c, i)));
+      applyLibFilter();
+      if (document.getElementById("library").classList.contains("on")) libEntrance();
+    }
+    // First-mount-only entrance (§8.0): the stagger class is added when the Library pane
+    // first shows with cards, then removed after the animation window — filters and
+    // re-renders never replay it.
+    function libEntrance() {
+      if (libEntered || !libGrid.children.length) return;
+      libEntered = true;
+      libGrid.classList.add("k-stagger");
+      setTimeout(() => libGrid.classList.remove("k-stagger"), 700);
+    }
+    document.getElementById("lib-q").oninput = applyLibFilter;
+
+    // ---- detail drawer (§7.4): info + live RW preview + history + actions ----
+    function openDrawer(c) {
+      stopPreview();
+      drawerComp = c;
+      disarmDelete();
+      document.getElementById("d-err").hidden = true;
+      document.getElementById("d-name").textContent = c.name;
+      document.getElementById("d-ver").textContent = "v" + c.version;
+      document.getElementById("d-desc").textContent = c.description || "";
+      const cat = document.getElementById("d-cat");
+      cat.hidden = !c.category_id;
+      cat.textContent = c.category_id || "";
+      document.getElementById("d-meta").textContent =
+        [kb(c.html_size), c.author && "by " + c.author, ago(c.updated_at)].filter(Boolean).join(" · ");
+      document.getElementById("d-open").hidden = !!oma.standalone;   // no chat to speak to when standalone
+      document.getElementById("lib-drawer").hidden = false;
+      loadHistory(c);
+    }
+    function closeDrawer() {
+      stopPreview();
+      drawerComp = null;
+      disarmDelete();
+      document.getElementById("lib-drawer").hidden = true;
+    }
+    document.getElementById("d-close").onclick = closeDrawer;
+    document.getElementById("lib-drawer").addEventListener("keydown", (e) => { if (e.key === "Escape") closeDrawer(); });
+    document.getElementById("d-open").onclick = () =>
+      drawerComp && oma.sendMessage(`Open the "${drawerComp.name}" component (open_component).`);
+
+    async function loadHistory(c) {
+      const ol = document.getElementById("d-hist");
+      ol.innerHTML = "";
+      let hist = null;
+      try {
+        const r = await oma.callTool("component_history", { name: c.name });
+        hist = r?.structuredContent?.history || null;
+      } catch { hist = null; }
+      if (drawerComp !== c) return;   // drawer switched while the history was in flight
+      if (!hist || !hist.length) hist = [{ version: c.version, ts: c.updated_at, html_size: c.html_size }];   // degrade: current version only
+      for (const h of hist.slice(0, 12))
+        ol.append(el("li", "k-num", ["v" + h.version, ago(h.ts), kb(h.html_size)].filter(Boolean).join(" · ")));
+      if (hist.length > 12) ol.append(el("li", null, "+ " + (hist.length - 12) + " earlier versions"));
+    }
+
+    // Preview toggle — the drawer's preview is the full READ-WRITE runner for local
+    // components; a non-local tier runs under its engine-computed caps (see the chokepoint).
+    function pvLabel(on) { document.getElementById("d-pv-lbl").textContent = on ? "Stop preview" : "Preview"; }
+    async function startPreview(c) {
+      pvName = c.name; pvSnap = null; pvTier = "local"; pvCaps = {};
+      const gen = ++pvGen;
+      rateReset();
+      document.getElementById("d-live").hidden = false;
+      pvLabel(true);
+      const sc = (await oma.callTool("component_html", { name: c.name }))?.structuredContent || {};
+      if (gen !== pvGen) return;   // drawer switched / preview stopped while the source was in flight
+      // capture {tier, caps} BEFORE the child document exists — no tier at all (an engine
+      // predating tiers) counts as "local", matching the universal loader's tier branch
+      pvTier = sc.tier == null ? "local" : sc.tier;
+      pvCaps = sc.caps || {};
+      pv.srcdoc = injectDoc(sc.html || "");
+      pv.onload = async () => {
+        const r = await oma.callTool("data_list", { collection: c.name });
+        if (gen !== pvGen) return;   // a different preview was selected while this fetch was in flight
+        if (r?.structuredContent) { pvSnap = r.structuredContent; pushPv(); }
+      };
+    }
+    function stopPreview() {
+      pvGen++; pv.onload = null; pv.srcdoc = ""; pvName = null; pvSnap = null; pvTier = "local"; pvCaps = {};
+      document.getElementById("d-live").hidden = true;
+      pvLabel(false);
+    }
+    document.getElementById("d-preview").onclick = () => {
+      if (!drawerComp) return;
+      if (pvName) stopPreview(); else startPreview(drawerComp);
+    };
+
+    // Delete — honors the confirm_delete shared pref with an in-widget two-click confirm
+    // (window.confirm is unreliable in sandboxed widget iframes), then delete_component.
+    let delArmed = false, delArmT = 0;
+    function confirmDeleteOn() {
+      const it = curStored("settings", "confirm_delete") || curStored("", "confirm_delete");
+      return coercePref(it ? it.fields.value : undefined, true);
+    }
+    function disarmDelete() {
+      delArmed = false; clearTimeout(delArmT);
+      document.getElementById("d-del-lbl").textContent = "Delete";
+    }
+    document.getElementById("d-delete").onclick = async () => {
+      const c = drawerComp; if (!c) return;
+      const errEl = document.getElementById("d-err");
+      errEl.hidden = true;
+      if (confirmDeleteOn() && !delArmed) {
+        delArmed = true;
+        document.getElementById("d-del-lbl").textContent = "Really delete?";
+        delArmT = setTimeout(disarmDelete, 4000);
+        return;
+      }
+      disarmDelete();
+      try {
+        const r = await oma.callTool("delete_component", { command_id: crypto.randomUUID(), name: c.name, actor: "human" });
+        if (r && r.isError) { errEl.textContent = (r.content && r.content[0] && r.content[0].text) || "Delete failed."; errEl.hidden = false; return; }
+        manifests.delete(c.name);
+        closeDrawer();
+        await loadComponents();   // history is retained server-side (tombstone); the grid refreshes
+      } catch (e) {
+        errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+      }
+    };
+
+    // ---- RW preview hardening (security-model v0.2) ----
+    // Sliding-window rate limits for the previewed child: writes 60/min, refresh 6/min,
+    // messages 3 per 10s. Reset per preview (one child at a time). On top of the rates:
+    // the CONTROL_PLANE hard-deny (all tiers), snapshot-bound id checks on EVERY write path,
+    // and — for non-local tiers — the engine-computed caps, mirroring shell.mjs runnerMount.
+    const RATE = {
+      writes:   { limit: 60, win: 60000, hits: [] },
+      refresh:  { limit: 6,  win: 60000, hits: [] },
+      messages: { limit: 3,  win: 10000, hits: [] },
+    };
+    function rateReset() { for (const k in RATE) RATE[k].hits.length = 0; }
+    function rateTake(kind) {
+      const r = RATE[kind], now = Date.now();
+      while (r.hits.length && now - r.hits[0] > r.win) r.hits.shift();
+      if (r.hits.length >= r.limit) throw new Error("rate limit: too many " + kind + " from the preview (" + r.limit + "/" + (r.win / 1000) + "s) — slow down");
+      r.hits.push(now);
+    }
+    // Write-shaped data tools that count against the write budget on the generic path.
+    // (save_component / delete_component / security_set are not merely write-shaped — they
+    // are CONTROL_PLANE and hard-denied before any rate accounting happens.)
+    const WRITEISH = new Set(["data_add_item", "data_update_item", "data_move_item", "data_delete_item"]);
+
+    // Parent-side setPref for the preview child — full settings-design §2.6 validation, group
+    // FORCED to the previewed component (the child cannot name a different group); last-write-wins.
+    async function proxySetPref(name, a) {
+      const key = a.key, value = a.value;
+      if (typeof key !== "string" || !KEY_RE.test(key) || /^(security_|_)/.test(key))
+        throw new Error("setPref: invalid or reserved key");
+      const t = typeof value;
+      if (t !== "string" && t !== "number" && t !== "boolean") throw new Error("setPref: value must be a scalar");
+      if (t === "string" && value.length > 4096) throw new Error("setPref: value too long");
+      const cid = () => crypto.randomUUID();
+      const add = () => oma.callTool("data_add_item", { command_id: cid(), collection: "settings", group: name, fields: { key, value }, actor: "human" });
+      const it = curStored(name, key);
+      let r;
+      if (it) {
+        r = await oma.callTool("data_update_item", { command_id: cid(), id: it.id, fields: { value }, actor: "human" });
+        if (r && r.isError) r = await add();   // concurrently deleted → re-create
+      } else r = await add();
+      await oma.refresh();   // our own bound collection — re-renders the forms and re-pushes prefs
+      return r;
+    }
+
+    window.addEventListener("message", async (ev) => {
+      const d = ev.data || {};
+      if (ev.source !== pv.contentWindow || !pvName) return;
+      if (d.omaPvHeight && typeof d.h === "number") { pv.style.height = Math.min(Math.max(d.h + 4, 140), 560) + "px"; return; }
+      if (!d.omaPv) return;
+      const cid = () => crypto.randomUUID();
+      const name = pvName, gen = pvGen, local = pvTier === "local", caps = pvCaps || {};
+      // v0.2 id-addressed-op collection binding (security-model §1.3(2)): an id-addressed write
+      // may only target an item of the child's bound collection, checked against the snapshot
+      // the parent holds — a guessed foreign id is refused before it reaches the engine.
+      const bound = (id) => { if (!pvSnap || !pvSnap.items.some((i) => i.id === id)) throw new Error("out of scope: id is not in the previewed collection"); };
+      // OCC on the typed write path (parity with the top-level shell's versionOf): the version
+      // the parent-held snapshot last saw rides along, so a concurrent edit surfaces as a
+      // version conflict instead of a silent clobber.
+      const verOf = (id) => { const it = pvSnap && pvSnap.items.find((i) => i.id === id); return it ? it.version : undefined; };
+      // Non-local settings-collection writes need caps.settings_write (runner rule); local is
+      // trusted-by-design (same-document co-equal with the AI everywhere else) and skips it.
+      const settingsGuard = (target) => {
+        if (!local && String(target == null ? "" : target).trim() === "settings" && caps.settings_write !== true)
+          throw new Error("settings write denied by policy");
+      };
+      // caps.delete_items for non-local tiers: allow | confirm (native confirm(), degrading
+      // to DENY where hosts suppress dialogs in sandboxed iframes) | deny — mirrors runnerMount.
+      const confirmDelete = () => {
+        if (local || caps.delete_items === "allow") return;
+        if (caps.delete_items === "confirm") {
+          let okd = false;
+          try { okd = typeof window.confirm === "function" && window.confirm('Component "' + name + '" wants to delete an item. Allow?') === true; } catch { okd = false; }
+          if (okd) return;
+          throw new Error("delete not confirmed (or confirmation unavailable in this host)");
+        }
+        throw new Error("delete denied by policy");
+      };
+      try {
+        let result;
+        switch (d.method) {
+          case "addItem":    rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_add_item", { command_id: cid(), collection: name, group: d.args.group || "", fields: d.args.fields || {}, position: d.args.position, actor: "human" }); break;
+          case "updateItem": bound(d.args.id); rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_update_item", { command_id: cid(), id: d.args.id, fields: d.args.fields, expected_version: verOf(d.args.id), actor: "human" }); break;
+          case "moveItem":   bound(d.args.id); rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_move_item", { command_id: cid(), id: d.args.id, group: d.args.group, position: d.args.position, expected_version: verOf(d.args.id), actor: "human" }); break;
+          case "deleteItem": bound(d.args.id); rateTake("writes"); settingsGuard(name); confirmDelete(); result = await oma.callTool("data_delete_item", { command_id: cid(), id: d.args.id, expected_version: verOf(d.args.id), actor: "human" }); break;
+          case "refresh":    rateTake("refresh"); result = (await oma.callTool("data_list", { collection: name }))?.structuredContent; break;
+          case "setPref":
+            // setPref is a settings-collection WRITE; non-local tiers need the cap (runner rule)
+            if (!local && caps.settings_write !== true) throw new Error("setPref denied by policy");
+            rateTake("writes"); result = await proxySetPref(name, d.args || {}); break;
+          case "callTool": {
+            const ca = d.args || {};
+            const tn = String(ca.name || "");
+            const ta = Object.assign({}, ca.args || {});
+            // Control-plane hard-deny — PERMANENT, every tier incl. local: a preview must
+            // never rewrite security policy or mutate the registry (see CONTROL_PLANE).
+            if (isControlPlane(tn)) throw new Error('preview: tool "' + tn + '" is control-plane and never available to a previewed component');
+            if (WRITEISH.has(tn)) rateTake("writes");
+            if (tn === "data_add_item") {
+              // advisory guard (settings-design §2.7): a preview must not seed foreign settings groups
+              // (normalized like store.mjs — it TRIMS the collection, so "settings " would land there)
+              if (String(ta.collection ?? "").trim() === "settings" && (ta.group || "") !== name)
+                throw new Error("preview: data_add_item into a foreign settings group is blocked");
+            }
+            // id-addressed writes bind to the previewed collection on the GENERIC path too,
+            // ALL tiers (§1.3(2)): the id must resolve in the parent-held snapshot.
+            if (tn === "data_update_item" || tn === "data_move_item" || tn === "data_delete_item") {
+              bound(ta.id);
+              settingsGuard(name);
+              if (tn === "data_delete_item") confirmDelete();
+              if (!local) ta.actor = "human";   // runner-stamped provenance (local passthrough stays raw)
+            }
+            if (!local) {
+              // Non-local tier: enforce the engine-computed caps, mirroring shell.mjs
+              // runnerMount. (Local keeps the permissive-but-denylisted passthrough — a
+              // local component is trusted-by-design, it runs same-document elsewhere.)
+              const callAllow = Array.isArray(caps.call_tools) ? caps.call_tools : [];
+              if (callAllow.indexOf("*") === -1 && callAllow.indexOf(tn) === -1) throw new Error('tool "' + tn + '" not allowed');
+              if ((tn === "component_html" || tn === "get_component") && caps.read_source !== true) throw new Error("component source read denied");
+              if (tn === "data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
+              if (tn === "data_list") { rateTake("refresh"); if (caps.cross_collection_read !== true) ta.collection = name; }
+              if (tn === "data_add_item") {
+                ta.actor = "human";
+                if (caps.cross_collection_write !== true) ta.collection = name;
+                settingsGuard(ta.collection);
+              }
+            }
+            result = await oma.callTool(tn, ta);
+            break;
+          }
+          case "sendMessage":
+            if (!local && caps.send_message !== true) { result = { isError: true, content: [{ type: "text", text: "sendMessage denied by policy" }] }; break; }
+            rateTake("messages"); result = await oma.sendMessage(d.args.text); break;
+          case "updateContext":
+            if (!local && caps.update_context !== true) { result = null; break; }   // silent deny by design (§5 v0.2)
+            rateTake("messages"); result = await oma.updateContext(d.args.text); break;
+          default: throw new Error("unknown " + d.method);
+        }
+        if (gen !== pvGen) return;   // preview switched mid-call — never leak results into the new child
+        pv.contentWindow.postMessage({ omaPvResult: true, id: d.id, result }, "*");
+        const sc = result?.structuredContent || (d.method === "refresh" ? result : null);
+        if (sc && Array.isArray(sc.items) && sc.collection === name) pvSnap = sc;   // only the child's OWN collection may become its snapshot
+        pushPv();   // §2.7: push {snapshot, prefs} after every proxied child call
+      } catch (e) {
+        if (gen !== pvGen) return;
+        pv.contentWindow.postMessage({ omaPvResult: true, id: d.id, error: String(e && e.message || e) }, "*");
+      }
+    });
+
+    // ---- boot: About stats, component grid, manifests (settings-design §4.3 data flow) ----
+    async function loadComponents() {
+      const comps = await oma.callTool("list_components", {});
+      compsCache = comps?.structuredContent?.components || [];
+      countUp(document.getElementById("a-comps"), compsCache.length);
+      renderLibrary();
+      renderPrefs();
+    }
+    (async () => {
+      try {
+        await loadComponents();   // grid + stored-key sections appear before manifests finish loading
+        const colls = await oma.callTool("data_collections", {});
+        const cs = colls?.structuredContent?.collections || [];
+        countUp(document.getElementById("a-colls"), cs.length);
+        countUp(document.getElementById("a-items"), cs.reduce((n, c) => n + c.items, 0));
+        await Promise.all(compsCache.map(async (c) => {
+          try { manifests.set(c.name, parseManifest((await oma.callTool("component_html", { name: c.name }))?.structuredContent?.html || "")); }
+          catch { manifests.set(c.name, null); }
+        }));
+        renderPrefs();
+      } catch {}
+    })();
+
+    oma.onChange(render);
+    oma.ready((s) => { render(s); migrate(); });
+  </script>
+</body>
+</html>

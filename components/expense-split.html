@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #app { max-width: 900px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: var(--font-heading-sm-size, 18px); }
+  #overall { margin-left: auto; font-weight: 700; font-variant-numeric: tabular-nums; }
+  form { display: grid; grid-template-columns: 1fr 2fr 110px auto; gap: 8px; margin-bottom: 14px; }
+  input, button { min-width: 0; padding: 9px 11px; border-radius: var(--border-radius-md); font: inherit; }
+  input { border: 1px solid var(--color-border-primary); background: var(--color-background-primary); color: inherit; }
+  button { border: 0; background: var(--color-background-inverse); color: var(--color-text-inverse); font-weight: 600; cursor: pointer; }
+  input:focus, button:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 1px; }
+  #settlement { margin-bottom: 14px; padding: 11px 13px; border-radius: var(--border-radius-md); background: var(--color-background-secondary); color: var(--color-text-secondary); line-height: 1.4; }
+  #settlement strong { color: var(--color-text-primary); }
+  #columns { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; align-items: start; }
+  .person { overflow: hidden; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-lg); }
+  .person-head { display: flex; gap: 8px; padding: 11px 12px; background: var(--color-background-secondary); font-weight: 700; }
+  .person-total { margin-left: auto; font-variant-numeric: tabular-nums; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--color-border-secondary); }
+  li:hover { background: var(--color-background-secondary); }
+  .desc { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+  .amount { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .delete { padding: 2px 5px; background: transparent; color: var(--color-text-tertiary); opacity: 0; }
+  li:hover .delete, .delete:focus { opacity: 1; }
+  .empty { padding: 36px; text-align: center; color: var(--color-text-tertiary); border: 1px dashed var(--color-border-primary); border-radius: var(--border-radius-lg); }
+  @media (max-width: 620px) { form { grid-template-columns: 1fr 110px; } #person, #desc { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>Shared expenses</h1><span id="overall">Total $0.00</span></header>
+  <form id="addForm">
+    <input id="person" placeholder="Person" aria-label="Person" autocomplete="off" required>
+    <input id="desc" placeholder="What was it for?" aria-label="Description" autocomplete="off" required>
+    <input id="amount" type="number" min="0.01" step="0.01" placeholder="0.00" aria-label="Amount" required>
+    <button type="submit">Add</button>
+  </form>
+  <div id="settlement" aria-live="polite"></div>
+  <main id="columns"></main>
+</div>
+<script type="module">
+  const money = (cents) => `$${(cents / 100).toFixed(2)}`;
+  const itemCents = (item) => Math.max(0, Math.round((Number(item.fields.amount) || 0) * 100));
+
+  function calculateSettlements(people, totals) {
+    if (people.length < 2) return [];
+    const total = people.reduce((sum, person) => sum + totals.get(person), 0);
+    const baseShare = Math.floor(total / people.length);
+    const remainder = total - baseShare * people.length;
+    const credits = [];
+    const debts = [];
+
+    people.forEach((person, index) => {
+      const share = baseShare + (index < remainder ? 1 : 0);
+      const balance = totals.get(person) - share;
+      if (balance > 0) credits.push({ person, cents: balance });
+      if (balance < 0) debts.push({ person, cents: -balance });
+    });
+
+    const lines = [];
+    let debtorIndex = 0;
+    let creditIndex = 0;
+    while (debtorIndex < debts.length && creditIndex < credits.length) {
+      const debtor = debts[debtorIndex];
+      const creditor = credits[creditIndex];
+      const cents = Math.min(debtor.cents, creditor.cents);
+      if (cents > 0) lines.push(`${debtor.person} owes ${creditor.person} ${money(cents)}`);
+      debtor.cents -= cents;
+      creditor.cents -= cents;
+      if (debtor.cents === 0) debtorIndex++;
+      if (creditor.cents === 0) creditIndex++;
+    }
+    return lines;
+  }
+
+  function render(state) {
+    const grouped = new Map();
+    for (const item of state.items) {
+      const person = String(item.group || "Unassigned").trim() || "Unassigned";
+      if (!grouped.has(person)) grouped.set(person, []);
+      grouped.get(person).push(item);
+    }
+
+    const people = [...grouped.keys()].sort((a, b) => a.localeCompare(b));
+    const totals = new Map();
+    for (const person of people) {
+      grouped.get(person).sort((a, b) => a.position - b.position);
+      totals.set(person, grouped.get(person).reduce((sum, item) => sum + itemCents(item), 0));
+    }
+    const overall = people.reduce((sum, person) => sum + totals.get(person), 0);
+    document.getElementById("overall").textContent = `Total ${money(overall)}`;
+
+    const settlement = document.getElementById("settlement");
+    settlement.innerHTML = "";
+    const label = document.createElement("strong");
+    label.textContent = "Settlement: ";
+    const lines = calculateSettlements(people, totals);
+    const result = document.createElement("span");
+    result.textContent = !state.items.length
+      ? "Add expenses to calculate who owes whom."
+      : people.length < 2
+        ? "Add another person to split the total."
+        : lines.length ? lines.join(" · ") : "Everyone is settled.";
+    settlement.append(label, result);
+
+    const columns = document.getElementById("columns");
+    columns.innerHTML = "";
+    if (!people.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No shared expenses yet.";
+      columns.appendChild(empty);
+    }
+
+    for (const person of people) {
+      const section = document.createElement("section");
+      section.className = "person";
+      const head = document.createElement("div");
+      head.className = "person-head";
+      const name = document.createElement("span");
+      name.textContent = person;
+      const total = document.createElement("span");
+      total.className = "person-total";
+      total.textContent = money(totals.get(person));
+      head.append(name, total);
+
+      const list = document.createElement("ul");
+      for (const item of grouped.get(person)) {
+        const row = document.createElement("li");
+        const desc = document.createElement("span");
+        desc.className = "desc";
+        desc.textContent = item.fields.desc || "Expense";
+        const amount = document.createElement("span");
+        amount.className = "amount";
+        amount.textContent = money(itemCents(item));
+        const remove = document.createElement("button");
+        remove.type = "button";
+        remove.className = "delete";
+        remove.title = "Delete expense";
+        remove.textContent = "×";
+        remove.onclick = () => oma.deleteItem(item.id);
+        row.append(desc, amount, remove);
+        list.appendChild(row);
+      }
+      section.append(head, list);
+      columns.appendChild(section);
+    }
+  }
+
+  oma.ready(render);
+  oma.onChange(render);
+
+  document.getElementById("addForm").onsubmit = (event) => {
+    event.preventDefault();
+    const personInput = document.getElementById("person");
+    const descInput = document.getElementById("desc");
+    const amountInput = document.getElementById("amount");
+    const person = personInput.value.trim();
+    const desc = descInput.value.trim();
+    const amount = Math.round(Number(amountInput.value) * 100) / 100;
+    if (!person || !desc || !Number.isFinite(amount) || amount <= 0) return;
+
+    oma.addItem({ group: person, fields: { desc, amount } });
+    descInput.value = "";
+    amountInput.value = "";
+    descInput.focus();
+  };
+</script>
+</body>
+</html>

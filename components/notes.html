@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #app { max-width: 760px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: var(--font-heading-sm-size, 18px); }
+  #count { color: var(--color-text-secondary); font-size: var(--font-text-sm-size); }
+  form { display: grid; grid-template-columns: 1fr auto auto; gap: 8px; margin-bottom: 14px; }
+  input, select, button, textarea { font: inherit; color: inherit; }
+  input, select { min-width: 0; padding: 9px 11px; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); background: var(--color-background-primary); }
+  button { padding: 9px 14px; border: 0; border-radius: var(--border-radius-md); background: var(--color-background-inverse); color: var(--color-text-inverse); font-weight: 600; cursor: pointer; }
+  input:focus, select:focus, textarea:focus, button:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 1px; }
+  #grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 12px; }
+  .note { position: relative; min-height: 145px; padding: 16px; border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-lg); box-shadow: var(--shadow-sm); cursor: text; }
+  .note[data-color="yellow"] { background: color-mix(in srgb, var(--color-background-primary) 76%, #f2c94c); }
+  .note[data-color="blue"] { background: color-mix(in srgb, var(--color-background-primary) 78%, #65a9e8); }
+  .note[data-color="green"] { background: color-mix(in srgb, var(--color-background-primary) 78%, #70c98b); }
+  .note[data-color="rose"] { background: color-mix(in srgb, var(--color-background-primary) 78%, #e9859e); }
+  .text { white-space: pre-wrap; overflow-wrap: anywhere; line-height: 1.45; }
+  textarea { display: block; width: 100%; min-height: 110px; resize: vertical; padding: 0; border: 0; outline: 0; background: transparent; line-height: 1.45; }
+  .delete { position: absolute; top: 7px; right: 7px; width: 27px; height: 27px; padding: 0; border: 1px solid var(--color-border-secondary); border-radius: var(--border-radius-full); background: var(--color-background-primary); color: var(--color-text-secondary); opacity: 0; }
+  .note:hover .delete, .delete:focus { opacity: 1; }
+  .empty { grid-column: 1 / -1; padding: 32px; text-align: center; color: var(--color-text-tertiary); border: 1px dashed var(--color-border-primary); border-radius: var(--border-radius-lg); }
+  @media (max-width: 500px) { form { grid-template-columns: 1fr auto; } form input { grid-column: 1 / -1; } }
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>Sticky notes</h1><span id="count"></span></header>
+  <form id="addForm">
+    <input id="newText" placeholder="Write a quick note…" aria-label="Note text" autocomplete="off">
+    <select id="newColor" aria-label="Note color">
+      <option value="yellow">Yellow</option>
+      <option value="blue">Blue</option>
+      <option value="green">Green</option>
+      <option value="rose">Rose</option>
+    </select>
+    <button type="submit">Add note</button>
+  </form>
+  <main id="grid"></main>
+</div>
+<script type="module">
+  const COLORS = new Set(["yellow", "blue", "green", "rose"]);
+  let latestState = { items: [] };
+  let editingId = null;
+  let draft = "";
+
+  function beginEdit(item) {
+    editingId = item.id;
+    draft = String(item.fields.text || "");
+    render(latestState);
+  }
+
+  function finishEdit(item) {
+    const next = draft.trim();
+    const previous = String(item.fields.text || "");
+    editingId = null;
+    if (next !== previous) {
+      oma.updateItem(item.id, { text: next });
+    } else {
+      render(latestState);
+    }
+  }
+
+  function render(state) {
+    latestState = state;
+    if (editingId && !state.items.some((item) => item.id === editingId)) editingId = null;
+    document.getElementById("count").textContent =
+      `${state.items.length} note${state.items.length === 1 ? "" : "s"}`;
+
+    const grid = document.getElementById("grid");
+    grid.innerHTML = "";
+    if (!state.items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.textContent = "No notes yet — capture something above.";
+      grid.appendChild(empty);
+    }
+
+    for (const item of state.items) {
+      const card = document.createElement("article");
+      card.className = "note";
+      card.dataset.color = COLORS.has(item.fields.color) ? item.fields.color : "yellow";
+
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.title = "Delete note";
+      remove.setAttribute("aria-label", "Delete note");
+      remove.textContent = "×";
+      remove.onmousedown = (event) => event.preventDefault();
+      remove.onclick = (event) => {
+        event.stopPropagation();
+        if (editingId === item.id) editingId = null;
+        oma.deleteItem(item.id);
+      };
+
+      if (editingId === item.id) {
+        const editor = document.createElement("textarea");
+        editor.value = draft;
+        editor.setAttribute("aria-label", "Edit note");
+        editor.oninput = () => { draft = editor.value; };
+        editor.onblur = () => finishEdit(item);
+        editor.onkeydown = (event) => {
+          if (event.key === "Escape") {
+            draft = String(item.fields.text || "");
+            editor.blur();
+          }
+        };
+        card.append(editor, remove);
+        queueMicrotask(() => {
+          editor.focus();
+          editor.setSelectionRange(editor.value.length, editor.value.length);
+        });
+      } else {
+        const text = document.createElement("div");
+        text.className = "text";
+        text.textContent = item.fields.text || "Empty note";
+        card.onclick = () => beginEdit(item);
+        card.append(text, remove);
+      }
+      grid.appendChild(card);
+    }
+  }
+
+  oma.ready(render);
+  oma.onChange(render);
+
+  document.getElementById("addForm").onsubmit = (event) => {
+    event.preventDefault();
+    const input = document.getElementById("newText");
+    const color = document.getElementById("newColor").value;
+    const text = input.value.trim();
+    if (!text) {
+      input.focus();
+      return;
+    }
+    oma.addItem({
+      group: "",
+      fields: { text, color: COLORS.has(color) ? color : "yellow" }
+    });
+    input.value = "";
+    input.focus();
+  };
+</script>
+</body>
+</html>

@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #app { max-width: 980px; margin: 0 auto; }
+  header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: var(--font-heading-sm-size, 18px); }
+  #summary { color: var(--color-text-secondary); font-size: var(--font-text-sm-size); }
+  form { display: grid; grid-template-columns: 1.1fr 1.4fr 1.6fr auto; gap: 8px; margin-bottom: 16px; }
+  input, button { min-width: 0; padding: 9px 11px; border-radius: var(--border-radius-md); font: inherit; }
+  input { border: 1px solid var(--color-border-primary); background: var(--color-background-primary); color: inherit; }
+  button { border: 1px solid var(--color-border-primary); background: var(--color-background-primary); color: inherit; cursor: pointer; }
+  form button { border-color: transparent; background: var(--color-background-inverse); color: var(--color-text-inverse); font-weight: 600; }
+  input:focus, button:focus-visible, a:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 1px; }
+  #stages { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: start; }
+  .stage { overflow: hidden; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-lg); }
+  .stage-head { display: flex; gap: 8px; padding: 11px 12px; background: var(--color-background-secondary); font-weight: 700; }
+  .count { margin-left: auto; color: var(--color-text-secondary); }
+  .cards { display: grid; gap: 0; }
+  article { padding: 12px; border-top: 1px solid var(--color-border-secondary); }
+  article:first-child { border-top: 0; }
+  article:hover { background: var(--color-background-secondary); }
+  .title { display: block; color: var(--color-text-primary); font-weight: 650; line-height: 1.35; overflow-wrap: anywhere; }
+  a.title { text-decoration-thickness: 1px; text-underline-offset: 3px; }
+  .note { margin-top: 6px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size); line-height: 1.4; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .actions { display: flex; gap: 5px; margin-top: 10px; }
+  .actions button { padding: 4px 8px; font-size: var(--font-text-sm-size); }
+  .actions .delete { margin-left: auto; color: var(--color-text-danger); }
+  button:disabled { opacity: .35; cursor: default; }
+  .empty { padding: 20px 10px; text-align: center; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size); }
+  @media (max-width: 760px) {
+    form { grid-template-columns: 1fr auto; }
+    form input { grid-column: 1 / -1; }
+    #stages { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<div id="app">
+  <header><h1>Reading list</h1><span id="summary"></span></header>
+  <form id="addForm">
+    <input id="title" placeholder="Title" aria-label="Title" autocomplete="off" required>
+    <input id="url" placeholder="example.com/article" aria-label="URL" autocomplete="off" required>
+    <input id="note" placeholder="Optional note" aria-label="Note" autocomplete="off">
+    <button type="submit">Add link</button>
+  </form>
+  <main id="stages"></main>
+</div>
+<script type="module">
+  const STAGES = [
+    { id: "toread", label: "To read" },
+    { id: "reading", label: "Reading" },
+    { id: "done", label: "Done" }
+  ];
+
+  function safeUrl(value) {
+    const raw = String(value || "").trim();
+    if (!raw) return "";
+    try {
+      const candidate = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+      const url = new URL(candidate);
+      return url.protocol === "http:" || url.protocol === "https:" ? url.href : "";
+    } catch {
+      return "";
+    }
+  }
+
+  function normalizedGroup(item) {
+    return STAGES.some((stage) => stage.id === item.group) ? item.group : "toread";
+  }
+
+  function makeCard(item, stageIndex) {
+    const card = document.createElement("article");
+    const href = safeUrl(item.fields.url);
+    let title;
+
+    if (href) {
+      title = document.createElement("a");
+      title.href = href;
+      title.target = "_blank";
+      title.rel = "noopener noreferrer";
+    } else {
+      title = document.createElement("span");
+    }
+    title.className = "title";
+    title.textContent = item.fields.title || "Untitled link";
+    card.appendChild(title);
+
+    if (item.fields.note) {
+      const note = document.createElement("div");
+      note.className = "note";
+      note.textContent = item.fields.note;
+      card.appendChild(note);
+    }
+
+    const actions = document.createElement("div");
+    actions.className = "actions";
+    const previous = document.createElement("button");
+    previous.type = "button";
+    previous.textContent = "← Back";
+    previous.disabled = stageIndex === 0;
+    previous.onclick = () => oma.moveItem(item.id, STAGES[stageIndex - 1].id);
+
+    const next = document.createElement("button");
+    next.type = "button";
+    next.textContent = stageIndex === STAGES.length - 1 ? "Finished" : "Next →";
+    next.disabled = stageIndex === STAGES.length - 1;
+    next.onclick = () => oma.moveItem(item.id, STAGES[stageIndex + 1].id);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "delete";
+    remove.textContent = "Delete";
+    remove.onclick = () => oma.deleteItem(item.id);
+
+    actions.append(previous, next, remove);
+    card.appendChild(actions);
+    return card;
+  }
+
+  function render(state) {
+    const counts = STAGES.map((stage) =>
+      state.items.filter((item) => normalizedGroup(item) === stage.id).length
+    );
+    document.getElementById("summary").textContent =
+      `${counts[0]} queued · ${counts[1]} in progress · ${counts[2]} finished`;
+
+    const stages = document.getElementById("stages");
+    stages.innerHTML = "";
+    STAGES.forEach((stage, stageIndex) => {
+      const section = document.createElement("section");
+      section.className = "stage";
+
+      const head = document.createElement("div");
+      head.className = "stage-head";
+      const label = document.createElement("span");
+      label.textContent = stage.label;
+      const count = document.createElement("span");
+      count.className = "count";
+      count.textContent = String(counts[stageIndex]);
+      head.append(label, count);
+
+      const cards = document.createElement("div");
+      cards.className = "cards";
+      const items = state.items
+        .filter((item) => normalizedGroup(item) === stage.id)
+        .sort((a, b) => a.position - b.position);
+
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "empty";
+        empty.textContent = stage.id === "toread"
+          ? "No links waiting."
+          : stage.id === "reading" ? "Nothing in progress." : "Nothing finished yet.";
+        cards.appendChild(empty);
+      }
+      for (const item of items) cards.appendChild(makeCard(item, stageIndex));
+      section.append(head, cards);
+      stages.appendChild(section);
+    });
+  }
+
+  oma.ready(render);
+  oma.onChange(render);
+
+  document.getElementById("addForm").onsubmit = (event) => {
+    event.preventDefault();
+    const titleInput = document.getElementById("title");
+    const urlInput = document.getElementById("url");
+    const noteInput = document.getElementById("note");
+    const title = titleInput.value.trim();
+    const url = safeUrl(urlInput.value);
+    const note = noteInput.value.trim();
+
+    urlInput.setCustomValidity(url ? "" : "Enter a valid HTTP or HTTPS address.");
+    if (!title || !url) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+
+    oma.addItem({ group: "toread", fields: { title, url, note } });
+    titleInput.value = "";
+    urlInput.value = "";
+    noteInput.value = "";
+    titleInput.focus();
+  };
+  document.getElementById("url").oninput = (event) => event.currentTarget.setCustomValidity("");
+</script>
+</body>
+</html>

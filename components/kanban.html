@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 14px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #board { display: flex; gap: 10px; align-items: flex-start; overflow-x: auto; padding-bottom: 6px; }
+  .col { flex: 1; min-width: 170px; background: var(--color-background-secondary); border-radius: var(--border-radius-lg); padding: 9px; }
+  .col.drag-over { outline: 2px dashed var(--color-ring-primary); outline-offset: -2px; }
+  .col h2 { margin: 0 0 8px; font-size: var(--font-text-sm-size); font-weight: 650; text-transform: uppercase;
+            letter-spacing: .05em; color: var(--color-text-secondary); display: flex; align-items: center; gap: 6px; }
+  .col h2 .n { margin-left: auto; font-weight: 600; background: var(--color-background-tertiary);
+               border-radius: var(--border-radius-full); min-width: 18px; height: 18px; padding: 0 5px;
+               display: inline-grid; place-items: center; font-size: 11px; }
+  .card { background: var(--color-background-primary); border: 1px solid var(--color-border-secondary);
+          border-radius: var(--border-radius-md); padding: 8px 10px; margin-bottom: 7px; cursor: grab;
+          box-shadow: var(--shadow-sm); position: relative; animation: pop .18s ease; }
+  @keyframes pop { from { opacity: 0; transform: scale(.97); } }
+  .card.dragging { opacity: .4; }
+  .card .x { position: absolute; top: 4px; right: 6px; border: none; background: none; cursor: pointer;
+             color: var(--color-text-tertiary); font-size: 14px; opacity: 0; }
+  .card:hover .x { opacity: 1; }
+  .card .x:hover { color: var(--color-text-danger); }
+  .addcard { width: 100%; border: none; background: none; color: var(--color-text-tertiary); cursor: pointer;
+             font: inherit; font-size: var(--font-text-sm-size); text-align: left; padding: 5px 4px; border-radius: var(--border-radius-sm); }
+  .addcard:hover { background: var(--color-background-tertiary); color: var(--color-text-primary); }
+  .addform input { width: 100%; padding: 7px 9px; border-radius: var(--border-radius-sm);
+                   border: 1px solid var(--color-border-primary); background: var(--color-background-primary);
+                   color: inherit; font: inherit; }
+  .addform input:focus { outline: none; border-color: var(--color-ring-primary); }
+</style>
+</head>
+<body>
+  <div id="board"></div>
+  <script type="module">
+    const DEFAULT_COLS = ["To Do", "Doing", "Done"];
+    let adding = null; // column currently showing the add form
+
+    function columnsOf(state) {
+      const cols = [...DEFAULT_COLS];
+      for (const it of state.items) if (it.group && !cols.includes(it.group)) cols.push(it.group);
+      return cols;
+    }
+
+    function render(state) {
+      const board = document.getElementById("board");
+      board.innerHTML = "";
+      for (const col of columnsOf(state)) {
+        const items = state.items.filter((i) => (i.group || DEFAULT_COLS[0]) === col);
+        const div = document.createElement("div");
+        div.className = "col";
+        div.dataset.col = col;
+
+        const h = document.createElement("h2");
+        h.innerHTML = `${col} <span class="n">${items.length}</span>`;
+        div.appendChild(h);
+
+        for (const it of items) {
+          const card = document.createElement("div");
+          card.className = "card";
+          card.draggable = true;
+          card.textContent = it.fields.title || "(untitled)";
+          const x = document.createElement("button");
+          x.className = "x"; x.textContent = "×"; x.title = "Delete";
+          x.onclick = (e) => { e.stopPropagation(); oma.deleteItem(it.id); };
+          card.appendChild(x);
+          card.addEventListener("dragstart", (e) => {
+            e.dataTransfer.setData("text/plain", it.id);
+            card.classList.add("dragging");
+          });
+          card.addEventListener("dragend", () => card.classList.remove("dragging"));
+          div.appendChild(card);
+        }
+
+        if (adding === col) {
+          const form = document.createElement("form");
+          form.className = "addform";
+          const input = document.createElement("input");
+          input.placeholder = "Card title…";
+          form.appendChild(input);
+          form.onsubmit = (e) => {
+            e.preventDefault();
+            if (input.value.trim()) oma.addItem({ group: col, fields: { title: input.value.trim() } });
+            adding = null;
+            render(oma.state);
+          };
+          input.onblur = () => { if (!input.value.trim()) { adding = null; render(oma.state); } };
+          div.appendChild(form);
+          setTimeout(() => input.focus(), 0);
+        } else {
+          const btn = document.createElement("button");
+          btn.className = "addcard";
+          btn.textContent = "+ Add card";
+          btn.onclick = () => { adding = col; render(oma.state); };
+          div.appendChild(btn);
+        }
+
+        div.addEventListener("dragover", (e) => { e.preventDefault(); div.classList.add("drag-over"); });
+        div.addEventListener("dragleave", () => div.classList.remove("drag-over"));
+        div.addEventListener("drop", (e) => {
+          e.preventDefault();
+          div.classList.remove("drag-over");
+          const id = e.dataTransfer.getData("text/plain");
+          if (id) oma.moveItem(id, col);
+        });
+
+        board.appendChild(div);
+      }
+    }
+
+    oma.ready(render);
+    oma.onChange(render);
+  </script>
+</body>
+</html>

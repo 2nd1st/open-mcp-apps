@@ -1,0 +1,54 @@
+{
+  "name": "open-mcp-apps",
+  "version": "0.1.0",
+  "description": "Give your AI a persistent, reusable UI — it builds the component once, you keep it forever. An open MCP App engine.",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs",
+    "build": "node build.mjs",
+    "seed": "node seed.mjs",
+    "serve": "node src/http.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-apps",
+    "model-context-protocol",
+    "claude",
+    "ai",
+    "ui",
+    "widgets",
+    "sqlite",
+    "persistent-ui"
+  ],
+  "author": "2nd1st",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=18"
+  },
+  "files": [
+    "src",
+    "components",
+    "build.mjs",
+    "seed.mjs",
+    "install.mjs",
+    "install.sh",
+    "install.md",
+    "KNOWN-ISSUES.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^13.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2nd1st/open-mcp-apps"
+  }
+}

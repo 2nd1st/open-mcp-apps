@@ -1,0 +1,53 @@
+[
+  {
+    "items": []
+  },
+  {
+    "items": [
+      {
+        "id": "reading-1",
+        "group": "toread",
+        "position": 0,
+        "fields": {
+          "title": "A guide to local-first software",
+          "url": "https://www.inkandswitch.com/local-first/",
+          "note": "Compare the sync principles with our current architecture."
+        },
+        "version": 1
+      },
+      {
+        "id": "reading-2",
+        "group": "toread",
+        "position": 1,
+        "fields": {
+          "title": "Web Content Accessibility Guidelines",
+          "url": "https://www.w3.org/WAI/standards-guidelines/wcag/",
+          "note": "Review keyboard and contrast guidance."
+        },
+        "version": 1
+      },
+      {
+        "id": "reading-3",
+        "group": "reading",
+        "position": 0,
+        "fields": {
+          "title": "The Twelve-Factor App",
+          "url": "https://12factor.net/",
+          "note": "Currently on the disposability section."
+        },
+        "version": 1
+      },
+      {
+        "id": "reading-4",
+        "group": "done",
+        "position": 0,
+        "fields": {
+          "title": "MDN: Using custom elements",
+          "url": "https://developer.mozilla.org/en-US/docs/Web/API/Web_components/Using_custom_elements",
+          "note": "Useful lifecycle examples."
+        },
+        "version": 1
+      }
+    ]
+  }
+]

@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<!-- @OMA_SYSTEM_CSS -->
+<style>
+  /* dashboard-only styles; base + kit come from _system.css (seed-inlined above) */
+  header { margin-bottom: 14px; }
+  h1 { display: inline-flex; align-items: center; gap: 7px; }
+  #stats { margin-right: 4px; }
+  #refresh { margin-left: auto; display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: none; background: transparent; color: var(--color-text-secondary); border-radius: var(--border-radius-sm, 7px); cursor: pointer; transition: background var(--k-t-fast), color var(--k-t-fast); }
+  #refresh:hover { background: var(--k-ink-4); color: var(--color-text-primary); }
+  #refresh.spin .k-icon { animation: spin 500ms var(--k-ease); }
+  @keyframes spin { to { rotate: 360deg; } }
+  .card { display: flex; flex-direction: column; gap: 7px; min-height: 120px; }
+  .cardhead { gap: 7px; }
+  .cardhead .name { font-weight: 650; }
+  .groups { display: flex; flex-wrap: wrap; gap: 5px; }
+  .groups .k-chip { max-width: 100%; }
+  .groups .k-chip .k-ellip { max-width: 92px; }
+  ul.preview { list-style: none; margin: 0; padding: 0; flex: 1; }
+  ul.preview li { padding: 2px 0; font-size: var(--font-text-sm-size, 12.5px); color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ul.preview li.done { text-decoration: line-through; color: var(--color-text-tertiary); }
+  ul.preview li.more { color: var(--color-text-tertiary); }
+  .cardfoot { gap: 8px; }
+  .when { flex: 1; font-size: 11px; }
+  .openbtn { opacity: 0; transition: opacity var(--k-t-fast); }
+  .card:hover .openbtn, .card:focus-within .openbtn { opacity: 1; }
+  @media (hover: none) { .openbtn { opacity: 1; } }
+  #empty { display: none; }
+  #note { margin-top: 12px; }
+</style>
+</head>
+<body>
+  <header class="k-row">
+    <h1 class="k-h1"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5 14.5 5 8 8.5 1.5 5zM3 8.25 8 11l5-2.75M3 11.25 8 14l5-2.75"/></svg>Everything</h1>
+    <span id="stats" class="k-sub"></span>
+    <button id="refresh" title="Refresh" aria-label="Refresh"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.89 4.11M13.5 1.5v3h-3"/></svg></button>
+  </header>
+  <div id="grid" class="k-grid"></div>
+  <div class="k-empty" id="empty">
+    <svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+      <path stroke="var(--color-text-tertiary)" stroke-width="2" d="M32 20 52 30.75v13L32 54.5 12 43.75v-13zM12 30.75l20 10.75 20-10.75M32 41.5v13"/>
+      <path stroke="var(--k-accent)" stroke-width="2" d="M24 4l1.7 5.8 5.8 1.7-5.8 1.7L24 19l-1.7-5.8-5.8-1.7 5.8-1.7zM45 10l1 3.4 3.4 1-3.4 1-1 3.4-1-3.4-3.4-1 3.4-1z"/>
+    </svg>
+    <b>Nothing here yet</b>
+    <span>Ask for anything — “make me a habit tracker” — and it appears here, forever.</span>
+  </div>
+  <div id="note" class="k-mut">Click Open to ask the AI to bring up the full board.</div>
+  <script type="module">
+    // Dashboard is a META component: it reads EVERY collection via oma.callTool instead of
+    // binding to one. The shell's auto-refresh doesn't cover it — it runs its own gentle
+    // poll while visible, at the user's widget_poll_seconds (own override ▸ global ▸ 20).
+    const known = {};                // collection -> { meta, snap }
+    let busy = false, booted = false;
+    const prev = new Map();          // collection -> last item count — gates count-up/pop (design-system §8.0)
+    let prevCols = 0, prevTotal = 0; // header count-up baselines
+    const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const ICONS = { "arrow-up-right": "M4 12 12 4M5.5 4H12v6.5" };
+    const icon = (n) => `<svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
+    const hueOf = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 6; };
+    const label = (f) => f.title ?? f.text ?? f.name ?? f.desc ?? Object.values(f).find((v) => typeof v === "string") ?? "(item)";
+
+    function ago(v) {
+      const t = new Date(v).getTime();
+      if (!v || Number.isNaN(t)) return "";
+      const s = Math.max(0, (Date.now() - t) / 1000);
+      if (s < 45) return "just now";
+      const m = s / 60; if (m < 60) return Math.round(m) + "m ago";
+      const h = m / 60; if (h < 24) return Math.round(h) + "h ago";
+      const d = h / 24; if (d < 7) return Math.round(d) + "d ago";
+      const w = d / 7; if (w < 5) return Math.round(w) + "w ago";
+      return new Date(t).toLocaleDateString();
+    }
+
+    // Count-up: from is passed explicitly (fresh nodes have no meaningful textContent), design-system §4.
+    function countUp(el, to, from) {
+      if (!Number.isFinite(from)) from = Number(el.textContent) || 0;
+      if (REDUCE || Math.abs(to - from) < 2) { el.textContent = to; return; }
+      const t0 = performance.now();
+      (function tick(t) {
+        const p = Math.min((t - t0) / 500, 1), e = 1 - (1 - p) ** 3;
+        el.textContent = Math.round(from + (to - from) * e);
+        if (p < 1) requestAnimationFrame(tick);
+      })(t0);
+    }
+
+    async function loadAll() {
+      if (busy) return;
+      busy = true;
+      try {
+        const res = await oma.callTool("data_collections", {});
+        const cols = res?.structuredContent?.collections || [];
+        for (const c of cols) {
+          const d = await oma.callTool("data_list", { collection: c.collection });
+          if (d?.structuredContent) known[c.collection] = { meta: c, snap: d.structuredContent };
+        }
+        for (const k of Object.keys(known)) if (!cols.some((c) => c.collection === k)) delete known[k];
+        render();
+      } catch (e) { console.error("[dashboard] load failed", e); }
+      busy = false;
+    }
+
+    function render() {
+      const entries = Object.entries(known).sort((a, b) => (b[1].meta.last_activity || "").localeCompare(a[1].meta.last_activity || ""));
+      const grid = document.getElementById("grid");
+      // Entrance stagger on first mount only — never replay on polls (design-system §8.0).
+      grid.classList.toggle("k-stagger", !booted && entries.length > 0);
+      grid.innerHTML = "";
+      document.getElementById("empty").style.display = entries.length ? "none" : "grid";
+      document.getElementById("note").style.display = entries.length ? "" : "none";
+
+      let total = 0, i = 0;
+      for (const [name, { meta, snap }] of entries) {
+        const count = snap.items.length;
+        total += count;
+
+        const card = document.createElement("div");
+        card.className = "k-card is-click card";
+        card.style.setProperty("--i", i++);
+        const open = () => oma.sendMessage(`Open the full board for my "${name}" collection (use open_component with the right component).`);
+        card.onclick = open;
+
+        const head = document.createElement("div");
+        head.className = "cardhead k-row";
+        const dot = document.createElement("span");
+        dot.className = "k-dot";
+        dot.style.background = `var(--k-hue-${hueOf(name)})`;           // collection identity dot
+        const nm = Object.assign(document.createElement("span"), { className: "name k-grow k-ellip", textContent: name });
+        const from = prev.get(name) ?? (booted ? count : 0);           // first mount: from 0; new post-boot: no count-up
+        const ct = Object.assign(document.createElement("span"), { className: "k-badge k-num", textContent: String(from) });
+        head.append(dot, nm, ct);
+        card.appendChild(head);
+        countUp(ct, count, from);
+        if (booted && prev.get(name) !== count) ct.classList.add("k-pop"); // celebrate real deltas only
+        prev.set(name, count);
+
+        const groups = [...new Set(snap.items.map((it) => it.group).filter(Boolean))];
+        if (groups.length) {
+          const g = document.createElement("div");
+          g.className = "groups";
+          for (const gr of groups.slice(0, 4)) {
+            const n = snap.items.filter((it) => it.group === gr).length;
+            const chip = document.createElement("span");
+            chip.className = "k-chip static";   // kit chip vocabulary, non-interactive variant
+            const gd = document.createElement("span");
+            gd.className = "k-dot";
+            gd.style.background = `var(--k-hue-${hueOf(gr)})`;          // same group = same hue everywhere
+            chip.append(gd,
+              Object.assign(document.createElement("span"), { className: "k-ellip", textContent: gr }),
+              Object.assign(document.createElement("span"), { className: "k-mut k-num", textContent: String(n) }));
+            g.appendChild(chip);
+          }
+          card.appendChild(g);
+        }
+
+        const ul = document.createElement("ul");
+        ul.className = "preview";
+        for (const it of snap.items.slice(0, 3)) {
+          const li = Object.assign(document.createElement("li"), { textContent: label(it.fields) });
+          if (it.fields.done) li.className = "done";
+          ul.appendChild(li);
+        }
+        if (count > 3) ul.appendChild(Object.assign(document.createElement("li"), { className: "more", textContent: `… ${count - 3} more` }));
+        card.appendChild(ul);
+
+        const foot = document.createElement("div");
+        foot.className = "cardfoot k-row";
+        const when = Object.assign(document.createElement("span"), { className: "when k-mut k-num", textContent: meta.last_activity ? ago(meta.last_activity) : "" });
+        const btn = document.createElement("button");
+        btn.type = "button";
+        btn.className = "k-btn openbtn";
+        btn.innerHTML = icon("arrow-up-right") + "Open";
+        btn.onclick = (e) => { e.stopPropagation(); open(); };
+        foot.append(when, btn);
+        card.appendChild(foot);
+
+        grid.appendChild(card);
+      }
+
+      const statsEl = document.getElementById("stats");
+      if (entries.length) {
+        const fc = booted ? prevCols : 0, ft = booted ? prevTotal : 0;
+        statsEl.innerHTML = `<span class="k-num" id="s-cols">${fc}</span> collections · <span class="k-num" id="s-items">${ft}</span> items`;
+        countUp(document.getElementById("s-cols"), entries.length, fc);
+        countUp(document.getElementById("s-items"), total, ft);
+        prevCols = entries.length; prevTotal = total;
+      } else {
+        statsEl.textContent = "";
+        prevCols = 0; prevTotal = 0;
+      }
+      for (const k of [...prev.keys()]) if (!known[k]) prev.delete(k);  // forget vanished collections
+      if (entries.length) booted = true;
+    }
+
+    const refreshBtn = document.getElementById("refresh");
+    refreshBtn.onclick = () => { if (!REDUCE) refreshBtn.classList.add("spin"); loadAll(); };  // one 500ms spin per click
+    refreshBtn.addEventListener("animationend", () => refreshBtn.classList.remove("spin"));
+
+    oma.ready(loadAll);
+    // Per-tick poll: honors widget_poll_seconds (own override ▸ global ▸ 20), clamp [5,300].
+    (function schedule() {
+      const s = oma.pref("widget_poll_seconds", 20);
+      const ms = (s >= 5 && s <= 300 ? s : 20) * 1000;
+      setTimeout(() => {
+        if (document.visibilityState === "visible") loadAll();
+        schedule();
+      }, ms);
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 16px; font-family: var(--font-sans); color: var(--color-text-primary); font-size: var(--font-text-md-size); }
+  #app { max-width: 620px; margin: 0 auto; }
+  .top { display: flex; align-items: baseline; gap: 12px; margin-bottom: 12px; }
+  h1 { margin: 0; font-size: var(--font-heading-sm-size, 18px); }
+  #today { margin-left: auto; color: var(--color-text-secondary); font-size: var(--font-text-sm-size); }
+  .timer { padding: 20px; text-align: center; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-lg); background: var(--color-background-secondary); }
+  #clock { margin: 10px 0 16px; font: 700 54px/1 var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -2px; }
+  .settings, .actions { display: flex; gap: 8px; justify-content: center; }
+  .settings { margin-bottom: 12px; }
+  input { min-width: 0; padding: 8px 10px; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: inherit; font: inherit; }
+  #labelInput { flex: 1; max-width: 290px; }
+  #minutesInput { width: 76px; }
+  input:focus, button:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 1px; }
+  button { padding: 8px 13px; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); background: var(--color-background-primary); color: inherit; font: inherit; font-weight: 600; cursor: pointer; }
+  button.primary { border-color: transparent; background: var(--color-background-inverse); color: var(--color-text-inverse); }
+  .history-head { display: flex; align-items: center; margin: 18px 0 8px; }
+  .history-head strong { font-size: var(--font-text-sm-size); text-transform: uppercase; letter-spacing: .05em; }
+  #send { margin-left: auto; }
+  ul { list-style: none; margin: 0; padding: 0; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-lg); overflow: hidden; }
+  li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--color-border-secondary); }
+  li:first-child { border-top: 0; }
+  li:hover { background: var(--color-background-secondary); }
+  .session { flex: 1; min-width: 0; }
+  .session strong { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .meta { color: var(--color-text-secondary); font-size: var(--font-text-sm-size); }
+  .delete { padding: 3px 7px; border: 0; background: transparent; color: var(--color-text-tertiary); opacity: 0; }
+  li:hover .delete, .delete:focus { opacity: 1; }
+  .empty { justify-content: center; padding: 20px; color: var(--color-text-tertiary); }
+</style>
+<script type="application/json" id="oma-manifest">
+{
+  "manifest_version": 1,
+  "settings": [
+    { "key": "work_minutes", "type": "number", "label": "Focus session (minutes)",
+      "description": "Length of one focus session.", "default": 25, "min": 1, "max": 180, "step": 1 },
+    { "key": "default_label", "type": "string", "label": "Default session label",
+      "description": "Pre-filled name for a new focus session; remembers your last one.", "default": "Focus session", "maxlength": 40 }
+  ],
+  "uses_shared": ["confirm_delete"]
+}
+</script>
+</head>
+<body>
+<div id="app">
+  <div class="top"><h1>Focus timer</h1><span id="today"></span></div>
+  <section class="timer">
+    <div id="clock" aria-live="polite">25:00</div>
+    <div class="settings">
+      <input id="labelInput" value="Focus session" maxlength="40" aria-label="Session label" autocomplete="off">
+      <input id="minutesInput" type="number" value="25" min="1" max="180" aria-label="Minutes">
+    </div>
+    <div class="actions">
+      <button id="start" class="primary" type="button">Start</button>
+      <button id="reset" type="button">Reset</button>
+    </div>
+  </section>
+  <div class="history-head"><strong>Completed sessions</strong><button id="send" type="button">Log session to AI</button></div>
+  <ul id="history"></ul>
+</div>
+<script type="module">
+  let latestState = { items: [] };
+  let duration = 25 * 60;
+  let remaining = duration;
+  let running = false;
+  let intervalId = null;
+  let sessionLabel = "Focus session";
+
+  const clock = document.getElementById("clock");
+  const startButton = document.getElementById("start");
+  const labelInput = document.getElementById("labelInput");
+  const minutesInput = document.getElementById("minutesInput");
+
+  function dayKey(date) {
+    return `${date.getFullYear()}-${date.getMonth()}-${date.getDate()}`;
+  }
+
+  function isToday(value) {
+    const date = new Date(value);
+    return !Number.isNaN(date.getTime()) && dayKey(date) === dayKey(new Date());
+  }
+
+  function paintTimer() {
+    const minutes = Math.floor(remaining / 60);
+    const seconds = remaining % 60;
+    clock.textContent = `${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+    startButton.textContent = running ? "Pause" : remaining === 0 ? "Start again" : "Start";
+    minutesInput.disabled = running;
+  }
+
+  function stopTimer() {
+    running = false;
+    clearInterval(intervalId);
+    intervalId = null;
+  }
+
+  function completeSession() {
+    stopTimer();
+    remaining = 0;
+    paintTimer();
+    oma.addItem({
+      group: "",
+      fields: {
+        label: sessionLabel.trim() || "Focus session",
+        minutes: Math.round(duration / 60),
+        completed_at: new Date().toISOString()
+      }
+    });
+  }
+
+  function tick() {
+    remaining = Math.max(0, remaining - 1);
+    paintTimer();
+    if (remaining === 0) completeSession();
+  }
+
+  function render(state) {
+    latestState = state;
+    const sessions = [...state.items].sort((a, b) =>
+      String(b.fields.completed_at || "").localeCompare(String(a.fields.completed_at || ""))
+    );
+    const todayMinutes = sessions
+      .filter((item) => isToday(item.fields.completed_at))
+      .reduce((sum, item) => sum + (Number(item.fields.minutes) || 0), 0);
+    document.getElementById("today").textContent = `${todayMinutes} min focused today`;
+
+    const history = document.getElementById("history");
+    history.innerHTML = "";
+    if (!sessions.length) {
+      const empty = document.createElement("li");
+      empty.className = "empty";
+      empty.textContent = "Completed sessions will appear here.";
+      history.appendChild(empty);
+    }
+    for (const item of sessions) {
+      const row = document.createElement("li");
+      const details = document.createElement("div");
+      details.className = "session";
+      const title = document.createElement("strong");
+      title.textContent = item.fields.label || "Focus session";
+      const meta = document.createElement("span");
+      meta.className = "meta";
+      const completed = new Date(item.fields.completed_at);
+      const time = Number.isNaN(completed.getTime()) ? "Unknown time" : completed.toLocaleString();
+      meta.textContent = `${Number(item.fields.minutes) || 0} min · ${time}`;
+      const remove = document.createElement("button");
+      remove.type = "button";
+      remove.className = "delete";
+      remove.title = "Delete session";
+      remove.textContent = "×";
+      remove.onclick = () => {
+        // Inline two-step confirm — confirm() is blocked in the widget sandbox.
+        if (oma.pref("confirm_delete", true) && remove.dataset.armed !== "1") {
+          remove.dataset.armed = "1"; remove.textContent = "Sure?"; remove.style.width = "auto";
+          setTimeout(() => { if (remove.dataset.armed) { remove.dataset.armed = ""; remove.textContent = "×"; remove.style.width = ""; } }, 3000);
+          return;
+        }
+        oma.deleteItem(item.id);
+      };
+      details.append(title, meta);
+      row.append(details, remove);
+      history.appendChild(row);
+    }
+    document.getElementById("send").hidden = !!oma.standalone;
+    paintTimer();
+  }
+
+  // Reference manifest loop: durations + default label live in the settings collection
+  // (declared in #oma-manifest). Read merged (own override ▸ global ▸ manifest default),
+  // write back from this component's own UI. See docs/settings-design.md §3.2, §9.
+  function applyPrefs() {
+    const mins = Math.min(180, Math.max(1, Math.round(oma.pref("work_minutes", 25))));
+    duration = mins * 60;
+    if (!running) remaining = duration;          // a running session keeps its countdown
+    minutesInput.value = String(mins);
+    const lbl = oma.pref("default_label", "Focus session");
+    if (document.activeElement !== labelInput) { labelInput.value = lbl; sessionLabel = lbl; }
+    paintTimer();
+  }
+
+  oma.ready((state) => { applyPrefs(); render(state); });
+  oma.onChange(render);
+  // A settings change elsewhere re-emits onChange (data path) AND fires onPrefChange — reapply
+  // only our own knobs so we never clobber a running timer or in-progress label edit.
+  oma.onPrefChange((c) => { if (c.key === "work_minutes" || c.key === "default_label") applyPrefs(); });
+
+  labelInput.oninput = () => { sessionLabel = labelInput.value; };
+  labelInput.onchange = () => { sessionLabel = labelInput.value; oma.setPref("default_label", labelInput.value); };
+  minutesInput.onchange = () => {
+    const value = Math.min(180, Math.max(1, Math.round(Number(minutesInput.value) || 25)));
+    minutesInput.value = String(value);
+    duration = value * 60;
+    remaining = duration;
+    paintTimer();
+    oma.setPref("work_minutes", value);
+  };
+  startButton.onclick = () => {
+    if (running) {
+      stopTimer();
+    } else {
+      if (remaining === 0) remaining = duration;
+      running = true;
+      intervalId = setInterval(tick, 1000);
+    }
+    paintTimer();
+  };
+  document.getElementById("reset").onclick = () => {
+    stopTimer();
+    remaining = duration;
+    paintTimer();
+  };
+  document.getElementById("send").onclick = () => {
+    const today = latestState.items.filter((item) => isToday(item.fields.completed_at));
+    const total = today.reduce((sum, item) => sum + (Number(item.fields.minutes) || 0), 0);
+    const labels = today.map((item) => item.fields.label || "Focus session").join(", ");
+    oma.sendMessage(today.length
+      ? `Focus update: I completed ${today.length} session${today.length === 1 ? "" : "s"} today (${total} minutes): ${labels}.`
+      : "Focus update: I have not completed a session today.");
+  };
+</script>
+</body>
+</html>
