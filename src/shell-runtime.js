@@ -123,7 +123,6 @@ async function call(name, args) {
     throw e;
   }
 }
-const versionOf = (id) => { const it = state.items.find((i) => i.id === id); return it ? it.version : undefined; };
 
 // ---- preferences: prefetched at boot, group-indexed (component-name-INDEPENDENT),
 // merged lazily per read — identity may not be known yet when the data arrives.
@@ -250,17 +249,24 @@ window.oma = {
   addItem({ group = "", fields = {}, position } = {}) {
     return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human" });
   },
+  // Widget mutations are LAST-WRITE-WINS (no expected_version) — the same choice setPref makes and
+  // for the same reason. A live widget is the user rapidly clicking their OWN UI; sending
+  // expected_version made two fast clicks on one item race — the 2nd carried the pre-echo STALE
+  // version, so the store returned a spurious "Version conflict" that surfaced as an error banner
+  // and blocked the interaction. The user is the single writer they can see; their click should
+  // just apply. The rare AI-vs-user race converges via the mutation echo + the ~20s poll, and the
+  // AI can still request OCC explicitly through the data_* tools when it genuinely needs it.
   /** Shallow-merge fields into an item (set a key to null to delete it). */
   updateItem(id, fields) {
-    return call("data_update_item", { command_id: uuid(), id, fields, expected_version: versionOf(id), actor: "human" });
+    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human" });
   },
   /** Move an item to another group (and/or position). */
   moveItem(id, group, position) {
-    return call("data_move_item", { command_id: uuid(), id, group, position, expected_version: versionOf(id), actor: "human" });
+    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human" });
   },
   /** Delete an item. */
   deleteItem(id) {
-    return call("data_delete_item", { command_id: uuid(), id, expected_version: versionOf(id), actor: "human" });
+    return call("data_delete_item", { command_id: uuid(), id, actor: "human" });
   },
   /** Re-fetch the collection from the server. */
   refresh() { return state.collection ? call("data_list", { collection: state.collection }) : Promise.resolve(); },
