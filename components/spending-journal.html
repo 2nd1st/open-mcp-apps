@@ -1,0 +1,1680 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="A running log of spending with categories, totals, and monthly views.">
+  <meta name="oma-category" content="Money">
+  <script type="application/json" id="oma-fixtures">{"items":[{"id":"02a9d795-faaa-44ec-9cab-4029c77b1918","group":"Dining","position":1,"fields":{"merchant":"Morning Tide Café","amount":8.9,"currency":"USD","date":"2026-07-21","category":"Dining","payment_method":"Apple Pay","note":"Coffee and breakfast"},"version":1},{"id":"2f17178f-0f6c-4920-b35b-8f53edac16d4","group":"Entertainment","position":1,"fields":{"merchant":"Cloud Nine Cinema","amount":18.5,"currency":"USD","date":"2026-07-16","category":"Entertainment","payment_method":"Apple Pay","note":"Friday night film"},"version":1},{"id":"1490d3b5-4575-4b40-8319-b15d443a8169","group":"Groceries","position":1,"fields":{"merchant":"Green Leaf Grocer","amount":36.45,"currency":"USD","date":"2026-07-23","category":"Groceries","payment_method":"Card","note":"Fruit, vegetables and pantry basics"},"version":1},{"id":"044939ed-670c-42fb-a0df-0288320ce92b","group":"Health","position":1,"fields":{"merchant":"Harbour Pharmacy","amount":14.2,"currency":"USD","date":"2026-07-13","category":"Health","payment_method":"Card","note":"Everyday essentials"},"version":1},{"id":"42f2a1ee-a43b-458b-b383-a9b41511781c","group":"Transport","position":1,"fields":{"merchant":"Metro Transit","amount":24,"currency":"USD","date":"2026-07-19","category":"Transport","payment_method":"Card","note":"Weekly travel top-up"},"version":1}]}</script>
+<title>Spending journal</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: var(--color-text-info, var(--color-ring-primary));
+    --positive: var(--color-text-success, var(--color-ring-primary));
+    --caution: var(--color-text-warning, var(--color-ring-primary));
+    --negative: var(--color-text-danger, var(--color-ring-primary));
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    overflow: hidden;
+  }
+
+  body {
+    padding: 14px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-text-md-size, 14px);
+  }
+
+  button, input, select {
+    color: inherit;
+    font: inherit;
+  }
+
+  button { cursor: pointer; }
+
+  .shell {
+    position: relative;
+    width: min(100%, 980px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+
+  .topbar {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .brand {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .brand-mark {
+    display: grid;
+    width: 37px;
+    height: 37px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--accent) 17%, transparent),
+      color-mix(in oklab, var(--positive) 7%, transparent)
+    );
+    color: var(--accent);
+  }
+
+  .brand-mark svg,
+  .ai-button svg,
+  .add-button svg,
+  .empty-icon svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.8;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .kicker {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+  }
+
+  .top-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    font-size: var(--font-text-sm-size, 13px);
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .btn.ghost {
+    background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
+  }
+
+  .ai-button svg {
+    width: 17px;
+    height: 17px;
+    color: var(--accent);
+  }
+
+  .overview {
+    display: grid;
+    grid-template-columns: minmax(250px, .8fr) minmax(360px, 1.2fr);
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--accent) 5%, var(--color-background-secondary));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .overview-main {
+    min-width: 0;
+  }
+
+  .eyebrow-row,
+  .card-heading,
+  .ledger-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .eyebrow {
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 13px);
+    font-weight: 650;
+  }
+
+  .currency-pill {
+    padding: 3px 7px;
+    border: 1px solid color-mix(in oklab, var(--accent) 20%, var(--color-border-secondary));
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--accent) 8%, transparent);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .05em;
+  }
+
+  .month-total {
+    display: block;
+    margin: 6px 0 3px;
+    font-size: clamp(30px, 4.5vw, 40px);
+    font-weight: 760;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.055em;
+    line-height: 1;
+  }
+
+  .month-meta {
+    min-height: 18px;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+
+  .stat-strip {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+
+  .mini-stat {
+    min-width: 0;
+    padding: 4px 0 4px 12px;
+    border-left: 1px solid color-mix(in oklab, var(--accent) 18%, var(--color-border-secondary));
+  }
+
+  .mini-label {
+    display: block;
+    margin-bottom: 3px;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .05em;
+    text-overflow: ellipsis;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .mini-value {
+    display: block;
+    overflow: hidden;
+    font-size: var(--font-text-sm-size, 12px);
+    font-variant-numeric: tabular-nums;
+    font-weight: 750;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .breakdown-card {
+    display: grid;
+    grid-template-columns: 156px minmax(0, 1fr);
+    min-height: 186px;
+    min-width: 0;
+    padding: 14px;
+    border: 1px solid color-mix(in oklab, var(--accent) 13%, var(--color-border-primary));
+    border-radius: var(--border-radius-lg);
+    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .donut-side {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    padding-right: 14px;
+    border-right: 1px solid var(--color-border-secondary);
+  }
+
+  .card-heading {
+    justify-content: space-between;
+    margin-bottom: 7px;
+  }
+
+  .card-title,
+  .ledger-title,
+  .quick-title {
+    font-weight: 760;
+    letter-spacing: -.012em;
+  }
+
+  .card-note {
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  .donut-wrap {
+    position: relative;
+    width: 124px;
+    height: 124px;
+    margin: 0 auto;
+  }
+
+  .donut {
+    display: block;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    transform: rotate(-90deg);
+  }
+
+  .donut-track,
+  .donut-segment {
+    fill: none;
+    stroke-width: 11;
+  }
+
+  .donut-track {
+    stroke: color-mix(in oklab, var(--color-text-tertiary) 11%, transparent);
+  }
+
+  .donut-segment {
+    stroke-linecap: butt;
+  }
+
+  .donut-center {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    pointer-events: none;
+  }
+
+  .donut-share {
+    font-size: 22px;
+    font-variant-numeric: tabular-nums;
+    font-weight: 780;
+    letter-spacing: -.04em;
+    line-height: 1;
+  }
+
+  .donut-label {
+    max-width: 72px;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .category-side {
+    min-width: 0;
+    padding-left: 14px;
+  }
+
+  .category-rows {
+    max-height: 143px;
+    overflow: auto;
+    padding: 1px 3px 1px 0;
+    scrollbar-color: var(--color-border-primary) transparent;
+    scrollbar-width: thin;
+  }
+
+  .category-row {
+    display: block;
+    width: 100%;
+    margin: 0 0 5px;
+    padding: 6px 7px;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    background: transparent;
+    text-align: left;
+  }
+
+  .category-row[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--cat) 30%, var(--color-border-primary));
+    background: color-mix(in oklab, var(--cat) 8%, transparent);
+  }
+
+  .category-main,
+  .category-meta {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .category-name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: var(--font-text-sm-size, 12px);
+    font-weight: 720;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .category-name::before {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    margin-right: 6px;
+    border-radius: 50%;
+    background: var(--cat);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--cat) 10%, transparent);
+    content: "";
+    vertical-align: 1px;
+  }
+
+  .category-amount {
+    flex: none;
+    font-size: var(--font-text-sm-size, 12px);
+    font-variant-numeric: tabular-nums;
+    font-weight: 760;
+  }
+
+  .category-meta {
+    margin-top: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+  }
+
+  .bar-track {
+    height: 3px;
+    margin-top: 4px;
+    overflow: hidden;
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--color-text-tertiary) 11%, transparent);
+  }
+
+  .bar-fill {
+    width: var(--width);
+    height: 100%;
+    border-radius: inherit;
+    background: var(--cat);
+    transform-origin: left;
+  }
+
+  .breakdown-empty {
+    display: grid;
+    min-height: 105px;
+    place-items: center;
+    padding: 12px;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-text-sm-size, 12px);
+    line-height: 1.45;
+    text-align: center;
+  }
+
+  .quick-add {
+    padding: 13px 14px 14px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-background-tertiary) 58%, var(--color-background-primary));
+  }
+
+  .quick-heading {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+
+  .quick-heading::before {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--positive);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--positive) 10%, transparent);
+    content: "";
+  }
+
+  .quick-hint {
+    margin-left: auto;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  .quick-grid {
+    display: grid;
+    grid-template-columns: minmax(155px, 1.35fr) minmax(92px, .65fr) 86px minmax(125px, 1fr) minmax(125px, .9fr) 138px;
+    gap: 8px;
+  }
+
+  .field {
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .field label {
+    padding-left: 2px;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .055em;
+    text-transform: uppercase;
+  }
+
+  .field input,
+  .field select {
+    width: 100%;
+    min-width: 0;
+    height: 37px;
+    padding: 8px 9px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    outline: none;
+    background: var(--color-background-primary);
+    font-size: var(--font-text-sm-size, 13px);
+  }
+
+  .field input::placeholder {
+    color: var(--color-text-tertiary);
+  }
+
+  .form-footer {
+    display: grid;
+    grid-column: 1 / -1;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+  }
+
+  .note-field {
+    position: relative;
+  }
+
+  .note-field input {
+    padding-left: 32px;
+  }
+
+  .note-glyph {
+    position: absolute;
+    left: 10px;
+    bottom: 10px;
+    color: var(--color-text-tertiary);
+    font-size: 14px;
+    pointer-events: none;
+  }
+
+  .add-button {
+    display: inline-flex;
+    min-width: 132px;
+    height: 37px;
+    align-items: center;
+    justify-content: center;
+    align-self: end;
+    gap: 7px;
+    padding: 8px 14px;
+    border: 0;
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-inverse);
+    color: var(--color-text-inverse);
+    box-shadow: var(--shadow-sm);
+    font-size: var(--font-text-sm-size, 13px);
+    font-weight: 760;
+  }
+
+  .add-button svg {
+    width: 16px;
+    height: 16px;
+  }
+
+  .insights {
+    padding: 16px 14px 0;
+  }
+
+  .ledger {
+    padding: 16px 14px 14px;
+  }
+
+  .ledger-heading {
+    min-height: 28px;
+    margin-bottom: 7px;
+  }
+
+  .entry-count {
+    color: var(--color-text-tertiary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+
+  .filter-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-left: auto;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--color-border-primary));
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--accent) 8%, transparent);
+    color: var(--accent);
+    font-size: 10px;
+    font-weight: 750;
+  }
+
+  .filter-chip[hidden] { display: none; }
+
+  .entry-list {
+    max-height: 286px;
+    overflow: auto;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    scrollbar-color: var(--color-border-primary) transparent;
+    scrollbar-width: thin;
+  }
+
+  .entry {
+    --cat: var(--accent);
+    position: relative;
+    display: grid;
+    grid-template-columns: 9px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+    min-height: 58px;
+    padding: 9px 10px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .entry:last-child { border-bottom: 0; }
+
+  .entry-dot {
+    width: 7px;
+    height: 28px;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--cat);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--cat) 8%, transparent);
+  }
+
+  .entry-copy { min-width: 0; }
+
+  .merchant-line {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .merchant {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 740;
+    letter-spacing: -.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .entry-category {
+    flex: none;
+    max-width: 125px;
+    overflow: hidden;
+    padding: 2px 6px;
+    border: 1px solid color-mix(in oklab, var(--cat) 22%, var(--color-border-secondary));
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--cat) 7%, transparent);
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .entry-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
+    margin-top: 4px;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    white-space: nowrap;
+  }
+
+  .entry-meta .note {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .meta-dot::before {
+    content: "·";
+  }
+
+  .entry-amount {
+    min-width: 92px;
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+    font-weight: 780;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .delete-button {
+    width: 31px;
+    min-width: 31px;
+    height: 30px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 17px;
+    line-height: 1;
+  }
+
+  .delete-button.armed {
+    width: auto;
+    min-width: 52px;
+    padding: 0 7px;
+    border-color: color-mix(in oklab, var(--negative) 25%, var(--color-border-primary));
+    background: color-mix(in oklab, var(--negative) 8%, transparent);
+    color: var(--negative);
+    font-size: 10px;
+    font-weight: 800;
+  }
+
+  .empty-state {
+    display: grid;
+    min-height: 150px;
+    place-items: center;
+    padding: 25px;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+    text-align: center;
+  }
+
+  .empty-icon {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    margin: 0 auto 9px;
+    place-items: center;
+    border: 1px dashed color-mix(in oklab, var(--accent) 35%, var(--color-border-primary));
+    border-radius: 50%;
+    background: color-mix(in oklab, var(--accent) 7%, transparent);
+    color: var(--accent);
+  }
+
+  .empty-state strong {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--color-text-primary);
+  }
+
+  .empty-state span {
+    display: block;
+    max-width: 390px;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  select:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+
+  .field input:focus,
+  .field select:focus {
+    border-color: var(--color-ring-primary);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-ring-primary) 11%, transparent);
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .ai-button,
+    .add-button,
+    .category-row,
+    .entry,
+    .entry-category,
+    .delete-button {
+      transition:
+        transform 180ms cubic-bezier(.2,.8,.3,1),
+        border-color 180ms cubic-bezier(.2,.8,.3,1),
+        background-color 180ms cubic-bezier(.2,.8,.3,1),
+        box-shadow 180ms cubic-bezier(.2,.8,.3,1);
+    }
+
+    .ai-button:hover,
+    .add-button:hover {
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-md, var(--shadow-sm));
+    }
+
+    .category-row:hover {
+      background: color-mix(in oklab, var(--cat) 6%, transparent);
+      transform: translateX(2px);
+    }
+
+    .entry:hover {
+      z-index: 1;
+      background: color-mix(in oklab, var(--color-text-primary) 3%, transparent);
+      transform: translateX(2px);
+    }
+
+    .entry-category:hover {
+      background: color-mix(in oklab, var(--cat) 12%, transparent);
+    }
+
+    .delete-button:hover {
+      border-color: color-mix(in oklab, var(--negative) 18%, var(--color-border-secondary));
+      background: color-mix(in oklab, var(--negative) 7%, transparent);
+      color: var(--negative);
+    }
+
+    .ai-button:active,
+    .add-button:active,
+    .category-row:active,
+    .entry-category:active,
+    .delete-button:active {
+      transform: scale(.975);
+    }
+
+    .donut-segment {
+      animation: donut-in 720ms cubic-bezier(.2,.8,.3,1) both;
+      animation-delay: var(--delay);
+    }
+
+    .bar-fill {
+      animation: bar-in 620ms cubic-bezier(.2,.8,.3,1) both;
+      animation-delay: var(--delay);
+    }
+
+    .entry {
+      animation: entry-in 340ms cubic-bezier(.2,.8,.3,1) both;
+      animation-delay: var(--delay);
+    }
+
+    .add-button.saved {
+      animation: save-pop 440ms cubic-bezier(.34,1.56,.64,1);
+    }
+
+    @keyframes donut-in {
+      from { stroke-dasharray: 0 100; opacity: .35; }
+    }
+
+    @keyframes bar-in {
+      from { transform: scaleX(0); opacity: .4; }
+    }
+
+    @keyframes entry-in {
+      from { opacity: 0; transform: translateY(5px); }
+    }
+
+    @keyframes save-pop {
+      0% { transform: scale(1); }
+      45% { transform: scale(1.055); }
+      100% { transform: scale(1); }
+    }
+  }
+
+  @media (max-width: 760px) {
+    body { padding: 8px; }
+
+    .overview {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+
+    .breakdown-card {
+      grid-template-columns: 140px minmax(0, 1fr);
+    }
+
+    .quick-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .form-footer {
+      grid-column: 1 / -1;
+    }
+
+    .merchant-field {
+      grid-column: span 2;
+    }
+  }
+
+  @media (max-width: 640px) {
+    .shell { border-radius: var(--border-radius-md); }
+
+    .topbar {
+      padding: 12px;
+    }
+
+    .ai-button {
+      min-height: 36px;
+      padding: 8px 9px;
+    }
+
+    .ai-button span { display: none; }
+
+    .overview { padding: 9px; }
+
+    .breakdown-card {
+      grid-template-columns: 118px minmax(0, 1fr);
+      padding: 11px;
+    }
+
+    .donut-side { padding-right: 9px; }
+
+    .donut-wrap {
+      width: 102px;
+      height: 102px;
+    }
+
+    .category-side { padding-left: 9px; }
+
+    .category-rows { max-height: 122px; }
+
+    .quick-add {
+      padding: 11px;
+    }
+
+    .quick-hint { display: none; }
+
+    .quick-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .merchant-field { grid-column: 1 / -1; }
+
+    .form-footer {
+      grid-template-columns: 1fr;
+    }
+
+    .add-button {
+      width: 100%;
+    }
+
+    .ledger {
+      padding: 10px;
+    }
+
+    .entry {
+      grid-template-columns: 7px minmax(0, 1fr) auto;
+      gap: 8px;
+      padding: 9px 8px;
+    }
+
+    .entry-amount {
+      min-width: 72px;
+      font-size: var(--font-text-sm-size, 12px);
+    }
+
+    .delete-button {
+      position: absolute;
+      right: 5px;
+      bottom: 2px;
+      width: 24px;
+      min-width: 24px;
+      height: 23px;
+      font-size: 14px;
+    }
+
+    .delete-button.armed {
+      width: auto;
+      min-width: 48px;
+    }
+
+    .entry-meta {
+      max-width: calc(100% - 23px);
+    }
+  }
+</style>
+</head>
+<body>
+<main class="shell" aria-label="Spending journal">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M7 3.5h10v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5z"></path>
+          <path d="M9.5 8h5M9.5 11.5h2M14 11.5h.5M9.5 15h2.5M14 15h.5"></path>
+        </svg>
+      </div>
+      <div class="identity">
+        <div class="kicker">PERSONAL LEDGER</div>
+        <h1>Spending journal</h1>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost ai-button" id="askAI" type="button" aria-label="Ask AI where my money went">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path d="M12 3l1.15 3.65L17 8l-3.85 1.35L12 13l-1.15-3.65L7 8l3.85-1.35L12 3Z"></path>
+          <path d="M18.5 13l.72 2.28L21.5 16l-2.28.72L18.5 19l-.72-2.28L15.5 16l2.28-.72L18.5 13ZM6 13l.58 1.92L8.5 15.5l-1.92.58L6 18l-.58-1.92-1.92-.58 1.92-.58L6 13Z"></path>
+        </svg>
+        <span>Where did my money go?</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview" aria-label="This month overview">
+    <div class="overview-main">
+      <div class="eyebrow-row">
+        <span class="eyebrow" id="monthLabel">This month</span>
+        <span class="currency-pill" id="currencyPill">USD</span>
+      </div>
+      <strong class="month-total" id="monthTotal" aria-live="polite">—</strong>
+      <div class="month-meta" id="monthMeta">Loading your journal…</div>
+    </div>
+    <div class="stat-strip">
+      <div class="mini-stat">
+        <span class="mini-label">Purchases</span>
+        <span class="mini-value" id="purchaseCount">0</span>
+      </div>
+      <div class="mini-stat">
+        <span class="mini-label">Average</span>
+        <span class="mini-value" id="averageSpend">—</span>
+      </div>
+      <div class="mini-stat">
+        <span class="mini-label">Top category</span>
+        <span class="mini-value" id="topCategory">—</span>
+      </div>
+    </div>
+  </section>
+
+  <section class="quick-add" aria-labelledby="quickTitle">
+    <div class="quick-heading">
+      <span class="quick-title" id="quickTitle">Quick add</span>
+      <span class="quick-hint">Everyday purchase · saved to this journal</span>
+    </div>
+    <form id="addForm">
+      <div class="quick-grid">
+        <div class="field merchant-field">
+          <label for="merchant">Merchant</label>
+          <input id="merchant" name="merchant" autocomplete="off" placeholder="e.g. Corner Market" required>
+        </div>
+        <div class="field">
+          <label for="amount">Amount</label>
+          <input id="amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required>
+        </div>
+        <div class="field">
+          <label for="currency">Currency</label>
+          <select id="currency" name="currency" required>
+            <option value="AUD">AUD</option>
+            <option value="USD">USD</option>
+            <option value="EUR">EUR</option>
+            <option value="GBP">GBP</option>
+            <option value="CAD">CAD</option>
+            <option value="NZD">NZD</option>
+            <option value="JPY">JPY</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="category">Category</label>
+          <input id="category" name="category" list="categoryOptions" autocomplete="off" placeholder="e.g. Groceries" required>
+          <datalist id="categoryOptions">
+            <option value="Groceries"></option>
+            <option value="Dining"></option>
+            <option value="Transport"></option>
+            <option value="Shopping"></option>
+            <option value="Entertainment"></option>
+            <option value="Bills"></option>
+            <option value="Health"></option>
+            <option value="Travel"></option>
+            <option value="Other"></option>
+          </datalist>
+        </div>
+        <div class="field">
+          <label for="paymentMethod">Payment</label>
+          <select id="paymentMethod" name="payment_method" required>
+            <option value="Card">Card</option>
+            <option value="Apple Pay">Apple Pay</option>
+            <option value="Cash">Cash</option>
+            <option value="Bank transfer">Bank transfer</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="purchaseDate">Date</label>
+          <input id="purchaseDate" name="date" type="date" required>
+        </div>
+        <div class="form-footer">
+          <div class="field note-field">
+            <label for="note">Note · optional</label>
+            <span class="note-glyph" aria-hidden="true">✎</span>
+            <input id="note" name="note" autocomplete="off" placeholder="What was this for?">
+          </div>
+          <button class="add-button" id="addButton" type="submit">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M12 5v14M5 12h14"></path>
+            </svg>
+            Add purchase
+          </button>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <section class="insights" aria-label="Spending by category">
+    <article class="breakdown-card">
+      <div class="donut-side">
+        <div class="card-heading">
+          <span class="card-title">Category split</span>
+        </div>
+        <div class="donut-wrap">
+          <svg class="donut" id="donut" viewBox="0 0 120 120" role="img" aria-label="No spending to chart">
+            <circle class="donut-track" cx="60" cy="60" r="46" pathLength="100"></circle>
+            <g id="donutSegments"></g>
+          </svg>
+          <div class="donut-center">
+            <span class="donut-share" id="donutShare">0%</span>
+            <span class="donut-label" id="donutLabel">top share</span>
+          </div>
+        </div>
+      </div>
+      <div class="category-side">
+        <div class="card-heading">
+          <span class="card-title">Running totals</span>
+          <span class="card-note" id="breakdownCurrency">USD</span>
+        </div>
+        <div class="category-rows" id="categoryRows"></div>
+      </div>
+    </article>
+  </section>
+
+  <section class="ledger" aria-labelledby="ledgerTitle">
+    <div class="ledger-heading">
+      <span class="ledger-title" id="ledgerTitle">Recent entries</span>
+      <span class="entry-count" id="entryCount">Newest first</span>
+      <button class="filter-chip" id="clearFilter" type="button" hidden></button>
+    </div>
+    <div class="entry-list" id="entryList" aria-live="polite"></div>
+  </section>
+</main>
+
+<script type="application/json" id="oma-manifest">
+{
+  "manifest_version": 1,
+  "uses_shared": ["locale", "date_format", "currency", "confirm_delete"]
+}
+</script>
+
+<script type="module">
+  const byId = (id) => document.getElementById(id);
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const palette = [
+    "var(--color-text-info, var(--color-ring-primary))",
+    "var(--color-text-success, var(--color-ring-primary))",
+    "var(--color-text-warning, var(--color-ring-primary))",
+    "var(--color-text-danger, var(--color-ring-primary))",
+    "var(--color-ring-primary)",
+    "var(--color-text-secondary)"
+  ];
+
+  let lastState = null;
+  let lastModel = null;
+  let activeCategory = null;
+  let armedDeleteId = null;
+  let deleteResetTimer = null;
+  let seedStarted = false;
+  let formInitialized = false;
+
+  const element = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  const localISO = (date) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const preferredCurrency = () => {
+    const code = String(oma.pref("currency", "USD") || "").trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : "USD";
+  };
+
+  const itemCurrency = (value) => {
+    const code = String(value || "").trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : preferredCurrency();
+  };
+
+  const locale = () => {
+    const value = oma.pref("locale", "auto");
+    return value === "auto" ? navigator.language : value;
+  };
+
+  const money = (amount, currency) =>
+    new Intl.NumberFormat(locale(), {
+      style: "currency",
+      currency,
+      currencyDisplay: "narrowSymbol",
+      maximumFractionDigits: currency === "JPY" ? 0 : 2
+    }).format(Number(amount) || 0);
+
+  const monthName = (date) =>
+    new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric" }).format(date);
+
+  const displayDate = (value) => {
+    if (!value) return "No date";
+    const parts = String(value).slice(0, 10).split("-");
+    if (parts.length !== 3) return String(value);
+    const [year, month, day] = parts;
+    const preference = oma.pref("date_format", "auto");
+    if (preference === "yyyy-mm-dd") return `${year}-${month}-${day}`;
+    if (preference === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+    if (preference === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+    const parsed = new Date(`${year}-${month}-${day}T12:00:00`);
+    return Number.isFinite(parsed.getTime())
+      ? new Intl.DateTimeFormat(locale(), { day: "numeric", month: "short" }).format(parsed)
+      : String(value);
+  };
+
+  const categoryColor = (name) => {
+    let hash = 0;
+    for (const character of String(name)) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
+    return palette[Math.abs(hash) % palette.length];
+  };
+
+  const normalizedCategory = (item) => {
+    const value = String(item.fields.category || item.group || "Uncategorized").trim();
+    return value || "Uncategorized";
+  };
+
+  const normalizedEntry = (item) => {
+    const fields = item.fields || {};
+    const amount = Math.max(0, Number(fields.amount) || 0);
+    return {
+      item,
+      merchant: String(fields.merchant || "Unknown merchant").trim() || "Unknown merchant",
+      amount,
+      currency: itemCurrency(fields.currency),
+      date: String(fields.date || ""),
+      category: normalizedCategory(item),
+      paymentMethod: String(fields.payment_method || "Payment method not set").trim(),
+      note: String(fields.note || "").trim()
+    };
+  };
+
+  const buildModel = (state) => {
+    const now = new Date();
+    const monthKey = localISO(now).slice(0, 7);
+    const entries = state.items.map(normalizedEntry).sort((a, b) => {
+      const dateOrder = b.date.localeCompare(a.date);
+      return dateOrder || (b.item.position || 0) - (a.item.position || 0);
+    });
+
+    const monthEntries = entries.filter((entry) => entry.date.slice(0, 7) === monthKey && entry.amount > 0);
+    const currencyTotals = new Map();
+    const currencyCounts = new Map();
+
+    for (const entry of monthEntries) {
+      currencyTotals.set(entry.currency, (currencyTotals.get(entry.currency) || 0) + entry.amount);
+      currencyCounts.set(entry.currency, (currencyCounts.get(entry.currency) || 0) + 1);
+    }
+
+    const preferred = preferredCurrency();
+    const rankedCurrencies = [...currencyTotals.keys()].sort((a, b) => {
+      const countOrder = (currencyCounts.get(b) || 0) - (currencyCounts.get(a) || 0);
+      return countOrder || (currencyTotals.get(b) || 0) - (currencyTotals.get(a) || 0);
+    });
+    const currency = currencyTotals.has(preferred) || !rankedCurrencies.length ? preferred : rankedCurrencies[0];
+    const visibleMonthEntries = monthEntries.filter((entry) => entry.currency === currency);
+    const total = visibleMonthEntries.reduce((sum, entry) => sum + entry.amount, 0);
+    const categoryMap = new Map();
+
+    for (const entry of visibleMonthEntries) {
+      if (!categoryMap.has(entry.category)) {
+        categoryMap.set(entry.category, { name: entry.category, total: 0, count: 0 });
+      }
+      const category = categoryMap.get(entry.category);
+      category.total += entry.amount;
+      category.count += 1;
+    }
+
+    const categories = [...categoryMap.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    const otherCurrencyCount = monthEntries.length - visibleMonthEntries.length;
+
+    return {
+      now,
+      entries,
+      monthEntries,
+      visibleMonthEntries,
+      currencyTotals,
+      currencyCounts,
+      currency,
+      total,
+      categories,
+      otherCurrencyCount,
+      monthLabel: monthName(now)
+    };
+  };
+
+  const renderDonut = (model) => {
+    const group = byId("donutSegments");
+    group.replaceChildren();
+
+    let offset = 0;
+    model.categories.forEach((category, index) => {
+      const percentage = model.total ? (category.total / model.total) * 100 : 0;
+      const visibleArc = model.categories.length === 1
+        ? 99.5
+        : Math.max(.45, percentage - Math.min(.75, percentage * .12));
+      const circle = document.createElementNS(SVG_NS, "circle");
+      circle.setAttribute("class", "donut-segment");
+      circle.setAttribute("cx", "60");
+      circle.setAttribute("cy", "60");
+      circle.setAttribute("r", "46");
+      circle.setAttribute("pathLength", "100");
+      circle.setAttribute("stroke-dasharray", `${visibleArc} ${100 - visibleArc}`);
+      circle.setAttribute("stroke-dashoffset", String(-offset));
+      circle.style.stroke = categoryColor(category.name);
+      circle.style.setProperty("--delay", `${index * 55}ms`);
+      group.appendChild(circle);
+      offset += percentage;
+    });
+
+    const top = model.categories[0];
+    const share = top && model.total ? Math.round((top.total / model.total) * 100) : 0;
+    byId("donutShare").textContent = `${share}%`;
+    byId("donutLabel").textContent = top ? top.name : "top share";
+    byId("donut").setAttribute(
+      "aria-label",
+      top
+        ? `${top.name} is the largest category at ${share} percent`
+        : "No spending to chart"
+    );
+  };
+
+  const renderCategories = (model) => {
+    const container = byId("categoryRows");
+    container.replaceChildren();
+
+    if (!model.categories.length) {
+      container.appendChild(
+        element("div", "breakdown-empty", "Add a purchase to reveal your category mix.")
+      );
+      return;
+    }
+
+    model.categories.forEach((category, index) => {
+      const percentage = model.total ? (category.total / model.total) * 100 : 0;
+      const row = element("button", "category-row");
+      row.type = "button";
+      row.setAttribute("aria-pressed", String(activeCategory === category.name));
+      row.setAttribute("aria-label", `Filter entries by ${category.name}`);
+      row.style.setProperty("--cat", categoryColor(category.name));
+
+      const main = element("div", "category-main");
+      main.append(
+        element("span", "category-name", category.name),
+        element("span", "category-amount", money(category.total, model.currency))
+      );
+
+      const meta = element("div", "category-meta");
+      meta.append(
+        element("span", "", `${category.count} ${category.count === 1 ? "purchase" : "purchases"}`),
+        element("span", "", `${Math.round(percentage)}%`)
+      );
+
+      const track = element("div", "bar-track");
+      const fill = element("div", "bar-fill");
+      fill.style.setProperty("--width", `${percentage}%`);
+      fill.style.setProperty("--delay", `${index * 45}ms`);
+      track.appendChild(fill);
+      row.append(main, meta, track);
+      row.onclick = () => {
+        activeCategory = activeCategory === category.name ? null : category.name;
+        render(lastState);
+      };
+      container.appendChild(row);
+    });
+  };
+
+  const armDelete = (id) => {
+    if (oma.pref("confirm_delete", true) && armedDeleteId !== id) {
+      armedDeleteId = id;
+      clearTimeout(deleteResetTimer);
+      render(lastState);
+      deleteResetTimer = setTimeout(() => {
+        if (armedDeleteId === id) {
+          armedDeleteId = null;
+          render(lastState);
+        }
+      }, 3000);
+      return;
+    }
+
+    clearTimeout(deleteResetTimer);
+    armedDeleteId = null;
+    oma.deleteItem(id);
+  };
+
+  const emptyState = (filtered) => {
+    const empty = element("div", "empty-state");
+    const content = element("div");
+    const icon = element("div", "empty-icon");
+    icon.innerHTML = `
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M6 3.5h10l2 2V20H6z"></path>
+        <path d="M9 9h6M9 13h6M9 17h3"></path>
+      </svg>`;
+    const title = element("strong", "", filtered ? "Nothing in this category yet" : "Your journal is clear");
+    const message = element(
+      "span",
+      "",
+      filtered
+        ? "Clear the category filter to see every purchase."
+        : "Add a purchase above, or ask the AI to record a few purchases from your notes."
+    );
+    content.append(icon, title, message);
+    empty.appendChild(content);
+    return empty;
+  };
+
+  const renderEntries = (model) => {
+    const list = byId("entryList");
+    list.replaceChildren();
+
+    const filteredEntries = activeCategory
+      ? model.entries.filter((entry) => entry.category === activeCategory)
+      : model.entries;
+
+    byId("entryCount").textContent = filteredEntries.length
+      ? `${filteredEntries.length} ${filteredEntries.length === 1 ? "entry" : "entries"} · newest first`
+      : "Newest first";
+
+    const clearFilter = byId("clearFilter");
+    clearFilter.hidden = !activeCategory;
+    clearFilter.textContent = activeCategory ? `${activeCategory} ×` : "";
+
+    if (!filteredEntries.length) {
+      list.appendChild(emptyState(Boolean(activeCategory)));
+      return;
+    }
+
+    filteredEntries.forEach((entry, index) => {
+      const row = element("article", "entry");
+      row.style.setProperty("--cat", categoryColor(entry.category));
+      row.style.setProperty("--delay", `${Math.min(index, 8) * 28}ms`);
+
+      const marker = element("span", "entry-dot");
+      marker.setAttribute("aria-hidden", "true");
+
+      const copy = element("div", "entry-copy");
+      const merchantLine = element("div", "merchant-line");
+      const merchant = element("span", "merchant", entry.merchant);
+      const category = element("button", "entry-category", entry.category);
+      category.type = "button";
+      category.setAttribute("aria-label", `Show ${entry.category} purchases`);
+      category.onclick = () => {
+        activeCategory = entry.category;
+        render(lastState);
+      };
+      merchantLine.append(merchant, category);
+
+      const meta = element("div", "entry-meta");
+      meta.append(
+        element("span", "", displayDate(entry.date)),
+        element("span", "meta-dot", ""),
+        element("span", "", entry.paymentMethod || "Payment")
+      );
+      if (entry.note) {
+        meta.append(
+          element("span", "meta-dot", ""),
+          element("span", "note", entry.note)
+        );
+      }
+      copy.append(merchantLine, meta);
+
+      const amount = element("div", "entry-amount", money(entry.amount, entry.currency));
+      const remove = element(
+        "button",
+        `delete-button${armedDeleteId === entry.item.id ? " armed" : ""}`,
+        armedDeleteId === entry.item.id ? "Sure?" : "×"
+      );
+      remove.type = "button";
+      remove.setAttribute(
+        "aria-label",
+        armedDeleteId === entry.item.id
+          ? `Confirm deletion of ${entry.merchant}`
+          : `Delete ${entry.merchant}`
+      );
+      remove.onclick = () => armDelete(entry.item.id);
+
+      row.append(marker, copy, amount, remove);
+      list.appendChild(row);
+    });
+  };
+
+  function render(state) {
+    if (!state) return;
+    lastState = state;
+    const model = buildModel(state);
+    lastModel = model;
+
+    if (activeCategory && !model.entries.some((entry) => entry.category === activeCategory)) {
+      activeCategory = null;
+    }
+
+    byId("monthLabel").textContent = model.monthLabel;
+    byId("currencyPill").textContent = model.currency;
+    byId("breakdownCurrency").textContent = model.currency;
+    byId("monthTotal").textContent = money(model.total, model.currency);
+    byId("purchaseCount").textContent = String(model.visibleMonthEntries.length);
+    byId("averageSpend").textContent = model.visibleMonthEntries.length
+      ? money(model.total / model.visibleMonthEntries.length, model.currency)
+      : "—";
+    byId("topCategory").textContent = model.categories[0]?.name || "—";
+
+    const visibleCount = model.visibleMonthEntries.length;
+    byId("monthMeta").textContent = model.otherCurrencyCount
+      ? `${visibleCount} ${visibleCount === 1 ? "purchase" : "purchases"} shown · ${model.otherCurrencyCount} in other ${model.otherCurrencyCount === 1 ? "currency" : "currencies"}`
+      : visibleCount
+        ? `Across ${visibleCount} ${visibleCount === 1 ? "purchase" : "purchases"} this month`
+        : "Your first purchase will start the story";
+
+    renderDonut(model);
+    renderCategories(model);
+    renderEntries(model);
+  }
+
+  const ensureCurrencyOption = (code) => {
+    const select = byId("currency");
+    if (![...select.options].some((option) => option.value === code)) {
+      select.appendChild(new Option(code, code));
+    }
+    select.value = code;
+  };
+
+  const initializeForm = () => {
+    if (formInitialized) return;
+    formInitialized = true;
+    ensureCurrencyOption(preferredCurrency());
+    byId("purchaseDate").value = localISO(new Date());
+  };
+
+  const seedDate = (daysBack) => {
+    const now = new Date();
+    now.setDate(Math.max(1, now.getDate() - daysBack));
+    return localISO(now);
+  };
+
+  async function seed() {
+    const currency = preferredCurrency();
+    const multiplier = currency === "JPY" ? 100 : 1;
+    const samples = [
+      {
+        merchant: "Green Leaf Grocer",
+        amount: 36.45 * multiplier,
+        date: seedDate(0),
+        category: "Groceries",
+        payment_method: "Card",
+        note: "Fruit, vegetables and pantry basics"
+      },
+      {
+        merchant: "Morning Tide Café",
+        amount: 8.9 * multiplier,
+        date: seedDate(2),
+        category: "Dining",
+        payment_method: "Apple Pay",
+        note: "Coffee and breakfast"
+      },
+      {
+        merchant: "Metro Transit",
+        amount: 24 * multiplier,
+        date: seedDate(4),
+        category: "Transport",
+        payment_method: "Card",
+        note: "Weekly travel top-up"
+      },
+      {
+        merchant: "Cloud Nine Cinema",
+        amount: 18.5 * multiplier,
+        date: seedDate(7),
+        category: "Entertainment",
+        payment_method: "Apple Pay",
+        note: "Friday night film"
+      },
+      {
+        merchant: "Harbour Pharmacy",
+        amount: 14.2 * multiplier,
+        date: seedDate(10),
+        category: "Health",
+        payment_method: "Card",
+        note: "Everyday essentials"
+      }
+    ];
+
+    for (const sample of samples) {
+      await oma.addItem({
+        group: sample.category,
+        fields: {
+          merchant: sample.merchant,
+          amount: sample.amount,
+          currency,
+          date: sample.date,
+          category: sample.category,
+          payment_method: sample.payment_method,
+          note: sample.note
+        }
+      });
+    }
+  }
+
+  byId("clearFilter").onclick = () => {
+    activeCategory = null;
+    render(lastState);
+  };
+
+  byId("addForm").onsubmit = (event) => {
+    event.preventDefault();
+    const form = event.currentTarget;
+    if (!form.reportValidity()) return;
+
+    const merchantInput = byId("merchant");
+    const amountInput = byId("amount");
+    const categoryInput = byId("category");
+    const noteInput = byId("note");
+    const merchant = merchantInput.value.trim().replace(/\s+/g, " ");
+    const amount = Math.round(Number(amountInput.value) * 100) / 100;
+    const categoryRaw = categoryInput.value.trim().replace(/\s+/g, " ");
+    const category = categoryRaw
+      ? categoryRaw.charAt(0).toUpperCase() + categoryRaw.slice(1)
+      : "";
+    const currency = itemCurrency(byId("currency").value);
+    const date = byId("purchaseDate").value;
+    const paymentMethod = byId("paymentMethod").value;
+    const note = noteInput.value.trim();
+
+    if (!merchant || !category || !date || !Number.isFinite(amount) || amount <= 0) return;
+
+    oma.addItem({
+      group: category,
+      fields: {
+        merchant,
+        amount,
+        currency,
+        date,
+        category,
+        payment_method: paymentMethod,
+        note
+      }
+    });
+
+    merchantInput.value = "";
+    amountInput.value = "";
+    noteInput.value = "";
+    const addButton = byId("addButton");
+    addButton.classList.remove("saved");
+    void addButton.offsetWidth;
+    addButton.classList.add("saved");
+    setTimeout(() => addButton.classList.remove("saved"), 500);
+    merchantInput.focus();
+  };
+
+  // oma.sendMessage falls back to the clipboard in standalone mode.
+  byId("askAI").onclick = () => {
+    const model = lastModel || buildModel(lastState || oma.state);
+    const categorySummary = model.categories.length
+      ? model.categories.map((category) => `${category.name}: ${money(category.total, model.currency)}`).join(", ")
+      : "no categorized purchases yet";
+    const recentSummary = model.visibleMonthEntries.length
+      ? model.visibleMonthEntries.slice(0, 12).map((entry) =>
+          `${entry.date} — ${entry.merchant}, ${money(entry.amount, entry.currency)} (${entry.category})`
+        ).join("; ")
+      : "no purchases in the main currency this month";
+    const otherCurrencies = [...model.currencyTotals.entries()]
+      .filter(([currency]) => currency !== model.currency)
+      .map(([currency, total]) => `${money(total, currency)} in ${currency}`)
+      .join(", ");
+
+    oma.sendMessage(
+      `Analyze my spending journal for ${model.monthLabel}. ` +
+      `In ${model.currency}, I spent ${money(model.total, model.currency)} across ` +
+      `${model.visibleMonthEntries.length} purchases. Category totals: ${categorySummary}. ` +
+      `Purchases: ${recentSummary}. ` +
+      `${otherCurrencies ? `Other currencies recorded separately: ${otherCurrencies}. ` : ""}` +
+      `Please surface patterns, likely spending leaks, anything unusual, and three practical suggestions. ` +
+      `Do not convert or combine different currencies.`
+    );
+  };
+
+  oma.ready((state) => {
+    initializeForm();
+    render(state);
+    // Gallery apps install EMPTY — sample data lives only in the oma-fixtures block (gallery preview).
+  });
+
+  oma.onChange(render);
+
+  oma.onPrefChange(() => {
+    if (lastState) render(lastState);
+  });
+</script>
+</body>
+</html>

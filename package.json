@@ -1,0 +1,70 @@
+{
+  "name": "open-mcp-apps",
+  "version": "0.2.0",
+  "description": "Give your AI a persistent, reusable UI \u2014 it builds the component once, you keep it forever. An open MCP App engine.",
+  "directories": {
+    "test": "test"
+  },
+  "scripts": {
+    "test": "node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs",
+    "build": "node build.mjs",
+    "prepare": "node build.mjs --optional",
+    "seed": "node seed.mjs",
+    "serve": "node src/http.mjs",
+    "uninstall": "node uninstall.mjs"
+  },
+  "keywords": [
+    "mcp",
+    "mcp-apps",
+    "model-context-protocol",
+    "claude",
+    "ai",
+    "ui",
+    "widgets",
+    "sqlite",
+    "persistent-ui"
+  ],
+  "author": "2nd1st",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "main": "index.mjs",
+  "types": "index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "default": "./index.mjs"
+    }
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "index.mjs",
+    "index.d.ts",
+    "src",
+    "dist",
+    "components",
+    "build.mjs",
+    "seed.mjs",
+    "install.mjs",
+    "install.sh",
+    "install.md",
+    "uninstall.mjs",
+    "KNOWN-ISSUES.md",
+    "LICENSING.md",
+    "TRADEMARKS.md"
+  ],
+  "dependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.4",
+    "@modelcontextprotocol/sdk": "^1.29.0",
+    "better-sqlite3": "^13.0.1",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/2nd1st/open-mcp-apps"
+  }
+}

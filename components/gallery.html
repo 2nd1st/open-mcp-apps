@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Library</title>
+<meta name="description" content="Browse the library of ready-made apps — real working previews with sample data — and add one to your registry in a click.">
+<!-- @OMA_SYSTEM_CSS -->
+<style>
+  :root {
+    --surface: var(--color-background-primary, Canvas);
+    --surface-soft: var(--color-background-secondary, Canvas);
+    --surface-softer: var(--color-background-tertiary, Canvas);
+    --text: var(--color-text-primary, CanvasText);
+    --muted: var(--color-text-secondary, GrayText);
+    --faint: var(--color-text-tertiary, GrayText);
+    --line: var(--color-border-secondary, color-mix(in oklab, currentColor 13%, transparent));
+    --line-strong: var(--color-border-primary, color-mix(in oklab, currentColor 22%, transparent));
+    --focus: var(--color-ring-primary, var(--color-text-info, Highlight));
+    --info: var(--color-text-info, var(--focus));
+    --success: var(--color-text-success, var(--k-ok, var(--info)));
+    --warning: var(--color-text-warning, var(--k-warn, var(--info)));
+    --danger: var(--color-text-danger, var(--k-bad, var(--warning)));
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { min-width: 0; margin: 0; }
+  body {
+    padding: 14px;
+    color: var(--text);
+    background: transparent;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+    font-size: var(--font-text-md-size, 14px);
+    line-height: 1.45;
+  }
+  button, input { color: inherit; font: inherit; }
+  button { cursor: pointer; }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  svg { display: block; }
+  mark { background: color-mix(in oklab, var(--info) 22%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  .store {
+    position: relative;
+    width: min(100%, 1240px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-lg, 16px);
+    background: var(--surface);
+    box-shadow: var(--shadow-md, 0 18px 52px color-mix(in oklab, var(--text) 9%, transparent));
+  }
+  /* In the browser viewer the runtime's STAGE already provides the elevated card — drop this
+     component's own frame there so the page isn't a card inside a card. (Chat keeps it.)
+     overflow must open up too, or the sticky toolbar would have no scrollport to stick in. */
+  .standalone .store { width: 100%; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
+
+  /* Hero folds away (1fr→0fr) while a query/filter is active — the clip div carries no padding
+     so the collapsed row really is 0px tall. Token durations zero under reduced motion. */
+  .hero-fold { display: grid; grid-template-rows: 1fr; transition: grid-template-rows var(--k-t-slow, 260ms) var(--k-ease, ease); }
+  .hero-clip { overflow: hidden; min-height: 0; }
+  .searching .hero-fold { grid-template-rows: 0fr; }
+  .searching .hero { min-height: 0; }
+
+  /* Chat renders the COMPACT hero (≈120px: eyebrow · title · one-line description · pills ·
+     pulse, no art); .standalone restores the full storefront banner with the showcase art. */
+  .hero {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+    padding: 19px 22px 17px;
+    border-bottom: 1px solid color-mix(in oklab, var(--info) 18%, var(--line));
+    background:
+      radial-gradient(circle at 85% 10%, color-mix(in oklab, var(--info) 16%, transparent), transparent 29%),
+      radial-gradient(circle at 55% 125%, color-mix(in oklab, var(--success) 9%, transparent), transparent 34%),
+      linear-gradient(126deg, color-mix(in oklab, var(--info) 11%, var(--surface)), var(--surface) 58%, color-mix(in oklab, var(--info) 7%, var(--surface)));
+  }
+  .hero::before {
+    position: absolute;
+    z-index: -1;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    background-image:
+      linear-gradient(90deg, color-mix(in oklab, var(--info) 6%, transparent) 1px, transparent 1px),
+      linear-gradient(color-mix(in oklab, var(--info) 6%, transparent) 1px, transparent 1px);
+    background-position: right -12px top -12px;
+    background-size: 40px 40px;
+    mask-image: linear-gradient(90deg, transparent 22%, transparent 47%, var(--text) 100%);
+  }
+  .hero::after {
+    position: absolute;
+    z-index: -1;
+    right: -112px;
+    bottom: -172px;
+    width: 250px;
+    height: 250px;
+    content: "";
+    pointer-events: none;
+    border: 32px solid color-mix(in oklab, var(--info) 7%, transparent);
+    border-radius: var(--border-radius-full, 999px);
+  }
+  .hero-copy { position: relative; z-index: 1; min-width: 0; }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 0 8px;
+    color: var(--info);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: var(--font-text-xs-size, 10px);
+    font-weight: 750;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+  .eyebrow-mark {
+    display: grid;
+    width: 18px;
+    height: 18px;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--info) 30%, var(--line));
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--info) 9%, var(--surface));
+  }
+  .eyebrow-mark svg { width: 11px; height: 11px; }
+  .hero-title {
+    margin: 0;
+    font-size: clamp(21px, 3.4vw, 26px);
+    line-height: 1.08;
+    letter-spacing: -.035em;
+  }
+  .hero-description {
+    overflow: hidden;
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: var(--font-text-md-size, 13.5px);
+    line-height: 1.5;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .trust-row { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 11px; }
+  .trust-pill {
+    display: inline-flex;
+    min-height: 26px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 9px;
+    border: 1px solid color-mix(in oklab, var(--info) 16%, var(--line));
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--surface) 86%, transparent);
+    color: var(--muted);
+    font-size: var(--font-text-xs-size, 11px);
+    font-weight: 650;
+    backdrop-filter: blur(8px);
+  }
+  .trust-pill svg { width: 13px; height: 13px; color: var(--success); }
+  .pulse {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 10px 0 0;
+    color: var(--faint);
+    font-size: var(--font-text-xs-size, 11px);
+  }
+  .pulse b { color: var(--muted); font-weight: 700; }
+
+  .hero-art {
+    display: none;
+    position: relative;
+    z-index: 1;
+    width: 226px;
+    height: 148px;
+    justify-self: end;
+    pointer-events: none;
+  }
+  .showcase {
+    position: absolute;
+    display: grid;
+    width: 108px;
+    height: 108px;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--tone) 25%, var(--line));
+    border-radius: var(--border-radius-lg, 16px);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--tone) 13%, var(--surface)), color-mix(in oklab, var(--surface) 94%, transparent));
+    color: var(--tone);
+    box-shadow: var(--shadow-sm, 0 8px 22px color-mix(in oklab, var(--text) 10%, transparent));
+  }
+  .showcase::after {
+    position: absolute;
+    right: 11px;
+    bottom: 10px;
+    width: 25px;
+    height: 5px;
+    content: "";
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--tone) 25%, var(--line));
+  }
+  .showcase svg { width: 39px; height: 39px; }
+  .showcase.one { --tone: var(--info); top: 0; right: 5px; transform: rotate(5deg); }
+  .showcase.two { --tone: var(--success); left: 5px; bottom: 2px; transform: rotate(-7deg); }
+  .showcase.three { --tone: var(--warning); right: 43px; bottom: -8px; width: 84px; height: 84px; transform: rotate(3deg); }
+  .showcase.three svg { width: 30px; height: 30px; }
+  .standalone .hero {
+    display: grid;
+    min-height: 198px;
+    grid-template-columns: minmax(0, 1fr) 236px;
+    align-items: center;
+    gap: 30px;
+    padding: 27px 34px 25px;
+  }
+  .standalone .hero-title { max-width: 700px; font-size: clamp(29px, 4.2vw, 44px); line-height: 1.02; letter-spacing: -.045em; }
+  .standalone .hero-description { max-width: 680px; overflow: visible; margin-top: 10px; font-size: var(--font-text-lg-size, 15px); line-height: 1.52; white-space: normal; text-overflow: clip; }
+  .standalone .trust-row { margin-top: 15px; }
+  .standalone .hero-art { display: block; }
+
+  .toolbar {
+    position: sticky;
+    top: 0;
+    z-index: 6;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 10px 18px;
+    padding: 13px 22px;
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in oklab, var(--surface) 92%, var(--surface-soft));
+  }
+  .search-wrap { position: relative; min-width: 0; }
+  .search-icon {
+    position: absolute;
+    top: 50%;
+    left: 12px;
+    width: 17px;
+    height: 17px;
+    color: var(--faint);
+    pointer-events: none;
+    transform: translateY(-50%);
+  }
+  #q {
+    width: 100%;
+    height: 42px;
+    padding: 9px 13px 9px 39px;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--surface);
+    color: var(--text);
+    box-shadow: inset 0 1px 1px color-mix(in oklab, var(--text) 3%, transparent);
+    appearance: none;
+  }
+  #q::placeholder { color: var(--faint); opacity: 1; }
+  #count {
+    justify-self: end;
+    color: var(--muted);
+    font-size: var(--font-text-sm-size, 12px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .chips { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 6px; }
+  .chips .k-chip svg { width: 12px; height: 12px; }
+
+  .catalog {
+    padding: 19px 22px 24px;
+    background: var(--surface);
+  }
+  #sections section + section { margin-top: 26px; }
+  .cat-h {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 10px;
+  }
+  .cat-h::after { height: 1px; flex: 1; content: ""; background: var(--line); }
+  .cat-h .k-h1 {
+    margin: 0;
+    color: var(--text);
+    font-size: var(--font-text-lg-size, 15px);
+    font-weight: 760;
+    letter-spacing: -.018em;
+  }
+  .cat-h .n {
+    display: inline-grid;
+    min-width: 22px;
+    height: 20px;
+    padding: 0 6px;
+    place-items: center;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--surface);
+    color: var(--faint);
+    font-size: var(--font-text-xs-size, 10px);
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .more {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    margin: 10px auto 0;
+    padding: 6px 14px;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--surface);
+    color: var(--muted);
+    font-size: var(--font-text-sm-size, 12px);
+    font-weight: 650;
+  }
+  .more:hover { border-color: color-mix(in oklab, var(--info) 34%, var(--line-strong)); color: var(--text); }
+  .more svg { width: 13px; height: 13px; }
+
+  /* Dense row grid: fixed preview windows absorb app-height variance. Wide calendar apps
+     span two tracks; this deliberately stays a row grid rather than column masonry. */
+  .g-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    grid-auto-flow: dense;
+    gap: 14px;
+  }
+  .g-card {
+    position: relative;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    overflow: hidden;
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-lg, 15px);
+    background: var(--surface);
+    box-shadow: var(--shadow-sm, 0 7px 20px color-mix(in oklab, var(--text) 6%, transparent));
+  }
+  .g-card:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+  .g-card::before {
+    position: absolute;
+    z-index: 3;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 3px;
+    content: "";
+    pointer-events: none;
+    background: linear-gradient(90deg, color-mix(in oklab, var(--info) 72%, var(--text)), color-mix(in oklab, var(--info) 8%, transparent));
+    opacity: .7;
+  }
+  .g-card.wide { grid-column: span 2; }
+  .g-card:has(.badge-ok) { border-color: color-mix(in oklab, var(--success) 28%, var(--line-strong)); }
+  .g-card:has(.badge-up) {
+    border-color: color-mix(in oklab, var(--warning) 42%, var(--line-strong));
+    box-shadow: 0 8px 24px color-mix(in oklab, var(--warning) 9%, transparent);
+  }
+  .g-card:has(.badge-up)::before { background: linear-gradient(90deg, var(--warning), color-mix(in oklab, var(--warning) 10%, transparent)); opacity: 1; }
+  .g-card:has(.badge-mut) { border-style: dashed; }
+
+  /* Live component art: a fixed-height, inert window with a scaled natural-width iframe. */
+  .pv-wrap {
+    position: relative;
+    height: 200px;
+    overflow: hidden;
+    flex: 0 0 auto;
+    background:
+      radial-gradient(circle at 84% 0%, color-mix(in oklab, var(--info) 6%, transparent), transparent 32%),
+      var(--surface-soft);
+  }
+  .standalone .pv-wrap { height: 252px; }
+  .compact .g-card .pv-wrap { height: 164px; }
+  .pv-wrap iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    border: 0;
+    transform-origin: top left;
+    pointer-events: none;
+    background: var(--surface);
+  }
+  .pv-wrap::after {
+    position: absolute;
+    z-index: 1;
+    inset: 0;
+    content: "";
+    pointer-events: none;
+    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--line) 52%, transparent);
+  }
+  .pv-skel { position: absolute; inset: 14px 14px 20px; z-index: 0; border-radius: var(--border-radius-md, 10px); }
+  .pv-fade {
+    position: absolute;
+    z-index: 2;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    height: 38px;
+    pointer-events: none;
+    background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--surface-soft) 95%, transparent));
+  }
+  .pv-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--faint);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+  .pv-chip {
+    position: absolute;
+    z-index: 4;
+    top: 10px;
+    right: 10px;
+    display: inline-flex;
+    min-height: 24px;
+    align-items: center;
+    padding: 4px 8px;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--surface) 92%, transparent);
+    box-shadow: 0 4px 13px color-mix(in oklab, var(--text) 10%, transparent);
+    font-size: var(--font-text-xs-size, 10px);
+    font-weight: 760;
+    letter-spacing: .035em;
+    line-height: 1;
+    text-transform: uppercase;
+    backdrop-filter: blur(10px);
+  }
+  .badge-ok {
+    color: var(--success);
+    border-color: color-mix(in oklab, var(--success) 36%, var(--line));
+    background: color-mix(in oklab, var(--success) 8%, var(--surface));
+  }
+  .badge-up {
+    color: var(--warning);
+    border-color: color-mix(in oklab, var(--warning) 44%, var(--line));
+    background: color-mix(in oklab, var(--warning) 9%, var(--surface));
+  }
+  .badge-mut { color: var(--faint); background: color-mix(in oklab, var(--surface) 92%, transparent); }
+
+  /* Fixed footer bar: title, one-line description, meta, and action remain visible below the art. */
+  .g-foot {
+    position: relative;
+    z-index: 3;
+    display: flex;
+    min-height: 76px;
+    align-items: center;
+    gap: 13px;
+    padding: 11px 12px 11px 14px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    box-shadow: 0 -8px 18px color-mix(in oklab, var(--surface) 68%, transparent);
+  }
+  .compact .g-foot { min-height: 64px; padding: 8px 10px 8px 12px; }
+  .g-foot .k-grow { min-width: 0; flex: 1; }
+  .g-foot .k-ellip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .g-foot .t {
+    margin-bottom: 3px;
+    color: var(--text);
+    font-size: var(--font-text-md-size, 14px);
+    font-weight: 760;
+    line-height: 1.2;
+    letter-spacing: -.014em;
+  }
+  .g-foot .m {
+    color: var(--muted);
+    font-size: var(--font-text-sm-size, 12px);
+    line-height: 1.3;
+  }
+  .g-foot .meta {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 4px;
+    color: var(--faint);
+    font-size: var(--font-text-xs-size, 10.5px);
+    white-space: nowrap;
+  }
+  .g-foot .meta .k-dot { width: 6px; height: 6px; }
+  .g-foot .meta .cat {
+    overflow: hidden;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--faint);
+    font-size: inherit;
+    text-decoration: underline dotted;
+    text-overflow: ellipsis;
+  }
+  .g-foot .meta .cat:hover { color: var(--info); }
+  .g-foot .k-btn {
+    display: inline-flex;
+    min-width: 86px;
+    height: 36px;
+    flex: none;
+    align-items: center;
+    justify-content: center;
+    padding: 7px 13px;
+    border: 1px solid color-mix(in oklab, var(--info) 76%, var(--text));
+    border-radius: var(--border-radius-md, 9px);
+    background: color-mix(in oklab, var(--info) 76%, var(--text));
+    color: var(--color-text-inverse, var(--surface));
+    font-size: var(--font-text-sm-size, 12px);
+    font-weight: 760;
+    line-height: 1;
+    text-decoration: none;
+    box-shadow: 0 5px 14px color-mix(in oklab, var(--info) 19%, transparent);
+  }
+  .g-foot .k-btn.sec {
+    border-color: color-mix(in oklab, var(--success) 36%, var(--line-strong));
+    background: var(--surface);
+    color: var(--success);
+    box-shadow: none;
+  }
+  .g-foot .k-btn:disabled {
+    cursor: not-allowed;
+    border-color: var(--line);
+    background: var(--surface-soft);
+    color: var(--faint);
+    box-shadow: none;
+  }
+  .card-err {
+    padding: 8px 14px 10px;
+    border-top: 1px dashed color-mix(in oklab, var(--danger) 34%, var(--line));
+    background: color-mix(in oklab, var(--danger) 6%, var(--surface));
+    color: var(--danger);
+    font-size: var(--font-text-xs-size, 11px);
+  }
+
+  .empty {
+    display: flex;
+    min-height: 230px;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 40px 22px;
+    color: var(--muted);
+    text-align: center;
+  }
+  .empty b {
+    color: var(--text);
+    font-size: var(--font-text-lg-size, 15px);
+    font-weight: 760;
+    letter-spacing: -.016em;
+  }
+  .empty span { max-width: 44ch; color: var(--muted); font-size: var(--font-text-sm-size, 12.5px); line-height: 1.5; }
+  .empty::before {
+    display: block;
+    width: 58px;
+    height: 58px;
+    margin: 0 0 12px;
+    content: "";
+    border: 1px dashed color-mix(in oklab, var(--info) 34%, var(--line));
+    border-radius: var(--border-radius-lg, 15px);
+    background:
+      linear-gradient(45deg, transparent 45%, color-mix(in oklab, var(--info) 20%, transparent) 45% 55%, transparent 55%),
+      color-mix(in oklab, var(--info) 6%, var(--surface));
+  }
+  .ask-hint { color: var(--muted); user-select: text; }
+  #err {
+    margin: 17px 0 0;
+    padding: 10px 12px;
+    border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--line));
+    border-radius: var(--border-radius-md, 10px);
+    background: color-mix(in oklab, var(--danger) 7%, var(--surface));
+    color: var(--danger);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+  #err:empty { display: none; }
+  .store-footer {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 13px 22px 15px;
+    border-top: 1px solid var(--line);
+    background: var(--surface);
+    color: var(--faint);
+    font-size: var(--font-text-xs-size, 10px);
+  }
+  .store-footer svg { width: 14px; height: 14px; flex: 0 0 auto; color: var(--info); }
+  .store-footer strong { color: var(--muted); }
+
+  /* Detail drawer: slides over the grid from the right; the grid stays mounted underneath. */
+  .veil {
+    position: absolute;
+    inset: 0;
+    z-index: 7;
+    padding: 0;
+    border: 0;
+    background: color-mix(in oklab, var(--text) 13%, transparent);
+    cursor: default;
+  }
+  .drawer {
+    position: absolute;
+    inset: 0 0 0 auto;
+    z-index: 8;
+    width: min(360px, 94%);
+    overflow: auto;
+    padding: 16px;
+    border-left: 1px solid var(--line-strong);
+    background: var(--surface);
+    box-shadow: var(--shadow-lg, 0 18px 52px color-mix(in oklab, var(--text) 18%, transparent));
+    transition: translate var(--k-t-slow, 260ms) var(--k-ease, ease), opacity var(--k-t-slow, 260ms);
+  }
+  @starting-style { .drawer { translate: 24px 0; opacity: 0; } }   /* enhancement; instant elsewhere */
+  .standalone .drawer { width: min(420px, 94%); }
+  .d-head { display: flex; align-items: center; gap: 8px; }
+  #d-title {
+    overflow: hidden;
+    flex: 1;
+    min-width: 0;
+    font-size: var(--font-text-lg-size, 15px);
+    font-weight: 760;
+    letter-spacing: -.014em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .d-x { display: grid; width: 30px; height: 30px; flex: none; place-items: center; padding: 0; border: 0; border-radius: var(--border-radius-sm, 7px); background: none; color: var(--muted); }
+  .d-x:hover { background: color-mix(in oklab, var(--text) 5%, transparent); color: var(--text); }
+  .d-x svg { width: 14px; height: 14px; }
+  .drawer .pv-wrap { height: 300px; margin: 12px 0; border: 1px solid var(--line); border-radius: var(--border-radius-md, 10px); }
+  #d-desc { margin: 0; color: var(--muted); font-size: var(--font-text-sm-size, 12.5px); }
+  .d-maker { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; color: var(--faint); font-size: var(--font-text-xs-size, 11px); }
+  .d-maker .k-dot { width: 6px; height: 6px; }
+  .drawer .card-err { margin-top: 10px; border: 1px dashed color-mix(in oklab, var(--danger) 34%, var(--line)); border-radius: var(--border-radius-md, 10px); }
+  .d-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 14px; }
+  .d-actions .k-btn { width: 100%; height: 38px; justify-content: center; text-decoration: none; }
+  .d-actions .k-btn svg { width: 14px; height: 14px; }
+  .d-more { margin-top: 16px; }
+  .d-more h4 { margin: 0; color: var(--muted); font-size: var(--font-text-sm-size, 12px); font-weight: 700; }
+  .mini {
+    display: block;
+    width: 100%;
+    margin-top: 6px;
+    padding: 8px 10px;
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-md, 10px);
+    background: none;
+    text-align: left;
+  }
+  .mini:hover { border-color: color-mix(in oklab, var(--info) 34%, var(--line-strong)); }
+  .mini .t { display: block; overflow: hidden; font-size: var(--font-text-sm-size, 12px); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .mini .m { display: block; overflow: hidden; color: var(--faint); font-size: var(--font-text-xs-size, 10.5px); text-overflow: ellipsis; white-space: nowrap; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .g-card {
+      transition: transform 180ms ease, box-shadow 180ms ease, border-color 180ms ease;
+    }
+    .g-card:hover {
+      z-index: 5;
+      transform: translateY(-4px);
+      border-color: color-mix(in oklab, var(--info) 34%, var(--line-strong));
+      box-shadow: var(--shadow-md, 0 16px 36px color-mix(in oklab, var(--text) 11%, transparent));
+    }
+    .g-foot .k-btn, .d-actions .k-btn { transition: transform 150ms ease, box-shadow 150ms ease, background-color 150ms ease; }
+    :is(.g-foot, .d-actions) .k-btn:not(:disabled):hover { transform: translateY(-1px); }
+    :is(.g-foot, .d-actions) .k-btn:not(:disabled):active { transform: translateY(0) scale(.98); }
+    :is(.g-foot, .d-actions) .k-btn.sec:hover { background: color-mix(in oklab, var(--success) 7%, var(--surface)); }
+    .showcase.one { animation: drift-one 6s ease-in-out infinite; }
+    .showcase.two { animation: drift-two 7s ease-in-out infinite; }
+    .showcase.three { animation: drift-three 5.5s ease-in-out infinite; }
+    @keyframes drift-one { 0%,100%{transform:rotate(5deg) translateY(0)} 50%{transform:rotate(3deg) translateY(-5px)} }
+    @keyframes drift-two { 0%,100%{transform:rotate(-7deg) translateY(0)} 50%{transform:rotate(-5deg) translateY(4px)} }
+    @keyframes drift-three { 0%,100%{transform:rotate(3deg) translateY(0)} 50%{transform:rotate(5deg) translateY(-3px)} }
+  }
+  @media (max-width: 920px) {
+    .standalone .hero { grid-template-columns: minmax(0, 1fr) 190px; gap: 18px; padding-inline: 26px; }
+    .standalone .hero-art { width: 205px; transform: scale(.86); transform-origin: right center; }
+  }
+  @media (max-width: 680px) {
+    body { padding: 0; }
+    .store { border-inline: 0; border-radius: 0; box-shadow: none; }
+    .hero, .standalone .hero { display: block; min-height: 0; padding: 18px 16px 16px; }
+    .searching .hero { min-height: 0; }
+    .hero::before { mask-image: linear-gradient(90deg, transparent 24%, var(--text) 100%); opacity: .68; }
+    .hero-art, .standalone .hero-art { display: none; }
+    .standalone .hero-title { max-width: 390px; font-size: clamp(28px, 10vw, 37px); }
+    .standalone .hero-description { margin-top: 9px; font-size: 14px; line-height: 1.5; }
+    .trust-row { gap: 6px; }
+    .trust-pill { min-height: 25px; padding: 4px 7px; font-size: 10px; }
+    .toolbar { grid-template-columns: 1fr; gap: 9px; padding: 12px; }
+    #count { justify-self: start; padding: 0 2px; }
+    .catalog { padding: 15px 12px 18px; }
+    #sections section + section { margin-top: 22px; }
+    .g-grid { grid-template-columns: 1fr; gap: 12px; }
+    .g-card.wide { grid-column: auto; }
+    .store-footer { align-items: flex-start; padding-inline: 14px; }
+  }
+  @media (max-width: 370px) {
+    .trust-pill:nth-child(3) { display: none; }
+    .g-foot { gap: 8px; padding-left: 12px; }
+    .g-foot .k-btn { min-width: 80px; padding-inline: 10px; }
+  }
+</style>
+</head>
+<body>
+<main class="store">
+  <div class="hero-fold"><div class="hero-clip">
+  <header class="hero">
+    <div class="hero-copy">
+      <p class="eyebrow">
+        <span class="eyebrow-mark" aria-hidden="true">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8"/></svg>
+        </span>
+        App Library
+      </p>
+      <h1 class="hero-title">Small apps. Ready when you are.</h1>
+      <p class="hero-description">Real, working previews of small apps — built by the makers. Add one in a click.</p>
+      <div class="trust-row" aria-label="Library promises">
+        <span class="trust-pill">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.5l5 2v3.7c0 3.2-2 5.8-5 7.3-3-1.5-5-4.1-5-7.3V3.5l5-2z"/><path d="M5.5 8l1.6 1.6 3.5-3.5"/></svg>
+          Made by the makers
+        </span>
+        <span class="trust-pill">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 8.5l3 3L13 4.5"/></svg>
+          Real working previews
+        </span>
+        <span class="trust-pill">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v8M4.8 6.9L8 10.1l3.2-3.2"/><path d="M2.5 12.5h11"/></svg>
+          One-click add
+        </span>
+      </div>
+      <p class="pulse" id="pulse" hidden><b class="k-num" id="pulseN">0</b><span id="pulseT"></span></p>
+    </div>
+    <div class="hero-art" aria-hidden="true">
+      <div class="showcase one"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="8" y="11" width="32" height="29" rx="5"/><path d="M8 19h32M16 7v8M32 7v8M16 26h4M28 26h4M16 33h4M28 33h4"/></svg></div>
+      <div class="showcase two"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="24" cy="24" r="15"/><path d="M24 9a15 15 0 0 1 15 15M24 16v9l6 4"/></svg></div>
+      <div class="showcase three"><svg viewBox="0 0 48 48" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 13h24M12 24h24M12 35h24"/><circle cx="8" cy="13" r="1"/><circle cx="8" cy="24" r="1"/><circle cx="8" cy="35" r="1"/></svg></div>
+    </div>
+  </header>
+  </div></div>
+
+  <section class="toolbar" aria-label="Library controls">
+    <div class="search-wrap">
+      <svg class="search-icon" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><circle cx="8.6" cy="8.6" r="5.6"/><path d="M12.8 12.8L18 18"/></svg>
+      <input class="k-field" id="q" type="search" placeholder="Search apps… (try “habits” or “bills”)" aria-label="Search apps" autocomplete="off" spellcheck="false">
+    </div>
+    <span id="count" aria-live="polite"></span>
+    <div class="chips" id="chips" hidden></div>
+    <!-- Feed-failure banner slot (dormant): when the remote library feed lands (library_browse,
+         docs/library-design.md), a dismissible "Community shelf unavailable — showing built-in
+         apps · Retry" banner renders here. No remote feed exists in this build → nothing renders. -->
+  </section>
+
+  <section class="catalog" aria-label="Ready-made apps">
+    <div id="sections"></div>
+    <div class="empty" id="empty" hidden>
+      <b>Nothing here yet</b>
+      <span>Ask your AI for anything — a habit tracker, a bill calendar, a reading list — and it shows up right here, ready to add.</span>
+    </div>
+    <div id="err" role="alert"></div>
+  </section>
+
+  <footer class="store-footer">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.5l5 2v3.7c0 3.2-2 5.8-5 7.3-3-1.5-5-4.1-5-7.3V3.5l5-2z"/><path d="M5.5 8l1.6 1.6 3.5-3.5"/></svg>
+    <span><strong>Your own apps stay yours.</strong> Library updates never overwrite a custom app with the same name.</span>
+  </footer>
+
+  <button class="veil" id="veil" hidden tabindex="-1" aria-hidden="true"></button>
+  <aside class="drawer" id="drawer" hidden role="dialog" aria-modal="true" aria-label="App details">
+    <header class="d-head">
+      <b id="d-title"></b>
+      <button class="d-x" id="d-close" aria-label="Close details"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </header>
+    <div class="pv-wrap" id="d-pv"></div>
+    <p id="d-desc"></p>
+    <p class="d-maker"><span class="k-dot"></span>Made by the makers — the open-mcp-apps project.</p>
+    <div class="card-err" id="d-err" role="alert" hidden></div>
+    <div class="d-actions" id="d-actions"></div>
+    <section class="d-more" id="d-more" hidden>
+      <h4>More like this</h4>
+      <div id="d-more-list"></div>
+    </section>
+  </aside>
+</main>
+
+<script type="module">
+  // Browser viewer detection: the runtime's stage frames the page there — .standalone lets the
+  // CSS drop this component's own outer card so we never render a card inside a card.
+  if (window.oma && oma.standalone) document.documentElement.classList.add("standalone");
+  const CAT_ORDER = ["Health & Habits", "Money", "Planning", "People"];   // known first, others appended
+  const WIDE = new Set(["meal-planner", "bill-calendar"]);                // calendar-grid apps span 2 tracks
+  const NATURAL_W = 760;                                                  // px width apps render at inside a preview
+  // "Start here" editorial rail: repo-curated picks (one per category), day-one, zero network.
+  // Moves to components/library-editorial.json once an engine tool exists to serve that file;
+  // picks missing from the local registry are silently skipped.
+  const START_HERE = ["habit-streaks", "savings-goals", "meal-planner", "keep-in-touch"];
+
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  let entries = [], busy = null, lastError = "", loadKey = "";   // registry list + load/install state
+  let query = "", filterCat = "";                                // active search / category filter
+  let errName = "", errText = "";                                // per-entry inline install error
+  let drawerName = null, booted = false;
+  const expanded = new Set();       // shelf ids the user opened with "Show all"
+
+  // ---- live preview plumbing -------------------------------------------------------------
+  // The preview is a sandboxed srcdoc document: CSP-first (network killed), the host's design
+  // tokens re-emitted, and a STUB window.oma seeded with the entry's embedded mock snapshot —
+  // the app renders exactly as it would live, but inert: every write resolves harmlessly,
+  // nothing reaches the store, pointer events never enter the frame.
+  const CSP_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:; script-src \'unsafe-inline\'; connect-src \'none\'; frame-src \'none\'">';
+  const TOKEN_NAMES = [
+    ...["background", "text", "border"].flatMap((k) => ["primary", "secondary", "tertiary", "inverse", "ghost", "info", "danger", "success", "warning", "disabled"].map((v) => `--color-${k}-${v}`)),
+    ...["primary", "secondary", "inverse", "info", "danger", "success", "warning"].map((v) => `--color-ring-${v}`),
+    "--font-sans", "--font-mono", "--font-weight-normal", "--font-weight-medium", "--font-weight-semibold", "--font-weight-bold",
+    ...["xs", "sm", "md", "lg"].flatMap((s) => [`--font-text-${s}-size`, `--font-text-${s}-line-height`]),
+    ...["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].flatMap((s) => [`--font-heading-${s}-size`, `--font-heading-${s}-line-height`]),
+    ...["xs", "sm", "md", "lg", "xl", "full"].map((s) => `--border-radius-${s}`),
+    "--border-width-regular", "--shadow-hairline", "--shadow-sm", "--shadow-md", "--shadow-lg",
+  ];
+  function tokenCSS() {
+    const cs = getComputedStyle(document.documentElement);
+    let vars = "";
+    for (const n of TOKEN_NAMES) { const v = cs.getPropertyValue(n).trim(); if (v) vars += `${n}:${v};`; }
+    return `<style>:root{${vars}}html{color-scheme:${cs.colorScheme || "light dark"}}body{font-family:var(--font-sans);color:var(--color-text-primary)}</style>`;
+  }
+  function stubOma(name, items) {
+    const snap = { collection: name, items: items || [], version: 1, component: name, host: "gallery-preview" };
+    // classic script in OUR head → runs before any component script (classic or module).
+    // The close tag is CONCATENATED so (a) parsing THIS file never sees a literal close tag,
+    // while (b) the srcdoc receives a REAL one — an escaped <\/script> inside srcdoc is NOT a
+    // close tag, the stub would swallow the component source and die as a syntax error.
+    // JSON's own "</" become "<\/" (an identity escape in JS strings) for the same reason.
+    return '<script>window.oma=(function(){var S=' + JSON.stringify(snap).replace(/<\//g, "<\\/") +
+      ';var ok=Promise.resolve({ok:true});return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){},' +
+      'pref:function(k,f){return f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok},' +
+      'deleteItem:function(){return ok},refresh:function(){return ok},callTool:function(){return Promise.resolve({content:[],structuredContent:{}})},' +
+      'sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{component:S.component,collection:S.collection},host:S.host,standalone:true};})();</scr' + 'ipt>';
+  }
+  function previewDoc(name, html, items) {
+    // component markup goes wholesale into OUR body (its doctype/head degrade to tag-soup;
+    // styles and scripts still apply) so OUR CSP meta is always first — the runner's pattern.
+    return "<!doctype html><html><head>" + CSP_META + '<meta charset="utf-8">' + tokenCSS() + stubOma(name, items) + "</head><body>" + html + "</body></html>";
+  }
+
+  const store = document.querySelector(".store");
+  const sections = document.getElementById("sections");
+  const roScale = new ResizeObserver((es) => { for (const e of es) fitPreview(e.target); });
+  function fitPreview(wrap) {
+    const f = wrap.querySelector("iframe");
+    if (!f || !wrap.clientWidth) return;
+    const scale = wrap.clientWidth / NATURAL_W;
+    f.style.width = NATURAL_W + "px";
+    f.style.height = Math.ceil(wrap.clientHeight / scale) + "px";
+    f.style.transform = `scale(${scale})`;
+  }
+  const io = new IntersectionObserver((es) => {
+    for (const e of es) if (e.isIntersecting) { io.unobserve(e.target); mountPreview(e.target); }
+  }, { rootMargin: "200px" });
+  async function mountPreview(wrap) {
+    if (wrap.dataset.live) return;    // one mount per element (render() creates fresh elements)
+    wrap.dataset.live = "1";
+    // The drawer REUSES its wrap across entries — bind this response to the entry it was asked
+    // for, and drop it if the wrap moved on (or left the DOM) while the call was in flight.
+    const name = wrap.dataset.pv;
+    const stale = () => !wrap.isConnected || wrap.dataset.pv !== name;
+    try {
+      const r = await oma.callTool("gallery_preview", { name });
+      if (stale()) return;
+      const sc = r && !r.isError ? r.structuredContent : null;
+      if (!sc || !sc.html) throw new Error("no preview payload");
+      const f = document.createElement("iframe");
+      f.setAttribute("sandbox", "allow-scripts");
+      f.setAttribute("title", name + " preview");
+      f.addEventListener("load", () => wrap.querySelector(".pv-skel")?.remove(), { once: true });
+      f.srcdoc = previewDoc(name, sc.html, sc.fixtures ? sc.fixtures.items : []);
+      wrap.prepend(f);
+      roScale.observe(wrap);
+      fitPreview(wrap);
+    } catch {
+      if (stale()) return;
+      wrap.querySelector(".pv-skel")?.remove();
+      wrap.insertAdjacentHTML("afterbegin", '<div class="pv-empty">preview unavailable</div>');
+    }
+  }
+
+  // ---- search + filter -------------------------------------------------------------------
+  // Interim client-side ranker over the loaded registry — a documented approximation of the
+  // future library_search BM25 field weights (name prefix > title word > any name/title hit >
+  // description hit). Swapped wholesale when that tool lands; the two are never mixed.
+  function rankOf(e) {
+    const q = query.toLowerCase();
+    const n = e.name.toLowerCase(), t = (e.title || "").toLowerCase();
+    if (n.startsWith(q)) return 0;
+    if (t.split(/\W+/).some((w) => w.startsWith(q))) return 1;
+    if (n.includes(q) || t.includes(q)) return 2;
+    if ((e.description || "").toLowerCase().includes(q)) return 3;
+    return 9;
+  }
+  const matches = (e) => (!filterCat || e.category === filterCat) && (!query || rankOf(e) < 9);
+  const visible = () => {
+    const s = entries.filter(matches);
+    return query ? s.sort((a, b) => rankOf(a) - rankOf(b) || a.name.localeCompare(b.name)) : s;
+  };
+  // Mode-prefixed fingerprint of what render() would show — the keystroke gate compares these.
+  const viewKey = () => (query ? "s:" : "b:") + filterCat + ":" + visible().map((e) => e.name).join("|");
+  // Escape-then-highlight: match on the raw string, wrap the escaped slice in <mark>.
+  function mark(s) {
+    s = String(s);
+    const q = query.toLowerCase(), i = q ? s.toLowerCase().indexOf(q) : -1;
+    if (i < 0) return esc(s);
+    return esc(s.slice(0, i)) + "<mark>" + esc(s.slice(i, i + q.length)) + "</mark>" + esc(s.slice(i + q.length));
+  }
+
+  // ---- cards + shelves -------------------------------------------------------------------
+  function chip(e) {
+    if (e.update_available) return '<span class="k-chip badge-up pv-chip">update available</span>';
+    if (e.installed && e.from_gallery) return '<span class="k-chip badge-ok pv-chip">added ✓</span>';
+    if (e.installed) return '<span class="k-chip badge-mut pv-chip">name in use</span>';
+    return "";
+  }
+  function action(e) {
+    if (busy === e.name) return '<button class="k-btn" disabled>Adding…</button>';
+    if (e.update_available) return `<button class="k-btn" data-install="${esc(e.name)}">Update</button>`;
+    if (e.installed && e.from_gallery) return oma.standalone
+      ? `<a class="k-btn sec" href="${esc(oma.viewBase + e.name)}">Open</a>`
+      : `<button class="k-btn sec" data-open="${esc(e.name)}">Open</button>`;
+    if (e.installed) return '<button class="k-btn sec" disabled title="A different app of yours already uses this name">Unavailable</button>';
+    return `<button class="k-btn" data-install="${esc(e.name)}">Add</button>`;
+  }
+  function card(e, i) {
+    return `<div class="g-card${WIDE.has(e.name) ? " wide" : ""}" data-name="${esc(e.name)}" tabindex="0" style="--i:${i}">
+      <div class="pv-wrap" data-pv="${esc(e.name)}">${chip(e)}<div class="pv-skel k-skel"></div><div class="pv-fade"></div></div>
+      <div class="g-foot">
+        <div class="k-grow" style="min-width:0">
+          <div class="t k-ellip">${mark(e.title || e.name)}</div>
+          <div class="m k-ellip">${mark(e.description || e.name)}</div>
+          <div class="meta"><span class="k-dot"></span>by the makers<button class="cat" data-cat="${esc(e.category)}">${esc(e.category)}</button></div>
+        </div>
+        ${action(e)}
+      </div>
+      ${e.name === errName ? `<div class="card-err" role="alert">${esc(errText)}</div>` : ""}
+    </div>`;
+  }
+  // A shelf: header + count pill + row grid. In chat, capRows() trims non-open shelves to their
+  // first grid row and lights the "Show all N" expander; open shelves and /view show everything.
+  function shelf(id, label, list, open) {
+    if (!list.length) return "";
+    return `<section${open ? "" : ` data-shelf="${esc(id)}"`}>
+      <div class="cat-h"><h3 class="k-h1">${esc(label)}</h3><span class="n">${list.length}</span></div>
+      <div class="g-grid${booted ? "" : " k-stagger"}">${list.map(card).join("")}</div>
+      ${open ? "" : `<button class="more" data-more="${esc(id)}" hidden>Show all ${list.length}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></button>`}
+    </section>`;
+  }
+  // Search miss — the miss→generate loop: standalone gets a copyable prompt, chat a real button.
+  function miss() {
+    const ask = `Build me a ${query} app`;
+    return `<div class="k-empty">
+      <svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path stroke="var(--faint)" stroke-width="2" d="M28 10a17 17 0 1 1 0 34 17 17 0 0 1 0-34zM40.5 39.5L54 53"/>
+        <path stroke="var(--info)" stroke-width="2" d="M52 10l1.7 5.8 5.8 1.7-5.8 1.7-1.7 5.8-1.7-5.8-5.8-1.7 5.8-1.7z"/>
+      </svg>
+      <b>No match</b>
+      <span>Try fewer words — or ask the AI to build it. It takes about a minute.</span>
+      ${oma.standalone
+        ? `<span class="ask-hint">Ask your AI: <span class="k-code">${esc(ask)}</span></span>`
+        : '<button class="k-btn" data-build>Ask the AI to build it</button>'}
+    </div>`;
+  }
+  // Chat height discipline: trim each closed shelf to one grid row. First-fit against the
+  // track count (mirrors grid-auto-flow:dense), so a wide card that can't fit doesn't strand
+  // an empty slot. Cards hide with [hidden] → IntersectionObserver simply never mounts them
+  // until "Show all"/a resize reveals them. Standalone never caps (shelves fully expanded).
+  function capRows() {
+    if (oma.standalone) return;
+    for (const sec of sections.querySelectorAll("section[data-shelf]")) {
+      const grid = sec.querySelector(".g-grid"), more = sec.querySelector(".more");
+      const open = expanded.has(sec.dataset.shelf);
+      const tracks = getComputedStyle(grid).gridTemplateColumns.split(" ").length;
+      let free = tracks, hid = 0;
+      for (const c of grid.children) {
+        const cost = c.classList.contains("wide") && tracks > 1 ? 2 : 1;
+        const show = open || cost <= free;
+        if (show && !open) free -= cost;
+        c.hidden = !show;
+        if (!show) hid++;
+      }
+      more.hidden = open || !hid;
+    }
+  }
+  new ResizeObserver(capRows).observe(sections);   // track count changes with width → recap
+
+  // ---- chrome: counter, filter chips, hero fold + pulse ------------------------------------
+  function syncChrome() {
+    const active = !!(query || filterCat);
+    store.classList.toggle("searching", active);   // folds the hero (grid-rows 1fr→0fr)
+    const n = entries.length;
+    document.getElementById("count").textContent =
+      !n ? "" : active ? `${entries.filter(matches).length} of ${n}` : `${n} ${n === 1 ? "app" : "apps"}`;
+    const chips = document.getElementById("chips");
+    chips.hidden = !filterCat;
+    chips.innerHTML = filterCat
+      ? `<button class="k-chip on" data-unfilter aria-label="Remove the ${esc(filterCat)} filter">${esc(filterCat)}<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>`
+      : "";
+  }
+  function countUp(el, to) {
+    if (REDUCE || to < 2) { el.textContent = to; return; }
+    const t0 = performance.now();
+    (function tick(t) {
+      const p = Math.min((t - t0) / 500, 1), e = 1 - (1 - p) ** 3;   // ease-out cubic
+      el.textContent = Math.round(to * e);
+      if (p < 1) requestAnimationFrame(tick);
+    })(t0);
+  }
+  // Pulse = entry count from the local registry, nothing more (no install counts anywhere).
+  // No entries → the line is absent, never a zero.
+  function pulse() {
+    const p = document.getElementById("pulse");
+    p.hidden = !entries.length;
+    if (!entries.length) return;
+    document.getElementById("pulseT").textContent = ` ready-made ${entries.length === 1 ? "app" : "apps"} · by the makers`;
+    const n = document.getElementById("pulseN");
+    if (booted) n.textContent = entries.length;
+    else countUp(n, entries.length);   // once, on first mount
+  }
+
+  // ---- detail drawer ----------------------------------------------------------------------
+  const drawer = document.getElementById("drawer"), veil = document.getElementById("veil");
+  let drawerTrigger = null;   // the actual element that opened the drawer — focus home on close
+  // True keyboard modality: while the drawer is open everything behind it is inert (no
+  // tab-escape, hidden from assistive tech). The veil stays live — it is the click-to-close.
+  const setInert = (on) => { for (const el of store.children) if (el !== drawer && el !== veil) el.inert = on; };
+  function openDrawer(name, from) {
+    if (!drawerName) drawerTrigger = from || null;   // entry switches inside the drawer keep the original
+    drawerName = name;
+    drawer.hidden = veil.hidden = false;
+    setInert(true);
+    buildDrawer();
+    document.getElementById("d-close").focus();   // also scrolls the drawer head into view
+  }
+  function closeDrawer() {
+    if (!drawerName) return;
+    // Back to the retained trigger — or, if a re-render replaced it, to its rebuilt card.
+    const back = drawerTrigger?.isConnected ? drawerTrigger
+      : sections.querySelector(`.g-card[data-name="${CSS.escape(drawerTrigger?.dataset.name || drawerName)}"]`);
+    drawerName = null; drawerTrigger = null;
+    drawer.hidden = veil.hidden = true;
+    setInert(false);
+    back?.focus();
+  }
+  // Installed entries point at settings for manage/remove — the drawer never grows its own
+  // remove button (cross-component ruling: Remove lives in settings' Installed drawer).
+  const manage = (e) => !(e.installed && e.from_gallery) ? "" : oma.standalone
+    ? `<a class="k-btn ghost" href="${esc(oma.viewBase + "settings")}">Manage in Settings</a>`
+    : '<button class="k-btn ghost" data-settings>Manage in Settings</button>';
+  function buildDrawer() {
+    const e = entries.find((x) => x.name === drawerName);
+    if (!e) return closeDrawer();                 // entry left the registry list
+    document.getElementById("d-title").textContent = e.title || e.name;
+    document.getElementById("d-desc").textContent = e.description || "";
+    const pv = document.getElementById("d-pv");
+    if (pv.dataset.pv !== e.name) {               // keep the live iframe across state refreshes
+      pv.dataset.pv = e.name;
+      delete pv.dataset.live;
+      pv.innerHTML = '<div class="pv-skel k-skel"></div><div class="pv-fade"></div>';
+      mountPreview(pv);
+    }
+    pv.querySelector(".pv-chip")?.remove();
+    pv.insertAdjacentHTML("afterbegin", chip(e));
+    const err = document.getElementById("d-err");
+    err.hidden = errName !== e.name;
+    err.textContent = errName === e.name ? errText : "";
+    document.getElementById("d-actions").innerHTML = action(e) + manage(e);
+    // "More like this" is content-based (same category) — the label is bound to that source
+    // and must not be renamed to social phrasing unless real co-install data feeds it.
+    const rel = entries.filter((x) => x.category === e.category && x.name !== e.name).slice(0, 3);
+    document.getElementById("d-more").hidden = !rel.length;
+    document.getElementById("d-more-list").innerHTML = rel.map((x) =>
+      `<button class="mini" data-view="${esc(x.name)}"><span class="t">${esc(x.title || x.name)}</span><span class="m">${esc(x.description || "")}</span></button>`).join("");
+  }
+
+  // ---- render ------------------------------------------------------------------------------
+  function render() {
+    syncChrome();
+    document.getElementById("empty").hidden = entries.length > 0 || !!lastError;
+    document.getElementById("err").textContent = lastError;
+    const shown = visible();
+    let html;
+    if (query) {
+      // Search mode: one flat, ranked grid — hits never scatter across category sections.
+      html = shown.length ? `<section><div class="g-grid">${shown.map(card).join("")}</div></section>` : miss();
+    } else if (filterCat) {
+      html = shelf(filterCat, filterCat, shown, true);
+    } else {
+      const cats = [...CAT_ORDER, ...new Set(shown.map((e) => e.category).filter((c) => !CAT_ORDER.includes(c)))];
+      html = shelf("start", "Start here", START_HERE.map((n) => shown.find((e) => e.name === n)).filter(Boolean))
+           + cats.map((c) => shelf(c, c, shown.filter((e) => e.category === c))).join("");
+    }
+    sections.innerHTML = html;
+    capRows();
+    for (const wrap of sections.querySelectorAll(".pv-wrap")) io.observe(wrap);
+    pulse();
+    if (drawerName) buildDrawer();   // drawer mirrors the fresh install state
+    booted = true;
+  }
+  // Same visible set → keep the mounted previews alive, refresh only the <mark> highlights.
+  function retitle() {
+    for (const c of sections.querySelectorAll(".g-card")) {
+      const e = entries.find((x) => x.name === c.dataset.name);
+      if (!e) continue;
+      c.querySelector(".t").innerHTML = mark(e.title || e.name);
+      c.querySelector(".m").innerHTML = mark(e.description || e.name);
+    }
+  }
+
+  async function load(force) {
+    // Local registry only — the complete Tier-0 view, not a degraded one. Integration point:
+    // when the engine grows the remote feed (library_browse, docs/library-design.md), merge its
+    // entries here (same-name remote official replaces the builtin row) and light the toolbar's
+    // feed-failure banner slot when that fetch fails. Absent feed → nothing extra renders.
+    try {
+      const r = await oma.callTool("gallery_list", {});
+      const sc = r && !r.isError ? r.structuredContent : null;
+      if (!sc) throw new Error("gallery_list failed");
+      entries = sc.entries || [];
+      lastError = "";
+    } catch {
+      lastError = "Couldn't load the library — it retries when you come back.";
+    }
+    // Change-gated: a no-change refocus poll must not tear down the mounted live previews.
+    // The error state rides the fingerprint, so a failure and its recovery each render exactly
+    // once — even when recovery returns identical entries — and repeated failures render none.
+    const key = JSON.stringify([entries, lastError]);
+    if (force || key !== loadKey) { loadKey = key; render(); }
+  }
+  async function install(name) {
+    // v0: every entry is local, so Add always routes through install_from_gallery. Remote index
+    // entries will route through library_install {id, command_id} (SRI-verified) when that tool
+    // lands — cross-component ruling §2-7 — over this same busy/error/reload cycle.
+    busy = name; errName = errText = ""; render();
+    try {
+      const r = await oma.callTool("install_from_gallery", { name, command_id: uuid() });
+      if (r && r.isError) {
+        const t = (r.content || []).find((c) => c.type === "text");
+        errName = name; errText = (t && t.text) || "Couldn't add it.";
+      }
+    } catch (e) {
+      errName = name; errText = (e && e.message) || "Couldn't add it.";
+    } finally {
+      busy = null;
+      await load(true);
+    }
+  }
+
+  // ---- events ------------------------------------------------------------------------------
+  document.body.addEventListener("click", (ev) => {
+    const t = ev.target.closest("button, a, .g-card");
+    if (!t) return;
+    if (t.dataset.install) install(t.dataset.install);
+    else if (t.dataset.open) oma.sendMessage("Open my " + t.dataset.open + " app");
+    else if (t.dataset.view) openDrawer(t.dataset.view, t);
+    else if (t.dataset.cat != null) { filterCat = t.dataset.cat; expanded.clear(); render(); }
+    else if (t.dataset.unfilter != null) { filterCat = ""; render(); }
+    else if (t.dataset.more != null) { expanded.add(t.dataset.more); capRows(); }
+    else if (t.dataset.build != null) oma.sendMessage(`Build me a ${query} app`);
+    else if (t.dataset.settings != null) oma.sendMessage("Open my settings.");
+    else if (t.id === "d-close" || t.id === "veil") closeDrawer();
+    else if (t.classList.contains("g-card")) openDrawer(t.dataset.name, t);
+  });
+  sections.addEventListener("keydown", (ev) => {
+    const c = ev.target.closest(".g-card");
+    if (!c) return;
+    if (ev.key === "Enter" && ev.target === c) openDrawer(c.dataset.name, c);
+    else if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const cards = [...sections.querySelectorAll(".g-card:not([hidden])")];
+      const next = cards[cards.indexOf(c) + (ev.key === "ArrowDown" ? 1 : -1)];
+      if (next) { ev.preventDefault(); next.focus(); }
+    }
+  });
+  // "/" focuses search; Esc peels one layer at a time: drawer → query → open shelves → filter.
+  // Shelf expansions are cleared the moment search or a category filter STARTS (Esc-layering
+  // ruling), so the open-shelves layer only exists in browse mode — no invisible survivor
+  // waiting to reappear after the first Escape.
+  const q = document.getElementById("q");
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "/" && !/^(INPUT|TEXTAREA)$/.test(ev.target.tagName)) { ev.preventDefault(); q.focus(); }
+    else if (ev.key === "Escape") {
+      if (drawerName) closeDrawer();
+      else if (query) { q.value = ""; query = ""; render(); }
+      else if (expanded.size) { expanded.clear(); capRows(); }
+      else if (filterCat) { filterCat = ""; render(); }
+    }
+  });
+  // Debounced + change-gated: a full render() tears down and re-mounts every visible preview
+  // iframe (fresh gallery_preview fetch each), so keystrokes must not trigger it needlessly.
+  let qTimer = null;
+  q.addEventListener("input", (ev) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => {
+      const next = ev.target.value.trim();
+      if (next === query) return;
+      const before = viewKey();
+      if (next && !query) expanded.clear();   // entering search — browse expansions don't survive it
+      query = next;
+      if (viewKey() !== before) render();
+      else { syncChrome(); retitle(); }
+    }, 180);
+  });
+  // Registry writes never reach oma.onChange (it is collection-scoped) — instead re-list on
+  // refocus; the load() gate keeps a no-change poll from touching the DOM.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  // Density (shared pref, zero new keys): compact tightens preview height + card padding.
+  const applyDensity = () => document.body.classList.toggle("compact", oma.pref("density", "comfortable") === "compact");
+  oma.onPrefChange(applyDensity);
+
+  oma.ready(() => { applyDensity(); load(); });
+</script>
+</body>
+</html>

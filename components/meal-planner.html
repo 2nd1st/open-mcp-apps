@@ -1,0 +1,1135 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Meal Planner</title>
+  <meta name="description" content="A week of meals in one grid — plan breakfast, lunch and dinner, or have the AI plan it.">
+  <meta name="oma-category" content="Planning">
+  <script type="application/json" id="oma-fixtures">{"items":[{"id":"f69cfb87-e084-4b88-9f16-466407f27882","group":"breakfast","position":1,"fields":{"date":"2026-07-20","meal_type":"breakfast","dish":"Berry oat breakfast jars","servings":2,"ingredients_note":"Rolled oats, yoghurt, berries, chia; prep the night before"},"version":1},{"id":"c1e9a1fc-bd79-4d90-97c6-9374cacbdf44","group":"breakfast","position":2,"fields":{"date":"2026-07-24","meal_type":"breakfast","dish":"Spinach feta omelette","servings":2,"ingredients_note":"Use up the baby spinach"},"version":1},{"id":"b74782d6-3579-4e73-806a-5a0c3f94ff18","group":"dinner","position":1,"fields":{"date":"2026-07-20","meal_type":"dinner","dish":"Miso salmon rice bowls","servings":2,"ingredients_note":"Salmon, edamame, cucumber, rice, white miso"},"version":1},{"id":"cb80770e-24c1-43e2-89cc-a0abfb155a89","group":"dinner","position":2,"fields":{"date":"2026-07-22","meal_type":"dinner","dish":"Ginger chicken lettuce cups","servings":4,"ingredients_note":"Chicken mince, water chestnuts, herbs, lettuce"},"version":1},{"id":"13ec3b12-2a5d-474e-99ba-7011f9634f8c","group":"lunch","position":1,"fields":{"date":"2026-07-21","meal_type":"lunch","dish":"Roast vegetable couscous","servings":3,"ingredients_note":"Use leftover roast vegetables; add feta and lemon"},"version":1},{"id":"b13b8cee-7193-49f8-8f62-45a62cbf0740","group":"lunch","position":2,"fields":{"date":"2026-07-25","meal_type":"lunch","dish":"Tomato pesto toasties","servings":2,"ingredients_note":"Sourdough, mozzarella, tomatoes, pesto"},"version":1}]}</script>
+<style>
+  :root {
+    --accent: var(--color-text-info, var(--color-ring-primary));
+    --breakfast: var(--color-text-warning, var(--accent));
+    --lunch: var(--color-text-success, var(--accent));
+    --dinner: var(--color-text-danger, var(--accent));
+    --surface: var(--color-background-primary);
+    --surface-soft: var(--color-background-secondary);
+    --surface-softer: var(--color-background-tertiary);
+    --line: var(--color-border-secondary);
+    --line-strong: var(--color-border-primary);
+  }
+
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  html, body { margin: 0; width: 100%; overflow: hidden; }
+  body {
+    padding: 12px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+  }
+  button, input, textarea { color: inherit; font: inherit; }
+  button { cursor: pointer; }
+
+  .app {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    width: min(100%, 1240px);
+    margin: 0 auto;
+    overflow: hidden;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 13px 16px;
+    background: var(--surface);
+    border-bottom: 1px solid var(--line);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+  }
+  .brand-mark {
+    display: grid;
+    flex: 0 0 auto;
+    width: 37px;
+    height: 37px;
+    place-items: center;
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 12%, var(--surface));
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-md);
+  }
+  .brand-mark svg { width: 20px; height: 20px; }
+  .brand-copy { min-width: 0; }
+  .kicker {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+  }
+  .subtitle {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 12px);
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .btn {
+    display: inline-flex;
+    min-height: 36px;
+    padding: 8px 12px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: var(--color-text-primary);
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-md);
+  }
+  .btn svg {
+    width: 16px;
+    height: 16px;
+    flex: 0 0 auto;
+  }
+  .btn.ghost {
+    background: var(--surface);
+  }
+
+  .overview {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    padding: 12px 16px;
+    background: color-mix(in oklab, var(--accent) 5%, var(--surface-soft));
+    border-bottom: 1px solid var(--line);
+    font-variant-numeric: tabular-nums;
+  }
+  .overview-number {
+    display: flex;
+    min-width: 150px;
+    padding-right: 16px;
+    align-items: center;
+    gap: 10px;
+    border-right: 1px solid var(--line);
+  }
+  .overview-number strong {
+    color: var(--accent);
+    font: 750 32px/.95 var(--font-mono);
+    letter-spacing: -.05em;
+  }
+  .overview-number span, .metric span {
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    letter-spacing: .04em;
+    line-height: 1.35;
+    text-transform: uppercase;
+  }
+  .metric {
+    display: grid;
+    min-width: 72px;
+    padding: 4px 8px;
+    align-content: center;
+  }
+  .metric strong {
+    margin-bottom: 1px;
+    font-size: 14px;
+  }
+  .week-switcher {
+    display: grid;
+    grid-template-columns: 34px minmax(180px, 1fr) 34px auto;
+    width: min(100%, 430px);
+    min-width: 0;
+    margin-left: auto;
+    padding: 5px;
+    align-items: center;
+    gap: 6px;
+    background: color-mix(in oklab, var(--surface) 82%, transparent);
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-md);
+  }
+  .icon-button, .today-button {
+    display: grid;
+    height: 32px;
+    place-items: center;
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-sm);
+  }
+  .icon-button { width: 34px; padding: 0; }
+  .icon-button svg { width: 15px; height: 15px; }
+  .today-button {
+    padding: 0 12px;
+    color: var(--accent);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .week-copy { min-width: 0; padding: 0 8px; text-align: center; }
+  .week-copy strong, .week-copy span { display: block; }
+  .week-copy strong {
+    overflow: hidden;
+    font-size: 13px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .week-copy span {
+    margin-top: 1px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .planner { min-height: 0; padding: 12px 14px 14px; background: var(--surface-softer); }
+  .planner-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0 2px 9px;
+  }
+  .planner-head p {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+  }
+  .legend { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    text-transform: capitalize;
+  }
+  .legend-dot {
+    width: 7px;
+    height: 7px;
+    background: var(--tone);
+    border-radius: var(--border-radius-full);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--tone) 12%, transparent);
+  }
+
+  .grid-scroll {
+    max-height: 414px;
+    overflow: auto;
+    overscroll-behavior: contain;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-sm);
+    scrollbar-color: color-mix(in oklab, var(--color-text-tertiary) 36%, transparent) transparent;
+  }
+  .calendar-grid {
+    display: grid;
+    grid-template-columns: 126px repeat(7, minmax(122px, 1fr));
+    min-width: 980px;
+  }
+  .grid-corner, .day-head, .meal-head, .meal-cell { border: 0 solid var(--line); }
+  .grid-corner, .day-head { position: sticky; z-index: 4; top: 0; border-bottom-width: 1px; }
+  .grid-corner {
+    z-index: 6;
+    left: 0;
+    display: grid;
+    min-height: 58px;
+    padding: 10px 12px;
+    align-content: center;
+    background: var(--surface);
+    border-right-width: 1px;
+  }
+  .grid-corner strong {
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .grid-corner span {
+    margin-top: 2px;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+  }
+  .day-head {
+    display: grid;
+    min-height: 58px;
+    padding: 7px 8px;
+    place-content: center;
+    text-align: center;
+    background: color-mix(in oklab, var(--surface) 94%, transparent);
+    border-right-width: 1px;
+    backdrop-filter: blur(8px);
+  }
+  .day-head:last-child { border-right-width: 0; }
+  .day-name {
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .day-date {
+    margin-top: 2px;
+    font-size: 14px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .today-chip {
+    display: inline-block;
+    margin-top: 2px;
+    padding: 1px 5px;
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: 7px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    background: color-mix(in oklab, var(--accent) 11%, transparent);
+    border-radius: var(--border-radius-full);
+  }
+  .day-head.is-today {
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 9%, var(--surface));
+    box-shadow: inset 0 3px 0 var(--accent);
+  }
+
+  .meal-head {
+    position: sticky;
+    z-index: 3;
+    left: 0;
+    display: flex;
+    min-height: 108px;
+    padding: 13px 12px;
+    align-items: flex-start;
+    gap: 9px;
+    background: color-mix(in oklab, var(--tone) 7%, var(--surface));
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+  }
+  .meal-bar {
+    width: 4px;
+    height: 30px;
+    flex: 0 0 auto;
+    background: var(--tone);
+    border-radius: var(--border-radius-full);
+    box-shadow: 0 5px 14px color-mix(in oklab, var(--tone) 24%, transparent);
+  }
+  .meal-label strong, .meal-label span { display: block; }
+  .meal-label strong { font-size: 12px; text-transform: capitalize; }
+  .meal-label span { margin-top: 3px; color: var(--color-text-tertiary); font-size: 9px; }
+
+  .meal-cell {
+    --tone: var(--accent);
+    position: relative;
+    min-width: 0;
+    min-height: 108px;
+    padding: 0;
+    text-align: left;
+    background: var(--surface);
+    border-right-width: 1px;
+    border-bottom-width: 1px;
+  }
+  .meal-cell:nth-child(8n) { border-right-width: 0; }
+  .meal-head.last-row, .meal-cell.last-row { border-bottom-width: 0; }
+  .meal-cell.is-today { background: color-mix(in oklab, var(--accent) 4%, var(--surface)); }
+  .meal-cell::after {
+    position: absolute;
+    inset: 9px auto 9px 0;
+    width: 3px;
+    content: "";
+    background: var(--tone);
+    border-radius: 0 var(--border-radius-full) var(--border-radius-full) 0;
+    opacity: 0;
+  }
+  .meal-cell.filled::after { opacity: 1; }
+  .cell-inner {
+    display: flex;
+    width: 100%;
+    min-height: 107px;
+    padding: 11px 11px 10px 13px;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: space-between;
+  }
+  .dish {
+    display: -webkit-box;
+    overflow: hidden;
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .note-preview {
+    display: -webkit-box;
+    margin-top: 5px;
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    line-height: 1.35;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .cell-meta { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: 8px; }
+  .servings {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 8px;
+    font-variant-numeric: tabular-nums;
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-full);
+  }
+  .servings svg, .edit-glyph { width: 11px; height: 11px; }
+  .edit-glyph { color: var(--color-text-tertiary); }
+  .empty .cell-inner { align-items: center; justify-content: center; gap: 7px; color: var(--color-text-tertiary); }
+  .add-mark {
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    color: var(--tone);
+    background: color-mix(in oklab, var(--tone) 9%, transparent);
+    border: 1px dashed color-mix(in oklab, var(--tone) 38%, var(--line));
+    border-radius: var(--border-radius-full);
+  }
+  .add-mark svg { width: 12px; height: 12px; }
+  .empty-label { font-size: 9px; font-weight: 600; }
+
+  .editor-layer {
+    position: absolute;
+    z-index: 20;
+    inset: 0;
+    display: grid;
+    padding: 18px;
+    overflow: hidden;
+    place-items: center;
+    background: color-mix(in oklab, var(--surface) 70%, transparent);
+    backdrop-filter: blur(7px);
+  }
+  .editor-card {
+    width: min(100%, 450px);
+    max-height: 100%;
+    overflow: auto;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-lg);
+    box-shadow: var(--shadow-md, var(--shadow-sm)), 0 24px 60px color-mix(in oklab, var(--color-text-primary) 18%, transparent);
+  }
+  .editor-accent { height: 4px; background: var(--tone); }
+  .editor-body { padding: 18px; }
+  .editor-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; margin-bottom: 16px; }
+  .editor-kicker {
+    margin: 0 0 3px;
+    color: var(--tone);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  .editor-top h2 { margin: 0; font-size: 18px; letter-spacing: -.015em; }
+  .close-button {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    flex: 0 0 auto;
+    padding: 0;
+    place-items: center;
+    color: var(--color-text-secondary);
+    background: var(--surface-soft);
+    border: 1px solid var(--line);
+    border-radius: var(--border-radius-sm);
+  }
+  .close-button svg { width: 14px; height: 14px; }
+  .field { display: block; margin-bottom: 12px; }
+  .field-row { display: grid; grid-template-columns: minmax(0, 1fr) 112px; gap: 10px; }
+  .field-label {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 5px;
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+  }
+  .field-label span { color: var(--color-text-tertiary); font-weight: 400; }
+  .input {
+    width: 100%;
+    padding: 10px 11px;
+    outline: none;
+    background: var(--surface-soft);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-sm);
+  }
+  input.input { height: 39px; }
+  textarea.input { min-height: 78px; resize: vertical; line-height: 1.4; }
+  .input:focus {
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--accent) 14%, transparent);
+  }
+  .btn:focus-visible,
+  .icon-button:focus-visible,
+  .today-button:focus-visible,
+  .meal-cell:focus-visible,
+  .close-button:focus-visible,
+  .button:focus-visible,
+  .input:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+  .editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
+  .action-right { display: flex; gap: 8px; margin-left: auto; }
+  .button {
+    min-height: 36px;
+    padding: 0 13px;
+    background: var(--surface-soft);
+    border: 1px solid var(--line-strong);
+    border-radius: var(--border-radius-sm);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .save-button {
+    min-width: 104px;
+    color: var(--color-text-inverse);
+    background: var(--accent);
+    border-color: var(--accent);
+    box-shadow: 0 7px 18px color-mix(in oklab, var(--accent) 20%, transparent);
+  }
+  .delete-button {
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 7%, var(--surface));
+    border-color: color-mix(in oklab, var(--color-text-danger) 30%, var(--line));
+  }
+  .delete-button.armed {
+    color: var(--color-text-inverse);
+    background: var(--color-text-danger);
+    border-color: var(--color-text-danger);
+  }
+
+  .app[data-density="compact"] .topbar { min-height: 62px; padding-top: 11px; padding-bottom: 11px; }
+  .app[data-density="compact"] .meal-head,
+  .app[data-density="compact"] .meal-cell { min-height: 91px; }
+  .app[data-density="compact"] .cell-inner { min-height: 90px; padding-top: 9px; padding-bottom: 8px; }
+  .app[data-density="compact"] .note-preview { -webkit-line-clamp: 1; }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .btn, .icon-button, .today-button, .meal-cell, .close-button, .button, .add-mark {
+      transition: transform 180ms cubic-bezier(.2,.8,.3,1), box-shadow 180ms ease, background-color 180ms ease, border-color 180ms ease;
+    }
+    .btn:hover, .icon-button:hover, .today-button:hover, .close-button:hover, .button:hover { transform: translateY(-1px); }
+    .meal-cell:hover { z-index: 2; background: color-mix(in oklab, var(--tone) 6%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--tone) 28%, transparent); }
+    .meal-cell:hover .add-mark { transform: scale(1.08); }
+    .btn:active, .icon-button:active, .today-button:active, .meal-cell:active, .close-button:active, .button:active { transform: scale(.975); }
+    .editor-card { animation: editor-in 220ms cubic-bezier(.2,.8,.3,1) both; }
+    .meal-cell.just-saved { animation: save-pop 430ms cubic-bezier(.34,1.56,.64,1); }
+    @keyframes editor-in {
+      from { opacity: 0; transform: translateY(8px) scale(.985); }
+      to { opacity: 1; transform: translateY(0) scale(1); }
+    }
+    @keyframes save-pop {
+      0% { transform: scale(1); }
+      45% { transform: scale(1.035); box-shadow: inset 0 0 0 2px var(--tone), 0 10px 24px color-mix(in oklab, var(--tone) 18%, transparent); }
+      100% { transform: scale(1); }
+    }
+  }
+
+  @media (max-width: 640px) {
+    body { padding: 8px; }
+    .app { border-radius: var(--border-radius-md); }
+    .topbar { gap: 10px; padding: 12px 13px; }
+    .brand { gap: 9px; }
+    .btn { padding-right: 10px; padding-left: 10px; }
+    .overview { flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; }
+    .overview-number { min-width: 140px; padding-right: 12px; }
+    .metric { min-width: 0; padding-right: 7px; padding-left: 8px; }
+    .week-switcher { grid-template-columns: 32px minmax(132px, 1fr) 32px auto; width: 100%; margin-left: 0; }
+    .planner { padding: 9px 8px 10px; }
+    .planner-head { align-items: flex-start; flex-direction: column; gap: 5px; margin-bottom: 7px; }
+    .planner-head p { display: none; }
+    .grid-scroll { max-height: 386px; border-radius: var(--border-radius-md); }
+    .calendar-grid { grid-template-columns: 102px repeat(7, minmax(108px, 1fr)); min-width: 858px; }
+    .grid-corner { padding-left: 9px; }
+    .meal-head { padding: 11px 8px; }
+    .cell-inner { padding-right: 9px; padding-left: 11px; }
+    .editor-layer { padding: 8px; }
+    .editor-card { border-radius: var(--border-radius-md); }
+    .editor-body { padding: 15px; }
+    .field-row { grid-template-columns: minmax(0, 1fr) 96px; }
+  }
+</style>
+</head>
+<body>
+<div class="app" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="5.5"></circle>
+          <path d="M3.5 4v5.5M6 4v5.5M3.5 7h2.5M4.75 9.5V20M20 4v16M20 4c-2 1.8-2 5.2 0 7"></path>
+        </svg>
+      </div>
+      <div class="brand-copy">
+        <div class="kicker">WEEKLY MEAL MAP</div>
+        <h1>Meal planner</h1>
+        <p class="subtitle">Arrange planned meals across a weekly calendar.</p>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost" id="aiPlan" type="button">
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m9.5 2 1.1 3.4L14 6.5l-3.4 1.1L9.5 11 8.4 7.6 5 6.5l3.4-1.1L9.5 2ZM15.5 11l.7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z"></path>
+        </svg>
+        <span>Plan with AI</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview" aria-label="Week overview">
+    <div class="overview-number">
+      <strong id="plannedCount">0</strong>
+      <span>of 21 meals<br>planned</span>
+    </div>
+    <div class="metric"><strong id="openCount">21</strong><span>open spots</span></div>
+    <div class="metric"><strong id="servingsCount">0</strong><span>servings</span></div>
+    <div class="week-switcher">
+      <button class="icon-button" id="prevWeek" type="button" aria-label="Previous week">
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m12.5 5-5 5 5 5"></path></svg>
+      </button>
+      <div class="week-copy">
+        <strong id="weekRange">This week</strong>
+        <span id="weekCaption">7-day plan</span>
+      </div>
+      <button class="icon-button" id="nextWeek" type="button" aria-label="Next week">
+        <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="m7.5 5 5 5-5 5"></path></svg>
+      </button>
+      <button class="today-button" id="todayWeek" type="button">Today</button>
+    </div>
+  </section>
+
+  <main class="planner">
+    <div class="planner-head">
+      <div class="legend" id="legend" aria-label="Meal type colors"></div>
+      <p>Tap any slot to add or edit a meal</p>
+    </div>
+    <div class="grid-scroll">
+      <div class="calendar-grid" id="calendar" role="grid" aria-label="Weekly meal plan"></div>
+    </div>
+  </main>
+
+  <div class="editor-layer" id="editorLayer" hidden>
+    <form class="editor-card" id="mealForm">
+      <div class="editor-accent" id="editorAccent"></div>
+      <div class="editor-body">
+        <div class="editor-top">
+          <div>
+            <p class="editor-kicker" id="editorKicker">Dinner · Monday</p>
+            <h2 id="editorTitle">Plan a meal</h2>
+          </div>
+          <button class="close-button" id="closeEditor" type="button" aria-label="Close editor">
+            <svg aria-hidden="true" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="m5 5 10 10M15 5 5 15"></path></svg>
+          </button>
+        </div>
+        <div class="field-row">
+          <label class="field">
+            <span class="field-label">Dish</span>
+            <input class="input" id="dishInput" autocomplete="off" maxlength="100" placeholder="e.g. Lemon herb chicken" required>
+          </label>
+          <label class="field">
+            <span class="field-label">Servings</span>
+            <input class="input" id="servingsInput" type="number" min="1" max="99" step="1" inputmode="numeric" required>
+          </label>
+        </div>
+        <label class="field">
+          <span class="field-label">Ingredients note <span>Optional</span></span>
+          <textarea class="input" id="noteInput" maxlength="280" placeholder="Key ingredients, prep reminders, or what to use up…"></textarea>
+        </label>
+        <div class="editor-actions">
+          <button class="button delete-button" id="deleteMeal" type="button" hidden>Delete</button>
+          <div class="action-right">
+            <button class="button" id="cancelEditor" type="button">Cancel</button>
+            <button class="button save-button" type="submit">Save meal</button>
+          </div>
+        </div>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="application/json" id="oma-manifest">
+{ "manifest_version": 1, "settings": [], "uses_shared": ["locale", "week_start", "date_format", "density", "confirm_delete"] }
+</script>
+
+<script type="module">
+  const mealTypes = ["breakfast", "lunch", "dinner"];
+  const toneVars = {
+    breakfast: "var(--breakfast)",
+    lunch: "var(--lunch)",
+    dinner: "var(--dinner)"
+  };
+  const hints = {
+    breakfast: "Start the day",
+    lunch: "Midday reset",
+    dinner: "Evening table"
+  };
+
+  const app = document.getElementById("app");
+  const calendar = document.getElementById("calendar");
+  const editorLayer = document.getElementById("editorLayer");
+  const mealForm = document.getElementById("mealForm");
+  const dishInput = document.getElementById("dishInput");
+  const servingsInput = document.getElementById("servingsInput");
+  const noteInput = document.getElementById("noteInput");
+  const deleteMeal = document.getElementById("deleteMeal");
+
+  let currentState = { items: [] };
+  let selectedWeekStart = null;
+  let weekStartMode = null;
+  let editingKey = null;
+  let editingId = null;
+  let draft = null;
+  let deleteArmed = false;
+  let deleteArmTimer = null;
+  let recentlySavedKey = null;
+  let saveTimer = null;
+  let seedStarted = false;
+
+  const locale = () => {
+    const value = oma.pref("locale", "auto");
+    return value === "auto" ? navigator.language : value;
+  };
+
+  function localISO(date) {
+    const y = date.getFullYear();
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    const d = String(date.getDate()).padStart(2, "0");
+    return `${y}-${m}-${d}`;
+  }
+
+  function parseLocalISO(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value || "");
+    return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) : null;
+  }
+
+  function addDays(date, amount) {
+    const next = new Date(date);
+    next.setDate(next.getDate() + amount);
+    return next;
+  }
+
+  function startOfWeek(date, mode = oma.pref("week_start", "monday")) {
+    const startIndex = mode === "sunday" ? 0 : mode === "saturday" ? 6 : 1;
+    const result = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+    result.setDate(result.getDate() - ((result.getDay() - startIndex + 7) % 7));
+    return result;
+  }
+
+  function formatRange(start, end) {
+    const formatter = new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric", year: "numeric" });
+    return typeof formatter.formatRange === "function"
+      ? formatter.formatRange(start, end)
+      : `${formatter.format(start)} – ${formatter.format(end)}`;
+  }
+
+  function formatLongDate(date) {
+    const preference = oma.pref("date_format", "auto");
+    const iso = localISO(date);
+    if (preference === "yyyy-mm-dd") return iso;
+    const d = String(date.getDate()).padStart(2, "0");
+    const m = String(date.getMonth() + 1).padStart(2, "0");
+    if (preference === "dd/mm/yyyy") return `${d}/${m}/${date.getFullYear()}`;
+    if (preference === "mm/dd/yyyy") return `${m}/${d}/${date.getFullYear()}`;
+    return new Intl.DateTimeFormat(locale(), { weekday: "long", month: "long", day: "numeric" }).format(date);
+  }
+
+  function titleCase(value) {
+    return value.charAt(0).toUpperCase() + value.slice(1);
+  }
+
+  function svgIcon(path) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 20 20");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.7");
+    svg.setAttribute("stroke-linecap", "round");
+    svg.setAttribute("stroke-linejoin", "round");
+    svg.setAttribute("aria-hidden", "true");
+    const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    shape.setAttribute("d", path);
+    svg.appendChild(shape);
+    return svg;
+  }
+
+  function visibleItems(state, days) {
+    const validDates = new Set(days.map(localISO));
+    return state.items.filter((item) => {
+      const type = mealTypes.includes(item.fields.meal_type) ? item.fields.meal_type : item.group;
+      return mealTypes.includes(type) && validDates.has(item.fields.date);
+    });
+  }
+
+  function buildSlotMap(state, days) {
+    const map = new Map();
+    for (const item of visibleItems(state, days)) {
+      const type = mealTypes.includes(item.fields.meal_type) ? item.fields.meal_type : item.group;
+      map.set(`${item.fields.date}|${type}`, item);
+    }
+    return map;
+  }
+
+  function renderLegend() {
+    const legend = document.getElementById("legend");
+    legend.replaceChildren();
+    for (const type of mealTypes) {
+      const item = document.createElement("span");
+      item.className = "legend-item";
+      item.style.setProperty("--tone", toneVars[type]);
+      const dot = document.createElement("span");
+      dot.className = "legend-dot";
+      const label = document.createElement("span");
+      label.textContent = type;
+      item.append(dot, label);
+      legend.appendChild(item);
+    }
+  }
+
+  function renderCalendar(days, slotMap) {
+    calendar.replaceChildren();
+    const today = localISO(new Date());
+
+    const corner = document.createElement("div");
+    corner.className = "grid-corner";
+    corner.setAttribute("role", "columnheader");
+    const cornerTitle = document.createElement("strong");
+    cornerTitle.textContent = "Meal";
+    const cornerSub = document.createElement("span");
+    cornerSub.textContent = "7-day view";
+    corner.append(cornerTitle, cornerSub);
+    calendar.appendChild(corner);
+
+    for (const day of days) {
+      const iso = localISO(day);
+      const head = document.createElement("div");
+      head.className = `day-head${iso === today ? " is-today" : ""}`;
+      head.setAttribute("role", "columnheader");
+      const weekday = document.createElement("span");
+      weekday.className = "day-name";
+      weekday.textContent = new Intl.DateTimeFormat(locale(), { weekday: "short" }).format(day);
+      const date = document.createElement("span");
+      date.className = "day-date";
+      date.textContent = new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(day);
+      head.append(weekday, date);
+      if (iso === today) {
+        const chip = document.createElement("span");
+        chip.className = "today-chip";
+        chip.textContent = "Today";
+        head.appendChild(chip);
+      }
+      calendar.appendChild(head);
+    }
+
+    for (const [rowIndex, type] of mealTypes.entries()) {
+      const mealHead = document.createElement("div");
+      mealHead.className = `meal-head${rowIndex === mealTypes.length - 1 ? " last-row" : ""}`;
+      mealHead.style.setProperty("--tone", toneVars[type]);
+      mealHead.setAttribute("role", "rowheader");
+      const bar = document.createElement("span");
+      bar.className = "meal-bar";
+      const copy = document.createElement("span");
+      copy.className = "meal-label";
+      const name = document.createElement("strong");
+      name.textContent = type;
+      const hint = document.createElement("span");
+      hint.textContent = hints[type];
+      copy.append(name, hint);
+      mealHead.append(bar, copy);
+      calendar.appendChild(mealHead);
+
+      for (const day of days) {
+        const iso = localISO(day);
+        const key = `${iso}|${type}`;
+        const item = slotMap.get(key);
+        const dish = (item?.fields.dish || "").trim();
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `meal-cell ${dish ? "filled" : "empty"}${iso === today ? " is-today" : ""}${rowIndex === mealTypes.length - 1 ? " last-row" : ""}${recentlySavedKey === key ? " just-saved" : ""}`;
+        button.style.setProperty("--tone", toneVars[type]);
+        button.setAttribute("role", "gridcell");
+        button.setAttribute("aria-label", `${dish ? `Edit ${dish}` : `Plan ${type}`} for ${formatLongDate(day)}`);
+
+        const inner = document.createElement("span");
+        inner.className = "cell-inner";
+        if (dish) {
+          const top = document.createElement("span");
+          const dishLabel = document.createElement("span");
+          dishLabel.className = "dish";
+          dishLabel.textContent = dish;
+          top.appendChild(dishLabel);
+          const note = (item.fields.ingredients_note || "").trim();
+          if (note) {
+            const noteLabel = document.createElement("span");
+            noteLabel.className = "note-preview";
+            noteLabel.textContent = note;
+            top.appendChild(noteLabel);
+          }
+          const meta = document.createElement("span");
+          meta.className = "cell-meta";
+          const servings = document.createElement("span");
+          servings.className = "servings";
+          servings.append(svgIcon("M6.5 9a2.5 2.5 0 1 0 0-5 2.5 2.5 0 0 0 0 5Zm7 1a2 2 0 1 0 0-4M2.5 16c.45-3.1 1.8-4.5 4-4.5s3.55 1.4 4 4.5m1-4.3c2.8-.45 4.4.9 5 3.3"));
+          const servingsValue = Math.max(1, Number.parseInt(item.fields.servings, 10) || 1);
+          servings.append(document.createTextNode(`${servingsValue} ${servingsValue === 1 ? "serving" : "servings"}`));
+          const edit = svgIcon("m5 14 1-3 7-7 3 3-7 7-4 1Zm6.5-8.5 3 3");
+          edit.classList.add("edit-glyph");
+          meta.append(servings, edit);
+          inner.append(top, meta);
+        } else {
+          const add = document.createElement("span");
+          add.className = "add-mark";
+          add.append(svgIcon("M10 5v10M5 10h10"));
+          const label = document.createElement("span");
+          label.className = "empty-label";
+          label.textContent = "Plan meal";
+          inner.append(add, label);
+        }
+        button.appendChild(inner);
+        button.onclick = () => openEditor(iso, type, item || null);
+        calendar.appendChild(button);
+      }
+    }
+  }
+
+  function renderEditor() {
+    if (!editingKey || !draft) {
+      editorLayer.hidden = true;
+      return;
+    }
+    editorLayer.hidden = false;
+    const [dateValue, type] = editingKey.split("|");
+    const date = parseLocalISO(dateValue);
+    editorLayer.style.setProperty("--tone", toneVars[type]);
+    document.getElementById("editorAccent").style.setProperty("--tone", toneVars[type]);
+    document.getElementById("editorKicker").textContent = `${titleCase(type)} · ${formatLongDate(date)}`;
+    document.getElementById("editorTitle").textContent = editingId ? "Edit this meal" : "Plan a meal";
+    dishInput.value = draft.dish;
+    servingsInput.value = draft.servings;
+    noteInput.value = draft.ingredients_note;
+    deleteMeal.hidden = !editingId;
+    deleteMeal.classList.toggle("armed", deleteArmed);
+    deleteMeal.textContent = deleteArmed ? "Sure? Delete" : "Delete";
+  }
+
+  function render(state) {
+    currentState = state;
+    const preferredStart = oma.pref("week_start", "monday");
+    if (!selectedWeekStart) selectedWeekStart = startOfWeek(new Date(), preferredStart);
+    if (weekStartMode !== null && weekStartMode !== preferredStart) {
+      selectedWeekStart = startOfWeek(selectedWeekStart, preferredStart);
+    }
+    weekStartMode = preferredStart;
+    app.dataset.density = oma.pref("density", "comfortable");
+
+    if (editingId && !state.items.some((item) => item.id === editingId)) closeEditor(false);
+
+    const days = Array.from({ length: 7 }, (_, index) => addDays(selectedWeekStart, index));
+    const slotMap = buildSlotMap(state, days);
+    const planned = [...slotMap.values()].filter((item) => (item.fields.dish || "").trim()).length;
+    const servings = [...slotMap.values()].reduce((total, item) => {
+      if (!(item.fields.dish || "").trim()) return total;
+      return total + Math.max(1, Number.parseInt(item.fields.servings, 10) || 1);
+    }, 0);
+    document.getElementById("weekRange").textContent = formatRange(days[0], days[6]);
+    const currentStart = localISO(startOfWeek(new Date(), preferredStart));
+    document.getElementById("weekCaption").textContent = localISO(selectedWeekStart) === currentStart ? "This week · 7-day plan" : "7-day plan";
+    document.getElementById("plannedCount").textContent = String(planned);
+    document.getElementById("openCount").textContent = String(21 - planned);
+    document.getElementById("servingsCount").textContent = String(servings);
+    renderCalendar(days, slotMap);
+    renderEditor();
+  }
+
+  function openEditor(date, type, item) {
+    editingKey = `${date}|${type}`;
+    editingId = item?.id || null;
+    draft = {
+      date,
+      meal_type: type,
+      dish: item?.fields.dish || "",
+      servings: String(Math.max(1, Number.parseInt(item?.fields.servings, 10) || 2)),
+      ingredients_note: item?.fields.ingredients_note || ""
+    };
+    deleteArmed = false;
+    renderEditor();
+    dishInput.focus();
+  }
+
+  function closeEditor(restoreFocus = true) {
+    const previousKey = editingKey;
+    editingKey = null;
+    editingId = null;
+    draft = null;
+    deleteArmed = false;
+    if (deleteArmTimer) clearTimeout(deleteArmTimer);
+    deleteArmTimer = null;
+    renderEditor();
+    if (restoreFocus && previousKey) {
+      const [date, type] = previousKey.split("|");
+      const target = [...calendar.querySelectorAll(".meal-cell")].find((cell) => cell.getAttribute("aria-label")?.includes(formatLongDate(parseLocalISO(date))) && cell.getAttribute("aria-label")?.toLowerCase().includes(type));
+      target?.focus();
+    }
+  }
+
+  function changeWeek(amount) {
+    closeEditor(false);
+    selectedWeekStart = addDays(selectedWeekStart, amount * 7);
+    render(currentState);
+  }
+
+  function seed() {
+    if (seedStarted) return;
+    seedStarted = true;
+    const base = startOfWeek(new Date(), oma.pref("week_start", "monday"));
+    const samples = [
+      { offset: 0, type: "breakfast", dish: "Berry oat breakfast jars", servings: 2, note: "Rolled oats, yoghurt, berries, chia; prep the night before" },
+      { offset: 0, type: "dinner", dish: "Miso salmon rice bowls", servings: 2, note: "Salmon, edamame, cucumber, rice, white miso" },
+      { offset: 1, type: "lunch", dish: "Roast vegetable couscous", servings: 3, note: "Use leftover roast vegetables; add feta and lemon" },
+      { offset: 2, type: "dinner", dish: "Ginger chicken lettuce cups", servings: 4, note: "Chicken mince, water chestnuts, herbs, lettuce" },
+      { offset: 4, type: "breakfast", dish: "Spinach feta omelette", servings: 2, note: "Use up the baby spinach" },
+      { offset: 5, type: "lunch", dish: "Tomato pesto toasties", servings: 2, note: "Sourdough, mozzarella, tomatoes, pesto" }
+    ];
+    for (const sample of samples) {
+      const date = localISO(addDays(base, sample.offset));
+      oma.addItem({
+        group: sample.type,
+        fields: {
+          date,
+          meal_type: sample.type,
+          dish: sample.dish,
+          servings: sample.servings,
+          ingredients_note: sample.note
+        }
+      });
+    }
+  }
+
+  dishInput.addEventListener("input", () => { if (draft) draft.dish = dishInput.value; });
+  servingsInput.addEventListener("input", () => { if (draft) draft.servings = servingsInput.value; });
+  noteInput.addEventListener("input", () => { if (draft) draft.ingredients_note = noteInput.value; });
+
+  mealForm.addEventListener("submit", (event) => {
+    event.preventDefault();
+    if (!draft || !draft.dish.trim()) return;
+    const fields = {
+      date: draft.date,
+      meal_type: draft.meal_type,
+      dish: draft.dish.trim(),
+      servings: Math.max(1, Number.parseInt(draft.servings, 10) || 1),
+      ingredients_note: draft.ingredients_note.trim()
+    };
+    const key = editingKey;
+    if (editingId) oma.updateItem(editingId, fields);
+    else oma.addItem({ group: draft.meal_type, fields });
+    recentlySavedKey = key;
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(() => {
+      recentlySavedKey = null;
+      render(currentState);
+    }, 650);
+    closeEditor(false);
+    render(currentState);
+  });
+
+  deleteMeal.addEventListener("click", () => {
+    if (!editingId) return;
+    if (oma.pref("confirm_delete", true) && !deleteArmed) {
+      deleteArmed = true;
+      renderEditor();
+      deleteArmTimer = setTimeout(() => {
+        deleteArmed = false;
+        renderEditor();
+      }, 3000);
+      return;
+    }
+    const id = editingId;
+    closeEditor(false);
+    oma.deleteItem(id);
+  });
+
+  document.getElementById("closeEditor").onclick = () => closeEditor();
+  document.getElementById("cancelEditor").onclick = () => closeEditor();
+  editorLayer.addEventListener("click", (event) => {
+    if (event.target === editorLayer) closeEditor();
+  });
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && !editorLayer.hidden) closeEditor();
+  });
+  document.getElementById("prevWeek").onclick = () => changeWeek(-1);
+  document.getElementById("nextWeek").onclick = () => changeWeek(1);
+  document.getElementById("todayWeek").onclick = () => {
+    closeEditor(false);
+    selectedWeekStart = startOfWeek(new Date(), oma.pref("week_start", "monday"));
+    render(currentState);
+  };
+
+  document.getElementById("aiPlan").onclick = () => {
+    const days = Array.from({ length: 7 }, (_, index) => addDays(selectedWeekStart, index));
+    const slotMap = buildSlotMap(currentState, days);
+    const existing = [];
+    for (const day of days) {
+      for (const type of mealTypes) {
+        const item = slotMap.get(`${localISO(day)}|${type}`);
+        if ((item?.fields.dish || "").trim()) {
+          existing.push(`${item.fields.date} ${type}: ${item.fields.dish} (${Math.max(1, Number.parseInt(item.fields.servings, 10) || 1)} servings)`);
+        }
+      }
+    }
+    const open = 21 - existing.length;
+    const kept = existing.length ? ` Keep these ${existing.length} existing meals unchanged: ${existing.join("; ")}.` : "";
+    // oma.sendMessage falls back to the clipboard outside a chat host, so this stays visible in standalone.
+    oma.sendMessage(`Please plan this week in my meal-planner collection (${localISO(days[0])} through ${localISO(days[6])}). Fill the ${open} open breakfast, lunch, and dinner slots with practical, varied dishes.${kept} For every new item, use group as the meal type and the exact fields {date, meal_type, dish, servings, ingredients_note}.`);
+  };
+
+  renderLegend();
+  oma.ready((state) => {
+    render(state);
+    // Gallery apps install EMPTY — sample data lives only in the oma-fixtures block (gallery preview).
+  });
+  oma.onChange(render);
+  oma.onPrefChange(() => render(currentState));
+</script>
+</body>
+</html>
