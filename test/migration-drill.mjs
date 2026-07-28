@@ -219,6 +219,12 @@ console.log("\n2b. a user's own 'library' app survives the rename; the stale 'ga
 }
 
 // ─────────────────────────────────────────────────── a real v1 registry (distribution, not branches)
+// The fixture is a REAL database, and real databases never ship: the publish snapshot bans *.db
+// wholesale (scripts/publish.mjs — a genuine store could carry genuine data). In the public tree
+// this section skips LOUDLY; the full drill still runs on every internal checkout and CI.
+if (!existsSync(join(ROOT, "test", "dump.db"))) {
+  console.log("\n3. test/dump.db — SKIPPED (internal-only fixture: real databases never ship)");
+} else {
 console.log("\n3. test/dump.db — a REAL v1 database (11 seeded components, no items)");
 {
   rm(DUMP_COPY);
@@ -239,6 +245,7 @@ console.log("\n3. test/dump.db — a REAL v1 database (11 seeded components, no 
   const w = store.execute({ type: "save_component", command_id: randomUUID(), name: comps[0].name, html: "<p>post-migration edit</p>", actor: "agent" });
   ok("a real migrated registry accepts a save", w.ok && w.version > comps[0].version);
   store.close();
+}
 }
 
 rm(V1); rm(DUMP_COPY);

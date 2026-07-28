@@ -7,6 +7,15 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.3.1 — 2026-07-28
+
+### Fixed
+
+- Public CI: the migration drill's real-database section now skips loudly when its
+  internal-only fixture is absent — real databases never ship (the publish snapshot bans
+  `*.db` wholesale), and the public tree crashed on the missing file. The full drill still
+  runs on every internal checkout.
+
 ## 0.3.0 — 2026-07-28
 
 The read/write surface was rebuilt around one self-evident envelope, the authoring
