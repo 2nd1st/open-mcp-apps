@@ -24,7 +24,7 @@ SPDX identifier: `AGPL-3.0-only`.
 ## The components / library — MIT
 
 The `components/` directory is the official **components/library** layer: the
-single-file HTML apps (dashboard, settings, gallery, and the example apps),
+single-file HTML apps (dashboard, settings, library, and the example apps),
 their fixtures, the `_system.css` design kit, and the demo data. These are
 licensed under the **MIT License** (see [`components/LICENSE`](components/LICENSE)).
 

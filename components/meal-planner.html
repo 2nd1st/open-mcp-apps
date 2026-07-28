@@ -690,7 +690,7 @@
 </div>
 
 <script type="application/json" id="oma-manifest">
-{ "manifest_version": 1, "settings": [], "uses_shared": ["locale", "week_start", "date_format", "density", "confirm_delete"] }
+{ "manifest_version": 2, "settings": [], "uses_shared": ["locale", "week_start", "date_format", "density", "confirm_delete"] }
 </script>
 
 <script type="module">
@@ -1126,7 +1126,7 @@
   renderLegend();
   oma.ready((state) => {
     render(state);
-    // Gallery apps install EMPTY — sample data lives only in the oma-fixtures block (gallery preview).
+    // Library apps install EMPTY — sample data lives only in the oma-fixtures block (library preview).
   });
   oma.onChange(render);
   oma.onPrefChange(() => render(currentState));

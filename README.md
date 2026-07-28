@@ -38,6 +38,20 @@ open_kanban  →  rendered inline, themed, persistent — reusable in every futu
 Components accumulate. Each one is single-purpose and independent — a board, a tracker, a
 splitter — minted for the task in front of you and kept for the next time you need it.
 
+## What it looks like
+
+The built-in library ships 16 ready-made apps — real, working previews, installed in a click:
+
+![The component library — live previews of ready-made apps](.github/screenshots/library.png)
+
+| | |
+|---|---|
+| ![Companion — an AI character with shared memory](.github/screenshots/companion.png) | ![Family Week — dinners, chores rotation, shopping and weekend plans](.github/screenshots/family-week.png) |
+| ![Study Cards — spaced repetition with review heatmap and deck shelf](.github/screenshots/study-cards.png) | ![Knowledge Cards — a visual library of saved answers](.github/screenshots/knowledge-cards.png) |
+
+Every app above is a single HTML file bound to plain data collections — written with the same
+`window.oma` API and authoring guide your AI will use for the apps it builds you.
+
 ## Install
 
 open-mcp-apps runs as a local MCP server. First get it **connected** to your host (below); then
@@ -61,7 +75,7 @@ https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps && node install.mjs`
 > Read https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.md and follow it.
 
 Either way, `install.mjs` registers the server into each host you pick (Claude Desktop, Claude Code,
-Codex), idempotently — it never clobbers your other servers, pins the exact `node` (native SQLite
+Codex), idempotently — it never clobbers your other servers, pins a stable `node` launcher (native SQLite
 ABI), reports what changed, and cleans up a pre-rename entry if one lingers. Your data lives in a
 **fixed per-user store** (not inside the clone), so every host shares the same apps and data. **After
 installing or updating, fully quit and reopen the host** (Cmd-Q, not just close the window) — it keeps
@@ -114,14 +128,39 @@ Multiple widgets in one conversation work fine (habit-streaks + meal-planner sid
 | `src/shell-runtime.js` | browser runtime injected into every component (`window.oma`) |
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
 | `src/guide.mjs` | the authoring contract the AI reads before generating a component |
-| `components/` | 3 system components installed on seed (settings, dashboard, gallery) + 8 gallery apps (bill-calendar, event-countdowns, habit-streaks, hydration-tally, keep-in-touch, meal-planner, savings-goals, spending-journal) — not auto-installed; browse the gallery app for live previews with sample data and one-click install |
+| `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
+| `components/` | 3 system components installed on seed (settings, dashboard, library) + 16 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
 
 ```bash
-node test/server-smoke.mjs   # 206 assertions over real stdio — incl. runtime component creation
-node test/http-smoke.mjs     #  19 assertions over the HTTP transport (incl. SSE /events)
-node test/seed-smoke.mjs     #   6 assertions on the seed / design-kit pipeline
-node test/files-smoke.mjs    #  31 assertions on the per-app file store (chunked uploads, GC races)
+npm test                     # every suite below, plus the static invariants and budget checks
+node test/server-smoke.mjs   # 351 assertions over real stdio — incl. runtime component creation
+node test/http-smoke.mjs     #  35 assertions over the HTTP transport (incl. SSE /events)
+node test/provenance.mjs     #  39 assertions that a component's author — its trust tier — is not overwritable
+node test/seed-smoke.mjs     #  12 assertions on the seed / design-kit pipeline
+node test/files-smoke.mjs    #  45 assertions on the per-app file store (chunked uploads, GC races)
 ```
+
+### Writing an app yourself
+
+The AI is the usual author, but it isn't the only one — its context window shouldn't be the ceiling
+on what an app can be. Build one in your own editor, with your own bundler, and install it:
+
+```bash
+node install-app.mjs ./my-app.html              # yours, full trust — same as an AI-authored app
+node install-app.mjs ./my-app.html --sandboxed  # untrusted: runs behind the runner, no capabilities
+node install-app.mjs --list                     # what's installed, and under whose provenance
+```
+
+One self-contained HTML document, ≤200 KB, no network requests — the engine injects the kit CSS,
+the host's design tokens and `window.oma`. The trade: the AI can no longer iterate on it (your file
+is the source of truth, you rebuild and re-install), though it can still read the source, and the
+app shares your data like any other. Provenance is not overwritable in either direction, so an app
+installed `--sandboxed` stays sandboxed until you delete it.
+
+**[`RUNTIME.md`](RUNTIME.md) is the contract** — the `window.oma` API in both modes, what a
+sandboxed app can still do, and the traps that only bite authors who aren't the AI. It carries a
+version (`oma.contract`) and `test/runtime-contract.mjs` pins it to the two runtimes' real
+surfaces, so it can't drift from them silently.
 
 ## Design positions (why it's built this way)
 
@@ -145,7 +184,7 @@ component that isn't locally trusted, plus reserved `security:*` / `policy:*` co
 generic data writes can't touch and an out-of-band privileged writer.
 
 **Honest status:** everything in the OSS version — your apps, AI-built apps, and the built-in
-gallery apps (all first-party) — runs locally in direct mode with full trust; there is nothing
+library apps (all first-party) — runs locally in direct mode with full trust; there is nothing
 third-party to sandbox yet. The runner is *built and tested but dormant*: it is the ready seam
 for shared/published components later, where review + sandboxing arrive together. See
 [`SECURITY.md`](SECURITY.md) for the full threat model and trust tiers.
@@ -156,7 +195,7 @@ for shared/published components later, where review + sandboxing arrive together
 |---|---|---|---|---|
 | **Claude Desktop** (local stdio) | ✅ | ✅ full loop incl. `sendMessage` reply | ✅ | ✅ |
 | **Browser viewer** (`/view/<name>`) | ✅ | ✅ (no chat attached — `sendMessage` degrades to a notice) | via CLI AI | ✅ |
-| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) | ✅ experimental | ❌ host's widget→server proxy not wired yet ([openai/codex#28912](https://github.com/openai/codex/issues/28912)) | ✅ | ✅ |
+| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code** (CLI, `claude mcp`) | — (text fallback by design) | — | ✅ | ✅ |
 | **codex CLI / IDE** | — (text fallback by design) | — | ✅ | ✅ |
 | **ChatGPT web** (Work mode) | supported by the standard — needs remote HTTPS (`/mcp` + tunnel), untested here | | | |
@@ -170,7 +209,7 @@ Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared s
 on Codex desktop and the browser viewer.
 
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system components installed (settings, dashboard, gallery); 8 gallery apps with live previews, one-click install
+- [x] system components installed (settings, dashboard, library); 16 library apps with live previews, one-click install
 - [x] AI component creation loop (guide → save → dynamic tool)
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys

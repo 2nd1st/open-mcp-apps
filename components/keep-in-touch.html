@@ -570,7 +570,7 @@
 </div>
 
 <script type="application/json" id="oma-manifest">
-{"manifest_version":1,"uses_shared":["locale","date_format","confirm_delete"]}
+{"manifest_version":2,"uses_shared":["locale","date_format","confirm_delete"]}
 </script>
 <script type="module">
   const DAY = 86400000;
@@ -950,7 +950,7 @@
   };
   document.getElementById("nextContact").oninput = (event) => event.currentTarget.setCustomValidity("");
 
-  oma.ready((state) => { render(state); });  // gallery apps install EMPTY — samples live in oma-fixtures (preview only)
+  oma.ready((state) => { render(state); });  // library apps install EMPTY — samples live in oma-fixtures (preview only)
   oma.onChange(render);
   oma.onPrefChange(() => render(latestState));
 </script>

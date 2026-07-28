@@ -23,7 +23,7 @@ came from:
   (policy writes, component save/delete/restore/install) is unreachable from any child at any tier.
 
 **Honest status:** the runner is *built and tested but not yet load-bearing*. Everything installable today
-is first-party — components you or your AI author, the seeded set, and `install_from_gallery` entries,
+is first-party — components you or your AI author, the seeded set, and `install_from_library` entries,
 which ship with the engine — and all of it runs in direct mode. No third-party content reaches the runner
 until a user-publishing pipeline lands, so treat it as a foundation, not a shipped guarantee.
 

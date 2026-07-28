@@ -118,7 +118,7 @@ await ch.appendUpload(bu.upload_id, "chunk-one ");
 const ap = await ch.appendUpload(bu.upload_id, "chunk-two");
 ok("appends accumulate the running size", ap.ok && ap.bytes === 19);
 const cm = await ch.commitUpload(bu.upload_id, "streamed.txt", { mime: "text/plain" });
-ok("commit lands the ref (v1, size 19, mime kept)", cm.ok && cm.meta.version === 1 && cm.meta.size === 19 && cm.meta.mime === "text/plain");
+ok("commit lands the ref (stamped with its ledger position, size 19, mime kept)", cm.ok && cm.meta.version > 0 && cm.meta.size === 19 && cm.meta.mime === "text/plain");
 const gotChunky = await ch.get("chunky", "streamed.txt");
 ok("get returns the exact assembled bytes", gotChunky && gotChunky.bytes.toString() === "chunk-one chunk-two" && gotChunky.meta.size === 19);
 // dedup: a chunked commit of bytes an earlier put() already stored → same sha, no second blob
@@ -144,11 +144,11 @@ ok("append after the staging file was swept → upload_expired", !ap4.ok && ap4.
 // OCC mismatch on commit: conflict; the freshly-linked NEW blob is left in place by the GC AGE
 // GUARD (a fresh unreferenced blob may be a racing writer's — only OLD orphans are unlinked),
 // and a later sweep reclaims it once it ages past the guard.
-await ch.put("occ-chunk", "target.txt", "version one");
+const occFirst = await ch.put("occ-chunk", "target.txt", "version one");
 const bu5 = await ch.beginUpload("occ-chunk");
 await ch.appendUpload(bu5.upload_id, "brand new content never stored before");
 const cm5 = await ch.commitUpload(bu5.upload_id, "target.txt", { expected_version: 99 });
-ok("commit with a stale expected_version → conflict", !cm5.ok && cm5.conflict === true && cm5.expected === 1);
+ok("commit with a stale expected_version → conflict", !cm5.ok && cm5.conflict === true && cm5.expected === occFirst.meta.version);
 ok("the fresh orphan blob is AGE-GUARDED (still on disk right after the conflict)", blobCount("occ-chunk") === 2);
 ok("the target file's bytes are untouched", (await ch.get("occ-chunk", "target.txt")).bytes.toString() === "version one");
 { // age the orphan past the guard → the sweep reclaims exactly it
@@ -168,6 +168,59 @@ const appendR = await appendP;
 ok("abort during append is either refused (busy) or the append fails clean — never a silent half-write",
   (abortRace.ok === false && abortRace.error === "upload_busy" && appendR.ok === true) || (abortRace.ok === true && appendR.ok === false));
 await ch.abortUpload(bu6.upload_id);
+
+console.log("11. write-set C appends — chunk dedup, sha precheck, and the commit that survives a lost reply");
+{
+  const enc = (s) => Buffer.from(s);
+  const u1 = await ch.beginUpload("chunky");
+  await ch.appendUpload(u1.upload_id, enc("AAAA"), { seq: 0 });
+  const dup = await ch.appendUpload(u1.upload_id, enc("AAAA"), { seq: 0 });
+  ok("a resent chunk index is acknowledged, not appended twice — the timeout-resend is now safe",
+    dup.ok === true && dup.duplicate === true && dup.bytes === 4);
+  const ooo = await ch.appendUpload(u1.upload_id, enc("BBBB"), { seq: 5 });
+  ok("a future index names the one expected", ooo.ok === false && ooo.error === "chunk_out_of_order" && ooo.expected === 1);
+  await ch.appendUpload(u1.upload_id, enc("BBBB"), { seq: 1 });
+  const wrong = await ch.commitUpload(u1.upload_id, "c.bin", { expected_sha256: "0".repeat(64) });
+  ok("expected_sha256 mismatch refuses LOSSLESSLY and names the actual hash",
+    wrong.ok === false && wrong.error === "sha256_mismatch" && /^[0-9a-f]{64}$/.test(wrong.actual));
+  const good = await ch.commitUpload(u1.upload_id, "c.bin", { command_id: "c15-commit", expected_sha256: wrong.actual });
+  ok("…the upload SURVIVED the refusal and commits with the right hash",
+    good.ok === true && good.meta.sha256 === wrong.actual && good.meta.size === 8);
+  // THE adversarial-challenge pin: the reply to a successful commit is lost, the upload is
+  // consumed, the host retries — and used to be told "start again with file_write_begin",
+  // inducing a full re-upload. The ledger answers first now.
+  const replay = await ch.commitUpload(u1.upload_id, "c.bin", { command_id: "c15-commit" });
+  ok("a retried commit with the same command_id returns the ORIGINAL receipt — no re-upload demanded",
+    replay.ok === true && replay.idempotent === true && replay.meta.sha256 === wrong.actual);
+  const reused = await ch.commitUpload("no-such-upload", "other.bin", { command_id: "c15-commit" });
+  ok("…while the same command_id aimed at a DIFFERENT path is refused",
+    reused.ok === false && reused.error === "command_id_reused");
+
+  // C-review residue: a duplicate index is only a duplicate if it carries the SAME bytes.
+  const u2 = await ch.beginUpload("chunky");
+  await ch.appendUpload(u2.upload_id, enc("AAA"), { seq: 0 });
+  const lied = await ch.appendUpload(u2.upload_id, enc("BBB"), { seq: 0 });
+  ok("a resend with DIFFERENT bytes is chunk_mismatch, never a false ack", lied.ok === false && lied.error === "chunk_mismatch");
+  await ch.appendUpload(u2.upload_id, enc("CCC"), { seq: 1 });
+  const old0 = await ch.appendUpload(u2.upload_id, enc("AAA"), { seq: 0 });
+  ok("an older staged index cannot be re-verified and is refused", old0.ok === false && old0.error === "chunk_already_staged");
+  await ch.abortUpload(u2.upload_id);
+  // C-review residue: the replay receipt is the ORIGINAL commit's, never the current row's.
+  const u3 = await ch.beginUpload("chunky");
+  await ch.appendUpload(u3.upload_id, enc("first"));
+  const k1 = await ch.commitUpload(u3.upload_id, "r.bin", { command_id: "c15-replay" });
+  const u4 = await ch.beginUpload("chunky");
+  await ch.appendUpload(u4.upload_id, enc("second-longer"));
+  await ch.commitUpload(u4.upload_id, "r.bin", { command_id: "c15-other" });
+  const kReplay = await ch.commitUpload(u3.upload_id, "r.bin", { command_id: "c15-replay" });
+  ok("a commit replay after an overwrite reports the ORIGINAL bytes, not the row's current state",
+    kReplay.ok === true && kReplay.idempotent === true && kReplay.meta.sha256 === k1.meta.sha256 && kReplay.meta.size === 5);
+  const u5 = await ch.beginUpload("other-comp");
+  await ch.appendUpload(u5.upload_id, enc("zzz"));
+  const cross = await ch.commitUpload(u5.upload_id, "r.bin", { command_id: "c15-replay" });
+  ok("a different component's live upload cannot ride an old command_id", cross.ok === false && cross.error === "command_id_reused");
+  await ch.abortUpload(u5.upload_id);
+}
 
 store.close();
 rmSync(TMP, { recursive: true, force: true });

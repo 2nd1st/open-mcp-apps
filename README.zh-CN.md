@@ -36,6 +36,20 @@ open_kanban  →  内联渲染、带主题、持久——以后每个对话都�
 组件会不断积累。每个都是单一用途、彼此独立的——一块看板、一个追踪器、一个分账器——为你眼前的任务
 铸造,并为你下次需要时留存。
 
+## 长什么样
+
+内置 library 自带 16 个现成 app——真实可交互的活预览,一键安装:
+
+![组件库——现成 app 的活预览](.github/screenshots/library.png)
+
+| | |
+|---|---|
+| ![Companion——有共同记忆的 AI 角色](.github/screenshots/companion.png) | ![Family Week——全家的一周:晚餐、家务轮值、购物与周末](.github/screenshots/family-week.png) |
+| ![Study Cards——间隔重复+复习热力图+卡组书架](.github/screenshots/study-cards.png) | ![Knowledge Cards——可视化的答案收藏库](.github/screenshots/knowledge-cards.png) |
+
+上面每个 app 都是绑定在普通数据集合上的单文件 HTML——用的是你的 AI 将来给你造 app 时
+同一套 `window.oma` API 与写作指南。
+
 ## 安装
 
 open-mcp-apps 是一个本地 MCP server。先把它**接上**你的 host(见下);之后 **onboarding 在 host 里
@@ -57,7 +71,7 @@ curl -fsSL https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.s
 > Read https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.md and follow it.
 
 两种方式最终都靠 `install.mjs` 把 server 幂等注册进你勾选的每个 host(Claude Desktop、Claude Code、Codex)——
-不覆盖其它 server,pin 住那个 `node`(原生 SQLite ABI),报告改了什么,并清理 rename 前的旧 entry。你的数据
+不覆盖其它 server,pin 稳定的 `node` 启动器(原生 SQLite ABI),报告改了什么,并清理 rename 前的旧 entry。你的数据
 存在一个**固定的用户级 store**(不在 clone 里),所以每个 host 看到同一份 app 和数据。**装完/更新后,彻底退出
 并重开 host**(Cmd-Q,不是关窗)—— 不彻底退出,它会一直挂着连旧数据的旧 server 进程。*remote / 一键安装
 (不用 shell)之后再做。*
@@ -102,14 +116,36 @@ widget 并存没问题(habit-streaks + meal-planner 并排)。
 | `src/shell-runtime.js` | 注入每个组件的浏览器 runtime(`window.oma`) |
 | `src/shell.mjs` | 在提供时用 runtime + design-token 兜底包裹存储的 HTML |
 | `src/guide.mjs` | AI 生成组件前读的 authoring 契约 |
-| `components/` | seed 时装 3 个 system 组件(settings、dashboard、gallery)+ 8 个 gallery app(bill-calendar、event-countdowns、habit-streaks、hydration-tally、keep-in-touch、meal-planner、savings-goals、spending-journal)——不自动安装;在 gallery app 里浏览、带示例数据实时预览、一键安装 |
+| `install-app.mjs` | 安装你自己写的 app(从文件)——唯一一扇不经过 AI 的注册表入口 |
+| `components/` | seed 时装 3 个 system 组件(settings、dashboard、library)+ 16 个 library app——不自动安装;在 library app 里浏览、带示例数据实时预览、一键安装 |
 
 ```bash
-node test/server-smoke.mjs   # 206 条断言,走真实 stdio——含运行时组件创建
-node test/http-smoke.mjs     #  19 条断言,走 HTTP transport(含 SSE /events)
-node test/seed-smoke.mjs     #   6 条断言,验 seed / design-kit 流水线
-node test/files-smoke.mjs    #  31 条断言,验 per-app 文件存储(分块上传、GC 竞态)
+npm test                     # 下面每个 suite,外加静态不变量与预算检查
+node test/server-smoke.mjs   # 351 条断言,走真实 stdio——含运行时组件创建
+node test/http-smoke.mjs     #  44 条断言,走 HTTP transport(含 SSE /events)
+node test/provenance.mjs     #  39 条断言,验组件 author(信任层)不可被覆写
+node test/seed-smoke.mjs     #  14 条断言,验 seed / design-kit 流水线
+node test/files-smoke.mjs    #  45 条断言,验 per-app 文件存储(分块上传、GC 竞态)
 ```
+
+### 自己写一个 app(场外开发)
+
+AI 是通常的作者,但不是唯一的作者——它的 context window 不应该是一个 app 复杂度的天花板。
+在你自己的编辑器里写、用你自己的 bundler 构建,然后装进来:
+
+```bash
+node install-app.mjs ./my-app.html              # 你写的,完全信任——与 AI 写的同权
+node install-app.mjs ./my-app.html --sandboxed  # 不受信:跑在 runner 后面,零 capability
+node install-app.mjs --list                     # 装了什么、各自的 provenance
+```
+
+一个自包含的 HTML 文档,≤200 KB,不发网络请求——引擎会注入 kit CSS、宿主 design token 和
+`window.oma`。交换条件:AI 不再能迭代它(你的文件是唯一真相,改了重装),但仍能读它的源码,
+app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`--sandboxed` 装进来的 app
+在删除之前永远在沙盒里。
+
+**[`RUNTIME.md`](RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
+以及只咬非 AI 作者的那些坑。带版本号,且被测试双向钉住。
 
 ## 设计取向(为什么这么建)
 
@@ -127,7 +163,7 @@ node test/files-smoke.mjs    #  31 条断言,验 per-app 文件存储(分块上�
 一个沙箱化的 `srcdoc` iframe,CSP-first 文档 + 最小只读 bridge——作为任何非本地可信组件的强制执行模式;
 另有保留的 `security:*` / `policy:*` 配置 key(通用 data 写入碰不到)和一个 out-of-band 特权写入器。
 
-**诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 gallery 的 app(全部第一方出品)——
+**诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 library 的 app(全部第一方出品)——
 都以 direct mode 全信任本地运行;目前还没有任何第三方内容需要沙箱。runner *已建成并测试过,但处于休眠*:
 它是将来共享/发布组件的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
 [`SECURITY.md`](SECURITY.md)。
@@ -138,7 +174,7 @@ node test/files-smoke.mjs    #  31 条断言,验 per-app 文件存储(分块上�
 |---|---|---|---|---|
 | **Claude Desktop**(本地 stdio) | ✅ | ✅ 完整循环,含 `sendMessage` 回复 | ✅ | ✅ |
 | **浏览器 viewer**(`/view/<name>`) | ✅ | ✅(无 chat 连接——`sendMessage` 降级为提示) | 经 CLI AI | ✅ |
-| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag) | ✅ 实验性 | ❌ host 的 widget→server proxy 还没接([openai/codex#28912](https://github.com/openai/codex/issues/28912)) | ✅ | ✅ |
+| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag) | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增仍被 host 侧拦([openai/codex#28912](https://github.com/openai/codex/issues/28912),见 KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code**(CLI,`claude mcp`) | —(设计上走文本 fallback) | — | ✅ | ✅ |
 | **codex CLI / IDE** | —(设计上走文本 fallback) | — | ✅ | ✅ |
 | **ChatGPT web**(Work mode) | 标准支持——需远程 HTTPS(`/mcp` + tunnel),此处未测 | | | |
@@ -151,7 +187,7 @@ node test/files-smoke.mjs    #  31 条断言,验 per-app 文件存储(分块上�
 验证。
 
 - [x] 引擎:registry + shell + 通用 data command + ledger
-- [x] 只装 system 组件(settings、dashboard、gallery);8 个 gallery app 可在 gallery 里浏览预览、一键安装
+- [x] 只装 system 组件(settings、dashboard、library);16 个 library app 可在 library 里浏览预览、一键安装
 - [x] AI 组件创建循环(guide → save → 动态 tool)
 - [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key

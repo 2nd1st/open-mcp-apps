@@ -1,20 +1,21 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// test/seed-smoke.mjs — proves seed.mjs kit-propagation + cross-run idempotency
-// (design-system §6.1 / D7: kit inlined via the @OMA_SYSTEM_CSS marker, then the FINAL
-// bytes are hashed, so a kit-only edit yields a new version for every marker-bearing
-// component and none of the others). Uses its OWN temp OMA_DB and restores
-// components/_system.css byte-exact in a finally block. Run: node test/seed-smoke.mjs
+// test/seed-smoke.mjs — proves seed.mjs stores the FILE's bytes and is idempotent across runs,
+// and that the system UI kit reaches components by INJECTION rather than by being baked into
+// stored source. The kit used to be spliced in at seed time through a per-file marker, which
+// meant (a) only the three marker-bearing system components ever had it and (b) a kit edit
+// needed a re-seed to land. Both properties are inverted now and pinned below.
+// Uses its OWN temp OMA_DB and restores components/_system.css byte-exact in a finally block.
+// Run: node test/seed-smoke.mjs
 import { execFileSync } from "node:child_process";
 import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import { dirname, join, basename } from "node:path";
+import { dirname, join } from "node:path";
 import { openStore } from "../src/store.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "seed-smoke.db");
 const CSS = join(ROOT, "components", "_system.css");
-const MARKER = "<!-- @OMA_SYSTEM_CSS -->";
 const rmdb = () => { for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f); };
 
 let pass = 0, fail = 0;
@@ -26,11 +27,15 @@ const versions = () => {
   s.close();
   return v;
 };
+// KIT_CSS caches on first read, so every kit observation runs in a FRESH process.
+const wrapped = () => execFileSync("node", ["-e",
+  'import("./src/shell.mjs").then(m=>{const d=m.wrapComponent("<p>x</p>");process.stdout.write(JSON.stringify({kit:/<style data-oma="kit">/.test(d),probe:d.includes("SEED_SMOKE_KIT_PROBE"),loader:/<style data-oma="kit">/.test(m.wrapLoader())}))})',
+], { cwd: ROOT, encoding: "utf-8" });
 
 // Capture the ORIGINAL bytes; restore them ONLY if the file still holds our probe write —
 // a concurrent editor's change must never be clobbered by the restore.
 const cssOriginal = readFileSync(CSS, "utf-8");
-const cssProbed = cssOriginal + "\n/* seed-smoke kit-edit probe */\n";
+const cssProbed = cssOriginal + "\n/* SEED_SMOKE_KIT_PROBE */\n";
 rmdb();
 try {
   console.log("1. seed is idempotent across runs (same temp db)");
@@ -41,22 +46,49 @@ try {
   ok("first seed produced components", Object.keys(v1).length > 0);
   ok("second seed is a no-op (all versions unchanged)", Object.keys(v1).every((n) => v1[n] === v2[n]));
 
-  console.log("1b. only SYSTEM components are installed; gallery entries are NOT");
+  console.log("1b. only SYSTEM components are installed; library entries are NOT");
   const installed = Object.keys(v1);
-  ok("settings + dashboard + gallery installed", ["settings", "dashboard", "gallery"].every((n) => installed.includes(n)));
-  ok("gallery entries (habit-streaks/meal-planner/bill-calendar) NOT auto-installed", ["habit-streaks", "meal-planner", "bill-calendar"].every((n) => !installed.includes(n)));
+  ok("settings + dashboard + library installed", ["settings", "dashboard", "library"].every((n) => installed.includes(n)));
+  ok("library entries (habit-streaks/meal-planner/bill-calendar) NOT auto-installed", ["habit-streaks", "meal-planner", "bill-calendar"].every((n) => !installed.includes(n)));
 
-  console.log("2. a kit edit propagates to marker-bearing components ONLY");
-  const files = readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html"));
-  const marker = [], plain = [];
-  for (const f of files) (readFileSync(join(ROOT, "components", f), "utf-8").includes(MARKER) ? marker : plain).push(basename(f, ".html"));
-  console.log(`   marker-bearing: [${marker.join(", ") || "none"}]   non-marker: [${plain.join(", ")}]`);
-  // append one comment to the kit → the inlined bytes change for every marker-bearing component
-  writeFileSync(CSS, cssProbed);
+  console.log("2. stored bytes are the FILE's bytes — the kit is not baked in");
+  const stored = (() => { const s = openStore(DB); const h = s.getComponent("settings").html; s.close(); return h; })();
+  ok("a seeded component's stored html equals its source file byte-for-byte",
+    stored === readFileSync(join(ROOT, "components", "settings.html"), "utf-8"));
+  ok("no stored component carries a kit <style> or the retired marker",
+    !stored.includes('data-oma="kit"') && !stored.includes("@OMA_SYSTEM_CSS"));
+  ok("the marker is gone from every shipped component file",
+    readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html"))
+      .every((f) => !readFileSync(join(ROOT, "components", f), "utf-8").includes("@OMA_SYSTEM_CSS")));
+
+  console.log("3. the kit reaches EVERY document by injection, with no re-seed");
+  const before = JSON.parse(wrapped());
+  ok("wrapComponent injects the kit for any component", before.kit);
+  ok("wrapLoader injects it too (the universal-loader document)", before.loader);
+  ok("…and does not yet contain the probe", !before.probe);
+  writeFileSync(CSS, cssProbed);            // edit the kit — nothing re-seeded, nothing rebuilt
+  const after = JSON.parse(wrapped());
+  ok("a kit edit is live in the very next rendered document", after.probe);
   seed();
   const v3 = versions();
-  ok("every marker-bearing component bumped exactly one version", marker.every((n) => v3[n] === v2[n] + 1));
-  ok("non-marker components did NOT bump (kit is inlined, never globally injected)", plain.every((n) => v3[n] === v2[n]));
+  ok("…and moves NO component version (the kit is not part of stored source)",
+    Object.keys(v2).every((n) => v3[n] === v2[n]));
+
+  console.log("4. seed never overwrites a NON-SEED component that holds a system name");
+  {
+    // Turn the seeded 'library' row into what a migrated v0.2.0 store can legally contain: a
+    // user-authored app that took the name before it was reserved. The seeder must refuse the
+    // slot loudly and leave the user's bytes alone — degraded ship, never a clobber.
+    const s = openStore(DB);
+    s.db.prepare("UPDATE component SET author='agent', html='<p>the user built this</p>' WHERE name='library'").run();
+    s.close();
+    const log4 = seed();
+    const s2 = openStore(DB);
+    const row = s2.getComponent("library");
+    s2.close();
+    ok("the seeder refused the occupied name and said so", /library — name taken by a non-seed component/.test(log4));
+    ok("the user's bytes and authorship survived the seed run", row.html === "<p>the user built this</p>" && row.author === "agent");
+  }
 } finally {
   const now = readFileSync(CSS, "utf-8");
   if (now === cssProbed) writeFileSync(CSS, cssOriginal); // undo only OUR probe write

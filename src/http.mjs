@@ -21,8 +21,8 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { openStore } from "./store.mjs";
-import { createEngine, tierOf, RUNNER_REQUIRED_HTML } from "./engine.mjs";
-import { wrapComponent } from "./shell.mjs";
+import { createEngine, tierOf, defaultCollectionFor } from "./engine.mjs";
+import { wrapComponent, wrapLoader } from "./shell.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -30,7 +30,13 @@ const store = openStore(); // fixed per-user data dir (see store.mjs) — OMA_DB
 
 // ---- a resident in-process MCP client for /rpc (the browser viewer's backend) ----------
 const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-const viewerEngine = createEngine(store, { hostLabel: "browser-viewer" });
+// Every app link handed to the model is built from this. A process cannot discover the address
+// the outside world reaches it by: put this server behind a tunnel or a reverse proxy — which is
+// exactly how it gets connected to a hosted chat — and the loopback URL it prints is dead for the
+// only reader that matters. So it is loopback by DEFAULT (right for the local case) and overridable
+// by the operator who does know. Trailing slashes are trimmed where it is used.
+const VIEW_BASE = process.env.OMA_VIEW_BASE || `http://127.0.0.1:${PORT}`;
+const viewerEngine = createEngine(store, { hostLabel: "browser-viewer", viewBase: VIEW_BASE });
 await viewerEngine.connect(serverTransport);
 const viewerClient = new Client({ name: "browser-viewer", version: "0.1.0" });
 await viewerClient.connect(clientTransport);
@@ -55,9 +61,32 @@ const readBody = (req) => new Promise((resolve, reject) => {
   req.on("error", reject);
 });
 
+// Origin validation (MCP transports spec, MUST): a web page that DNS-rebinds its domain to
+// 127.0.0.1 can POST here same-origin — and /rpc is the full unauthenticated tool surface.
+// Such requests carry the attacker page's Origin; everything legitimate carries either none
+// (curl, MCP clients, tunnel ingress), a loopback origin (the standalone shell's own fetches,
+// any port — local pages are not the rebinding threat), or the origin the operator already
+// declared via OMA_VIEW_BASE (the shell served THROUGH a tunnel fetches /rpc with the tunnel's
+// Origin — refusing it would kill the tunneled browser viewer). Anything else → 403.
+// The hosted deployment is out of scope here: its Origin/CSRF story belongs to the BFF
+// (see docs/spec-conformance.md).
+const originAllowed = (origin) => {
+  if (!origin) return true;
+  let o;
+  try { o = new URL(origin); } catch { return false; } // includes Origin: null
+  if (o.hostname === "localhost" || o.hostname === "127.0.0.1" || o.hostname === "[::1]") return true;
+  if (process.env.OMA_VIEW_BASE) {
+    try { if (o.origin === new URL(process.env.OMA_VIEW_BASE).origin) return true; } catch {}
+  }
+  return false;
+};
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   try {
+    if (!originAllowed(req.headers.origin)) {
+      return json(res, 403, { isError: true, content: [{ type: "text", text: "forbidden origin" }] });
+    }
     // ---- MCP over Streamable HTTP (stateless: a fresh engine per request; the tool list
     // is rebuilt from the live registry every time, so new components appear immediately) ----
     if (url.pathname === "/mcp") {
@@ -75,7 +104,7 @@ const server = http.createServer(async (req, res) => {
         const ua = String(req.headers["user-agent"] || "").trim();
         hostLabel = ua ? "http:" + ua.split(/[\s/]/)[0].toLowerCase().slice(0, 32) : "remote-http";
       }
-      const engine = createEngine(store, { hostLabel });
+      const engine = createEngine(store, { hostLabel, viewBase: VIEW_BASE });
       await engine.connect(transport);
       await transport.handleRequest(req, res, body);
       res.on("close", () => { transport.close(); engine.close?.(); });
@@ -86,6 +115,26 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/rpc" && req.method === "POST") {
       const { name, arguments: args } = JSON.parse((await readBody(req)) || "{}");
       if (!name) return json(res, 400, { isError: true, content: [{ type: "text", text: "name required" }] });
+      // Internal `_` methods (write-set D): the Data pane's non-tool verbs — undo and the
+      // via-bearing ledger view. Deliberately NOT MCP tools (the ledger stays off the AI face,
+      // §9-4: "undo = a store verb + a Data pane entry, not a tool"), so they exist only on
+      // this browser-session transport; the runner denies the `_` prefix to sandboxed children.
+      if (name === "_undo_last") {
+        const a = args || {};
+        const r = store.undoLast(String(a.target || ""), a.expected_seq != null ? { expectedSeq: a.expected_seq } : {});
+        return json(res, 200, {
+          content: [{ type: "text", text: r.ok ? "undone" : r.error === "stale_undo" ? "That entry changed since you looked — reload." : String(r.error || "failed") }],
+          structuredContent: r, ...(r.ok ? {} : { isError: true }),
+        });
+      }
+      if (name === "_ledger_recent") {
+        const a = args || {};
+        const events = store.recentEvents({ collection: a.collection, limit: a.limit });
+        return json(res, 200, { content: [{ type: "text", text: `${events.length} event(s)` }], structuredContent: { events } });
+      }
+      if (name.startsWith("_")) {
+        return json(res, 200, { isError: true, content: [{ type: "text", text: `unknown internal method "${name}"` }] });
+      }
       const result = await viewerClient.callTool({ name, arguments: args || {} });
       return json(res, 200, result);
     }
@@ -120,15 +169,31 @@ const server = http.createServer(async (req, res) => {
     if (view && req.method === "GET") {
       const comp = store.getComponent(view[1]);
       if (!comp) return html(res, 404, `<h3>No component "${view[1]}"</h3>`);
-      // Tier gate (docs/security-model.md §2.3): /view serves DIRECT mode — the real
-      // window.oma, and this route's connect-src 'self' reaches /rpc. Non-local tiers fail
-      // closed to the placeholder (no runner exists on this path yet); every component today
-      // is local, so nothing changes until one isn't.
+      // Same binding rule the open_component tool uses — one answer to "what does this app open on".
+      const collection = url.searchParams.get("collection") || defaultCollectionFor(comp);
+      // Tier branch (docs/security-model.md §2.3). DIRECT mode — the real window.oma, and this
+      // route's connect-src 'self' reaches /rpc — is for local components only. A non-local one
+      // gets the universal loader instead, which reads component_html over /rpc, sees the tier and
+      // hands the source to oma.embed → the runner, with engine-computed caps. Before this branch
+      // the route fail-closed to a placeholder, which was correct while non-local components could
+      // not exist; the local install door (install-app.mjs --sandboxed) is what made them exist,
+      // and an app you cannot open in the viewer is an app you cannot develop against.
+      //
+      // No CSP change: about:srcdoc frames are exempt from frame-src and inherit this policy, so
+      // the runner's child renders under the same wall the direct path uses (see VIEW_CSP above —
+      // settings' Library preview has relied on exactly this since it shipped).
       if (tierOf(comp.author) !== "local")
-        return html(res, 403, RUNNER_REQUIRED_HTML, { "content-security-policy": VIEW_CSP });
-      const collection = url.searchParams.get("collection") || view[1];
+        return html(res, 200, wrapLoader({
+          standalone: { endpoint: "/rpc", collection, component: view[1],
+            ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
+        }), { "content-security-policy": VIEW_CSP });
       return html(res, 200, wrapComponent(comp.html, {
-        standalone: { endpoint: "/rpc", collection, component: view[1] },
+        // viewBase reaches the RUNTIME only when the operator set one. Component→component links
+        // default to a relative "/view/", which is correct for a plain local server and wrong behind
+        // a path-prefixed proxy — where OMA_VIEW_BASE is exactly the operator saying what the prefix
+        // is. Passing it unconditionally would turn every in-app link absolute (127.0.0.1), which
+        // silently breaks the ordinary `localhost:PORT` visit: different origin, same server.
+        standalone: { endpoint: "/rpc", collection, component: view[1], ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         version: comp.version,   // render-health identity (auto-revert reports)
       }), { "content-security-policy": VIEW_CSP });
     }
@@ -136,14 +201,14 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/" && req.method === "GET") {
       const comps = store.listComponents();
       const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-      const SYSTEM_ORDER = ["dashboard", "gallery", "settings"];
+      const SYSTEM_ORDER = ["dashboard", "library", "settings"];
       const system = SYSTEM_ORDER.map((n) => comps.find((c) => c.name === n)).filter(Boolean);
       const apps = comps.filter((c) => !SYSTEM_ORDER.includes(c.name));
-      const sysIcon = { dashboard: "M3 3h7v7H3zM12 3h7v4h-7zM12 9h7v10h-7zM3 12h7v8H3z", gallery: "M4 5h16v14H4zM4 15l4-4 3 3 5-5 4 4", settings: "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 12h2m12 0h2M12 4v2m0 12v2" };
+      const sysIcon = { dashboard: "M3 3h7v7H3zM12 3h7v4h-7zM12 9h7v10h-7zM3 12h7v8H3z", library: "M4 5h16v14H4zM4 15l4-4 3 3 5-5 4 4", settings: "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 12h2m12 0h2M12 4v2m0 12v2" };
       const card = (c, big) => `<a class="card${big ? " big" : ""}" href="/view/${esc(c.name)}">
         ${big ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${sysIcon[c.name] || sysIcon.dashboard}"/></svg>` : ""}
         <span class="n">${esc(c.name)}</span><span class="v">v${c.version}</span>
-        <span class="d">${esc(c.description || (c.author === "gallery" ? "gallery app" : "app"))}</span></a>`;
+        <span class="d">${esc(c.description || (c.author === "library" ? "library app" : "app"))}</span></a>`;
       return html(res, 200, `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>open-mcp-apps</title><style>
   :root{color-scheme:light dark}
   body{margin:0;padding:48px 20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:Canvas;color:CanvasText}
@@ -168,7 +233,7 @@ const server = http.createServer(async (req, res) => {
   ${system.length ? `<h2>System</h2><div class="grid">${system.map((c) => card(c, true)).join("")}</div>` : ""}
   <h2>Apps · ${apps.length}</h2>
   ${apps.length ? `<div class="grid">${apps.map((c) => card(c, false)).join("")}</div>`
-    : `<div class="empty">No apps yet. Ask your AI in chat to build one — or open the <a href="/view/gallery">gallery</a> and install a ready-made app.</div>`}
+    : `<div class="empty">No apps yet. Ask your AI in chat to build one — or open the <a href="/view/library">library</a> and install a ready-made app.</div>`}
   <p class="foot">MCP endpoint: <code>POST /mcp</code> · store: shared with every chat host on this machine</p>
 </div></body></html>`);
     }

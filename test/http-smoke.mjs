@@ -16,7 +16,9 @@ import { wrapComponent } from "../src/shell.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "http-smoke.db");
-const PORT = 8931;
+// High default so a dev server on the classic 89xx range can't wedge the suite; override to
+// taste with OMA_TEST_PORT (the fixture also binds PORT+1).
+const PORT = Number(process.env.OMA_TEST_PORT) || 18931;
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
 { // seed
@@ -56,8 +58,14 @@ try {
   const res = await client.readResource({ uri: "ui://open-mcp-apps/habit-streaks.html" });
   ok("ui:// resource served over HTTP", res.contents[0].mimeType === "text/html;profile=mcp-app");
   const add = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", group: "To Do", fields: { title: "from http" } } });
-  ok("write over HTTP works", add.structuredContent.items.some((i) => i.fields.title === "from http"));
-  ok("host label is request-scoped (UA fallback, no cross-client globals)", typeof add.structuredContent.host === "string" && (add.structuredContent.host.startsWith("http:") || add.structuredContent.host === "remote-http"));
+  ok("write over HTTP works", add.structuredContent.item.fields.title === "from http");
+  // The host label's home is the LEDGER (each event is attributed to the host that wrote it) —
+  // pages stopped carrying an ambient `host` key with the envelope rewrite. The invariant is the
+  // same one: derived per request, never a module global shared between clients.
+  const chg = await client.callTool({ name: "data_changes", arguments: { collection: "kanban", since: add.structuredContent.seq - 1 } });
+  const evHost = chg.structuredContent.events[0]?.host;
+  ok("host label is request-scoped (UA fallback, no cross-client globals) — attributed on the event",
+    typeof evHost === "string" && (evHost.startsWith("http:") || evHost === "remote-http"));
 
   console.log("2. just-saved component opens immediately via the universal opener");
   const mkHtml = `<!DOCTYPE html><html><body><div id="x"></div><script type="module">oma.ready(s=>{document.getElementById("x").textContent=s.items.length});</script></body></html>`;
@@ -73,7 +81,12 @@ try {
     body: JSON.stringify({ name: "data_list", arguments: { collection: "kanban" } }) });
   const rpcResult = await rpc.json();
   ok("rpc returns a CallToolResult", Array.isArray(rpcResult.content) && rpcResult.structuredContent.collection === "kanban");
-  ok("rpc identifies as browser-viewer", rpcResult.structuredContent.host === "browser-viewer");
+  // The viewer's identity shows where identities live now: on the events its writes produce.
+  const rpcWrite = await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", fields: { title: "from the viewer" } } }) });
+  const rpcAck = await rpcWrite.json();
+  const rpcChg = await client.callTool({ name: "data_changes", arguments: { collection: "kanban", since: rpcAck.structuredContent.seq - 1 } });
+  ok("rpc identifies as browser-viewer — on the event it wrote", rpcChg.structuredContent.events[0]?.host === "browser-viewer");
 
   console.log("4. /view — browser viewer page");
   const viewResp = await fetch(`${BASE}/view/dashboard`);
@@ -89,12 +102,31 @@ try {
   ok("index lists components", idx.includes("/view/dashboard") && idx.includes("/view/counter"));
   const missing = await fetch(`${BASE}/view/nope`);
   ok("unknown component 404s", missing.status === 404);
-  // security-model §2.3: a non-local component must NOT render with full trust on the /view path —
-  // it fails closed (403 + a shell-free placeholder, no window.oma) until runner mode exists there.
+  // security-model §2.3: a non-local component must NOT render with full trust on /view. It used to
+  // fail closed to a placeholder because this route had no runner; now it serves the UNIVERSAL
+  // LOADER, which reads component_html over /rpc, sees the tier, and hands the source to the runner
+  // (verified live in Chrome: the child mounts in an about:srcdoc frame with sandbox="allow-scripts",
+  // its typed writes land through the bridge, and oma.callTool comes back "not allowed").
+  //
+  // The property under test is unchanged and is the one that matters: THE SOURCE IS NOT IN THIS
+  // DOCUMENT. Direct mode inlines a component's markup beside the real window.oma; the loader
+  // delivers neither — the html arrives later, over /rpc, into a sandboxed child. So the assertion
+  // is not "no window.oma anywhere" (the loader legitimately ships the runtime that owns embed) but
+  // "this component's markup never reached a full-trust document".
   const nonlocalResp = await fetch(`${BASE}/view/nonlocal-fixture`);
   const nonlocalPage = await nonlocalResp.text();
-  ok("/view fails closed for a non-local component (403, no shell)",
-    nonlocalResp.status === 403 && !nonlocalPage.includes("window.oma") && !nonlocalPage.includes("id='x'") && (nonlocalResp.headers.get("content-security-policy") || "").includes("default-src 'none'"));
+  ok("/view serves the loader for a non-local component, never its source",
+    nonlocalResp.status === 200 && !nonlocalPage.includes("id='x'") && !nonlocalPage.includes("nonlocal</div>")
+    && nonlocalPage.includes('data-oma="loader"') && nonlocalPage.includes("Loading component"));
+  ok("...with the standalone config, before the runtime, so the loader can reach /rpc",
+    nonlocalPage.includes("__OMA_STANDALONE__") && nonlocalPage.includes('"component":"nonlocal-fixture"')
+    && nonlocalPage.indexOf('data-oma="standalone"') < nonlocalPage.indexOf('data-oma="runtime"'));
+  ok("...under the same CSP as direct mode (srcdoc children are exempt from frame-src)",
+    (nonlocalResp.headers.get("content-security-policy") || "").includes("default-src 'none'"));
+  // A LOCAL component must still take the direct path — the loader is the exception, not the rule,
+  // and a regression that routed everything through it would cost every app an extra round trip.
+  ok("...while a local component still mounts directly (source inlined, no loader)",
+    page.includes('id="grid"') && !page.includes('data-oma="loader"'));
   // JSON-in-script hardening: ?collection= is caller-controlled and lands inside an inline
   // <script> via wrapComponent — "</script>" in it must never terminate the tag (XSS class).
   const evil = "</script><img src=x onerror=alert(1)>";
@@ -178,6 +210,87 @@ try {
     ok("commit in a THIRD request lands the file", !cm.isError && cm.structuredContent?.size === 12);
     const rd = await client.callTool({ name: "file_read", arguments: { component: "httpchunk", path: "over-mcp.txt" } });
     ok("file reads back intact over /mcp", !rd.isError && Buffer.from(rd.structuredContent.data_base64, "base64").toString() === "hello remote");
+  }
+
+  console.log("8. internal `_` RPC — the Data pane's non-tool verbs (write-set D)");
+  // undo and the via-bearing ledger view exist ONLY on /rpc: never registered as MCP tools
+  // (the ledger stays off the AI face), denied to sandboxed children by the `_` prefix rule.
+  {
+    const post = async (name, args) => (await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name, arguments: args }) })).json();
+    const w = await post("data_add_item", { command_id: "via-http-1", collection: "panecoll", fields: { t: "x" }, actor: "human", via: { component: "pane-app" } });
+    ok("a via-stamped write transits /rpc (passthrough end to end)", w.structuredContent?.ok === true);
+    const led = await post("_ledger_recent", { collection: "panecoll", limit: 10 });
+    const ev = led.structuredContent?.events?.[0];
+    ok("_ledger_recent serves the shadow edge + the undoable mark", !!ev && ev.via?.component === "pane-app" && ev.undoable === true);
+    const ch = await post("data_changes", { collection: "panecoll", since: 0 });
+    ok("data_changes (the AI face) strips via on the SAME event", ch.structuredContent.events.length > 0 && ch.structuredContent.events.every((e) => !("via" in e)));
+    const un = await post("_undo_last", { target: ev.id });
+    ok("_undo_last reverses the aggregate's last event", un.structuredContent?.ok === true && un.structuredContent.deleted === true);
+    const bad = await post("_nonexistent", {});
+    ok("an unknown internal method answers isError, never falls through to tool dispatch", bad.isError === true);
+    const viaMcp = await client.callTool({ name: "_undo_last", arguments: { target: "x" } });
+    ok("internal methods are NOT MCP tools — /mcp refuses them as unknown", viaMcp.isError === true && /not found|unknown/i.test(viaMcp.content?.[0]?.text || ""));
+  }
+
+  console.log("9. Origin validation — the DNS-rebinding door (MCP transports MUST)");
+  // Threat: a web page rebinds its domain to 127.0.0.1 and POSTs to /rpc (full unauthenticated
+  // tool surface) or /mcp. Such requests arrive with the attacker page's Origin. Policy:
+  // no Origin → allow (curl, MCP clients, tunnel ingress send none); localhost/127.0.0.1 any
+  // port → allow (the standalone shell's own fetches); OMA_VIEW_BASE's origin → allow (the
+  // shell served through a tunnel fetches /rpc with the tunnel's Origin); anything else → 403.
+  {
+    const rpcBody = JSON.stringify({ name: "data_list", arguments: { collection: "kanban" } });
+    const post = (path, origin, body = rpcBody) => fetch(`${BASE}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(origin ? { origin } : {}),
+        ...(path === "/mcp" ? { accept: "application/json, text/event-stream" } : {}) },
+      body,
+    });
+    const mcpBody = JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" });
+    const evilRpc = await post("/rpc", "http://evil.example");
+    ok("/rpc 403s a foreign Origin (rebinding attack blocked)", evilRpc.status === 403);
+    const evilMcp = await post("/mcp", "http://evil.example", mcpBody);
+    ok("/mcp 403s a foreign Origin", evilMcp.status === 403);
+    const nullOrigin = await post("/rpc", "null");
+    ok("/rpc 403s Origin: null (sandboxed foreign frames)", nullOrigin.status === 403);
+    const noOrigin = await post("/rpc", null);
+    ok("/rpc still serves Origin-less callers (curl/MCP clients)", noOrigin.status === 200 && (await noOrigin.json()).structuredContent.collection === "kanban");
+    const selfOrigin = await post("/rpc", `http://localhost:${PORT}`);
+    ok("/rpc serves its own localhost origin (standalone shell)", selfOrigin.status === 200);
+    const loopbackOtherPort = await post("/rpc", "http://127.0.0.1:3000");
+    ok("/rpc serves 127.0.0.1 on any port (local pages are not the rebinding threat)", loopbackOtherPort.status === 200);
+    const evilView = await fetch(`${BASE}/view/dashboard`, { headers: { origin: "http://evil.example" } });
+    ok("a foreign-Origin GET is refused too (no cross-origin reads of app source)", evilView.status === 403);
+  }
+
+  console.log("10. Origin validation behind a tunnel — OMA_VIEW_BASE's origin is allowed");
+  // The survey's three-way policy alone would break the tunneled browser viewer: the /view page
+  // served through the tunnel fetches /rpc with the TUNNEL's Origin. OMA_VIEW_BASE is already
+  // the operator declaring that address; its origin must pass.
+  {
+    const PORT2 = PORT + 1;
+    const proc2 = spawn("node", [join(ROOT, "src", "http.mjs")], {
+      env: { ...process.env, OMA_DB: DB, PORT: String(PORT2), OMA_VIEW_BASE: "https://tunnel-fixture.example/oma" },
+      stdio: ["ignore", "pipe", "inherit"],
+    });
+    try {
+      await new Promise((resolve, reject) => {
+        const t = setTimeout(() => reject(new Error("tunnel-config server didn't start")), 8000);
+        proc2.stdout.on("data", (d) => { if (String(d).includes("listening")) { clearTimeout(t); resolve(); } });
+        proc2.on("exit", () => reject(new Error("tunnel-config server exited early")));
+      });
+      const post2 = (origin) => fetch(`http://127.0.0.1:${PORT2}/rpc`, {
+        method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
+        body: JSON.stringify({ name: "data_list", arguments: { collection: "kanban" } }),
+      });
+      const tunnelOk = await post2("https://tunnel-fixture.example");
+      ok("the OMA_VIEW_BASE origin passes (tunneled viewer keeps working)", tunnelOk.status === 200);
+      const stillEvil = await post2("http://evil.example");
+      ok("a foreign Origin still 403s with OMA_VIEW_BASE set", stillEvil.status === 403);
+    } finally {
+      proc2.kill();
+    }
   }
 
   await client.close(); await client2.close();

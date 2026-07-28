@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Library</title>
 <meta name="description" content="Browse the library of ready-made apps — real working previews with sample data — and add one to your registry in a click.">
-<!-- @OMA_SYSTEM_CSS -->
 <style>
   :root {
     --surface: var(--color-background-primary, Canvas);
@@ -694,7 +693,7 @@
         <span class="eyebrow-mark" aria-hidden="true">
           <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><path d="M8 1.8v12.4M1.8 8h12.4M3.6 3.6l8.8 8.8M12.4 3.6l-8.8 8.8"/></svg>
         </span>
-        App Library
+        Library
       </p>
       <h1 class="hero-title">Small apps. Ready when you are.</h1>
       <p class="hero-description">Real, working previews of small apps — built by the makers. Add one in a click.</p>
@@ -787,44 +786,21 @@
   let drawerName = null, booted = false;
   const expanded = new Set();       // shelf ids the user opened with "Show all"
 
-  // ---- live preview plumbing -------------------------------------------------------------
-  // The preview is a sandboxed srcdoc document: CSP-first (network killed), the host's design
-  // tokens re-emitted, and a STUB window.oma seeded with the entry's embedded mock snapshot —
-  // the app renders exactly as it would live, but inert: every write resolves harmlessly,
-  // nothing reaches the store, pointer events never enter the frame.
-  const CSP_META = '<meta http-equiv="Content-Security-Policy" content="default-src \'none\'; style-src \'unsafe-inline\'; img-src data:; font-src data:; script-src \'unsafe-inline\'; connect-src \'none\'; frame-src \'none\'">';
-  const TOKEN_NAMES = [
-    ...["background", "text", "border"].flatMap((k) => ["primary", "secondary", "tertiary", "inverse", "ghost", "info", "danger", "success", "warning", "disabled"].map((v) => `--color-${k}-${v}`)),
-    ...["primary", "secondary", "inverse", "info", "danger", "success", "warning"].map((v) => `--color-ring-${v}`),
-    "--font-sans", "--font-mono", "--font-weight-normal", "--font-weight-medium", "--font-weight-semibold", "--font-weight-bold",
-    ...["xs", "sm", "md", "lg"].flatMap((s) => [`--font-text-${s}-size`, `--font-text-${s}-line-height`]),
-    ...["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].flatMap((s) => [`--font-heading-${s}-size`, `--font-heading-${s}-line-height`]),
-    ...["xs", "sm", "md", "lg", "xl", "full"].map((s) => `--border-radius-${s}`),
-    "--border-width-regular", "--shadow-hairline", "--shadow-sm", "--shadow-md", "--shadow-lg",
-  ];
-  function tokenCSS() {
-    const cs = getComputedStyle(document.documentElement);
-    let vars = "";
-    for (const n of TOKEN_NAMES) { const v = cs.getPropertyValue(n).trim(); if (v) vars += `${n}:${v};`; }
-    return `<style>:root{${vars}}html{color-scheme:${cs.colorScheme || "light dark"}}body{font-family:var(--font-sans);color:var(--color-text-primary)}</style>`;
-  }
-  function stubOma(name, items) {
-    const snap = { collection: name, items: items || [], version: 1, component: name, host: "gallery-preview" };
-    // classic script in OUR head → runs before any component script (classic or module).
-    // The close tag is CONCATENATED so (a) parsing THIS file never sees a literal close tag,
-    // while (b) the srcdoc receives a REAL one — an escaped <\/script> inside srcdoc is NOT a
-    // close tag, the stub would swallow the component source and die as a syntax error.
-    // JSON's own "</" become "<\/" (an identity escape in JS strings) for the same reason.
-    return '<script>window.oma=(function(){var S=' + JSON.stringify(snap).replace(/<\//g, "<\\/") +
-      ';var ok=Promise.resolve({ok:true});return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){},' +
-      'pref:function(k,f){return f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok},' +
-      'deleteItem:function(){return ok},refresh:function(){return ok},callTool:function(){return Promise.resolve({content:[],structuredContent:{}})},' +
-      'sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{component:S.component,collection:S.collection},host:S.host,standalone:true};})();</scr' + 'ipt>';
-  }
-  function previewDoc(name, html, items) {
-    // component markup goes wholesale into OUR body (its doctype/head degrade to tag-soup;
-    // styles and scripts still apply) so OUR CSP meta is always first — the runner's pattern.
-    return "<!doctype html><html><head>" + CSP_META + '<meta charset="utf-8">' + tokenCSS() + stubOma(name, items) + "</head><body>" + html + "</body></html>";
+  // ---- live preview plumbing (write-set D) ---------------------------------------------
+  // Previews mount through oma.embed with the INERT preset: the runner machine
+  // (src/runner.mjs, bundled into the shell runtime) composes the sandboxed document —
+  // CSP-first, host tokens re-emitted — and feeds the entry's fixture snapshot. The app
+  // renders exactly as it would live, but inert: every write resolves harmlessly, nothing
+  // reaches the store, pointer events never enter the frame. The fourth hand-kept copy of
+  // the CSP/token/stub machinery that lived here is gone.
+  // GRID handles only — released on every re-render, because render() rebuilds those elements.
+  // The drawer's preview is tracked SEPARATELY: its wrap lives outside `sections` and survives a
+  // re-render, so unmounting it here killed a preview that buildDrawer() then declined to rebuild
+  // (its dataset.pv was unchanged), leaving the drawer permanently blank.
+  const previews = new Set();
+  let drawerPv = null;          // the drawer's own embed handle, or null
+  function dropDrawerPv() {     // the ONE place the drawer's iframe is released
+    if (drawerPv) { try { drawerPv.unmount(); } catch {} drawerPv = null; }
   }
 
   const store = document.querySelector(".store");
@@ -849,16 +825,19 @@
     const name = wrap.dataset.pv;
     const stale = () => !wrap.isConnected || wrap.dataset.pv !== name;
     try {
-      const r = await oma.callTool("gallery_preview", { name });
+      const r = await oma.callTool("library_preview", { name });
       if (stale()) return;
       const sc = r && !r.isError ? r.structuredContent : null;
       if (!sc || !sc.html) throw new Error("no preview payload");
-      const f = document.createElement("iframe");
-      f.setAttribute("sandbox", "allow-scripts");
-      f.setAttribute("title", name + " preview");
-      f.addEventListener("load", () => wrap.querySelector(".pv-skel")?.remove(), { once: true });
-      f.srcdoc = previewDoc(name, sc.html, sc.fixtures ? sc.fixtures.items : []);
-      wrap.prepend(f);
+      const h = await oma.embed(name, {
+        into: wrap, preset: "inert", html: sc.html, heights: false,
+        snapshot: { collection: name, items: (sc.fixtures && sc.fixtures.items) || [], version: 1 },
+      });
+      if (stale()) { h.unmount(); return; }
+      if (wrap.id === "d-pv") drawerPv = h; else previews.add(h);
+      wrap.prepend(h.el);   // the frame sits under the skeleton until it loads
+      h.el.setAttribute("title", name + " preview");
+      h.el.addEventListener("load", () => wrap.querySelector(".pv-skel")?.remove(), { once: true });
       roScale.observe(wrap);
       fitPreview(wrap);
     } catch {
@@ -899,14 +878,14 @@
   // ---- cards + shelves -------------------------------------------------------------------
   function chip(e) {
     if (e.update_available) return '<span class="k-chip badge-up pv-chip">update available</span>';
-    if (e.installed && e.from_gallery) return '<span class="k-chip badge-ok pv-chip">added ✓</span>';
+    if (e.installed && e.from_library) return '<span class="k-chip badge-ok pv-chip">added ✓</span>';
     if (e.installed) return '<span class="k-chip badge-mut pv-chip">name in use</span>';
     return "";
   }
   function action(e) {
     if (busy === e.name) return '<button class="k-btn" disabled>Adding…</button>';
     if (e.update_available) return `<button class="k-btn" data-install="${esc(e.name)}">Update</button>`;
-    if (e.installed && e.from_gallery) return oma.standalone
+    if (e.installed && e.from_library) return oma.standalone
       ? `<a class="k-btn sec" href="${esc(oma.viewBase + e.name)}">Open</a>`
       : `<button class="k-btn sec" data-open="${esc(e.name)}">Open</button>`;
     if (e.installed) return '<button class="k-btn sec" disabled title="A different app of yours already uses this name">Unavailable</button>';
@@ -1034,7 +1013,7 @@
   }
   // Installed entries point at settings for manage/remove — the drawer never grows its own
   // remove button (cross-component ruling: Remove lives in settings' Installed drawer).
-  const manage = (e) => !(e.installed && e.from_gallery) ? "" : oma.standalone
+  const manage = (e) => !(e.installed && e.from_library) ? "" : oma.standalone
     ? `<a class="k-btn ghost" href="${esc(oma.viewBase + "settings")}">Manage in Settings</a>`
     : '<button class="k-btn ghost" data-settings>Manage in Settings</button>';
   function buildDrawer() {
@@ -1044,6 +1023,10 @@
     document.getElementById("d-desc").textContent = e.description || "";
     const pv = document.getElementById("d-pv");
     if (pv.dataset.pv !== e.name) {               // keep the live iframe across state refreshes
+      // Replacing innerHTML removes the old iframe from the DOM but leaves its handle registered —
+      // the window message listener, the parent's change/pref callbacks and the liveEmbeds entry
+      // all survive, once per entry the user browses through. Release it first.
+      dropDrawerPv();
       pv.dataset.pv = e.name;
       delete pv.dataset.live;
       pv.innerHTML = '<div class="pv-skel k-skel"></div><div class="pv-fade"></div>';
@@ -1065,6 +1048,8 @@
 
   // ---- render ------------------------------------------------------------------------------
   function render() {
+    for (const h of previews) h.unmount();   // GRID handles hold listeners — release before rebuilding
+    previews.clear();                        // (the drawer's handle is deliberately NOT in here)
     syncChrome();
     document.getElementById("empty").hidden = entries.length > 0 || !!lastError;
     document.getElementById("err").textContent = lastError;
@@ -1103,9 +1088,9 @@
     // entries here (same-name remote official replaces the builtin row) and light the toolbar's
     // feed-failure banner slot when that fetch fails. Absent feed → nothing extra renders.
     try {
-      const r = await oma.callTool("gallery_list", {});
+      const r = await oma.callTool("library_list", {});
       const sc = r && !r.isError ? r.structuredContent : null;
-      if (!sc) throw new Error("gallery_list failed");
+      if (!sc) throw new Error("library_list failed");
       entries = sc.entries || [];
       lastError = "";
     } catch {
@@ -1118,12 +1103,12 @@
     if (force || key !== loadKey) { loadKey = key; render(); }
   }
   async function install(name) {
-    // v0: every entry is local, so Add always routes through install_from_gallery. Remote index
+    // v0: every entry is local, so Add always routes through install_from_library. Remote index
     // entries will route through library_install {id, command_id} (SRI-verified) when that tool
     // lands — cross-component ruling §2-7 — over this same busy/error/reload cycle.
     busy = name; errName = errText = ""; render();
     try {
-      const r = await oma.callTool("install_from_gallery", { name, command_id: uuid() });
+      const r = await oma.callTool("install_from_library", { name, command_id: uuid() });
       if (r && r.isError) {
         const t = (r.content || []).find((c) => c.type === "text");
         errName = name; errText = (t && t.text) || "Couldn't add it.";
@@ -1176,7 +1161,7 @@
     }
   });
   // Debounced + change-gated: a full render() tears down and re-mounts every visible preview
-  // iframe (fresh gallery_preview fetch each), so keystrokes must not trigger it needlessly.
+  // iframe (fresh library_preview fetch each), so keystrokes must not trigger it needlessly.
   let qTimer = null;
   q.addEventListener("input", (ev) => {
     clearTimeout(qTimer);

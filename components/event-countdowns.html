@@ -506,7 +506,7 @@
 </style>
 <script type="application/json" id="oma-manifest">
 {
-  "manifest_version": 1,
+  "manifest_version": 2,
   "settings": [],
   "uses_shared": ["locale", "date_format", "confirm_delete"]
 }
@@ -842,7 +842,7 @@
 
   oma.ready((state) => {
     render(state);
-    // Gallery apps install EMPTY — sample data lives only in the oma-fixtures block (gallery preview).
+    // Library apps install EMPTY — sample data lives only in the oma-fixtures block (library preview).
   });
   oma.onChange(render);
   oma.onPrefChange(() => render(latestState));

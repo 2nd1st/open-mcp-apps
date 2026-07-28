@@ -17,7 +17,7 @@
 // Node built-ins only, so it runs before `npm install`.
 
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, openSync, closeSync } from "node:fs";
+import { readFileSync, writeFileSync, existsSync, mkdirSync, copyFileSync, openSync, closeSync, realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve } from "node:path";
 import { homedir, platform } from "node:os";
@@ -39,7 +39,18 @@ if (!(nodeMajor >= MIN_NODE)) {
 }
 
 const ROOT = dirname(fileURLToPath(import.meta.url));
-const NODE = process.execPath;                          // pin the exact node (native SQLite ABI)
+// Pin node only as far as identity requires: better-sqlite3 is a native addon, so the registered
+// node must be THE binary it was built for — but a Homebrew execPath is a VERSIONED cellar path
+// (…/Cellar/node/26.5.0/bin/node) that vanishes on the next `brew upgrade node`, silently
+// bricking every host entry (live-test 2026-07-28). When a stable launcher resolves to the same
+// binary, register THAT: identical node today, and patch/minor upgrades (same ABI) keep working.
+// A major upgrade still needs `npm rebuild`, and better-sqlite3's own error says so.
+const NODE = (() => {
+  for (const cand of ["/opt/homebrew/bin/node", "/usr/local/bin/node", "/home/linuxbrew/.linuxbrew/bin/node"]) {
+    try { if (realpathSync(cand) === realpathSync(process.execPath)) return cand; } catch { /* not this machine's layout */ }
+  }
+  return process.execPath;
+})();
 const SERVER = resolve(ROOT, "src", "server.mjs");
 const NAME = "open-mcp-apps";
 const LEGACY = "open-mcp-app";                          // pre-rename name; remove if found
@@ -51,7 +62,14 @@ const FRESH = argv.includes("--fresh");
 const hostArg = (argv.find((a) => a.startsWith("--host=")) || "").split("=")[1]
   || (argv.includes("--host") ? argv[argv.indexOf("--host") + 1] : null);
 
-const sameEntry = (e) => !!e && e.command === NODE && JSON.stringify(e.args) === JSON.stringify([SERVER]);
+// TEMPORARY (2026-07-28): Claude Desktop 1.24012.9 and Claude Code share a chat-surface bridge
+// regression that silently drops the loader widget's boot-time calls — open_component hangs at
+// "Loading component…" while the per-component dynamic tools' direct-embed path renders and
+// operates correctly on both. Their registrations opt into dynamic tools until upstream fixes
+// the bridge; remove together with the KNOWN-ISSUES entry.
+const ANTHROPIC_HOST_ENV = { OMA_DYNAMIC_TOOLS: "1" };
+const sameEntry = (e, env) => !!e && e.command === NODE && JSON.stringify(e.args) === JSON.stringify([SERVER])
+  && (!env || Object.entries(env).every(([k, v]) => e.env && e.env[k] === v));
 const cmd = (bin) => (platform() === "win32" && bin === "npm") ? "npm.cmd" : bin;
 
 // The shared store lives in a FIXED per-user data dir — MUST mirror store.mjs `defaultDbDir()`.
@@ -91,7 +109,7 @@ const claude = {
     if (cfg.mcpServers && typeof cfg.mcpServers !== "object") return { error: `${p} has a non-object "mcpServers"` };
     const prev = cfg.mcpServers?.[NAME];
     const legacy = !!cfg.mcpServers?.[LEGACY];
-    return { p, cfg, prev, legacy, status: !prev ? "fresh" : sameEntry(prev) ? "current" : "stale" };
+    return { p, cfg, prev, legacy, status: !prev ? "fresh" : sameEntry(prev, ANTHROPIC_HOST_ENV) ? "current" : "stale" };
   },
   apply(st) {
     const changed = [];
@@ -100,9 +118,10 @@ const claude = {
     if (st.status === "stale") {
       if (st.prev.command !== NODE) changed.push(["node", st.prev.command, NODE]);
       if (JSON.stringify(st.prev.args) !== JSON.stringify([SERVER])) changed.push(["server", st.prev.args?.[0], SERVER]);
+      if (st.prev.env?.OMA_DYNAMIC_TOOLS !== "1") changed.push(["env", "—", "OMA_DYNAMIC_TOOLS=1 (chat-surface workaround)"]);
     } else if (st.status === "fresh") changed.push(["added", "—", SERVER]);
     if (!existsSync(dirname(st.p))) mkdirSync(dirname(st.p), { recursive: true });
-    st.cfg.mcpServers[NAME] = { command: NODE, args: [SERVER] };
+    st.cfg.mcpServers[NAME] = { command: NODE, args: [SERVER], env: { ...ANTHROPIC_HOST_ENV } };
     writeFileSync(st.p, JSON.stringify(st.cfg, null, 2) + "\n");
     const back = JSON.parse(readFileSync(st.p, "utf8"));
     if (!back.mcpServers?.[NAME]) { console.error("✗ wrote config but the open-mcp-apps entry is missing on re-read."); process.exit(1); }
@@ -120,7 +139,11 @@ function ccGet(name) {
     const command = (out.match(/^\s*Command:\s*(.+)$/m) || [])[1]?.trim();
     if (!command) return null;                            // present but not stdio / unparseable → treat as absent
     const argsLine = (out.match(/^\s*Args:\s*(.+)$/m) || [])[1]?.trim();
-    return { command, args: argsLine ? argsLine.split(/\s+/) : [] };
+    // `claude mcp get` doesn't reliably print env — read it from the user-scope config file,
+    // which is where user-scope stdio entries actually live.
+    let env;
+    try { env = JSON.parse(readFileSync(join(homedir(), ".claude.json"), "utf8")).mcpServers?.[name]?.env; } catch {}
+    return { command, args: argsLine ? argsLine.split(/\s+/) : [], ...(env ? { env } : {}) };
   } catch { return null; }                                // "No MCP server named …" exits non-zero → absent
 }
 const claudeCode = {
@@ -131,19 +154,21 @@ const claudeCode = {
   state() {
     const prev = ccGet(NAME);
     const legacy = !!ccGet(LEGACY);
-    return { prev, legacy, status: !prev ? "fresh" : sameEntry(prev) ? "current" : "stale" };
+    return { prev, legacy, status: !prev ? "fresh" : sameEntry(prev, ANTHROPIC_HOST_ENV) ? "current" : "stale" };
   },
   apply(st) {
     const changed = [];
     const cc = (a) => execFileSync("claude", a, { stdio: "inherit" });
+    const add = () => cc(["mcp", "add", NAME, "-s", "user",
+      ...Object.entries(ANTHROPIC_HOST_ENV).flatMap(([k, v]) => ["-e", `${k}=${v}`]), "--", NODE, SERVER]);
     if (st.legacy) { try { cc(["mcp", "remove", LEGACY, "-s", "user"]); changed.push(["removed legacy", LEGACY, "—"]); } catch {} }
     if (st.status === "stale") {
       try { cc(["mcp", "remove", NAME, "-s", "user"]); } catch {}
-      changed.push(["updated", `${st.prev.command} ${(st.prev.args || []).join(" ")}`, `${NODE} ${SERVER}`]);
-      cc(["mcp", "add", NAME, "-s", "user", "--", NODE, SERVER]);
+      changed.push(["updated", `${st.prev.command} ${(st.prev.args || []).join(" ")}`, `${NODE} ${SERVER} (+dynamic tools)`]);
+      add();
     } else if (st.status === "fresh") {
       changed.push(["added", "—", SERVER]);
-      cc(["mcp", "add", NAME, "-s", "user", "--", NODE, SERVER]);
+      add();
     }
     return { changed, configLoc: "~/.claude.json (user scope)", note: null };
   },

@@ -1,0 +1,1571 @@
+<!--
+Project Pulse · library component self-check
+硬合同
+[✓] 1. 单文件自包含；仅一个 module 脚本，仅使用 window.oma；无外部资源、网络或 SDK。
+[✓] 2. #oma-manifest 使用 collections 对象文法，并声明 settings、uses_shared；组件源码无数据行。
+[✓] 3. 安装后为空；首屏空态可操作；9 条叙事样例仅位于 #oma-fixtures。
+[✓] 4. updated_at / done_at 只存 ISO 事实；相对时间、stale 与 14 天窗口均在 render 时计算；未存判断字符串。
+[✓] 5. 看板滚动区使用固定 max-height；500px 可横滑；全文件无 vh 单位；首屏保留栏头、概览、脉搏和主操作。
+[✓] 6. 控件与表面优先使用 k-*；颜色只用 host token 或 color-mix；无字面色值。
+[✓] 7. 英文默认；STR 内置 en/zh 全量字典；日期与数字读取 locale / date_format，密度读取 density。
+[✓] 8. 新增、编辑、移动全部通过 oma.*；不改本地数据镜像；失败显示错误条，拖拽写失败由新 state 自然回弹。
+[✓] 9. 未在 srcdoc、JSON 字符串或脚本字符串中嵌入脚本闭标签。
+brief 验收自查
+[✓] manifest 仅声明 project-tasks，包含 title / note / tag / done_at 及运行时活动事实 updated_at。
+[✓] Backlog / Doing / Done 三列常驻；拖拽和触屏移列均调用 moveItem，Done 同步写 done_at。
+[✓] 14 天脉搏和 Doing >7 天 stale 角标均由 ISO 时间在 render 时计算。
+[✓] t+45 时 Doing 样例全部 stale，脉搏窗口按新日期重建并右移，不依赖构建日常量。
+[✓] 空态含 Claude Code 教学示意卡和可工作的多行录入。
+[✓] 500px 下看板保留三列最小宽度并横向滚动；内容区 max-height 固定。
+45 天心算：以运行时当前日 2026-07-27 推到 2026-09-10，三张 Doing 卡分别静置 46、49、55 天，全部显示 stale；14 根柱只统计 2026-08-28 至 2026-09-10，因此样例活动自然移出窗口。
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Project Pulse</title>
+<meta name="description" content="A three-lane project board shared by AI, chat components, and /view, with a 14-day activity pulse and stale-task reminders.">
+<meta name="oma-category" content="Work">
+<script type="application/json" id="oma-manifest">
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "stale_days",
+      "type": "number",
+      "label": "Stale reminder days",
+      "description": "Tasks in Doing fade and show a clock after this many days without an update.",
+      "default": 7,
+      "min": 1,
+      "max": 30,
+      "step": 1
+    },
+    {
+      "key": "show_notes",
+      "type": "boolean",
+      "label": "Show task notes",
+      "description": "Show task context inside board cards.",
+      "default": true
+    }
+  ],
+  "uses_shared": ["locale", "date_format", "density"],
+  "collections": {
+    "project-tasks": {
+      "label_field": "title",
+      "strict": true,
+      "fields": {
+        "title": { "type": "string", "required": true },
+        "note": { "type": "string" },
+        "tag": { "type": "string" },
+        "done_at": { "type": "string" },
+        "updated_at": { "type": "string" }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": { "category_id": "dev-artifacts" }
+}
+</script>
+<script type="application/json" id="oma-fixtures">
+{
+  "items": [
+    {
+      "id": "15d399d5-885a-47c3-afca-5c6bfb21378a",
+      "group": "Backlog",
+      "position": 1,
+      "fields": {
+        "title": "Rewrite the homepage around product stories",
+        "note": "Connect three representative projects into one narrative, then tighten the personal introduction.",
+        "tag": "Content",
+        "updated_at": "2026-07-27T08:40:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "ab85c8b0-ff8e-4c15-858a-596f04975b11",
+      "group": "Backlog",
+      "position": 2,
+      "fields": {
+        "title": "Move leoyun.dev DNS to Cloudflare",
+        "note": "Preserve the mail records and export the current zone before switching so rollback stays simple.",
+        "tag": "Infrastructure",
+        "updated_at": "2026-07-24T16:10:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "6f3b9910-3693-442e-9276-e26deea635bc",
+      "group": "Backlog",
+      "position": 3,
+      "fields": {
+        "title": "Set Lighthouse budgets for project pages",
+        "note": "Add blocking CI thresholds for LCP, CLS, and total script weight.",
+        "tag": "Performance",
+        "updated_at": "2026-07-24T11:25:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "d932daf1-eb77-4a1e-9317-f98825b0c6db",
+      "group": "Doing",
+      "position": 1,
+      "fields": {
+        "title": "Wire the Astro build into one-command deploys",
+        "note": "Preview deploys work; failure notifications and cache cleanup are next.",
+        "tag": "Automation",
+        "updated_at": "2026-07-26T21:05:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "26e48e7d-244f-4a05-b156-c363bd36150e",
+      "group": "Doing",
+      "position": 2,
+      "fields": {
+        "title": "Define a mobile image strategy for case studies",
+        "note": "AVIF exports are ready; next is checking narrow crops and slow-network placeholders.",
+        "tag": "Frontend",
+        "updated_at": "2026-07-23T14:35:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "3569ab94-2a46-4e99-8040-4be74b0aff50",
+      "group": "Doing",
+      "position": 3,
+      "fields": {
+        "title": "梳理旧域名的 301 跳转表",
+        "note": "还差两篇旧文章的最终去向，等内容盘点结果。",
+        "tag": "SEO",
+        "updated_at": "2026-07-17T10:15:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "d8f6a270-74ef-4f05-97a3-5a83a9b320cd",
+      "group": "Done",
+      "position": 1,
+      "fields": {
+        "title": "Lock the new information architecture",
+        "note": "The Home, Projects, Notes, and About entry points are settled.",
+        "tag": "UX",
+        "done_at": "2026-07-15T18:20:00+10:00",
+        "updated_at": "2026-07-15T18:20:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "1adc1335-db2f-4b6d-9e35-047040203556",
+      "group": "Done",
+      "position": 2,
+      "fields": {
+        "title": "Export project screenshots from 2021-2025",
+        "note": "Originals and compressed versions are archived by project, with a checklist for missing shots.",
+        "tag": "Assets",
+        "done_at": "2026-07-20T13:45:00+10:00",
+        "updated_at": "2026-07-24T13:45:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "da9677c1-c58e-4878-8641-466c577f651c",
+      "group": "Done",
+      "position": 3,
+      "fields": {
+        "title": "Add cookieless Plausible analytics",
+        "note": "The production domain is verified and core conversion events are now arriving.",
+        "tag": "Data",
+        "done_at": "2026-07-25T17:30:00+10:00",
+        "updated_at": "2026-07-25T17:30:00+10:00"
+      },
+      "version": 1
+    }
+  ]
+}
+</script>
+<style>
+  body {
+    max-width: 760px;
+    margin-inline: auto;
+    background: transparent;
+    color: var(--color-text-primary);
+  }
+
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  [tabindex]:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+
+  .app-bar {
+    align-items: center;
+    padding: 15px 17px 13px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .app-mark {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg, 8px);
+    color: var(--color-text-info, var(--color-ring-primary));
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 10%, transparent);
+  }
+
+  .app-mark svg {
+    width: 23px;
+    height: 23px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    margin: 0 0 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .identity h1 {
+    margin: 0;
+    font-size: 18px;
+    font-weight: 680;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .bar-actions {
+    margin-left: auto;
+    flex: none;
+  }
+
+  .bar-actions .k-btn {
+    white-space: nowrap;
+  }
+
+  .overview {
+    display: grid;
+    grid-template-columns: minmax(112px, 1.25fr) repeat(3, minmax(72px, 1fr));
+    gap: 1px;
+    background: var(--color-border-secondary);
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .overview-cell {
+    min-width: 0;
+    padding: 13px 15px;
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
+  }
+
+  .overview-main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+  }
+
+  .overview-main strong {
+    font-size: 31px;
+    font-weight: 690;
+    line-height: 1;
+    letter-spacing: 0;
+  }
+
+  .overview-main span,
+  .stat-label {
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .stat-value {
+    display: block;
+    margin-bottom: 2px;
+    font-size: 16px;
+    font-weight: 650;
+    line-height: 1.2;
+  }
+
+  .pulse-band {
+    padding: 12px 16px 13px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .pulse-head {
+    align-items: baseline;
+    margin-bottom: 8px;
+  }
+
+  .pulse-title {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .pulse-window {
+    font-size: 11px;
+  }
+
+  .pulse-bars {
+    display: grid;
+    grid-template-columns: repeat(14, minmax(9px, 1fr));
+    align-items: end;
+    gap: 5px;
+    height: 44px;
+  }
+
+  .pulse-bar {
+    position: relative;
+    min-width: 0;
+    height: calc(5px + var(--level, 0) * 6px);
+    max-height: 42px;
+    border-radius: var(--border-radius-sm, 4px) var(--border-radius-sm, 4px) 2px 2px;
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) calc(20% + var(--level, 0) * 12%), var(--color-background-tertiary));
+  }
+
+  .pulse-bar.today-bar::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    bottom: -5px;
+    left: 0;
+    height: 2px;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .pulse-foot {
+    display: flex;
+    justify-content: space-between;
+    margin-top: 7px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+
+  .error-strip[hidden] {
+    display: none;
+  }
+
+  .error-strip .k-icon {
+    flex: none;
+  }
+
+  .empty-capture {
+    margin: 12px 16px 0;
+    padding: 14px;
+    text-align: left;
+  }
+
+  .empty-capture[hidden] {
+    display: none;
+  }
+
+  .empty-copy {
+    display: grid;
+    gap: 3px;
+    margin-bottom: 10px;
+  }
+
+  .empty-copy b {
+    font-size: 14px;
+  }
+
+  .empty-copy span {
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+
+  .bulk-form {
+    align-items: stretch;
+  }
+
+  .bulk-form textarea {
+    min-height: 58px;
+    resize: vertical;
+    line-height: 1.4;
+  }
+
+  .board-shell {
+    max-width: 100%;
+    overflow-x: auto;
+    overflow-y: hidden;
+    padding: 12px 16px 16px;
+    scrollbar-width: thin;
+  }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(214px, 1fr));
+    gap: 10px;
+    min-width: 680px;
+  }
+
+  .lane {
+    min-width: 0;
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md, 8px);
+    background: color-mix(in oklab, var(--color-background-secondary) 78%, transparent);
+  }
+
+  .lane.drag-over {
+    border-color: var(--color-ring-primary);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 8%, var(--color-background-secondary));
+  }
+
+  .lane-head {
+    min-height: 42px;
+    padding: 10px 11px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .lane-title {
+    min-width: 0;
+    font-size: 12px;
+    font-weight: 650;
+  }
+
+  .lane-title .k-dot {
+    margin-right: 6px;
+    vertical-align: 1px;
+  }
+
+  .lane[data-group="Backlog"] .k-dot {
+    background: var(--color-text-tertiary);
+  }
+
+  .lane[data-group="Doing"] .k-dot {
+    background: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .lane[data-group="Done"] .k-dot {
+    background: var(--color-text-success);
+  }
+
+  .lane-body {
+    display: grid;
+    align-content: start;
+    gap: 8px;
+    min-height: 140px;
+    max-height: 430px;
+    overflow-y: auto;
+    padding: 8px;
+    scrollbar-width: thin;
+  }
+
+  .task-card {
+    position: relative;
+    min-width: 0;
+    padding: 10px;
+    cursor: grab;
+    border-radius: var(--border-radius-md, 8px);
+  }
+
+  .task-card:active {
+    cursor: grabbing;
+  }
+
+  .task-card.dragging {
+    opacity: 0.55;
+  }
+
+  .task-card.is-stale {
+    filter: saturate(0.25);
+    opacity: 0.66;
+  }
+
+  .task-card.is-stale .task-title {
+    padding-right: 25px;
+  }
+
+  .task-card.is-done .task-title {
+    color: var(--color-text-secondary);
+    text-decoration: line-through;
+    text-decoration-thickness: 1px;
+  }
+
+  .card-top {
+    align-items: flex-start;
+  }
+
+  .task-title {
+    min-width: 0;
+    font-size: 13px;
+    font-weight: 630;
+    line-height: 1.4;
+  }
+
+  .card-move {
+    width: 27px;
+    height: 27px;
+    flex: none;
+    padding: 0;
+  }
+
+  .task-note {
+    margin: 6px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+
+  .card-meta {
+    align-items: center;
+    margin-top: 9px;
+  }
+
+  .task-tag {
+    max-width: 104px;
+  }
+
+  .last-move {
+    margin-left: auto;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .stale-clock {
+    position: absolute;
+    top: 7px;
+    right: 38px;
+    display: inline-grid;
+    width: 22px;
+    height: 22px;
+    place-items: center;
+    border-radius: var(--border-radius-full, 999px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 11%, var(--color-background-primary));
+  }
+
+  .stale-clock .k-icon {
+    width: 12px;
+    height: 12px;
+  }
+
+  .lane-empty {
+    display: grid;
+    min-height: 84px;
+    place-items: center;
+    padding: 12px;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    text-align: center;
+  }
+
+  .demo-task {
+    border-style: dashed;
+    box-shadow: none;
+    cursor: default;
+  }
+
+  .demo-task code {
+    color: var(--color-text-info, var(--color-ring-primary));
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+  }
+
+  .modal {
+    position: fixed;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    background: color-mix(in oklab, var(--color-text-primary) 18%, transparent);
+  }
+
+  .modal[hidden] {
+    display: none;
+  }
+
+  .modal-panel {
+    width: min(420px, 100%);
+    max-height: 560px;
+    overflow: auto;
+    padding: 16px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg, 8px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .modal-head {
+    align-items: center;
+    margin-bottom: 14px;
+  }
+
+  .modal-head h2 {
+    margin: 0;
+    font-size: 16px;
+    letter-spacing: 0;
+  }
+
+  .icon-only {
+    width: 30px;
+    height: 30px;
+    padding: 0;
+  }
+
+  .field-stack {
+    display: grid;
+    gap: 6px;
+    margin-bottom: 11px;
+  }
+
+  .field-stack label {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 620;
+  }
+
+  .field-stack textarea {
+    min-height: 82px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .modal-actions {
+    justify-content: flex-end;
+    margin-top: 14px;
+  }
+
+  .compact .app-bar {
+    padding-block: 10px;
+  }
+
+  .compact .overview-cell {
+    padding-block: 9px;
+  }
+
+  .compact .pulse-band {
+    padding-block: 9px;
+  }
+
+  .compact .lane-body {
+    gap: 6px;
+    padding: 6px;
+  }
+
+  .compact .task-card {
+    padding: 8px;
+  }
+
+  @media (max-width: 620px) {
+    .app-bar {
+      flex-wrap: wrap;
+    }
+
+    .bar-actions {
+      width: 100%;
+      margin-left: 50px;
+    }
+
+    .bar-actions .k-btn {
+      flex: 1;
+    }
+
+    .overview {
+      grid-template-columns: 1.2fr repeat(3, 1fr);
+    }
+
+    .overview-cell {
+      padding-inline: 10px;
+    }
+
+    .stat-label {
+      font-size: 10px;
+    }
+
+    .pulse-bars {
+      gap: 3px;
+    }
+  }
+
+  @media (max-width: 430px) {
+    .overview {
+      grid-template-columns: repeat(2, 1fr);
+    }
+
+    .overview-cell:nth-child(2) {
+      border-right: 0;
+    }
+
+    .bulk-form {
+      flex-direction: column;
+    }
+
+    .bulk-form .k-btn {
+      width: 100%;
+    }
+
+    .modal {
+      align-items: end;
+      padding: 10px;
+    }
+
+    .modal-panel {
+      width: 100%;
+      max-height: 620px;
+    }
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .task-card,
+    .lane,
+    .pulse-bar,
+    .error-strip,
+    .modal-panel {
+      transition: transform var(--k-t) var(--k-ease), opacity var(--k-t) var(--k-ease), border-color var(--k-t) var(--k-ease), background var(--k-t) var(--k-ease), filter var(--k-t) var(--k-ease);
+    }
+
+    .task-card.is-click:hover {
+      transform: translateY(-1px);
+    }
+
+    .task-card.is-click:active,
+    .k-btn:active {
+      transform: scale(0.98);
+    }
+
+    .pulse-bar {
+      transform-origin: bottom;
+      animation: pulse-rise 320ms var(--k-ease) both;
+      animation-delay: calc(var(--i, 0) * 18ms);
+    }
+
+    .modal-panel {
+      animation: modal-in 180ms var(--k-spring) both;
+    }
+
+    @keyframes pulse-rise {
+      from {
+        transform: scaleY(0.18);
+        opacity: 0.45;
+      }
+    }
+
+    @keyframes modal-in {
+      from {
+        transform: translateY(8px) scale(0.985);
+        opacity: 0;
+      }
+    }
+  }
+</style>
+</head>
+<body>
+  <header class="app-bar k-row">
+    <span class="app-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M2.5 12h4l2.2-6 4.2 12 2.2-6h6.4"/>
+      </svg>
+    </span>
+    <div class="identity">
+      <p class="eyebrow" data-i18n="eyebrow"></p>
+      <h1 data-i18n="appName"></h1>
+    </div>
+    <div class="bar-actions k-row">
+      <button class="k-btn sec" id="weekly-btn" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 12.5h11M3.5 10V6.5M7.8 10V3M12.1 10V5"/>
+        </svg>
+        <span data-i18n="weeklyReport"></span>
+      </button>
+      <button class="k-btn" id="add-btn" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.5v11M2.5 8h11"/>
+        </svg>
+        <span data-i18n="newTask"></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview" data-i18n-aria-label="overviewAria">
+    <div class="overview-cell overview-main">
+      <strong class="k-num" id="doing-count">0</strong>
+      <span data-i18n="inProgress"></span>
+    </div>
+    <div class="overview-cell">
+      <strong class="stat-value k-num" id="total-count">0</strong>
+      <span class="stat-label" data-i18n="totalTasks"></span>
+    </div>
+    <div class="overview-cell">
+      <strong class="stat-value k-num" id="done-rate">0%</strong>
+      <span class="stat-label" data-i18n="completionRate"></span>
+    </div>
+    <div class="overview-cell">
+      <strong class="stat-value k-num" id="stale-count">0</strong>
+      <span class="stat-label" data-i18n="needsAttention"></span>
+    </div>
+  </section>
+
+  <section class="pulse-band" aria-labelledby="pulse-title">
+    <div class="pulse-head k-row">
+      <span class="pulse-title" id="pulse-title" data-i18n="pulseTitle"></span>
+      <span class="k-grow"></span>
+      <span class="pulse-window k-mut k-num" id="pulse-window"></span>
+    </div>
+    <div class="pulse-bars" id="pulse-bars" role="img" data-i18n-aria-label="pulseAria"></div>
+    <div class="pulse-foot">
+      <span id="pulse-start"></span>
+      <span data-i18n="surfaceSignal"></span>
+      <span id="pulse-end"></span>
+    </div>
+  </section>
+
+  <div class="error-strip" id="error-strip" role="status" aria-live="polite" hidden>
+    <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M8 2.2 14 13H2zM8 5.5v3.8M8 11.7v.1"/>
+    </svg>
+    <span class="k-grow" id="error-text"></span>
+    <button class="k-btn ghost icon-only" id="error-close" type="button" data-i18n-aria-label="closeError" data-i18n-title="close">
+      <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M4 4l8 8M12 4l-8 8"/>
+      </svg>
+    </button>
+  </div>
+
+  <section class="empty-capture k-empty" id="empty-capture" hidden>
+    <div class="empty-copy">
+      <b data-i18n="emptyTitle"></b>
+      <span data-i18n="emptyBody"></span>
+    </div>
+    <form class="bulk-form k-row" id="bulk-form">
+      <textarea class="k-field k-grow" id="bulk-input" data-i18n-placeholder="bulkPlaceholder" data-i18n-aria-label="bulkAria"></textarea>
+      <button class="k-btn" id="bulk-submit" type="submit" data-i18n="addBacklog"></button>
+    </form>
+  </section>
+
+  <main class="board-shell" data-i18n-aria-label="boardAria">
+    <div class="board" id="board">
+      <section class="lane" data-group="Backlog" aria-labelledby="backlog-title">
+        <header class="lane-head k-row">
+          <span class="lane-title" id="backlog-title"><span class="k-dot"></span><span data-i18n="backlog"></span></span>
+          <span class="k-grow"></span>
+          <span class="k-badge k-num" data-count="Backlog">0</span>
+        </header>
+        <div class="lane-body" data-lane-body="Backlog"></div>
+      </section>
+      <section class="lane" data-group="Doing" aria-labelledby="doing-title">
+        <header class="lane-head k-row">
+          <span class="lane-title" id="doing-title"><span class="k-dot"></span><span data-i18n="doingLane"></span></span>
+          <span class="k-grow"></span>
+          <span class="k-badge info k-num" data-count="Doing">0</span>
+        </header>
+        <div class="lane-body" data-lane-body="Doing"></div>
+      </section>
+      <section class="lane" data-group="Done" aria-labelledby="done-title">
+        <header class="lane-head k-row">
+          <span class="lane-title" id="done-title"><span class="k-dot"></span><span data-i18n="doneLane"></span></span>
+          <span class="k-grow"></span>
+          <span class="k-badge ok k-num" data-count="Done">0</span>
+        </header>
+        <div class="lane-body" data-lane-body="Done"></div>
+      </section>
+    </div>
+  </main>
+
+  <div class="modal" id="task-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
+    <form class="modal-panel" id="task-form">
+      <header class="modal-head k-row">
+        <h2 id="modal-title"></h2>
+        <span class="k-grow"></span>
+        <button class="k-btn ghost icon-only" id="modal-close" type="button" data-i18n-aria-label="close" data-i18n-title="close">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4 4l8 8M12 4l-8 8"/>
+          </svg>
+        </button>
+      </header>
+      <div class="field-stack">
+        <label for="task-title" data-i18n="titleLabel"></label>
+        <input class="k-field" id="task-title" maxlength="140" required>
+      </div>
+      <div class="field-stack">
+        <label for="task-tag" data-i18n="tagLabel"></label>
+        <input class="k-field" id="task-tag" maxlength="32" data-i18n-placeholder="tagPlaceholder">
+      </div>
+      <div class="field-stack">
+        <label for="task-note" data-i18n="notesLabel"></label>
+        <textarea class="k-field" id="task-note" maxlength="1000" data-i18n-placeholder="notePlaceholder"></textarea>
+      </div>
+      <footer class="modal-actions k-row">
+        <button class="k-btn sec" id="modal-cancel" type="button" data-i18n="cancel"></button>
+        <button class="k-btn" id="modal-save" type="submit"></button>
+      </footer>
+    </form>
+  </div>
+
+  <script type="module">
+    const oma = window.oma;
+    const STR = {
+      en: {
+        pageTitle: "Project Pulse",
+        description: "A three-lane project board shared by AI, chat components, and /view, with a 14-day activity pulse and stale-task reminders.",
+        eyebrow: "Ship rhythm",
+        appName: "Project Pulse",
+        weeklyReport: "AI brief",
+        newTask: "New task",
+        overviewAria: "Project overview",
+        inProgress: "In progress",
+        totalTasks: "All tasks",
+        completionRate: "Completion",
+        needsAttention: "Needs attention",
+        pulseTitle: "14 day activity pulse",
+        pulseAria: "Task activity over the last 14 days",
+        activityOne: "{date}, 1 activity",
+        activities: "{date}, {count} activities",
+        activeDayOne: "1 active day",
+        activeDays: "{count} active days",
+        surfaceSignal: "AI · Widget · /view",
+        close: "Close",
+        closeError: "Close error message",
+        emptyTitle: "Put the work you are shipping on this board",
+        emptyBody: "In Claude Code, say: break project X into tasks and add them to project-pulse. You can also paste one task per line below.",
+        bulkPlaceholder: "Rewrite the homepage story\nAdd preview deploys\nCheck mobile performance",
+        bulkAria: "Batch tasks, one per line",
+        addBacklog: "Add to Backlog",
+        boardAria: "Project task board",
+        backlog: "Backlog",
+        doingLane: "Doing",
+        doneLane: "Done",
+        modalNew: "New task",
+        modalEdit: "Edit task",
+        titleLabel: "Title",
+        tagLabel: "Tag",
+        notesLabel: "Notes",
+        tagPlaceholder: "Frontend, content, launch...",
+        notePlaceholder: "Keep the next step or dependency context",
+        cancel: "Cancel",
+        saveTask: "Save task",
+        saveChanges: "Save changes",
+        joinBacklog: "Add to Backlog",
+        unknownDate: "Unknown date",
+        noActivity: "No activity yet",
+        justNow: "just now",
+        untitledTask: "Untitled task",
+        uncategorized: "Uncategorized",
+        taskAria: "{title}, in {group}",
+        moveTo: "Move to {group}",
+        moveTaskTo: "Move {title} to {group}",
+        lastUpdated: "Last updated: {date}",
+        staleFor: "{count} days without an update",
+        demoPrefix: "In Claude Code, say:",
+        demoCommand: "Break project X into tasks and add them to project-pulse",
+        doingEmpty: "Drag a task here to start moving it",
+        doneEmpty: "Completed work stays here",
+        backlogEmpty: "Waiting for the next worthwhile task",
+        taskRemoved: "This task was removed elsewhere, so the editor was closed.",
+        moveFailed: "The move failed; the task returned to its original lane.",
+        activityUpdateFailed: "The lane changed, but the activity time was not saved. Edit the task once more later.",
+        saveEditFailed: "The changes were not saved.",
+        addFailed: "The task was not added.",
+        saveFailed: "The task was not saved. Try again.",
+        triage: "Triage",
+        bulkFailed: "{count} tasks were not added and remain in the input.",
+        weeklyPrompt: "Write a weekly brief from the latest project-pulse changes. Use data_changes to distinguish my updates from AI updates, then summarize completed work, active work, stale tasks, and next steps. Do not change any data."
+      },
+      zh: {
+        pageTitle: "Project Pulse · 项目进度脉搏",
+        description: "一块让 AI、聊天组件和 /view 共用同一份 project-tasks 数据的三列项目看板，带 14 天活动脉搏与陈旧任务提醒。",
+        eyebrow: "交付节奏",
+        appName: "Project Pulse",
+        weeklyReport: "AI 周报",
+        newTask: "新任务",
+        overviewAria: "项目概览",
+        inProgress: "正在推进",
+        totalTasks: "全部任务",
+        completionRate: "完成率",
+        needsAttention: "需要唤醒",
+        pulseTitle: "14 天活动脉搏",
+        pulseAria: "最近 14 天任务活动强度",
+        activityOne: "{date}，1 次活动",
+        activities: "{date}，{count} 次活动",
+        activeDayOne: "1 个活跃日",
+        activeDays: "{count} 个活跃日",
+        surfaceSignal: "AI · 组件 · /view",
+        close: "关闭",
+        closeError: "关闭错误提示",
+        emptyTitle: "把正在做的项目交给这块板",
+        emptyBody: "在 Claude Code 里说：把 X 项目拆成任务放进 project-pulse。也可以在下面一行一个任务直接贴进来。",
+        bulkPlaceholder: "重写首页文案\n接入预览部署\n检查移动端性能",
+        bulkAria: "批量任务，每行一条",
+        addBacklog: "放入 Backlog",
+        boardAria: "项目任务看板",
+        backlog: "待办",
+        doingLane: "推进中",
+        doneLane: "已完成",
+        modalNew: "新任务",
+        modalEdit: "编辑任务",
+        titleLabel: "标题",
+        tagLabel: "标签",
+        notesLabel: "备注",
+        tagPlaceholder: "前端、内容、发布...",
+        notePlaceholder: "保留下一步或依赖上下文",
+        cancel: "取消",
+        saveTask: "保存任务",
+        saveChanges: "保存修改",
+        joinBacklog: "加入 Backlog",
+        unknownDate: "日期未知",
+        noActivity: "暂无动静",
+        justNow: "刚刚",
+        untitledTask: "未命名任务",
+        uncategorized: "未分类",
+        taskAria: "{title}，位于{group}",
+        moveTo: "移到{group}",
+        moveTaskTo: "把 {title} 移到{group}",
+        lastUpdated: "最后更新：{date}",
+        staleFor: "已 {count} 天未更新",
+        demoPrefix: "在 Claude Code 里说：",
+        demoCommand: "把 X 项目拆成任务放进 project-pulse",
+        doingEmpty: "把任务拖到这里开始推进",
+        doneEmpty: "完成的工作会留在这里",
+        backlogEmpty: "等待下一件值得做的事",
+        taskRemoved: "这条任务已在另一个入口被移除，编辑已关闭。",
+        moveFailed: "移动失败，任务已回到原位置。",
+        activityUpdateFailed: "列已移动，但活动时间未能写入；请稍后再编辑一次任务。",
+        saveEditFailed: "保存失败，修改没有写入。",
+        addFailed: "新增失败，任务没有写入。",
+        saveFailed: "保存失败，请重试。",
+        triage: "待整理",
+        bulkFailed: "{count} 条任务未写入，已保留在输入框中。",
+        weeklyPrompt: "按 project-pulse 最近的变动给我写个周报：请用 data_changes 区分我和 AI 的更新，概括已完成、正在推进、陈旧任务与下一步。不要改数据。"
+      }
+    };
+    const GROUPS = ["Backlog", "Doing", "Done"];
+    const GROUP_INDEX = new Map(GROUPS.map((group, index) => [group, index]));
+    const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+    const today    = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+    const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
+    const nextOccurrence = (anchorIso, everyDays) => {
+      const a = dateOnly(anchorIso);
+      const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
+      return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
+    };
+
+    let editingId = null;
+    let dragId = null;
+    let dragFrom = null;
+    let latestState = { items: [] };
+    let lastDay = localISO(today());
+    let errorTimer = 0;
+
+    const errorStrip = document.getElementById("error-strip");
+    const errorText = document.getElementById("error-text");
+    const modal = document.getElementById("task-modal");
+    const taskForm = document.getElementById("task-form");
+    const taskTitle = document.getElementById("task-title");
+    const taskTag = document.getElementById("task-tag");
+    const taskNote = document.getElementById("task-note");
+
+    function localISO(date) {
+      const y = date.getFullYear();
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      return `${y}-${m}-${d}`;
+    }
+
+    function language() {
+      const value = String(oma.pref("locale", "en") || "en");
+      return value.toLowerCase().startsWith("zh") ? "zh" : "en";
+    }
+
+    function localeCode() {
+      const value = String(oma.pref("locale", "en") || "en");
+      if (value === "auto") return language() === "zh" ? "zh-CN" : "en";
+      return value;
+    }
+
+    function t(key, values = {}) {
+      const template = STR[language()][key] || STR.en[key] || key;
+      return String(template).replace(/\{(\w+)\}/g, (_, name) => values[name] === undefined ? `{${name}}` : String(values[name]));
+    }
+
+    function applyI18n() {
+      document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+      document.title = t("pageTitle");
+      const description = document.querySelector('meta[name="description"]');
+      if (description) description.content = t("description");
+      for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+      for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+      for (const node of document.querySelectorAll("[data-i18n-aria-label]")) node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel));
+      for (const node of document.querySelectorAll("[data-i18n-title]")) node.title = t(node.dataset.i18nTitle);
+      document.getElementById("modal-title").textContent = t(editingId ? "modalEdit" : "modalNew");
+      document.getElementById("modal-save").textContent = t(editingId ? "saveChanges" : "joinBacklog");
+    }
+
+    function groupLabel(group) {
+      if (group === "Backlog") return t("backlog");
+      if (group === "Doing") return t("doingLane");
+      return t("doneLane");
+    }
+
+    function numberFormat(value) {
+      return new Intl.NumberFormat(localeCode()).format(value);
+    }
+
+    function formatDate(iso) {
+      const date = dateOnly(iso);
+      if (Number.isNaN(date.getTime())) return t("unknownDate");
+      const pref = oma.pref("date_format", "auto");
+      const y = String(date.getFullYear());
+      const m = String(date.getMonth() + 1).padStart(2, "0");
+      const d = String(date.getDate()).padStart(2, "0");
+      if (pref === "yyyy-mm-dd") return `${y}-${m}-${d}`;
+      if (pref === "dd/mm/yyyy") return `${d}/${m}/${y}`;
+      if (pref === "mm/dd/yyyy") return `${m}/${d}/${y}`;
+      return new Intl.DateTimeFormat(localeCode(), { month: "short", day: "numeric" }).format(date);
+    }
+
+    function relativeAge(iso) {
+      const time = Date.parse(iso || "");
+      if (!Number.isFinite(time)) return t("noActivity");
+      const delta = Date.now() - time;
+      if (delta < 60000) return t("justNow");
+      const rtf = new Intl.RelativeTimeFormat(localeCode(), { numeric: "auto" });
+      const minutes = Math.floor(delta / 60000);
+      if (minutes < 60) return rtf.format(-minutes, "minute");
+      const hours = Math.floor(minutes / 60);
+      if (hours < 24) return rtf.format(-hours, "hour");
+      const days = Math.max(1, -daysUntil(String(iso).slice(0, 10)));
+      if (days < 30) return rtf.format(-days, "day");
+      const months = Math.floor(days / 30);
+      return rtf.format(-months, "month");
+    }
+
+    function activityISO(item) {
+      const value = item.fields && item.fields.updated_at;
+      return typeof value === "string" ? value : "";
+    }
+
+    function staleAge(item, threshold) {
+      if (item.group !== "Doing") return 0;
+      const iso = activityISO(item);
+      if (!iso) return threshold + 1;
+      return Math.max(0, -daysUntil(iso.slice(0, 10)));
+    }
+
+    function isStale(item, threshold) {
+      return staleAge(item, threshold) > threshold;
+    }
+
+    function fieldText(item, key) {
+      const value = item.fields && item.fields[key];
+      return typeof value === "string" ? value : "";
+    }
+
+    function sortedGroup(items, group) {
+      return items
+        .filter((item) => GROUPS.includes(item.group) && item.group === group)
+        .sort((a, b) => a.position - b.position || a.id.localeCompare(b.id));
+    }
+
+    function showError(message) {
+      clearTimeout(errorTimer);
+      errorText.textContent = message;
+      errorStrip.hidden = false;
+      errorTimer = setTimeout(() => {
+        errorStrip.hidden = true;
+      }, 7000);
+    }
+
+    function clearError() {
+      clearTimeout(errorTimer);
+      errorStrip.hidden = true;
+    }
+
+    function writeFailed(result) {
+      return Boolean(result && (result.isError || result.ok === false));
+    }
+
+    function writeReason(result, fallback) {
+      return result && (result.note || result.reason) ? String(result.note || result.reason) : fallback;
+    }
+
+    function iconPath(path) {
+      const template = document.createElement("template");
+      template.innerHTML = `<svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="${path}"/></svg>`;
+      return template.content.firstElementChild;
+    }
+
+    function createTaskCard(item, staleThreshold, showNotes) {
+      const card = document.createElement("article");
+      const stale = isStale(item, staleThreshold);
+      card.className = "task-card k-card is-click k-stagger";
+      card.classList.toggle("is-stale", stale);
+      card.classList.toggle("is-done", item.group === "Done");
+      card.draggable = true;
+      card.tabIndex = 0;
+      card.dataset.id = item.id;
+      const taskName = fieldText(item, "title") || t("untitledTask");
+      card.setAttribute("aria-label", t("taskAria", { title: taskName, group: groupLabel(item.group) }));
+
+      const top = document.createElement("div");
+      top.className = "card-top k-row";
+      const title = document.createElement("span");
+      title.className = "task-title k-ellip2 k-grow";
+      title.textContent = taskName;
+      top.append(title);
+
+      const nextGroup = item.group === "Done" ? "Doing" : GROUPS[Math.min(2, (GROUP_INDEX.get(item.group) || 0) + 1)];
+      const moveButton = document.createElement("button");
+      moveButton.className = "k-btn ghost card-move";
+      moveButton.type = "button";
+      moveButton.title = t("moveTo", { group: groupLabel(nextGroup) });
+      moveButton.setAttribute("aria-label", t("moveTaskTo", { title: title.textContent, group: groupLabel(nextGroup) }));
+      moveButton.append(iconPath(item.group === "Done" ? "M10.5 3.5 6 8l4.5 4.5M6.5 8h7" : "M5.5 3.5 10 8l-4.5 4.5M2.5 8h7"));
+      moveButton.onclick = (event) => {
+        event.stopPropagation();
+        moveTask(item.id, nextGroup);
+      };
+      top.append(moveButton);
+      card.append(top);
+
+      const noteValue = fieldText(item, "note");
+      if (showNotes && noteValue) {
+        const note = document.createElement("p");
+        note.className = "task-note k-ellip2";
+        note.textContent = noteValue;
+        card.append(note);
+      }
+
+      const meta = document.createElement("div");
+      meta.className = "card-meta k-row";
+      const tag = document.createElement("span");
+      tag.className = "task-tag k-chip static k-ellip";
+      tag.textContent = fieldText(item, "tag") || t("uncategorized");
+      meta.append(tag);
+      const activity = document.createElement("span");
+      activity.className = "last-move k-num";
+      activity.textContent = relativeAge(activityISO(item));
+      const activityDate = activityISO(item);
+      if (activityDate) activity.title = t("lastUpdated", { date: formatDate(activityDate) });
+      meta.append(activity);
+      card.append(meta);
+
+      if (stale) {
+        const clock = document.createElement("span");
+        clock.className = "stale-clock";
+        clock.title = t("staleFor", { count: numberFormat(staleAge(item, staleThreshold)) });
+        clock.setAttribute("aria-label", clock.title);
+        clock.append(iconPath("M8 2.2a5.8 5.8 0 1 1 0 11.6A5.8 5.8 0 0 1 8 2.2zM8 4.7v3.6l2.4 1.4"));
+        card.append(clock);
+      }
+
+      card.onclick = () => openEditor(item);
+      card.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          openEditor(item);
+        }
+      };
+      card.ondragstart = (event) => {
+        dragId = item.id;
+        dragFrom = item.group;
+        event.dataTransfer.effectAllowed = "move";
+        event.dataTransfer.setData("text/plain", item.id);
+        requestAnimationFrame(() => card.classList.add("dragging"));
+      };
+      card.ondragend = () => {
+        dragId = null;
+        dragFrom = null;
+        card.classList.remove("dragging");
+        document.querySelectorAll(".lane.drag-over").forEach((lane) => lane.classList.remove("drag-over"));
+      };
+      return card;
+    }
+
+    function createLaneEmpty(group, allEmpty) {
+      if (allEmpty && group === "Backlog") {
+        const demo = document.createElement("div");
+        demo.className = "demo-task task-card k-card";
+        const title = document.createElement("b");
+        title.className = "task-title";
+        title.textContent = t("demoPrefix");
+        const code = document.createElement("code");
+        code.textContent = t("demoCommand");
+        demo.append(title, document.createElement("br"), code);
+        return demo;
+      }
+      const empty = document.createElement("div");
+      empty.className = "lane-empty";
+      empty.textContent = t(group === "Doing" ? "doingEmpty" : group === "Done" ? "doneEmpty" : "backlogEmpty");
+      return empty;
+    }
+
+    function renderPulse(items) {
+      const bars = document.getElementById("pulse-bars");
+      bars.innerHTML = "";
+      const points = [];
+      const anchor = today();
+      for (let offset = 13; offset >= 0; offset--) {
+        const date = new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() - offset);
+        const key = localISO(date);
+        const count = items.filter((item) => activityISO(item).slice(0, 10) === key).length;
+        points.push({ date, key, count });
+      }
+      const max = Math.max(1, ...points.map((point) => point.count));
+      points.forEach((point, index) => {
+        const bar = document.createElement("span");
+        const level = point.count ? Math.max(1, Math.round((point.count / max) * 5)) : 0;
+        bar.className = "pulse-bar";
+        bar.classList.toggle("today-bar", index === points.length - 1);
+        bar.style.setProperty("--level", String(level));
+        bar.style.setProperty("--i", String(index));
+        const label = t(point.count === 1 ? "activityOne" : "activities", {
+          date: formatDate(point.key),
+          count: numberFormat(point.count)
+        });
+        bar.title = label;
+        bar.setAttribute("aria-label", label);
+        bars.append(bar);
+      });
+      document.getElementById("pulse-start").textContent = formatDate(points[0].key);
+      document.getElementById("pulse-end").textContent = formatDate(points[points.length - 1].key);
+      const activeDays = points.filter((point) => point.count > 0).length;
+      document.getElementById("pulse-window").textContent = t(activeDays === 1 ? "activeDayOne" : "activeDays", {
+        count: numberFormat(activeDays)
+      });
+    }
+
+    function render(state) {
+      latestState = state;
+      const items = Array.isArray(state.items) ? state.items : [];
+      const staleThreshold = oma.pref("stale_days", 7);
+      const showNotes = oma.pref("show_notes", true);
+      applyI18n();
+      document.body.classList.toggle("compact", oma.pref("density", "comfortable") === "compact");
+      const doing = items.filter((item) => item.group === "Doing").length;
+      const done = items.filter((item) => item.group === "Done").length;
+      const stale = items.filter((item) => isStale(item, staleThreshold)).length;
+      const rate = items.length ? Math.round((done / items.length) * 100) : 0;
+      document.getElementById("doing-count").textContent = numberFormat(doing);
+      document.getElementById("total-count").textContent = numberFormat(items.length);
+      document.getElementById("done-rate").textContent = `${numberFormat(rate)}%`;
+      document.getElementById("stale-count").textContent = numberFormat(stale);
+      document.getElementById("empty-capture").hidden = items.length > 0;
+      renderPulse(items);
+
+      for (const group of GROUPS) {
+        const groupItems = sortedGroup(items, group);
+        const body = document.querySelector(`[data-lane-body="${group}"]`);
+        const count = document.querySelector(`[data-count="${group}"]`);
+        body.innerHTML = "";
+        count.textContent = numberFormat(groupItems.length);
+        if (!groupItems.length) {
+          body.append(createLaneEmpty(group, items.length === 0));
+          continue;
+        }
+        groupItems.forEach((item, index) => {
+          const card = createTaskCard(item, staleThreshold, showNotes);
+          card.style.setProperty("--i", String(index));
+          body.append(card);
+        });
+      }
+
+      if (editingId && !items.some((item) => item.id === editingId)) {
+        closeEditor();
+        showError(t("taskRemoved"));
+      }
+    }
+
+    async function moveTask(id, targetGroup) {
+      const item = oma.state.items.find((row) => row.id === id);
+      if (!item || item.group === targetGroup || !GROUPS.includes(targetGroup)) return;
+      clearError();
+      try {
+        const moved = await oma.moveItem(id, targetGroup);
+        if (writeFailed(moved)) {
+          showError(writeReason(moved, t("moveFailed")));
+          return;
+        }
+        const now = new Date().toISOString();
+        const fields = {
+          updated_at: now,
+          done_at: targetGroup === "Done" ? now : null
+        };
+        const updated = await oma.updateItem(id, fields);
+        if (writeFailed(updated)) {
+          showError(writeReason(updated, t("activityUpdateFailed")));
+        }
+      } catch (error) {
+        showError(error && error.message ? error.message : t("moveFailed"));
+      }
+    }
+
+    function openEditor(item) {
+      editingId = item ? item.id : null;
+      document.getElementById("modal-title").textContent = t(item ? "modalEdit" : "modalNew");
+      document.getElementById("modal-save").textContent = t(item ? "saveChanges" : "joinBacklog");
+      taskTitle.value = item ? fieldText(item, "title") : "";
+      taskTag.value = item ? fieldText(item, "tag") : "";
+      taskNote.value = item ? fieldText(item, "note") : "";
+      modal.hidden = false;
+      document.getElementById("board").inert = true;
+      document.querySelector(".app-bar").inert = true;
+      document.getElementById("empty-capture").inert = true;
+      requestAnimationFrame(() => taskTitle.focus());
+    }
+
+    function closeEditor() {
+      editingId = null;
+      modal.hidden = true;
+      document.getElementById("board").inert = false;
+      document.querySelector(".app-bar").inert = false;
+      document.getElementById("empty-capture").inert = false;
+    }
+
+    taskForm.onsubmit = async (event) => {
+      event.preventDefault();
+      const title = taskTitle.value.trim();
+      if (!title) {
+        taskTitle.focus();
+        return;
+      }
+      const save = document.getElementById("modal-save");
+      save.disabled = true;
+      clearError();
+      try {
+        const fields = {
+          title,
+          tag: taskTag.value.trim(),
+          note: taskNote.value.trim(),
+          updated_at: new Date().toISOString()
+        };
+        const result = editingId
+          ? await oma.updateItem(editingId, fields)
+          : await oma.addItem({ group: "Backlog", fields });
+        if (writeFailed(result)) {
+          showError(writeReason(result, t(editingId ? "saveEditFailed" : "addFailed")));
+          return;
+        }
+        closeEditor();
+      } catch (error) {
+        showError(error && error.message ? error.message : t("saveFailed"));
+      } finally {
+        save.disabled = false;
+      }
+    };
+
+    document.getElementById("bulk-form").onsubmit = async (event) => {
+      event.preventDefault();
+      const input = document.getElementById("bulk-input");
+      const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+      if (!lines.length) {
+        input.focus();
+        return;
+      }
+      const button = document.getElementById("bulk-submit");
+      button.disabled = true;
+      clearError();
+      const failed = [];
+      for (const title of lines) {
+        try {
+          const result = await oma.addItem({
+            group: "Backlog",
+            fields: {
+              title,
+              note: "",
+              tag: t("triage"),
+              updated_at: new Date().toISOString()
+            }
+          });
+          if (writeFailed(result)) failed.push(title);
+        } catch {
+          failed.push(title);
+        }
+      }
+      button.disabled = false;
+      if (failed.length) {
+        input.value = failed.join("\n");
+        showError(t("bulkFailed", { count: numberFormat(failed.length) }));
+        return;
+      }
+      input.value = "";
+    };
+
+    for (const lane of document.querySelectorAll(".lane")) {
+      const targetGroup = lane.dataset.group;
+      lane.ondragover = (event) => {
+        if (!dragId || dragFrom === targetGroup) return;
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "move";
+        lane.classList.add("drag-over");
+      };
+      lane.ondragleave = (event) => {
+        if (!lane.contains(event.relatedTarget)) lane.classList.remove("drag-over");
+      };
+      lane.ondrop = (event) => {
+        event.preventDefault();
+        lane.classList.remove("drag-over");
+        const id = dragId || event.dataTransfer.getData("text/plain");
+        if (id) moveTask(id, targetGroup);
+      };
+    }
+
+    document.getElementById("weekly-btn").onclick = () => {
+      oma.sendMessage(t("weeklyPrompt"));
+    };
+    document.getElementById("add-btn").onclick = () => openEditor(null);
+    document.getElementById("modal-close").onclick = closeEditor;
+    document.getElementById("modal-cancel").onclick = closeEditor;
+    document.getElementById("error-close").onclick = clearError;
+    modal.onclick = (event) => {
+      if (event.target === modal) closeEditor();
+    };
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && !modal.hidden) closeEditor();
+    });
+
+    setInterval(() => {
+      const nextDay = localISO(today());
+      if (nextDay !== lastDay) {
+        lastDay = nextDay;
+        render(oma.state);
+      }
+    }, 60000);
+
+    void nextOccurrence;
+    oma.ready(render);
+    oma.onChange(render);
+    oma.onPrefChange(() => render(latestState));
+  </script>
+</body>
+</html>

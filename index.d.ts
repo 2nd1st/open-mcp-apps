@@ -5,8 +5,15 @@
 export interface EngineOptions {
   /** Fixed host label stamped on change events; when absent, derived per-session from the MCP initialize clientInfo. */
   hostLabel?: string;
-  /** Replace the default initialize instructions wholesale (hosted deployments may need their own copy). */
+  /** Replace the MANUAL layer of the instructions (hosted deployments carry their own behaviour
+   *  text). The engine-composed dynamic segments (onboarding vs inventory, proactivity stance,
+   *  later the roster) cannot be removed: a manual carrying the placeholders
+   *  (__ONBOARDING_OR_INVENTORY__, __PROACTIVITY_STANCE__) positions them; one that omits them
+   *  gets them appended. */
   instructions?: string;
+  /** Base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787"). When present,
+   *  list_components prints a real <viewBase>/view/<name> link per app; absent = no link. */
+  viewBase?: string;
 }
 
 export interface Store {
@@ -26,6 +33,12 @@ export function createEngine(store: Store, opts?: EngineOptions): unknown;
 
 export function tierOf(author: string | null | undefined): "local" | "unreviewed";
 export const RUNNER_REQUIRED_HTML: string;
+/** Which collection an app opens on when the caller names none: the one collection its
+ *  #oma-manifest declares, else its own name. Use it wherever you MOUNT a component, so an
+ *  embedding shell binds by the same rule as open_component and the engine's own viewer. */
+export function defaultCollectionFor(
+  component: { name?: string; manifest?: string | null } | null | undefined,
+): string | null;
 
 /** Wrap component HTML into the final widget document (injects the oma runtime).
  * standalone (browser-viewer mode, no MCP host): endpoint/events default to "/rpc" and
@@ -51,7 +64,7 @@ export function openFileChannel(store: Store): unknown;
 
 export const GUIDE: string;
 
-/** Idempotently install the built-in system components (settings/dashboard/gallery) into a store — embedders call this after openStore() to provision a fresh registry. */
+/** Idempotently install the built-in system components (settings/dashboard/library) into a store — embedders call this after openStore() to provision a fresh registry. */
 export function seedSystemComponents(store: Store, opts?: { log?: (line: string) => void }): Array<{
   name: string;
   action: "seeded" | "unchanged" | "skipped" | "error";
@@ -72,3 +85,44 @@ export const MAX_APP_FILE_BYTES: number;
 export const MAX_APP_FILE_COUNT: number;
 export const MAX_TOTAL_FILE_BYTES: number;
 export const MAX_TOTAL_FILE_COUNT: number;
+
+// ── the sandbox/preview machine (write-set D: src/runner.mjs, one copy) ──────────────────────
+
+/** The canonical no-host design-token fallback stylesheet (what wrapComponent injects). */
+export const TOKEN_FALLBACK_CSS: string;
+/** The system UI kit CSS (components/_system.css, MIT), read from disk on first call.
+ *  wrapComponent/wrapLoader inject it themselves; pass it to composePreviewDoc so a
+ *  server-composed preview shows the same widget the runtime would. */
+export function KIT_CSS(): string;
+/** The kit as a head <style> with the data-oma marker every composer agrees on. */
+export function kitStyle(css: string): string;
+/** The child-document CSP as a <meta> tag (composeChildDoc puts it FIRST in head). */
+export const RUNNER_CSP: string;
+/** The same policy as a bare string — send it as an HTTP header on served preview documents. */
+export const RUNNER_CSP_POLICY: string;
+/** Host design-token custom-property names the machine re-emits into child documents. */
+export const TOKEN_NAMES: string[];
+/** The child mini-bridge script (window.oma proxy over postMessage, message keys omaRun*). */
+export const BRIDGE: string;
+/** CSP-first sandboxed child document: untrusted markup rides wholesale in OUR body. */
+export function composeChildDoc(html: string, opts?: { tokenCss?: string; kitCss?: string; bridge?: string }): string;
+/** A complete, self-contained INERT preview document (stub oma seeded with fixture items) —
+ *  what a hosted /library preview server serves instead of keeping hand-synced copies. */
+export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; tokenCss?: string; kitCss?: string }): string;
+/** The inert stub window.oma script for a standalone preview document. */
+export function stubOmaScript(name: string, items?: unknown[]): string;
+/** Build the parent-side caps chokepoint every sandboxed child call funnels through. */
+export function makeGuard(cfg: {
+  name: string;
+  coll: string;
+  caps?: Record<string, unknown>;
+  tier?: string;
+  preset?: "live" | "readonly" | "inert";
+  io: Record<string, unknown>;
+}): (method: string, args: Record<string, unknown>) => Promise<unknown>;
+/** Walk file_read's byte windows; parts decode-and-concatenate byte-wise (never assume 3-alignment). */
+export function readFileParts(
+  callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>,
+  component: string,
+  path: string,
+): Promise<{ mime?: string; sha256?: string; size?: number; parts: string[] }>;

@@ -23,7 +23,7 @@ STRUCTURE RULES
   Keep window.oma usage to the calls already present; do not add new tool or message calls.
   Never unhide "dashboard" or "settings" (DASH.hiddenCollections) — pins live in the dashboard's
   own collection, so unhiding it renders this dashboard inside itself.
-  Preserve the module script, @OMA_SYSTEM_CSS marker, metadata, and dependency-free runtime.
+  Preserve the module script, metadata, and dependency-free runtime.
 -->
 <!doctype html>
 <html lang="en">
@@ -32,7 +32,6 @@ STRUCTURE RULES
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Dashboard</title>
 <meta name="description" content="Your home screen — every app you keep, one glance away.">
-<!-- @OMA_SYSTEM_CSS -->
 <style>
   /* ===== section: foundation ===== */
   :root {
@@ -385,7 +384,7 @@ STRUCTURE RULES
   }
 </style>
 <script type="application/json" id="oma-manifest">
-{ "manifest_version": 1,
+{ "manifest_version": 2,
   "settings": [
     { "key": "show_greeting", "type": "boolean", "label": "Show the time-of-day greeting", "default": true },
     { "key": "max_visible", "type": "number", "label": "Recent apps shown before “Show all”", "default": 6, "min": 3, "max": 24, "step": 1 }
@@ -475,8 +474,8 @@ STRUCTURE RULES
     // LOAD-BEARING: pins live in "dashboard" itself — unhide it and this dashboard renders its
     // own pin store as a card.
     hiddenCollections: ["dashboard", "settings"],
-    // This page IS the dashboard; settings + gallery are locked built-ins with quiet doors below.
-    hiddenApps: ["dashboard", "settings", "gallery"],
+    // This page IS the dashboard; settings + library are locked built-ins with quiet doors below.
+    hiddenApps: ["dashboard", "settings", "library"],
     hero: {
       show: true,
       style: "greeting", // "banner" restores the poster hero (copy + stats below)
@@ -624,8 +623,25 @@ STRUCTURE RULES
       const value = fields[field];
       if (typeof value === "string" && value.trim()) return value.trim();
     }
-    const first = Object.values(fields).find((value) => typeof value === "string" && value.trim());
-    return first ? first.trim() : "(item)";
+    // Fallback order matters: a component with no label_field and no title-ish key used to get
+    // whatever string came first — for date-keyed rows that was a bare "2026-07-28" on every tile
+    // (live-test 2026-07-28). Prefer a human string; take a date only when it is ALL there is,
+    // and then at least set it like a date instead of an ISO literal.
+    const isDateish = (v) => /^\d{4}-\d{2}-\d{2}([T ].*)?$/.test(v);
+    const strings = Object.values(fields)
+      .filter((v) => typeof v === "string" && v.trim()).map((v) => v.trim());
+    const human = strings.find((v) => !isDateish(v) && !/^(data:|https?:\/\/)/.test(v));
+    if (human) return human;
+    const dateish = strings.find(isDateish);
+    if (dateish) {
+      const d = new Date(dateish.length > 10 ? dateish : dateish + "T00:00:00");
+      if (!Number.isNaN(d.getTime())) {
+        const opts = { month: "short", day: "numeric" };
+        if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+        return new Intl.DateTimeFormat(undefined, opts).format(d);
+      }
+    }
+    return strings[0] || "(item)";
   }
 
   function friendlyActivity(value) {
@@ -1102,7 +1118,7 @@ STRUCTURE RULES
     doorAsk.hidden = oma.standalone;
     doorBrowse.hidden = oma.standalone;
     doorBrowseLink.hidden = !oma.standalone;
-    doorBrowseLink.href = oma.viewBase + "gallery";
+    doorBrowseLink.href = oma.viewBase + "library";
     return [doors];
   }
 
@@ -1114,7 +1130,7 @@ STRUCTURE RULES
       : "Ask for anything — it becomes an app that keeps your stuff.";
     emptyChips.hidden = emptyAsk.hidden = emptyBrowse.hidden = oma.standalone;
     emptyBrowseLink.hidden = !oma.standalone;
-    emptyBrowseLink.href = oma.viewBase + "gallery";
+    emptyBrowseLink.href = oma.viewBase + "library";
     if (!oma.standalone) {
       emptyChips.replaceChildren(...DASH.empty.examples.map((example) => {
         const chip = document.createElement("button");

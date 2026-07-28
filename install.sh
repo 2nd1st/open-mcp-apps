@@ -21,7 +21,13 @@ command -v node >/dev/null 2>&1 || { echo "✗ Node 22+ is required — install 
 
 if [ -d "$DIR/.git" ]; then
   echo "→ Updating existing clone at $DIR"
-  git -C "$DIR" pull --ff-only
+  git -C "$DIR" pull --ff-only || {
+    echo "✗ Update failed. If this clone predates a published-history rewrite (v0.2.0 re-rooted"
+    echo "  the public repo), a fast-forward can never succeed again. Fresh start:"
+    echo "      mv \"$DIR\" \"$DIR.bak\"   # then re-run this installer"
+    echo "  Your apps and data are NOT in this folder — the store lives in your user data dir."
+    exit 1
+  }
 else
   echo "→ Cloning open-mcp-apps into $DIR"
   git clone "$REPO" "$DIR"

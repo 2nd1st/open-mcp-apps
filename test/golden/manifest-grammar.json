@@ -1,0 +1,323 @@
+{
+  "note": "Decisions of src/manifest-block.mjs over test/rig/manifest-fixtures.mjs. The reader is a BYTE grammar: one canonical opening tag, exactly one occurrence, content to the first </script. Position in the document is irrelevant by design. This corpus was originally built to attack an HTML-tokenizer implementation against a real headless browser — it is kept because those are the hardest inputs anyone has aimed at this reader, and every row now has an answer reachable by reading the grammar rather than by running a browser.",
+  "fixtures": [
+    {
+      "name": "F01-baseline-v1-head",
+      "why": "the 9 seeded components' actual shape (head, after </style>)",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings",
+        "uses_shared"
+      ]
+    },
+    {
+      "name": "F02-baseline-v2-body-minified",
+      "why": "bill-calendar/keep-in-touch shape: block in BODY, one minified line, v2",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "collections",
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F03-duplicate-id",
+      "why": "two blocks with the same id — which one wins? (author error / smuggling)",
+      "expect": {
+        "state": "bad",
+        "error": "duplicate_manifest_block"
+      }
+    },
+    {
+      "name": "F04-inside-template",
+      "why": "template content is an INERT DocumentFragment: getElementById cannot see it. A naive regex CAN. Differential + smuggling surface.",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F05-inside-comment",
+      "why": "commented-out block: not in the DOM at all. A naive regex sees it. Differential.",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F06-literal-close-in-json-string",
+      "why": "a JSON string value containing a LITERAL </script>: the HTML tokenizer ends the element there, so the JSON is truncated. Establishes 'to the first literal close tag' as the browser rule.",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_bad_json"
+      }
+    },
+    {
+      "name": "F07-escaped-close-in-json-string",
+      "why": "the CORRECT way to carry the sequence (<\\/script>) — must round-trip identically on both sides",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "note",
+        "settings"
+      ]
+    },
+    {
+      "name": "F08-double-escape-state",
+      "why": "HTML script-data-DOUBLE-escaped state: after <!-- ... <script the NEXT </script> does NOT end the element. The classic place where 'first literal close' diverges from the browser.",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "note",
+        "settings"
+      ]
+    },
+    {
+      "name": "F09-case-and-quote-variants",
+      "why": "tag/attr names are ASCII-case-insensitive, attr order free, quotes optional — the regex must not be literal-string matching",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F10-id-value-wrong-case",
+      "why": "the id VALUE is case-sensitive even though the attr NAME is not: id=OMA-MANIFEST must NOT match",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F11-type-wrong-case-and-padded",
+      "why": "type value casing/whitespace: does el.type-based matching accept APPLICATION/JSON or ' application/json '?",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F12-decoy-first-wrong-type",
+      "why": "SECURITY: an EXECUTABLE script carries the id first; a real json block follows. 'getElementById then check type' -> null; 'first element matching BOTH' -> the second block. Real divergence between two plausible grammars.",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F13-gt-inside-quoted-attribute",
+      "why": "a quoted attribute value containing '>' — the tag does NOT end there. Kills the <script[^>]*> regex shape.",
+      "expect": {
+        "state": "absent"
+      }
+    },
+    {
+      "name": "F14-no-block",
+      "why": "the overwhelmingly common case today: no declaration at all (must mean 'keep the column as-is')",
+      "expect": {
+        "state": "absent"
+      }
+    },
+    {
+      "name": "F15-empty-object-block",
+      "why": "EXPLICIT empty declaration = the 'clear the column' signal in the approved 3-state semantics",
+      "expect": {
+        "state": "empty"
+      }
+    },
+    {
+      "name": "F16-whitespace-only-block",
+      "why": "block present but content is whitespace: is this 'clear' or 'malformed'? Semantics gap that must be decided, not discovered.",
+      "expect": {
+        "state": "empty"
+      }
+    },
+    {
+      "name": "F17-bad-json",
+      "why": "trailing comma / comment — malformed JSON must be a LOUD reject, never a silent 'no block' (that would clear or freeze a declaration by accident)",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_bad_json"
+      }
+    },
+    {
+      "name": "F18-json-array-not-object",
+      "why": "valid JSON, wrong top-level type — must not reach Object.entries and throw inside the write tx",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_not_object"
+      }
+    },
+    {
+      "name": "F19-v1-legacy-block",
+      "why": "the 9 shipped components are manifest_version:1 — a v2 engine must still extract them (and settings.html:651 currently HARD-rejects anything !== 1, the mirror hazard)",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "uses_shared"
+      ]
+    },
+    {
+      "name": "F20-unterminated-block",
+      "why": "no closing tag at all (truncated authoring / a save cut mid-write): browser takes the rest of the document as script text",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_bad_json"
+      }
+    },
+    {
+      "name": "F21-close-tag-with-space-and-attrs",
+      "why": "'</script >' and '</script foo=bar>' also end a script element per the tokenizer; '</scriptx>' does not",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F22-inside-table-foster-parenting",
+      "why": "foster parenting relocates nodes out of <table>: the element still exists in the DOM, but its position moves — a position-based extractor must not care",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F23-noscript-and-textarea-decoys",
+      "why": "raw-text/escapable-raw-text containers: <textarea> content is TEXT (never an element), <noscript> in a scripting-enabled parse is also raw text. A regex sees elements where the DOM has none.",
+      "expect": {
+        "state": "bad",
+        "error": "duplicate_manifest_block"
+      }
+    },
+    {
+      "name": "F24-svg-namespaced-script",
+      "why": "an SVG <script> is a DIFFERENT element (SVGScriptElement, no .type coercion the same way) yet carries the same id — namespace confusion",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F25-html-entities-in-json",
+      "why": "script content is RAW TEXT: &quot; is NOT decoded. A parser that decodes entities (or an html-to-text pass) corrupts the JSON.",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "note",
+        "settings"
+      ]
+    },
+    {
+      "name": "F27-decoy-inside-another-scripts-js-string",
+      "why": "TOP smuggling risk: another module script's JS source contains the manifest block as a STRING. Script content is raw text, so the DOM has no such element — a flat scanner would extract from inside JS.",
+      "expect": {
+        "state": "bad",
+        "error": "duplicate_manifest_block"
+      }
+    },
+    {
+      "name": "F28-decoy-inside-style-and-xmp",
+      "why": "raw-text containers other than script: <style> and <xmp> also swallow markup as text",
+      "expect": {
+        "state": "bad",
+        "error": "duplicate_manifest_block"
+      }
+    },
+    {
+      "name": "F29-duplicate-attribute",
+      "why": "the tokenizer keeps the FIRST occurrence of a duplicated attribute; a naive last-wins regex reads the second",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F30-self-closing-attempt",
+      "why": "'/>' does NOT close an HTML script element — the rest of the document becomes its content",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    },
+    {
+      "name": "F31-nested-template",
+      "why": "template content is parsed as NORMAL markup (nesting allowed): a scanner that skips to the first </template> resumes too early and sees a block the DOM never has",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "functions",
+        "manifest_version"
+      ]
+    },
+    {
+      "name": "F32-iframe-decoy",
+      "why": "is <iframe> content raw text to the parser? decides whether the scanner must skip it",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "functions",
+        "manifest_version"
+      ]
+    },
+    {
+      "name": "F33-block-before-doctype",
+      "why": "markup before the doctype / outside html: the parser relocates it into head — position must not matter",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F26-non-ascii-and-crlf",
+      "why": "dashboard.html really ships curly quotes inside the block; CRLF line endings are a normal authoring accident",
+      "expect": {
+        "state": "present"
+      },
+      "keys": [
+        "manifest_version",
+        "settings"
+      ]
+    },
+    {
+      "name": "F34-canonical-then-near-miss",
+      "why": "cold-review find: the near-miss check used to run only when NO canonical block existed, so a canonical block plus a differently-spelled attempt was accepted with the second one silently doing nothing — the outcome the check exists to refuse. Order-mirror of F12.",
+      "expect": {
+        "state": "bad",
+        "error": "manifest_block_malformed"
+      }
+    }
+  ]
+}

@@ -1,17 +1,18 @@
 {
   "name": "open-mcp-apps",
-  "version": "0.2.0",
-  "description": "Give your AI a persistent, reusable UI \u2014 it builds the component once, you keep it forever. An open MCP App engine.",
+  "version": "0.3.0",
+  "description": "Give your AI a persistent, reusable UI — it builds the component once, you keep it forever. An open MCP App engine.",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs",
+    "test": "node test/invariants.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/migration-drill.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs",
     "build": "node build.mjs",
     "prepare": "node build.mjs --optional",
     "seed": "node seed.mjs",
     "serve": "node src/http.mjs",
-    "uninstall": "node uninstall.mjs"
+    "uninstall": "node uninstall.mjs",
+    "eval": "node test/eval-live.mjs"
   },
   "keywords": [
     "mcp",
@@ -47,6 +48,8 @@
     "build.mjs",
     "seed.mjs",
     "install.mjs",
+    "install-app.mjs",
+    "RUNTIME.md",
     "install.sh",
     "install.md",
     "uninstall.mjs",

@@ -1,34 +1,29 @@
 # Contributor License Agreement (CLA)
 
-> **⚠️ DRAFT — NOT YET IN EFFECT. Nothing you contribute today is governed by it.**
+> **In effect from v0.3.0 for engine contributions.**
 >
-> A working draft adapted from the widely-used Apache Individual Contributor
-> License Agreement, published early so that anyone deciding whether to
-> contribute can see the terms being considered rather than be surprised by them
-> later. It has not been reviewed by a lawyer; do not rely on it as legal advice.
+> Adapted from the widely-used Apache Individual Contributor License Agreement.
+> It has not yet been reviewed by a lawyer; it is published as-is, in plain
+> sight, so you can judge the terms yourself — do not rely on it as legal advice.
 >
-> **The grantee is deliberately unnamed.** The Project is maintained by one
-> person and has no company behind it yet. Naming a party in a contract that is
-> about to change is worse than leaving it open, so this Agreement takes effect
-> only once (1) there is a settled legal entity to name as the grantee, (2) the
-> text has been reviewed and approved, and (3) a signing mechanism is in place —
-> see "How to sign". §9 is written so that the Agreement survives the Project
-> moving from an individual maintainer to a company.
+> **The grantee ("We"/"Us") is the Project's maintainer: the individual who
+> operates as [`2nd1st`](https://github.com/2nd1st) on GitHub.** The Project has
+> no company behind it today; §9 (Assignment) is what carries this Agreement
+> intact if that changes — a successor entity gains nothing beyond what You have
+> already granted here.
 >
-> **Until then:** contributions to `components/` need nothing at all (they are
-> MIT in and MIT out). For engine contributions, open an issue first and
-> provenance gets sorted out with you directly — see
-> [`CONTRIBUTING.md`](CONTRIBUTING.md). Sign your commits off (`git commit -s`)
-> either way.
+> Contributions to `components/` need no agreement at all (MIT in, MIT out). DCO
+> sign-off (`git commit -s`) applies to everything either way.
 >
-> This draft is the individual (ICLA) version. A corporate CLA would be needed
-> in addition if contributions on behalf of an employer are expected.
+> This is the individual (ICLA) form. Contributing on behalf of an employer?
+> Open an issue first — a corporate CLA (CCLA) is executed case by case until a
+> standing one is published.
 
 ---
 
 Thank you for your interest in contributing to open-mcp-apps (the "Project"),
-maintained by the Project's maintainers ("We" or "Us" — see the draft notice
-above regarding the grantee). This Contributor License Agreement ("Agreement")
+maintained by the individual operating as `2nd1st` on GitHub ("We" or "Us";
+see Section 9 for assignment to a successor). This Contributor License Agreement ("Agreement")
 documents the rights granted by contributors to Us. By making a Contribution to
 the Project, You accept and agree to the following terms for Your present and
 future Contributions.
@@ -143,7 +138,13 @@ already granted here, and Your own rights in Your Contributions are unaffected.
 
 ## How to sign
 
-*(To be finalized before the CLA is operative.)* The intended mechanism is an
-automated CLA check on pull requests (for example, a CLA-assistant GitHub Action
-that records your agreement against your GitHub identity the first time you open
-a PR). Until that is enabled, this document is informational only.
+Signing happens on your FIRST pull request, in the PR itself: the CLA check
+prompts you, and you sign by replying with a comment —
+
+> I have read the CLA Document and I hereby sign the CLA
+
+The signature is recorded once against your GitHub identity (in
+`.github/cla-signatures.json` on `main`) and every later PR passes the check
+automatically. Maintainer and bot accounts are allowlisted. DCO sign-off
+(`git commit -s`) is still required on every commit — the CLA covers the grant,
+the sign-off covers each change's provenance.

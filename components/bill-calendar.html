@@ -644,7 +644,7 @@
           </svg>
         </div>
         <div>
-          <span class="metric-label">Paid on time</span>
+          <span class="metric-label">On-time streak</span>
           <strong id="streakValue">—</strong>
         </div>
       </div>
@@ -706,7 +706,7 @@
 </main>
 
 <script type="application/json" id="oma-manifest">
-{"manifest_version":1,"uses_shared":["locale","week_start","date_format","currency","density","confirm_delete"]}
+{"manifest_version":2,"uses_shared":["locale","week_start","date_format","currency","density","confirm_delete"]}
 </script>
 <script type="module">
   const $ = (id) => document.getElementById(id);
@@ -881,7 +881,9 @@
       ? `${upcomingSeven.length} bill${upcomingSeven.length === 1 ? "" : "s"} due soon`
       : overdue.length ? "Nothing else due in the next seven days" : "Clear for the next seven days";
     const streak = onTimeStreak(items);
-    $("streakValue").textContent = streak ? `${streak} in a row` : "Start a streak";
+    // The label ("On-time streak") carries the meaning; the value stays a bare number so the
+    // narrow stat column can never ellipsize it into nonsense ("2 in…", live-test 2026-07-28).
+    $("streakValue").textContent = String(streak);
     $("upcomingCount").textContent = items.filter((item) => statusOf(item) === "upcoming").length;
     $("overdueCount").textContent = overdue.length;
     $("paidCount").textContent = items.filter((item) => statusOf(item) === "paid").length;
@@ -1068,7 +1070,7 @@
 
   oma.ready((state) => {
     render(state);
-    // Gallery apps install EMPTY — sample data lives only in the oma-fixtures block (gallery preview).
+    // Library apps install EMPTY — sample data lives only in the oma-fixtures block (library preview).
   });
   oma.onChange(render);
   oma.onPrefChange(() => render(currentState));

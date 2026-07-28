@@ -292,15 +292,33 @@ export function makeFileChannel({ store, backend }) {
     if (uploads.size >= MAX_ACTIVE_UPLOADS) return { ok: false, error: "too_many_uploads" };
     const stagingId = await backend.openStaging();
     const upload_id = randomUUID();
-    uploads.set(upload_id, { component: String(component), stagingId, bytes: 0, hash: createHash("sha256"), touched: Date.now(), busy: false });
+    uploads.set(upload_id, { component: String(component), stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
     return { ok: true, upload_id, bytes: 0 };
   }
 
-  async function appendUpload(upload_id, data) {
+  async function appendUpload(upload_id, data, { seq } = {}) {
     const u = liveUpload(upload_id);
     if (!u) return { ok: false, error: "upload_not_found" };
     if (u.busy) return { ok: false, error: "upload_busy" };
+    // Optional 0-based chunk index: the resend-after-timeout safety. A chunk the staging file
+    // already holds is ACKNOWLEDGED, not appended twice (double-append corrupts the file with no
+    // error anywhere) — but a duplicate INDEX is only a duplicate if it carries the same BYTES:
+    // acknowledging different bytes would tell the caller its new content was stored when the old
+    // one was. Only the LAST index is verifiable (one hash kept); an older index cannot be, and is
+    // refused rather than guessed at. A chunk from the future names the index expected.
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
+    if (seq != null) {
+      const at = Math.floor(Number(seq));
+      if (!Number.isFinite(at) || at < 0) return { ok: false, error: "bad_chunk_seq" };
+      if (at === u.chunks - 1) {
+        const sha = createHash("sha256").update(bytes).digest("hex");
+        if (sha !== u.lastChunkSha) return { ok: false, error: "chunk_mismatch", expected: u.chunks };
+        u.touched = Date.now();
+        return { ok: true, bytes: u.bytes, chunks: u.chunks, duplicate: true };
+      }
+      if (at < u.chunks) return { ok: false, error: "chunk_already_staged", expected: u.chunks };
+      if (at > u.chunks) return { ok: false, error: "chunk_out_of_order", expected: u.chunks, got: at };
+    }
     if (u.bytes + bytes.length > MAX_FILE_BYTES) { dropUpload(u, String(upload_id)); return { ok: false, error: "file_too_large" }; }
     u.busy = true;
     try {
@@ -311,15 +329,39 @@ export function makeFileChannel({ store, backend }) {
       await backend.appendStaging(u.stagingId, bytes);
       u.hash.update(bytes);
       u.bytes += bytes.length;
+      u.chunks += 1;
+      u.lastChunkSha = createHash("sha256").update(bytes).digest("hex");
       u.touched = Date.now();
-      return { ok: true, bytes: u.bytes };
+      return { ok: true, bytes: u.bytes, chunks: u.chunks };
     } catch (e) {
       dropUpload(u, String(upload_id));
       throw e;
     } finally { u.busy = false; }
   }
 
-  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version } = {}) {
+  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version, expected_sha256 } = {}) {
+    // Idempotency FIRST, before the upload is even looked up. A successful commit CONSUMES its
+    // upload, so the retry that arrives after a lost response finds no upload — and used to be told
+    // "start again with file_write_begin", inducing a full re-upload of a file that was already
+    // committed (the adversarial challenge's find). The ledger knows better: same command_id, same
+    // file → the original receipt, rebuilt from the file table via the event's aggregate.
+    if (command_id) {
+      const prior = store.priorReceipt(command_id);
+      if (prior) {
+        if (prior.event_type !== "file_written") return { ok: false, error: "command_id_reused" };
+        const p = prior.payload || {};
+        if (p.path !== String(path)) return { ok: false, error: "command_id_reused" };
+        // If a LIVE upload is being aimed at this old command_id, its component must match the
+        // original commit's — otherwise this is a reused id, and answering "success" would leave
+        // the new upload silently uncommitted.
+        const uLive = uploads.get(String(upload_id));
+        if (uLive && uLive.component !== p.component) return { ok: false, error: "command_id_reused" };
+        // The ORIGINAL receipt, from the event that made this command idempotent — never from the
+        // current file row, which a later overwrite (or delete) may have moved on.
+        return { ok: true, idempotent: true,
+          meta: { component: p.component, path: p.path, sha256: p.sha256, size: p.size, mime: p.mime || "application/octet-stream", version: prior.seq } };
+      }
+    }
     const u = liveUpload(upload_id);
     if (!u) return { ok: false, error: "upload_not_found" };
     if (u.busy) return { ok: false, error: "upload_busy" };
@@ -328,6 +370,14 @@ export function makeFileChannel({ store, backend }) {
     try {
       const st = await backend.statStaging(u.stagingId);
       if (!st || st.size !== u.bytes) { dropUpload(u, String(upload_id)); return { ok: false, error: "upload_expired" }; }
+      // Loss-free precheck (programmatic callers): hash.copy() answers "are these the bytes you
+      // meant" WITHOUT consuming the running hash or the upload — a mismatch leaves everything
+      // standing, so the caller can abort deliberately instead of discovering corruption later.
+      if (expected_sha256 != null) {
+        const have = u.hash.copy().digest("hex");
+        if (have !== String(expected_sha256).toLowerCase())
+          return { ok: false, error: "sha256_mismatch", actual: have, staged_bytes: u.bytes };
+      }
       const sha = u.hash.digest("hex");
       const had = await backend.hasBlob(u.component, sha);
       try { if (!had) await backend.linkStaging(u.stagingId, u.component, sha); }

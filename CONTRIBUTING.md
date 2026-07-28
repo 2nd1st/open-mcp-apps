@@ -65,12 +65,11 @@ existing ones are the easiest contribution to land.
 Agreement is intended here: it is what lets the engine stay AGPL while remaining
 offerable under other terms (including embedded in the maintainers' own hosted
 service), and without it a single merged contribution could bind the whole
-project — its maintainers included — to the AGPL. [CLA.md](CLA.md) is a **draft
-and not in effect**: the grantee is deliberately left unfilled until there is a
-settled legal entity to name, and shipping a half-written contract would be worse
-than shipping none. So until it is finalised, engine contributions are handled
-case by case — open an issue, and provenance gets sorted out with you before you
-spend real time on a patch.
+project — its maintainers included — to the AGPL. [CLA.md](CLA.md) is **in
+effect for engine contributions**: your first PR gets a CLA check, and you sign
+by replying to its prompt with one comment — once, against your GitHub identity.
+`components/` contributions need no agreement. Contributing on behalf of an
+employer? Open an issue first — corporate CLAs are handled case by case.
 
 **Sign your commits off** (`git commit -s`). That adds a `Signed-off-by:` line
 asserting the [Developer Certificate of Origin](https://developercertificate.org/)

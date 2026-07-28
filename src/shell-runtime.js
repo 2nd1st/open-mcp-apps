@@ -7,6 +7,11 @@
 // re-renders on change. The shell owns the ui/initialize handshake, tool calls, idempotency
 // keys, optimistic-concurrency versions, and host theming.
 //
+// Write-set D: every RULE this file lives by (the 0-RTT continuity decision, the adoption
+// gate, the paged walk, the poll decisions, via) is a pure function in runtime-core.mjs,
+// pinned by node tests; this file is the wiring. The sandbox machine (child doc composition,
+// mini-bridge, caps chokepoint) lives ONCE in runner.mjs and is reached here as oma.embed.
+//
 // NOT a security boundary (docs/security-model.md §2): this runtime shares the document with
 // the component's own scripts, so nothing here can gate a hostile component. Untrusted
 // (non-local) components run one level down behind the runner, never in direct mode.
@@ -15,6 +20,8 @@
 
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
 import { isControlPlaneTool as _isControlPlaneTool } from "./tool-policy.mjs";
+import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
@@ -22,7 +29,15 @@ const SA = typeof window !== "undefined" ? window.__OMA_STANDALONE__ : undefined
 
 const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, { tools: {} });
 
-let state = { collection: null, items: [], version: 0, component: null, host: null };
+// `version` is the GLOBAL ledger seq of the last adopted read (stamped in the read's own
+// transaction server-side); `total`/`truncated` are the walk's honesty marks — a component
+// can render "N of M" instead of pretending a capped projection is the collection.
+// The direct-embed (per-component resource) document carries its binding as an injected global:
+// on hosts whose toolinput/toolresult pushes never deliver a collection (measured on Claude
+// Desktop 1.24012.9 dynamic-tools mode), the widget otherwise reaches interactivity unbound and
+// every write bounces off the server as collection:null.
+const BOUND_HINT = (typeof window !== "undefined" && window.__OMA_COLLECTION_HINT__) || null;
+let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, component: null, host: null };
 let toolInput = {};
 let ready = false;
 const readyCbs = [];
@@ -32,7 +47,6 @@ const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now())
 function emit() {
   for (const cb of changeCbs) { try { cb(state); } catch (e) { console.error("[oma] onChange handler threw", e); } }
 }
-let refetchedOnMount = false;
 let readying = false;
 // The first ready() AND the first onChange() fire only after the pref cache is warm (or the
 // 1000 ms cap expired — a late successful fetch then triggers a notifying re-ingest). First
@@ -42,38 +56,46 @@ function markReady() {
   readying = true;
   const flush = () => {
     lastMerged = currentMerged();   // diff baseline — component identity is known by now
+    // …and so is the PER-APP theme layer, which is why it is re-applied here. Prefs are fetched at
+    // connect, in parallel with the host's ontoolinput, so ingestPrefs can (and on the universal
+    // loader path usually does) run while compName() is still null — computing a theme with the
+    // global layer only and no hook to revisit it. `pref()` is immune because it resolves the name
+    // at every call; the theme is not, because it writes into the DOM once. Same hazard the line
+    // above exists for. Idempotent: applyThemeVars diffs against what it last stamped.
+    applyThemeVars(themeVars(currentMerged()));
     ready = true;
     for (const cb of readyCbs.splice(0)) { try { cb(state); } catch (e) { console.error("[oma] ready handler threw", e); } }
     emit();                         // ONE warm first paint — covers onChange-only components
-    // refetch-on-mount: the first snapshot may be a HOST-CACHED tool result replayed on
-    // re-mount (e.g. after an app restart) — always pull fresh state once. The DB is the
-    // truth; the widget is stateless.
-    if (!refetchedOnMount) { refetchedOnMount = true; if (state.collection) window.oma.refresh().catch(() => {}); }
   };
   Promise.race([
     prefsPromise ?? (prefsPromise = syncPrefs()),
     new Promise((r) => setTimeout(r, 1000)),
   ]).then(flush, flush);
 }
-function applySnapshot(sc) {
-  if (sc && Array.isArray(sc.items)) {
-    // Skip the re-render when nothing changed (version is the global ledger seq) — background
-    // refreshes must not clobber in-progress user input with an identical repaint.
-    const unchanged = ready && sc.version === state.version && sc.collection === state.collection;
-    state = {
-      collection: sc.collection ?? state.collection,
-      items: sc.items,
-      version: sc.version ?? state.version,
-      component: sc.component ?? state.component,
-      host: sc.host ?? state.host,
-    };
-    if (!unchanged && ready) emit();                            // pre-ready emits deferred to flush
-    if (ready && sc.settings_version !== lastSettingsVersion) { // refetch prefs only when settings changed
-      lastSettingsVersion = sc.settings_version;
-      schedulePrefSync();
-    }
-    markReady();
+
+/** The adoption gate, wired: un-adoptable ⇒ keep the old projection. Skip the repaint when
+ *  nothing changed (version + row count + binding) — background walks must not clobber
+ *  in-progress user input with an identical repaint. */
+function adopt(snap) {
+  if (!canAdopt(state, snap)) return false;
+  const unchanged = ready && snap.version === state.version && snap.items.length === state.items.length
+    && (snap.collection ?? state.collection) === state.collection;
+  state = {
+    collection: snap.collection ?? state.collection,
+    items: snap.items,
+    version: snap.version ?? state.version,
+    total: typeof snap.total === "number" ? snap.total : snap.items.length,
+    truncated: !!snap.truncated,
+    component: snap.component ?? state.component,
+    host: snap.host ?? state.host,
+  };
+  if (!unchanged && ready) emit();                            // pre-ready emits deferred to flush
+  if (ready && typeof snap.settings_version === "number" && snap.settings_version !== lastSettingsVersion) {
+    lastSettingsVersion = snap.settings_version;              // refetch prefs only when settings changed
+    schedulePrefSync();
   }
+  markReady();
+  return true;
 }
 
 // A shell-owned error banner: AI-written components rarely handle failures, so persistence
@@ -95,6 +117,22 @@ function omaNotify(msg) {
   el._t = setTimeout(() => { el.style.display = "none"; }, 6000);
 }
 
+// A bridge request the host silently DROPS must reject, never hang: the ext-apps SDK has no
+// timeout of its own, and an unsettled await here wedges whatever subsystem issued it for the
+// widget's whole life — the poll chain never reschedules, syncPrefs' busy latch never clears,
+// a walk never releases its single-flight slot. Observed on Claude Desktop 1.24012.9 (and
+// Claude Code, same bridge stack): calls sent in an early post-mount window vanish — the
+// renderer logs "oncalltool handler replaced" and requests on the replaced handler are lost.
+// Ten seconds is far beyond any real engine round-trip; the rejection flows through the same
+// tagged-error path as any transport failure, so render-health never blames the component.
+const BRIDGE_DEADLINE_MS = 10_000;
+function withDeadline(p, what) {
+  return new Promise((resolve, reject) => {
+    const t = setTimeout(() => reject(new Error(what + ": no reply in " + BRIDGE_DEADLINE_MS + "ms — the host may have dropped the request")), BRIDGE_DEADLINE_MS);
+    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+  });
+}
+
 async function rawCall(name, args) {
   try {
     if (SA) {
@@ -106,7 +144,7 @@ async function rawCall(name, args) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return await res.json(); // a CallToolResult
     }
-    return await app.callServerTool({ name, arguments: args });
+    return await withDeadline(app.callServerTool({ name, arguments: args }), name);
   } catch (e) {
     // Tag every failure that originates from a TOOL CALL (host declined, bridge blip, transport
     // error). The render-health reporter must never mistake these for a broken component — a
@@ -116,7 +154,83 @@ async function rawCall(name, args) {
   }
 }
 
+// ---- the paged walk: how this widget reads its collection (write-set D) -------------------
+// Reads are PAGES now (data_list, limit 500, cursor) and a widget owns its own walk: merge
+// pages pinned to one version, restart when a write moves the stamp mid-walk, mark the
+// projection truncated past the page cap instead of silently stopping. Mounting ALWAYS
+// walks — a host may replay a CACHED tool result on re-mount, and the zero-row open carries
+// no rows by design, so the walk (not the pushed result) is what the first paint stands on.
+
+function pageFetcher(collection, opts = {}) {
+  return async (cursor) => {
+    const r = await rawCall("data_list", {
+      collection,
+      limit: opts.limit || WALK_LIMIT,
+      ...(opts.group != null ? { group: opts.group } : {}),
+      ...(opts.match ? { match: opts.match } : {}),
+      ...(cursor ? { cursor } : {}),
+    });
+    return r && !r.isError ? r.structuredContent : null;
+  };
+}
+
+/** Full paged read of ANY collection. Never touches widget state (the foreign-collection
+ *  rebind class of bugs is structurally out). `filtered` marks group/match reads so the
+ *  adoption gate never applies a completeness check they can't satisfy. */
+async function readCollection(collection, opts = {}) {
+  const coll = String(collection);
+  const out = await walkPages(pageFetcher(coll, opts), opts.maxPages ? { maxPages: opts.maxPages } : undefined);
+  if (out.error) throw new Error("read failed: " + out.error);
+  return {
+    collection: coll,
+    items: out.items,
+    version: out.version,
+    settings_version: out.settings_version,
+    files_version: out.files_version,
+    total: out.total,
+    truncated: !!out.truncated,
+    ...(opts.group != null || opts.match ? { filtered: true } : {}),
+    ...(out.torn ? { torn: true } : {}),
+  };
+}
+
+let walking = null;   // single-flight: concurrent walk triggers share one pass
+let walkAgain = false;
+function walk() {
+  if (!state.collection) return Promise.resolve();
+  // Sharing an in-flight pass is right for two triggers that want the SAME answer, and wrong for a
+  // trigger that appeared after that pass started reading: an in-flight walk that began before a
+  // write cannot contain it, and handing it back as the write's reconciliation let a pre-write
+  // snapshot adopt and take the optimistically-painted rows away again (they came back on the next
+  // poll, so it read as a flicker of vanishing edits). A later request therefore queues ONE re-run
+  // instead of being answered with a stale promise. Bounded to one: under sustained writes this
+  // must converge, not chase.
+  if (walking) { walkAgain = true; return walking; }
+  walking = (async () => {
+    try {
+      const snap = await readCollection(state.collection);
+      snap.host = state.host;
+      adopt(snap);
+      if (snap.torn) markActivity();   // writes kept landing mid-walk — converge on the fast poll
+    } catch (e) {
+      console.error("[oma] walk failed", e);
+    } finally {
+      walking = null;
+    }
+    if (walkAgain) { walkAgain = false; await walk(); }
+  })();
+  return walking;
+}
+
+// ---- writes: the continuity rule (0-RTT redraw) -------------------------------------------
+// A write returns an ACK with the row it wrote, never the collection. decideAck's inequality
+// (prev_collection_seq ≤ our read stamp) says whether applying just that row locally loses
+// anything; when it can't, the click paints with ZERO extra round trips. The old text-regex
+// conflict sniffing is dead — conflicts are structured (ok:false + note + current row).
+let pendingWrites = 0;   // in-flight own writes: the SSE/probe change-check must not race the ack
+let burstNeedsWalk = false;   // some ack in this burst could not be fully trusted — walk once, at the end
 async function call(name, args) {
+  pendingWrites++;
   try {
     // Any widget WRITE marks activity → the poll goes fast, so a burst of edits (and the AI's
     // replies to them) streams in at ~2s latency instead of the base cadence.
@@ -125,16 +239,57 @@ async function call(name, args) {
     if (result && result.isError) {
       const t = (result.content || []).find((c) => c.type === "text");
       omaNotify("⚠ " + ((t && t.text) || "Action failed."));
-    } else {
-      const t = result && (result.content || []).find((c) => c.type === "text");
-      if (t && /conflict|no longer exists/i.test(t.text)) omaNotify("⚠ " + t.text.split("\n")[0]);
+      return result;
     }
-    applySnapshot(result && result.structuredContent);
+    const sc = result && result.structuredContent;
+    const d = decideAck(state, sc);
+    if (d.kind === "conflict") {
+      omaNotify("⚠ " + ((sc && sc.note) || "Write refused (" + ((sc && sc.reason) || "conflict") + ") — refreshed."));
+      burstNeedsWalk = true;
+    } else if (d.kind === "apply" || d.kind === "apply-refresh") {
+      const rows = applyAck(state.items, sc);
+      // The mark may only step to this ack's seq when NO sibling write is still in flight. An
+      // overlapping write sits BELOW that seq and has not been applied yet, so advancing here
+      // claimed a position our items did not hold — and the probe, seeing nothing move, never
+      // went back for it. Sequential clicks (the common burst: each ack lands before the next
+      // click) are still sole-in-flight, so the 0-RTT path is untouched; genuinely concurrent
+      // writes pay exactly one walk, at the end of the burst.
+      const advance = d.kind === "apply" && pendingWrites === 1;
+      if (rows) {
+        state = {
+          ...state, items: rows,
+          version: advance ? Math.max(Number(state.version) || 0, Number(sc.seq) || 0) : state.version,
+          total: state.total + (rows.length - state.items.length),
+        };
+        if (state.collection === "settings") {
+          if (advance) lastSettingsVersion = state.version;
+          // ingestPrefs only emits when the MERGED map moved, and a settings widget writing ANOTHER
+          // component's group (exactly what the settings app does) moves nothing of its own — so the
+          // app that just wrote a row never re-rendered its own list, and the watermark had already
+          // advanced so no poll would repair it. The bound state DID change: emit for it, and let
+          // ingestPrefs handle the pref-cache side without owning the repaint.
+          // notify:true keeps onPrefChange working; it returns whether it already repainted, so the
+          // bound-state repaint happens exactly once either way.
+          if (!ingestPrefs(rows, true)) emit();
+        } else emit();
+      }
+      if (!advance || !rows) burstNeedsWalk = true;   // pick the concurrent write up
+    } else if (d.kind === "stale") {
+      // A receipt at or behind our watermark: the read we hold already contains it. Nothing to
+      // paint, and — deliberately — no walk: paying for one would confirm what we already know.
+    } else if (sc && sc.ok === true && sc.collection === "settings" && state.collection !== "settings") {
+      schedulePrefSync();   // a cross-collection settings write (rare) — pref cache is stale
+    }
     return result;
   } catch (e) {
     omaNotify("⚠ Not saved: " + ((e && e.message) || e) + " — the host may have blocked the call; try again or reopen the widget.");
     console.error("[oma] tool call failed", name, e);
     throw e;
+  } finally {
+    pendingWrites--;
+    // One walk per BURST, not per ack: N overlapping writes would otherwise queue N walks that all
+    // read the same thing. Deferring to the end also means the walk sees the whole burst landed.
+    if (pendingWrites === 0 && burstNeedsWalk) { burstNeedsWalk = false; walk(); }
   }
 }
 
@@ -146,7 +301,7 @@ const compName = () =>
   state.component || (toolInput && toolInput.component) ||
   (typeof window !== "undefined" && window.__OMA_COMPONENT__) || null;
 
-// Exact coercion, shared verbatim with the mini-bridges (docs/settings-design.md §2.1):
+// Exact coercion, shared verbatim with the mini-bridge (docs/settings-design.md §2.1):
 // the FALLBACK's type drives it, so junk stored values degrade to the fallback safely.
 function coercePref(v, fallback) {
   const t = typeof fallback;
@@ -199,9 +354,12 @@ function rawPref(key) {                            // O(1), name resolved per ca
   if (g && g.has(key)) return g.get(key);
   return prefGlobal.has(key) ? prefGlobal.get(key) : undefined;
 }
+/** Returns TRUE when it emitted, so a caller whose own state also changed can avoid a second
+ *  repaint without having to guess (see call()'s settings branch). */
 function ingestPrefs(items, notify) {
   indexPrefs(items);
-  if (!notify) return;
+  applyThemeVars(themeVars(currentMerged()));   // the theme layer rides the SAME rows and merge
+  if (!notify) return false;
   const next = currentMerged(), prev = lastMerged;
   lastMerged = next;
   const changed = [];
@@ -213,7 +371,9 @@ function ingestPrefs(items, notify) {
   if (changed.length) {
     for (const c of changed) for (const cb of prefCbs) { try { cb(c); } catch (e) { console.error("[oma] onPrefChange handler threw", e); } }
     emit();   // render-from-state components repaint with the new pref values for free
+    return true;
   }
+  return false;
 }
 async function syncPrefs() {
   if (prefSyncBusy) { prefSyncQueued = true; return; }
@@ -221,8 +381,7 @@ async function syncPrefs() {
   try {
     if (state.collection === "settings" && ready) ingestPrefs(state.items, true);  // settings app post-ready: no extra call
     else {
-      const r = await rawCall("data_list", { collection: "settings" });            // rawCall: must NOT applySnapshot
-      const sc = r && r.structuredContent;
+      const sc = await readCollection("settings");                                 // full walk — >100 pref rows must not half-load
       // monotonic gate: a slow fetch must never rewind a fresher setPref ingest
       if (sc && !(typeof lastSettingsVersion === "number" && sc.settings_version < lastSettingsVersion)) { lastSettingsVersion = sc.settings_version; ingestPrefs(sc.items || [], ready); }
     }        //                        notify = ready — silent only when it beat the flush
@@ -238,19 +397,118 @@ function schedulePrefSync() {                      // debounced (250 ms)
 }
 
 // ---- theming: adopt the host's design tokens (Claude light/dark, fonts, radii) ----
+let hostVars = null;              // the host's own variable map, kept so a removed theme token
+                                  // can be RESTORED to it rather than merely dropped
 function applyTheme(ctx) {
   if (!ctx) return;
   try {
     if (ctx.theme) applyDocumentTheme(ctx.theme);
-    if (ctx.styles && ctx.styles.variables) applyHostStyleVariables(ctx.styles.variables);
+    if (ctx.styles && ctx.styles.variables) { hostVars = ctx.styles.variables; applyHostStyleVariables(ctx.styles.variables); }
     const css = ctx.styles && ctx.styles.css;
     if (css && typeof css.fontFaces === "string") applyHostFonts(css.fontFaces);
   } catch (_) { /* theming is best-effort */ }
+  // The host writes its variables as INLINE properties on <html>, which outranks any stylesheet.
+  // The user's theme is the layer ABOVE the host's, so it has to be re-stamped through the same
+  // door afterwards — and host context can arrive at any time, including after a pref change.
+  applyThemeVars(themeVars(currentMerged()));
 }
+
+// The user theme layer: `theme:--*` settings rows, merged per oma.pref's own rule (this
+// component's group overrides global), stamped as inline custom properties. Values were already
+// charset-checked by themeVars; nothing here can carry a selector or escape a declaration.
+let themeApplied = new Map();
+/** The token names our theme stamped that are scoped to THIS component only. A child embedded by
+ *  us must not inherit them (see tokenCSS's `substitute`): global theme tokens apply to the child
+ *  too and are fine to pass down, a per-app one is by definition not the child's. */
+function ownThemeNames() {
+  const g = prefByGroup.get(compName());
+  const out = [];
+  if (!g) return out;
+  for (const k of g.keys()) {
+    if (typeof k !== "string" || k.slice(0, THEME_KEY_PREFIX.length) !== THEME_KEY_PREFIX) continue;
+    out.push(k.slice(THEME_KEY_PREFIX.length));
+  }
+  return out;
+}
+/** What the child should see instead of our per-app value: the host's own value where the host gave
+ *  one (the layer directly beneath the theme), else nothing — the child's fallback sheet answers. */
+function childTokenSubstitutes() {
+  const out = {};
+  for (const n of ownThemeNames()) out[n] = hostVars && hostVars[n] != null ? hostVars[n] : null;
+  return out;
+}
+function applyThemeVars(pairs) {
+  if (typeof document === "undefined") return;
+  const root = document.documentElement;
+  const next = new Map(pairs);
+  for (const name of themeApplied.keys()) {
+    if (next.has(name)) continue;                       // still themed — the set below rewrites it
+    if (hostVars && hostVars[name] != null) root.style.setProperty(name, hostVars[name]);
+    else root.style.removeProperty(name);               // …falling back to the injected stylesheet
+  }
+  for (const [name, value] of next) root.style.setProperty(name, value);
+  themeApplied = next;
+}
+
+// ---- files (read side): list / bytes / object URL — the knowledge-card render path --------
+const fileUrlCache = new Map();   // path -> {sha256, url}
+async function fileBytes(component, path) {
+  const { parts, mime, sha256 } = await readFileParts(rawCall, component, path);
+  // Decode per window and concatenate BYTES (windows are raw byte ranges; base64 strings of
+  // adjacent windows are not concatenation-safe unless 3-aligned, so we never assume it).
+  const chunks = parts.map((p) => { const s = atob(p); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; });
+  const size = chunks.reduce((n, c) => n + c.length, 0);
+  const bytes = new Uint8Array(size);
+  let at = 0;
+  for (const c of chunks) { bytes.set(c, at); at += c.length; }
+  // Whole-file hash check, best-effort: subtle is absent in some sandboxed contexts.
+  if (sha256 && globalThis.crypto?.subtle) {
+    try {
+      const digest = await crypto.subtle.digest("SHA-256", bytes);
+      const hex = [...new Uint8Array(digest)].map((b) => b.toString(16).padStart(2, "0")).join("");
+      if (hex !== sha256) throw new Error("file bytes failed the sha256 check — try again");
+    } catch (e) { if (e && /sha256 check/.test(String(e.message))) throw e; }
+  }
+  return { bytes, mime, sha256 };
+}
+
+// The child is a separate document, so it inherits none of our CSS — the system UI kit has to
+// travel with it. We take it from OUR OWN head rather than bundling a second copy: every
+// document that runs this runtime was composed by wrapComponent/wrapLoader, and both inject
+// the kit under the same data-oma marker. One copy of the bytes, no build step, no drift.
+// The neutral token FALLBACK sheet, read the same way and for the same reason as the kit. The child
+// had no fallback layer at all before: every token it saw was whatever the parent's computed value
+// happened to be, so a name we now deliberately omit (the per-app theme repair above) would resolve
+// to nothing. With the fallbacks underneath, omitting is safe and the child's cascade matches the
+// parent's shape: fallbacks → host/substituted tokens → kit → theme (pushed) → its own <style>.
+let fallbackCache = null;
+function ownFallbackCss() {
+  if (fallbackCache == null) {
+    const el = document.querySelector('style[data-oma="tokens"]');
+    fallbackCache = el ? el.textContent : "";
+  }
+  return fallbackCache;
+}
+
+let kitCache = null;
+function ownKitCss() {
+  if (kitCache == null) {
+    const el = document.querySelector('style[data-oma="kit"]');
+    kitCache = el ? el.textContent : "";
+  }
+  return kitCache;
+}
+
+// ---- live embeds: parent-side registry so embedded children stay fresh --------------------
+// The embedder's own poll watches ONE collection; embedded children bound elsewhere ride the
+// same probe — on a moved global seq each live embed checks its own collection with one
+// data_changes call and re-walks only when something actually happened there.
+const liveEmbeds = new Set();
 
 // ---- the public API components are written against ----
 window.oma = {
-  /** Current snapshot: { collection, items: [{id, group, position, fields, version}], version } */
+  /** Current snapshot: { collection, items: [{id, group, position, fields, version}], version,
+   *  total, truncated } — total/truncated let a component say "N of M" honestly. */
   get state() { return state; },
   /** cb(state) once the bridge is connected and initial data has arrived. */
   ready(cb) { if (ready) cb(state); else readyCbs.push(cb); },
@@ -258,32 +516,46 @@ window.oma = {
   onChange(cb) { changeCbs.push(cb); },
   // actor:"human" in the writes below is enum-constrained AUDIT metadata, never authorization:
   // it is caller-chosen and forgeable in direct mode (security-model §1.4); only a
-  // runner-stamped component identity is trustworthy write provenance.
+  // runner-stamped component identity is trustworthy write provenance. `via` is the same
+  // class of metadata — the component's shadow edge for the Data pane, stripped from every
+  // AI-facing read.
   /** Add an item. fields is any JSON object your component defines. */
   addItem({ group = "", fields = {}, position } = {}) {
-    return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human" });
+    // Direct-embed mode can reach interactivity before any toolinput/toolresult has delivered a
+    // binding; sending collection:null just bounces off the server as -32602. Fail loudly and
+    // locally instead — the next poll/toolresult binds and the user's retry succeeds.
+    if (!state.collection) {
+      omaNotify("⚠ No collection bound yet — try again in a moment.");
+      return Promise.reject(new Error("no collection bound yet"));
+    }
+    return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human", via: viaOf(compName()) });
   },
   // Widget mutations are LAST-WRITE-WINS (no expected_version) — the same choice setPref makes and
   // for the same reason. A live widget is the user rapidly clicking their OWN UI; sending
   // expected_version made two fast clicks on one item race — the 2nd carried the pre-echo STALE
   // version, so the store returned a spurious "Version conflict" that surfaced as an error banner
   // and blocked the interaction. The user is the single writer they can see; their click should
-  // just apply. The rare AI-vs-user race converges via the mutation echo + the ~20s poll, and the
+  // just apply. The rare AI-vs-user race converges via the ack continuity rule + the poll, and the
   // AI can still request OCC explicitly through the data_* tools when it genuinely needs it.
   /** Shallow-merge fields into an item (set a key to null to delete it). */
   updateItem(id, fields) {
-    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human" });
+    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human", via: viaOf(compName()) });
   },
   /** Move an item to another group (and/or position). */
   moveItem(id, group, position) {
-    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human" });
+    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human", via: viaOf(compName()) });
   },
   /** Delete an item. */
   deleteItem(id) {
-    return call("data_delete_item", { command_id: uuid(), id, actor: "human" });
+    return call("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) });
   },
-  /** Re-fetch the collection from the server. */
-  refresh() { return state.collection ? call("data_list", { collection: state.collection }) : Promise.resolve(); },
+  /** Re-read the bound collection (a full paged walk; adopted through the gate). */
+  refresh() { return walk(); },
+  /**
+   * Read ANY collection as a full paged walk — items/version/total/truncated — WITHOUT
+   * touching this widget's own bound state. opts: {group, match, limit, maxPages}.
+   */
+  readCollection(collection, opts) { return readCollection(collection, opts); },
   /**
    * SYNC merged preference read: own component override ▸ global ▸ fallback, computed
    * lazily at call time. The fallback's TYPE drives coercion (junk values → fallback).
@@ -304,22 +576,42 @@ window.oma = {
     if (t !== "string" && t !== "number" && t !== "boolean")
       return Promise.reject(new Error("setPref: value must be a scalar"));
     if (t === "string" && value.length > 4096) return Promise.reject(new Error("setPref: value too long"));
-    // LAST-WRITE-WINS on purpose: no expected_version (store.mjs skips the OCC check when it
-    // is null). A scalar pref has no merge to protect, and OCC here would SILENTLY LOSE the
-    // write: engine.mjs returns version conflicts as non-isError results whose only signal
-    // is the "Version conflict" text that call() sniffs — and setPref must bypass call()
-    // (its returned snapshot is the settings collection and must never reach applySnapshot).
+    // LAST-WRITE-WINS on purpose: no expected_version (a scalar pref has no merge to protect).
+    // Must bypass call(): its ack handling is scoped to the BOUND collection, and a pref write
+    // targets settings. The ack's own row is ingested locally instead — a settings event's seq
+    // IS the settings_version, so the pref cache stays exact with zero extra reads.
     const existing = [...prefItems].reverse().find((it) => it.group === me && it.fields && it.fields.key === key);
+    const via = viaOf(me);
     const add = () => rawCall("data_add_item",
-      { command_id: uuid(), collection: "settings", group: me, fields: { key, value }, actor: "human" });
+      { command_id: uuid(), collection: "settings", group: me, fields: { key, value }, actor: "human", via });
     const p = existing
-      ? rawCall("data_update_item", { command_id: uuid(), id: existing.id, fields: { value }, actor: "human" })
+      ? rawCall("data_update_item", { command_id: uuid(), id: existing.id, fields: { value }, actor: "human", via })
           .then((r) => (r && r.isError ? add() : r))   // not_found (concurrent reset deleted it) → re-create
       : add();
     return p.then((r) => {
-      if (r && r.isError) { omaNotify("⚠ Preference not saved."); return r; }
       const sc = r && r.structuredContent;
-      if (sc && Array.isArray(sc.items) && !(typeof lastSettingsVersion === "number" && sc.settings_version < lastSettingsVersion)) { lastSettingsVersion = sc.settings_version; ingestPrefs(sc.items, true); }
+      if (r && r.isError || (sc && sc.ok === false)) { omaNotify("⚠ Preference not saved."); return r; }
+      // Staleness is a PER-ROW question, not a per-collection one. Dropping the whole ack because
+      // some other key's write landed first threw away this key's value until the next full
+      // settings sync — and two setPref calls in flight is the ordinary case (a settings form).
+      // applyAck refuses only the rows that are actually superseded (row.version > ack.seq), and
+      // the watermark takes the max, so a late-but-lower ack can never rewind it.
+      if (sc && sc.item) {
+        const rows = applyAck(prefItems, sc);
+        if (rows) {
+          // Merging the row is always safe; MOVING THE WATERMARK is not. lastSettingsVersion is
+          // what data_version's settings_version is compared against, so claiming this write's seq
+          // asserts we have seen everything up to it — and a concurrent write by another actor sits
+          // below it, unread. Then the probe finds settings_version equal to what we hold and never
+          // syncs, so that key stays missing until some later settings event. Same inequality the
+          // bound collection uses: only a receipt whose `prev` is inside our mark may advance it.
+          const prev = Number(sc.prev_collection_seq);
+          const held = Number(lastSettingsVersion) || 0;
+          if (Number.isFinite(prev) && prev <= held) lastSettingsVersion = Math.max(held, Number(sc.seq) || 0);
+          else schedulePrefSync();   // something else touched settings first — go read it
+          ingestPrefs(rows, true);
+        }
+      }
       return r;
     });
   },
@@ -329,6 +621,288 @@ window.oma = {
    * is local-authored-only; untrusted components run behind the runner, which filters calls.
    */
   callTool(name, args) { return rawCall(name, args || {}); },
+  /** Per-app FILES, read side: list(), read(path) → Uint8Array, url(path) → object URL you can
+   *  put straight into <img src>/<a href>. Files are written by the AI (file_write); this is
+   *  how a component renders them. */
+  files: {
+    list() {
+      const me = compName();
+      return rawCall("file_list", { component: me }).then((r) => (r && r.structuredContent) || { files: [] });
+    },
+    read(path) {
+      return fileBytes(compName(), String(path)).then((f) => f.bytes);
+    },
+    url(path) {
+      const p = String(path);
+      const hit = fileUrlCache.get(p);
+      return fileBytes(compName(), p).then((f) => {
+        if (hit && hit.sha256 === f.sha256) return hit.url;
+        if (hit) { try { URL.revokeObjectURL(hit.url); } catch {} }
+        const url = URL.createObjectURL(new Blob([f.bytes], { type: f.mime || "application/octet-stream" }));
+        fileUrlCache.set(p, { sha256: f.sha256, url });
+        return url;
+      });
+    },
+  },
+  /**
+   * Call one of THIS component's own #oma-manifest functions (data in → data out; functions
+   * never touch UI — the data change comes back through the normal reactive loop). The callee
+   * is always this component: cross-component calls arrive with the function pillar's
+   * callable caps, not before.
+   */
+  callFunction(fn, args) {
+    const me = compName();
+    return rawCall("call_function", { component: me, function: String(fn), args: args || {}, command_id: uuid(), via: viaOf(me) });
+  },
+  /**
+   * Mount another component INSIDE this one (sandboxed, caps-enforced — the same runner
+   * machine the loader uses; depth 1: an embedded child cannot embed further).
+   * opts: { into: Element (required), preset: "live"|"readonly"|"inert", collection, html,
+   *         snapshot, heights: {min,max}|false }.
+   * Returns { el, unmount, refresh }.
+   */
+  async embed(name, opts = {}) {
+    const n = String(name);
+    if (!opts.into || typeof opts.into.appendChild !== "function") throw new Error("embed: opts.into element required");
+    const preset = opts.preset || "live";
+    let html = opts.html, caps = opts.caps, tier = opts.tier;
+    // Inert children never call anything, so provided html is all they need; every other
+    // preset resolves the engine truth (source + tier + caps) unless the caller provided it.
+    if ((html == null || caps == null) && !(preset === "inert" && html != null)) {
+      const r = await rawCall("component_html", { name: n });
+      const sc = (r && r.structuredContent) || {};
+      if (!sc.html) throw new Error('embed: component "' + n + '" not found');
+      if (html == null) html = sc.html;
+      if (caps == null) caps = sc.caps || {};
+      if (tier == null) tier = sc.tier == null ? "local" : sc.tier;
+    }
+    if (caps == null) caps = {};
+    if (tier == null) tier = "local";
+    const coll = String(opts.collection || (opts.snapshot && opts.snapshot.collection) || n);
+    let childSnap = opts.snapshot
+      ? { collection: coll, items: opts.snapshot.items || [], version: opts.snapshot.version || 0, component: n, host: state.host }
+      : { collection: coll, items: [], version: 0, component: n, host: state.host };
+
+    let prefMap = null, compKeys = {}, settingsIds = new Set();
+    let prefVersion = -1;     // settings_version behind prefMap — a slow read must not rewind it
+    let dead = false;         // set by unmount(); every in-flight boot/read result checks it
+    function rebuildPrefs(rows, ver) {
+      if (dead) return;
+      if (typeof ver === "number") {
+        if (ver < prefVersion) return;   // a boot read that finished LATE is not newer information
+        prefVersion = ver;
+      }
+      settingsIds = new Set(rows.map((i) => i.id));
+      const base = {}, over = {};
+      for (const it of rows) {
+        const k = it.fields && it.fields.key;
+        if (typeof k !== "string") continue;
+        if (it.group === "") base[k] = it.fields.value;
+        else if (it.group === n) over[k] = it.fields.value;
+      }
+      compKeys = {};
+      for (const k in over) compKeys[k] = 1;
+      prefMap = Object.assign(base, over);
+    }
+
+    const guard = makeGuard({
+      name: n, coll, caps, tier, preset,
+      io: {
+        callTool: rawCall,
+        sendMessage: (t) => window.oma.sendMessage(t),
+        updateContext: (t) => window.oma.updateContext(t),
+        snapshot: () => childSnap,
+        settingsIds: () => settingsIds,
+        readCollection,
+        readFile: (component, path) => fileBytes(component, path).then((f) => {
+          let s = ""; const b = f.bytes;
+          for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
+          return { base64: btoa(s), mime: f.mime };
+        }),
+        notify: omaNotify,
+        confirm: (m) => { try { return typeof window.confirm === "function" && window.confirm(m) === true; } catch { return false; } },
+        uuid,
+      },
+    });
+
+    const frame = document.createElement("iframe");
+    frame.setAttribute("sandbox", "allow-scripts");
+    // heights:false hands ALL sizing to the embedder's own CSS (scaled thumbnails, preview
+    // fit) — no inline size properties to out-specificity a stylesheet.
+    const H = opts.heights === false ? null : opts.heights || { min: 60, max: 20000 };
+    frame.style.cssText = "display:block;border:0;" + (H ? "width:100%;height:" + Math.max(H.min, 140) + "px" : "");
+
+    // `changed` exists for the apply-refresh case: an optimistic local apply deliberately does NOT
+    // move childSnap.version, so an UPDATE (same row count, same version) was invisible to the
+    // bridge's own change test and the child's successful click stayed on screen as the old value
+    // until a refresh landed — indefinitely if it failed. The parent knows it just mutated rows;
+    // it says so, instead of the child having to infer it.
+    function push(changed) {
+      if (!frame.contentWindow) return;
+      frame.contentWindow.postMessage({
+        omaRunSnapshot: true,
+        ...(changed ? { changed: true } : {}),
+        snapshot: { collection: childSnap.collection || coll, items: childSnap.items || [], version: childSnap.version || 0, component: n, host: state.host },
+        toolInput: { component: n, collection: coll },
+        prefs: prefMap || {},
+        compKeys,
+        // The theme layer for THIS child, resolved here: prefMap already merged global with the
+        // child's own group, and themeVars already dropped anything failing the token charsets.
+        // The child applies the pairs verbatim — no second copy of the rule inside the bridge.
+        themeVars: themeVars(prefMap || {}),
+      }, "*");
+    }
+
+    // Prefs + first data, per preset: live walks both in full; readonly reads prefs plus ONE
+    // first page of the bound collection (a thumbnail is a picture, not a full projection);
+    // inert touches nothing — its snapshot came with the fixtures.
+    let boot = Promise.resolve();
+    if (preset === "live" || preset === "readonly") {
+      // Boot results are the OLDEST information this embed will ever have, but they can arrive
+      // LAST (a slow first read racing a fast child write). Both legs therefore adopt the same way
+      // every other path does — version-monotonically, and never after unmount.
+      boot = Promise.allSettled([
+        readCollection("settings").then((s) => rebuildPrefs(s.items || [], s.settings_version))
+          .catch(() => { if (prefMap === null) prefMap = {}; }),
+        opts.snapshot ? Promise.resolve()
+          : readCollection(coll, preset === "readonly" ? { maxPages: 1 } : undefined)
+              .then((s) => {
+                if (dead) return;
+                if ((s.version || 0) >= (childSnap.version || 0)) childSnap = { ...s, component: n, host: state.host };
+              }).catch(() => {}),
+      ]).then(() => { if (!dead) push(); });
+    } else { prefMap = {}; }
+
+    const onMessage = async (ev) => {
+      if (ev.source !== frame.contentWindow) return;   // source-authenticated: only OUR child
+      const d = ev.data || {};
+      if (d.omaRunHeight && typeof d.h === "number") { if (H) frame.style.height = Math.min(Math.max(d.h + 4, H.min), H.max) + "px"; return; }
+      if (!d.omaRun) return;
+      try {
+        const result = await guard(d.method, d.args || {});
+        if (!frame.contentWindow) return;
+        frame.contentWindow.postMessage({ omaRunResult: true, id: d.id, result }, "*");
+        // Keep the child's projection fresh from what just crossed the chokepoint:
+        // a settings snapshot rebuilds prefs/settingsIds; an own-collection snapshot is
+        // adopted version-monotonically; a write ACK applies through the same continuity
+        // rule the top-level widget uses (child clicks redraw with zero extra reads too).
+        const sc = (result && result.structuredContent) || (d.method === "refresh" || d.method === "readCollection" ? result : null);
+        if (sc && Array.isArray(sc.items)) {
+          // NOTHING a child asked for rebuilds prefs or settingsIds. A child with
+          // cross_collection_read can read `settings` with a {group}/{match} that matches nothing;
+          // taking that as the settings snapshot emptied settingsIds — the set the guard uses to
+          // recognise a foreign settings row — and the next update_item on a remembered row then
+          // walked straight past settings_write:false. The parent already keeps this fresh from
+          // its OWN full walks: boot, the post-ack re-walk below, and onParentPref.
+          // (Same shape as the childSnap rule right underneath: only OUR reads may restate state.)
+          // ONLY a refresh restates the child's own projection. readCollection is the child's
+          // free-form read: it may carry {group}/{match} — a FILTERED subset that happens to name
+          // the bound collection — and adopting it as the snapshot deleted every row outside the
+          // filter, with no poll able to bring them back (the version had already advanced).
+          if (d.method === "refresh" && sc.collection === coll && (sc.version || 0) >= (childSnap.version || 0))
+            childSnap = { ...childSnap, items: sc.items, version: sc.version || 0 };
+          push();
+        } else if (sc && "ok" in sc) {
+          // Child writes go through the SAME continuity rule as the top-level widget's — this used
+          // to apply every ok:true ack unconditionally, which skipped any concurrent write that had
+          // touched the collection since the child's read (prev_collection_seq was never consulted).
+          const cd = decideAck({ collection: coll, version: childSnap.version || 0 }, sc);
+          if (cd.kind === "apply" || cd.kind === "apply-refresh") {
+            const rows = applyAck(childSnap.items || [], sc);
+            if (rows) {
+              childSnap = { ...childSnap, items: rows,
+                version: cd.kind === "apply" ? Math.max(childSnap.version || 0, Number(sc.seq) || 0) : (childSnap.version || 0) };
+              push(true);   // a write landed — say so, the version may not have moved
+            }
+            if (cd.kind === "apply-refresh" || !rows) refreshChild();
+          } else if (cd.kind === "conflict") refreshChild();
+        }
+        if (sc && sc.ok === true && sc.collection === "settings")
+          readCollection("settings").then((s) => { rebuildPrefs(s.items || [], s.settings_version); if (!dead) push(); }).catch(() => {});
+      } catch (e) {
+        if (frame.contentWindow) frame.contentWindow.postMessage({ omaRunResult: true, id: d.id, error: String((e && e.message) || e) }, "*");
+      }
+    };
+    window.addEventListener("message", onMessage);
+
+    let refreshing = null;
+    function refreshChild() {
+      if (preset !== "live") return Promise.resolve();
+      if (refreshing) return refreshing;
+      refreshing = readCollection(coll).then((s) => {
+        if (dead) return;
+        if ((s.version || 0) >= (childSnap.version || 0)) { childSnap = { ...s, component: n, host: state.host }; push(); }
+      }).catch(() => {}).finally(() => { refreshing = null; });
+      return refreshing;
+    }
+
+    // Liveness: ride the embedder's probe. Same collection → the parent's own walk + onChange
+    // already covers it; a foreign collection checks its own ledger slice first.
+    const handle = {
+      el: frame,
+      coll,
+      refresh: refreshChild,
+      async tick() {
+        if (preset !== "live") return;
+        if (coll === state.collection) return;   // parent onChange path covers us
+        try {
+          const r = await rawCall("data_changes", { collection: coll, since: childSnap.version || 0 });
+          const d = r && !r.isError ? r.structuredContent : null;
+          const verdict = decideChanges(d);
+          if (verdict.kind === "walk") await refreshChild();
+          else if (verdict.kind === "advance") childSnap = { ...childSnap, version: verdict.to };
+        } catch { /* next probe retries */ }
+      },
+      unmount() {
+        dead = true;   // in-flight boot/refresh results resolve into a frame that is already gone
+        liveEmbeds.delete(handle);
+        window.removeEventListener("message", onMessage);
+        const ci = changeCbs.indexOf(onParentChange);
+        if (ci !== -1) changeCbs.splice(ci, 1);
+        const pi = prefCbs.indexOf(onParentPref);
+        if (pi !== -1) prefCbs.splice(pi, 1);
+        clearTimeout(prefT);
+        try { frame.remove(); } catch {}
+      },
+    };
+    // Parent onChange feeds the child two ways: (1) the embedder bound to the SAME collection
+    // hands its adopted walks straight through (the loader case — no double fetch); (2) an
+    // embedder bound to the SETTINGS collection (the settings app itself) keeps every child's
+    // pref map fresh as the user flips switches (§2.7 parity, without a second fetch).
+    const onParentChange = (s) => {
+      if (preset === "inert" || !Array.isArray(s.items)) return;
+      // `lastSettingsVersion`, not s.version: prefVersion is on the SETTINGS axis, and s.version is
+      // the global ledger seq (always ≥ it). Mixing the two would pin prefVersion above every real
+      // settings_version and freeze the child's pref map. adopt() just set this from the same walk.
+      if (s.collection === "settings") { rebuildPrefs(s.items, lastSettingsVersion); push(); }
+      if (preset !== "live" || s.collection !== coll) return;
+      if ((s.version || 0) < (childSnap.version || 0)) return;   // never rewind past a child-write snapshot
+      childSnap = { ...childSnap, items: s.items, version: s.version };
+      push();
+    };
+    changeCbs.push(onParentChange);
+    // Parent pref changes (any embedder, not just the settings app): the child's merged map
+    // may have moved — re-walk settings once, debounced across a burst of changed keys.
+    let prefT = 0;
+    const onParentPref = () => {
+      if (preset === "inert") return;
+      clearTimeout(prefT);
+      prefT = setTimeout(() => {
+        readCollection("settings").then((s2) => { rebuildPrefs(s2.items || [], s2.settings_version); if (!dead) push(); }).catch(() => {});
+      }, 250);
+    };
+    prefCbs.push(onParentPref);
+    if (preset === "live") liveEmbeds.add(handle);
+
+    frame.onload = () => { Promise.race([boot, new Promise((r) => setTimeout(r, 1200))]).then(push, push); };
+    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE });
+    opts.into.appendChild(frame);
+    return handle;
+  },
+  /** Runtime contract version (RUNTIME.md). Same number in direct mode and behind the runner —
+   *  what differs between them is enforcement, not the shape of this object. An app shipped from
+   *  outside this repo feature-detects with it; one written by the AI never needs to. */
+  get contract() { return RUNTIME_CONTRACT; },
   /** Arguments of the tool call that mounted this widget (e.g. {component, collection}). */
   get toolInput() { return toolInput; },
   /** Which host this widget is running in ("claude-ai", "chatgpt", "browser-viewer", …). */
@@ -343,8 +917,9 @@ window.oma = {
   get viewBase() { return (SA && typeof SA.viewBase === "string" && SA.viewBase) || "/view/"; },
   /**
    * True if `name` is a control-plane tool no component may call via callTool (registry /
-   * security-policy mutation). The single source of truth (tool-policy.mjs) — a preview bridge
-   * (e.g. settings.html) MUST gate on this rather than hand-maintaining its own denylist.
+   * security-policy mutation, and every internal `_`-prefixed RPC). The single source of
+   * truth (tool-policy.mjs) — a preview bridge MUST gate on this rather than hand-maintain
+   * its own denylist.
    */
   isControlPlaneTool(name) { return _isControlPlaneTool(name); },
   /**
@@ -383,13 +958,13 @@ window.oma = {
 };
 
 // Staleness: the AI (or another host — CLI, another chat) can write via data_* while this
-// widget sits on screen. ADAPTIVE poll while visible: each tick asks the server the cheap
-// data_version probe and only a moved seq pays for a full data_list — so the idle cost is one
-// tiny read per interval. After user activity (a click/keystroke/any widget write) or an
-// observed remote change, the cadence drops to 2s and decays ×1.6 per quiet tick back to the
-// base `widget_poll_seconds` — effective latency while someone is working is seconds.
-// Per-tick pref read so `widget_poll_seconds` honors the merge rule (per-component override
-// under group=<component>) and reacts to changes without a restart.
+// widget sits on screen. ADAPTIVE poll while visible: each tick asks the cheap data_version
+// probe; a moved GLOBAL seq is then confirmed against OUR collection with one data_changes
+// call — a foreign collection's write costs a probe + one tiny check, never a full walk
+// (and safely advances our mark, so it doesn't re-fire). settings changes are caught from
+// the probe's settings_version — write acks no longer carry settings snapshots. After user
+// activity (a click/keystroke/any widget write) or an observed remote change, the cadence
+// drops to 2s and decays ×1.6 per quiet tick back to the base `widget_poll_seconds`.
 const pollMs = () => {
   const s = window.oma.pref("widget_poll_seconds", 20);   // coercePref handles junk
   return (s >= 5 && s <= 300 ? s : 20) * 1000;
@@ -397,22 +972,38 @@ const pollMs = () => {
 const FAST_MS = 2000;
 let pollDelay = 0;                                        // 0 = base cadence
 function markActivity() { pollDelay = FAST_MS; }
+async function checkOwnChanges() {
+  // Our own write is in flight: the commit's SSE/probe signal RACES the ack, and checking now
+  // would walk for a change the ack is about to apply locally (a spurious refresh on the exact
+  // path the 0-RTT rule exists for). The ack advances the mark; a genuinely foreign change
+  // still surfaces on the next tick.
+  if (pendingWrites > 0) return;
+  const r = await rawCall("data_changes", { collection: state.collection, since: state.version });
+  const d = r && !r.isError ? r.structuredContent : null;
+  const verdict = decideChanges(d);
+  if (verdict.kind === "walk") { await walk(); pollDelay = FAST_MS; }  // hot: keep streaming
+  else if (verdict.kind === "advance") state = { ...state, version: verdict.to };  // all elsewhere — silent
+}
 async function pollTick() {
   if (ready && document.visibilityState === "visible" && state.collection) {
     try {
       const r = await rawCall("data_version", {});
       const sc = r && !r.isError ? r.structuredContent : null;
-      const seq = sc && typeof sc.seq === "number" ? sc.seq : null;
-      if (seq == null) await window.oma.refresh();        // engine predates data_version → old behavior
-      else if (seq !== state.version) { await window.oma.refresh(); pollDelay = FAST_MS; } // hot: keep streaming
-      else if (pollDelay) { pollDelay = Math.round(pollDelay * 1.6); if (pollDelay >= pollMs()) pollDelay = 0; }
+      if (!sc || typeof sc.seq !== "number") await walk();  // engine predates data_version → old behavior
+      else {
+        const p = decideProbe(state.version, lastSettingsVersion, sc);
+        if (p.syncPrefs) schedulePrefSync();
+        if (p.checkChanges) await checkOwnChanges();
+        else if (pollDelay) { pollDelay = Math.round(pollDelay * 1.6); if (pollDelay >= pollMs()) pollDelay = 0; }
+        if (p.checkChanges) for (const h of liveEmbeds) h.tick();   // embedded children ride the same probe
+      }
     } catch { /* transient bridge failure — next tick retries */ }
   }
   setTimeout(pollTick, pollDelay || pollMs());
 }
 setTimeout(pollTick, pollMs());
 document.addEventListener("visibilitychange", () => {
-  if (ready && document.visibilityState === "visible") { markActivity(); window.oma.refresh().catch(() => {}); }
+  if (ready && document.visibilityState === "visible") { markActivity(); walk(); }
 });
 document.addEventListener("pointerdown", markActivity, { capture: true, passive: true });
 document.addEventListener("keydown", markActivity, { capture: true, passive: true });
@@ -454,12 +1045,13 @@ const bridgeReadyP = new Promise((r) => { bridgeReady = r; });
 }
 
 if (SA) {
-  // Browser viewer: no MCP host, no bridge — bind directly and pull.
+  // Browser viewer: no MCP host, no bridge — bind directly and pull. Mounting always walks:
+  // there is no pushed tool result here at all.
   state.collection = SA.collection || null;
   state.component = SA.component || null;
   state.host = "browser-viewer";
   prefsPromise = syncPrefs();  // SA.component is already set — even eager consumers are safe
-  window.oma.refresh().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
+  walk().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
   bridgeReady();
   // Viewer SHELL (standalone pages only — host chats render the bare widget): a slim fixed top
   // bar so a browser-opened app has navigation and identity instead of floating raw in the tab.
@@ -496,27 +1088,42 @@ if (SA) {
     else mountBar();
   } catch { /* the bar is cosmetic — never let it break the app */ }
   // Local realtime (SSE): /events pushes ledger seqs the moment anything commits; a moved seq
-  // triggers the same refresh the poll would. Any failure just leaves the adaptive poll as the
-  // fallback (EventSource auto-reconnects on transient drops).
+  // runs the same changes-check the poll would (walk only when OUR collection moved). Any
+  // failure just leaves the adaptive poll as the fallback (EventSource auto-reconnects).
   if (typeof EventSource === "function") {
     try {
       const es = new EventSource(SA.events || "/events");
       es.onmessage = (ev) => {
         try {
           const d = JSON.parse(ev.data);
-          if (typeof d.seq === "number" && d.seq !== state.version) { markActivity(); window.oma.refresh().catch(() => {}); }
+          if (typeof d.seq === "number" && d.seq !== state.version) {
+            markActivity();
+            if (ready && state.collection) checkOwnChanges().catch(() => {});
+            for (const h of liveEmbeds) h.tick();
+          }
         } catch {}
       };
     } catch {}
   }
 } else {
-  // The host pushes the mounting tool's input + result after ui/initialize.
+  // The host pushes the mounting tool's input + result after ui/initialize. Neither is the
+  // paint source anymore: the input BINDS the collection, the result (zero rows by design,
+  // and possibly a stale HOST-CACHED replay) is adopted only if the gate lets it through —
+  // the walk the binding triggers is what the first paint stands on.
+  let connected = false;
+  const startWalk = () => { if (connected && state.collection) walk(); };
   app.ontoolinput = (params) => {
     const a = (params && (params.arguments || params)) || {};
     toolInput = a;
     if (typeof a.collection === "string" && a.collection) state.collection = a.collection;
+    startWalk();
   };
-  app.ontoolresult = (result) => applySnapshot(result && result.structuredContent);
+  app.ontoolresult = (result) => {
+    const sc = result && result.structuredContent;
+    if (sc && typeof sc.collection === "string" && !state.collection) state.collection = sc.collection;
+    if (sc && Array.isArray(sc.items)) { if (!adopt(sc)) startWalk(); }
+    else startWalk();
+  };
   app.onhostcontextchanged = (ctx) => applyTheme(ctx);
   app.onerror = (e) => console.error("[oma] bridge error", e);
 
@@ -524,9 +1131,7 @@ if (SA) {
     applyTheme(app.getHostContext());
     prefsPromise = syncPrefs();  // bridge must be connected before callServerTool works
     bridgeReady();               // render-health reports queued before connect can flush now
-    // Fallback: if the host didn't push a tool result shortly after connect, pull once.
-    // .catch is load-bearing: this was the one un-caught refresh — its rejection on a slow host
-    // landed in the reporter's window and auto-reverted healthy components (review finding #1).
-    setTimeout(() => { if (!ready && state.collection) window.oma.refresh().catch(() => {}); }, 800);
+    connected = true;
+    startWalk();                 // binding may have arrived before connect — walk now
   }).catch((e) => console.error("[oma] connect failed", e));
 }

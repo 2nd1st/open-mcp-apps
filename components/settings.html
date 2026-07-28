@@ -3,9 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<!-- @OMA_SYSTEM_CSS -->
 <style>
-  /* component-specific styles; the shared system kit is inlined at seed time via the marker above */
+  /* component-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
   body { max-width: 760px; margin-inline: auto; }   /* /view comfort — a no-op inside chat iframes */
   .pane { display: none; }
   .pane.on { display: block; }
@@ -63,14 +62,21 @@
   #library.pane { position: relative; min-height: 380px; }
   #lib-grid { --pv-scale: .3; }
   .lib-thumb { position: relative; aspect-ratio: 16/10; overflow: hidden; border-radius: calc(var(--border-radius-lg, 14px) - 4px); border: 1px solid var(--color-border-secondary); background: var(--color-background-primary); }
-  .lib-thumb > iframe { width: 720px; height: 450px; border: 0; position: absolute; top: 0; left: 0; transform: scale(var(--pv-scale, .3)); transform-origin: 0 0; pointer-events: none; }
+  .lib-thumb iframe { width: 720px !important; height: 450px !important; border: 0; position: absolute; top: 0; left: 0; transform: scale(var(--pv-scale, .3)); transform-origin: 0 0; pointer-events: none; }
   .lib-thumb > .k-skel { position: absolute; inset: 0; border-radius: 0; }
   .lib-desc { margin-top: 4px; min-height: 2.6em; }
   /* kit classes set their own display, which beats the UA [hidden] rule — restate it */
   #lib-cats[hidden], #d-cat[hidden], #d-open[hidden], #lib-none[hidden], #lib-empty[hidden], #d-delete[hidden] { display: none; }
   .lib-drawer { position: absolute; inset: 0 0 0 auto; width: min(340px, 94%); z-index: 5; background: var(--color-background-primary); border-left: 1px solid var(--color-border-primary); box-shadow: var(--shadow-lg, var(--shadow-sm)); padding: var(--k-s4); overflow: auto; transition: translate var(--k-t-slow) var(--k-ease), opacity var(--k-t-slow); }
   @starting-style { .lib-drawer { translate: 24px 0; opacity: 0; } }   /* enhancement; instant elsewhere */
-  #pv { width: 100%; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); height: 300px; background: transparent; }
+  #pv-wrap iframe { border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md); background: transparent; }
+  /* Data pane */
+  .drow { display: flex; align-items: center; gap: var(--k-s3); min-height: 40px; padding: 7px 0; border-bottom: 1px solid var(--color-border-secondary); }
+  .drow .own { display: flex; gap: 6px; flex-wrap: wrap; }
+  .devt { display: flex; align-items: baseline; gap: 8px; padding: 5px 0; border-bottom: 1px solid var(--color-border-secondary); font-size: 12px; }
+  .devt .k-num { color: var(--color-text-tertiary); flex: none; }
+  .devt .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .devt .k-btn { padding: 0 8px; font-size: 11px; flex: none; }
   #d-hist { margin: 0; padding-left: 18px; font-size: 11.5px; }
   #d-hist li { margin: 2px 0; }
   #d-hist .k-btn { padding: 0 8px; margin-left: 6px; font-size: 11px; }
@@ -86,7 +92,8 @@
     <button class="k-tab on" data-p="prefs"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4.5h6M11.5 4.5h2M8.5 2.5v4M2.5 11.5h2M7.5 11.5h6M4.5 9.5v4"/></svg>Preferences</button>
     <button class="k-tab" data-p="guide"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 12.5V3.5a2 2 0 0 1 2-2h7v13h-7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h7"/></svg>Guide</button>
     <button class="k-tab" data-p="about"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 1.5v3.5M10.5 1.5v3.5M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12v2.5"/></svg>About</button>
-    <button class="k-tab" data-p="library"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5H7V7H2.5zM9 2.5h4.5V7H9zM2.5 9H7v4.5H2.5zM9 9h4.5v4.5H9z"/></svg>Installed</button><!-- "Library" is the community app's name; internal ids keep "library" -->
+    <button class="k-tab" data-p="library"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 2.5H7V7H2.5zM9 2.5h4.5V7H9zM2.5 9H7v4.5H2.5zM9 9h4.5v4.5H9z"/></svg>Installed</button><!-- "App Store" is the community app's name; internal ids keep "library" -->
+    <button class="k-tab" data-p="data"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2c3 0 5.5 1 5.5 2.2S11 6.5 8 6.5 2.5 5.4 2.5 4.2 5 2 8 2zM2.5 4.2v7.6C2.5 13 5 14 8 14s5.5-1 5.5-2.2V4.2M2.5 8c0 1.2 2.5 2.2 5.5 2.2S13.5 9.2 13.5 8"/></svg>Data</button>
     <button class="k-tab" data-p="perms"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.5l5.5 2.5v3.5c0 3.5-2.5 6-5.5 7-3-1-5.5-3.5-5.5-7V4z"/></svg>Permissions</button>
   </div>
 
@@ -113,7 +120,7 @@
     <ul>
       <li>Just say <code>show my habit tracker</code> / <code>open my board</code> — the app appears right in the chat.</li>
       <li>Say <code>what data do I have</code> for a list of everything stored, or <code>open the dashboard</code> for an overview.</li>
-      <li>Want an app that doesn't exist? Say <code>make me an X</code> — the AI writes it, saves it, and reuses it forever. Or browse the Library for ready-made ones.</li>
+      <li>Want an app that doesn't exist? Say <code>make me an X</code> — the AI writes it, saves it, and reuses it forever. Or browse the App Store for ready-made ones.</li>
       <li>One app can show different data: <code>open my work data in the kanban app</code>.</li>
       <li>Let the AI operate for you: <code>mark "research the spec" done</code> — any open widget auto-refreshes.</li>
     </ul>
@@ -167,7 +174,7 @@
       <p class="k-mut k-num" id="d-store" style="margin:8px 0 0" hidden></p>
       <div id="d-live" hidden>
         <p class="muted" style="margin:12px 0 6px">Live preview — real data, real writes.</p>
-        <iframe id="pv" sandbox="allow-scripts" title="App preview"></iframe>
+        <div id="pv-wrap"></div>
       </div>
       <h4 class="k-sub" style="margin:14px 0 4px">History</h4>
       <ol id="d-hist" class="k-mut"></ol>
@@ -180,6 +187,21 @@
         <button class="k-btn danger" id="d-delete"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4"/></svg><span id="d-del-lbl">Delete</span></button>
       </footer>
     </aside>
+  </div>
+
+  <div class="pane" id="data">
+    <h3 style="margin-top:2px">Data sets</h3>
+    <p class="k-mut note">Every collection in your store, and which app claims it. An app claims a collection by declaring it in its <code>#oma-manifest</code> block (or just by sharing its name).</p>
+    <div id="data-rows"><p class="k-mut note">Loading…</p></div>
+    <h3>Recent activity</h3>
+    <p class="k-mut note" id="data-ledger-note" hidden>The audit trail (who wrote what, with undo) lives in the browser view — open <a id="data-ledger-link" href="#" target="_blank" rel="noopener">settings in the browser</a> to see it.</p>
+    <div id="data-ledger" hidden>
+      <div class="k-row" style="margin-bottom:8px">
+        <select class="k-field" id="data-coll" aria-label="Collection filter"></select>
+        <button class="k-btn ghost" id="data-reload">Reload</button>
+      </div>
+      <div id="data-events"></div>
+    </div>
   </div>
 
   <div class="pane" id="perms">
@@ -197,6 +219,10 @@
     let SHARED_KEYS = new Set();
     const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
     const RESERVED = (k) => /^(security_|_)/.test(k) || /^(security|policy):/.test(k);
+    // Theme tokens live in this same collection (group "" = everywhere, group "<app>" = that app
+    // only) so the whole feature costs zero tool seats. They are NOT preferences, so they get
+    // their own micro-group instead of reading as undeclared strays next to a component's options.
+    const THEME = (k) => k.slice(0, 6) === "theme:";
     // TOP_KEYS render first, unfolded (frozen 2026-07-25: the two decisions users revisit);
     // every other catalog key folds into "More options" under these micro-groups. A key the
     // catalog renames simply drops out of TOP and shows up foldered — visible, never silent.
@@ -259,12 +285,13 @@ function coercePref(v, fallback) {
       document.querySelectorAll(".pane").forEach((p) => p.classList.toggle("on", p.id === t.dataset.p));
       if (t.dataset.p === "library") libEntrance();   // Installed pane first-open entrance stagger (design-system §8.0 gating)
       if (t.dataset.p === "perms") loadPerms();       // fresh read every visit — cheap, always current
+      if (t.dataset.p === "data") loadData();         // fresh collections + ownership + ledger every visit
     };
 
     // ---- Permissions pane (P4): renders component_permissions; overrides write through
     // security_set (security:<name>:<cap>) — the ONLY tool that may touch reserved keys.
     // Local tier = direct render = full trust (switches would be theater — shown read-only);
-    // runner tiers (gallery installs, pasted comps) get real switches the runner enforces.
+    // runner tiers (library installs, pasted comps) get real switches the runner enforces.
     const PERM_CAPS = [
       ["send_message", "Send chat messages"],
       ["update_context", "Update AI context"],
@@ -291,9 +318,9 @@ function coercePref(v, fallback) {
       box.innerHTML = "";
       for (const c of rows) {
         // OSS keeps this pane SIMPLE: local components (which is everything in OSS — own, AI-built
-        // and gallery apps alike) get one clean line. The switch UI below only materializes for
+        // and library apps alike) get one clean line. The switch UI below only materializes for
         // future non-local tiers (shared/published apps), so no dead controls are shown today.
-        const originLabel = c.author === "gallery" ? "Library install" : c.author === "seed" ? "system" : "by " + c.author;
+        const originLabel = c.author === "library" ? "App Store install" : c.author === "seed" ? "system" : "by " + c.author;
         if (c.tier === "local") {
           const row = el("div", "prow");
           row.append(lbl(c.name, originLabel + (c.locked ? " · fixed system UI" : "") + " · full local trust"));
@@ -526,7 +553,12 @@ function coercePref(v, fallback) {
         else d.append(prefRow({ ...def, desc: def.description }, name));
       }
       for (const sp of SHARED_PREFS) if (!declared.has(sp.key) && g.has(sp.key)) d.append(prefRow(sp, name));   // shared-key overrides render with the proper control
-      for (const [k, it] of g) if (!declared.has(k) && !SHARED_KEYS.has(k)) d.append(rawRow(it));
+      for (const [k, it] of g) if (!declared.has(k) && !SHARED_KEYS.has(k) && !THEME(k)) d.append(rawRow(it));
+      const themed = [...g].filter(([k]) => THEME(k));
+      if (themed.length) {
+        d.append(el("h4", "k-sub oh", "Theme (this app only)"));
+        for (const [, it] of themed) d.append(rawRow(it, "Design token — overrides the global theme for " + name + "."));
+      }
       if (pending) d.append(skelRow());   // declared rows may still land
       const foot = sectionFooter(name, mf, g, declared);
       if (foot) d.append(foot);
@@ -564,7 +596,23 @@ function coercePref(v, fallback) {
     function renderAdvanced() {
       const adv = document.getElementById("advanced"), box = document.getElementById("adv-rows");
       box.innerHTML = "";
-      const strays = SHARED_PREFS.length ? [...groupItems("")].filter(([k]) => !SHARED_KEYS.has(k)) : [];
+      const global = SHARED_PREFS.length ? [...groupItems("")].filter(([k]) => !SHARED_KEYS.has(k)) : [];
+      const themed = global.filter(([k]) => THEME(k));
+      const strays = global.filter(([k]) => !THEME(k));
+      if (themed.length) {
+        box.append(el("h4", "k-sub oh", "Theme"));
+        box.append(el("p", "k-mut note", "Design tokens applied to every app. Ask the AI to change one, or edit it here."));
+        for (const [k, it] of themed) {
+          // "Did it take?" is answered by the OUTCOME, not by a second copy of the runtime's
+          // charset rule: the runtime stamps every accepted token as an inline property on
+          // <html>, so an absent one was refused. (Global rows only — a per-app token applies in
+          // THAT app's document, never in this one, so the same check there would always lie.)
+          const live = document.documentElement.style.getPropertyValue(k.slice(6)).trim() !== "";
+          box.append(rawRow(it, live
+            ? "Design token — applies everywhere unless an app overrides it."
+            : "Not applied — the name must look like --color-text-info and the value must be a plain CSS value."));
+        }
+      }
       if (strays.length) {
         box.append(el("h4", "k-sub oh", "Other global keys"));
         for (const [, it] of strays) box.append(rawRow(it));
@@ -603,8 +651,8 @@ function coercePref(v, fallback) {
     function render(state) {
       document.getElementById("a-host").textContent = state.host || "unknown";
       renderPrefs();
-      pushPv();        // preview open → keep its child's prefs fresh (settings-design §2.7)
-      pushAllThumbs(); // same parity for every live thumbnail (design-system §7.3)
+      // Preview children keep themselves fresh: oma.embed watches our settings changes and
+      // re-pushes prefs to every mounted child (settings-design §2.7 parity, now in the runner).
     }
 
     let migrated = false;
@@ -642,116 +690,35 @@ function coercePref(v, fallback) {
       const vals = e.options.map(optVal);
       return vals.every((v) => typeof v === "string" && v.length <= 120) && vals.includes(e.default);
     }
-    function parseManifest(html) {
-      try {
-        const doc = new DOMParser().parseFromString(html, "text/html");
-        const el = doc.getElementById("oma-manifest");
-        if (!el || el.type !== "application/json") return null;
-        const m = JSON.parse(el.textContent);
-        if (m.manifest_version !== 1 || !Array.isArray(m.settings)) return null;
-        return { settings: m.settings.filter(validEntry).slice(0, 24),
-                 uses_shared: Array.isArray(m.uses_shared) ? m.uses_shared.filter((k) => typeof k === "string") : [] };
-      } catch { return null; }
+    // The declaration arrives already parsed: the engine reads the document's #oma-manifest block at
+    // save time and hands the result over. This function only decides which parts THIS app renders.
+    //
+    // Two gates used to live here and both were wrong. `manifest_version !== 1` would have made every
+    // v2 declaration vanish silently; `!Array.isArray(m.settings)` was already dropping the whole
+    // declaration of five shipped components — the ones that declare only `uses_shared` — so their
+    // preferences section never appeared and their shared-pref grouping was always empty. The rule
+    // now is: read the keys that are present, ignore the rest.
+    function useDeclaration(m) {
+      if (!m || typeof m !== "object") return null;
+      if (m.manifest_version != null && ![1, 2].includes(m.manifest_version)) return null;
+      const settings = Array.isArray(m.settings) ? m.settings.filter(validEntry).slice(0, 24) : [];
+      const uses_shared = Array.isArray(m.uses_shared) ? m.uses_shared.filter((k) => typeof k === "string") : [];
+      return settings.length || uses_shared.length ? { settings, uses_shared } : null;
     }
 
-    // ---- srcdoc children: shared bridge + CSP (thumbnails AND the drawer's live preview).
-    // Every runner srcdoc gets a network kill-switch CSP meta prepended (security-model v0.2).
-    // coercePref is interpolated via toString() so the bridge copy stays byte-identical.
-    const CSP_META = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'">`;
-    const BRIDGE = `<script>(function(){
-      var S={collection:null,items:[],version:0,component:null,host:null};
-      var readyCbs=[],changeCbs=[],prefCbs=[],isReady=false,seq=0,pending={};
-      var P=null;
-${coercePref.toString()}
-      function firePref(k,v,o,s){prefCbs.forEach(function(cb){try{cb({key:k,value:v,oldValue:o,scope:s})}catch(e){}})}
-      function req(m,a){return new Promise(function(res,rej){var id=++seq;pending[id]=[res,rej];
-        parent.postMessage({omaPv:true,id:id,method:m,args:a},"*");})}
-      window.addEventListener("message",function(ev){var d=ev.data||{};
-        if(d.omaPvResult&&pending[d.id]){var p=pending[d.id];delete pending[d.id];d.error?p[1](new Error(d.error)):p[0](d.result);}
-        if(d.omaPvSnapshot&&d.snapshot){
-          var pc=false;
-          if(d.prefs&&typeof d.prefs==="object"){
-            var CK=d.compKeys||{};
-            if(P===null){P=d.prefs;}
-            else{var old=P;P=d.prefs;var k;
-              for(k in P)if(!(k in old)||old[k]!==P[k]){firePref(k,P[k],old[k],CK[k]?"component":"global");pc=true;}
-              for(k in old)if(!(k in P)){firePref(k,undefined,old[k],"global");pc=true;}}
-          }
-          var ch=d.snapshot.version!==S.version||pc;S=Object.assign(S,d.snapshot);
-          if(!isReady){isReady=true;readyCbs.splice(0).forEach(function(cb){try{cb(S)}catch(e){}});}
-          else if(ch){changeCbs.forEach(function(cb){try{cb(S)}catch(e){}});}}
-      });
-      window.oma={ get state(){return S}, ready:function(cb){isReady?cb(S):readyCbs.push(cb)}, onChange:function(cb){changeCbs.push(cb)},
-        addItem:function(o){return req("addItem",o||{})}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f})},
-        moveItem:function(id,g,p){return req("moveItem",{id:id,group:g,position:p})}, deleteItem:function(id){return req("deleteItem",{id:id})},
-        refresh:function(){return req("refresh",{})}, callTool:function(n,a){return req("callTool",{name:n,args:a})},
-        pref:function(k,f){ return (P && k in P) ? coercePref(P[k], f) : f },
-        onPrefChange:function(cb){prefCbs.push(cb)},
-        setPref:function(k,v){return req("setPref",{key:k,value:v})},
-        sendMessage:function(t){return req("sendMessage",{text:t})}, updateContext:function(t){return req("updateContext",{text:t})},
-        get toolInput(){return {}}, get host(){return S.host}, get standalone(){return false} };
-      var ro=new ResizeObserver(function(){parent.postMessage({omaPvHeight:true,h:document.documentElement.scrollHeight},"*")});
-      window.addEventListener("load",function(){ro.observe(document.body)});
-    })();<\/script>`;
-    // pvGen: stale async results from a previous selection are dropped.
-    // pvTier/pvCaps: trust tier + engine-computed caps of the CURRENT preview (component_html
-    // returns them, security-model §2.3) — enforced at the preview's postMessage chokepoint.
-    let pvName = null, pvSnap = null, pvGen = 0, pvTier = "local", pvCaps = {};
-    const pv = document.getElementById("pv");
-
-    // Children are separate documents — the host's injected design tokens don't reach them.
-    // Extract the COMPUTED values from our own root (host-injected if present, shell
-    // fallbacks otherwise) and re-emit them as :root CSS for the child.
-    const TOKEN_NAMES = [
-      ...["background", "text", "border"].flatMap((k) => ["primary", "secondary", "tertiary", "inverse", "ghost", "info", "danger", "success", "warning", "disabled"].map((v) => `--color-${k}-${v}`)),
-      ...["primary", "secondary", "inverse", "info", "danger", "success", "warning"].map((v) => `--color-ring-${v}`),
-      "--font-sans", "--font-mono", "--font-weight-normal", "--font-weight-medium", "--font-weight-semibold", "--font-weight-bold",
-      ...["xs", "sm", "md", "lg"].flatMap((s) => [`--font-text-${s}-size`, `--font-text-${s}-line-height`]),
-      ...["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].flatMap((s) => [`--font-heading-${s}-size`, `--font-heading-${s}-line-height`]),
-      ...["xs", "sm", "md", "lg", "xl", "full"].map((s) => `--border-radius-${s}`),
-      "--border-width-regular", "--shadow-hairline", "--shadow-sm", "--shadow-md", "--shadow-lg",
-    ];
-    function tokenCSS() {
-      const cs = getComputedStyle(document.documentElement);
-      let vars = "";
-      for (const n of TOKEN_NAMES) { const v = cs.getPropertyValue(n).trim(); if (v) vars += `${n}:${v};`; }
-      return `<style data-oma="tokens">:root{${vars}}html{color-scheme:${cs.colorScheme || "light dark"}}body{font-family:var(--font-sans);color:var(--color-text-primary)}</style>`;
-    }
-    // CSP-FIRST document construction: the component's own markup is UNTRUSTED — a hostile
-    // document can put a <script> BEFORE its <head> (or shape markup so a head-anchored
-    // replace lands late), and any script parsed ahead of the CSP meta runs with the network
-    // still open. So never anchor on the component's <head>: ALWAYS build the outer document
-    // ourselves, CSP_META as the literal first child of <head>, and the component's markup
-    // ENTIRELY in <body> — the parser folds its nested <html>/<head>/<body> tags and its
-    // styles/scripts still run from there, strictly after the CSP is in force.
-    function injectDoc(html) {
-      return "<!DOCTYPE html><html><head>" + CSP_META + "<meta charset=\"UTF-8\">" + tokenCSS() + BRIDGE + "</head><body>" + html + "</body></html>";
-    }
-
-    // Merged pref map for a srcdoc child (child group over global, last row wins) —
-    // computed from OUR live state.items: the settings app is bound to the settings collection.
-    function childPrefs(name) {
-      const base = {}, over = {};
-      for (const it of oma.state.items) {
-        const k = it.fields && it.fields.key;
-        if (typeof k !== "string") continue;
-        if (it.group === "") base[k] = it.fields.value;
-        else if (it.group === name) over[k] = it.fields.value;
-      }
-      const compKeys = {};
-      for (const k in over) compKeys[k] = 1;      // layer provenance — the bridge derives onPrefChange scope from it
-      return { merged: Object.assign(base, over), compKeys };
-    }
-    function pushPv() {
-      if (!pvName || !pvSnap || !pv.contentWindow) return;
-      const p = childPrefs(pvName);
-      pv.contentWindow.postMessage({ omaPvSnapshot: true, snapshot: pvSnap, prefs: p.merged, compKeys: p.compKeys }, "*");
-    }
+    // ---- srcdoc previews (write-set D): thumbnails and the drawer child mount through
+    // oma.embed — the ONE runner machine (src/runner.mjs, bundled into the shell runtime).
+    // The two hand-kept preview bridges that used to live here (~350 lines: CSP, token
+    // re-emission, an omaPv* mini-bridge, and a full caps chokepoint each) are gone; presets
+    // carry their semantics: "readonly" = the thumbnail rules, "live" = the drawer's
+    // caps-enforced read-write preview.
+    let pvHandle = null;   // the drawer's live-preview embed handle
+    let pvStarting = false; // a mount is in flight — the toggle must read that as ON (see startPreview)
 
     // ============ Installed tab (internal id "library", design-system §7): grid + thumbs + drawer ============
     let libCat = "", libEntered = false, drawerComp = null;
     const libGrid = document.getElementById("lib-grid");
-    const thumbs = new Map();   // thumb contentWindow -> {name, snap, iframe}
+    const thumbs = new Map();   // name -> embed handle (unmounted on every grid re-render)
     const hueOf = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 6; };
     const kb = (n) => (n / 1024).toFixed(1) + "k";
     function ago(ts) {
@@ -783,86 +750,19 @@ ${coercePref.toString()}
       }
     }, { rootMargin: "120px" });
 
+    // Mount = oma.embed with the readonly preset: reads answer from one first page, every
+    // write path refuses, chat methods are silent — the old thumbnail rules, now owned by
+    // the runner machine. heights:false leaves sizing to .lib-thumb's scaled-picture CSS.
     async function mountThumb(th) {
       const name = th.dataset.name;
       try {
-        const sc = (await oma.callTool("component_html", { name }))?.structuredContent || {};
-        if (!th.isConnected) return;   // grid re-rendered while the source was in flight
-        const f = document.createElement("iframe");
-        f.setAttribute("sandbox", "allow-scripts");
-        f.tabIndex = -1;                            // inert: a thumbnail is a picture (§7.3)
-        f.setAttribute("aria-hidden", "true");
-        f.srcdoc = injectDoc(sc.html || "");
-        f.onload = async () => {
-          th.querySelector(".k-skel")?.remove();
-          if (!f.contentWindow) return;
-          // tier rides on the thumb record — no tier at all (an engine predating tiers) counts
-          // as "local", matching the universal loader's tier branch (shell.mjs)
-          const t = { name, snap: null, iframe: f, tier: sc.tier == null ? "local" : sc.tier };
-          thumbs.set(f.contentWindow, t);
-          const r = await oma.callTool("data_list", { collection: name });   // the ONE parent-pushed snapshot
-          if (r?.structuredContent && thumbs.get(f.contentWindow) === t) { t.snap = r.structuredContent; pushThumb(t); }
-        };
-        th.append(f);
+        const h = await oma.embed(name, { into: th, preset: "readonly", heights: false });
+        if (!th.isConnected) { h.unmount(); return; }   // grid re-rendered while mounting
+        th.querySelector(".k-skel")?.remove();
+        thumbs.set(name, h);
       } catch { /* source fetch failed — skeleton stays, honestly unfinished */ }
     }
-    function pushThumb(t) {
-      if (!t.snap || !t.iframe.contentWindow) return;
-      const p = childPrefs(t.name);   // same merged-prefs computation as the drawer preview (§2.7 parity)
-      t.iframe.contentWindow.postMessage({ omaPvSnapshot: true, snapshot: t.snap, prefs: p.merged, compKeys: p.compKeys }, "*");
-    }
-    function pushAllThumbs() { for (const t of thumbs.values()) pushThumb(t); }
 
-    // Control-plane denylist — PERMANENT and tier-independent: no srcdoc child (thumbnail or
-    // drawer preview) may rewrite security policy or mutate the component registry, even a
-    // trusted local one. A preview renders components; it never administers them.
-    // Control-plane deny — delegate to oma.isControlPlaneTool (tool-policy.mjs, the single source
-    // of truth shared with the runner). No hand-maintained copy here, so it can never drift.
-    // Fail-closed: if the runtime predicate is somehow absent, treat the tool as control-plane.
-    const isControlPlane = (n) => (window.oma && typeof oma.isControlPlaneTool === "function") ? oma.isControlPlaneTool(n) : true;
-
-    // ---- thumb bridge = the READ-ONLY caps preset (design-system §7.3, normative) ----
-    // callTool is allowlist-EXACT and tier-aware; every write-shaped method rejects; chat
-    // methods resolve null silently (a thumb must never speak to the chat); refresh answers
-    // from cache. component_html/get_component are NEVER thumb-callable, any tier — a
-    // thumbnail is a picture and has no business reading any component's source.
-    const THUMB_TOOLS = new Set(["data_list", "data_collections", "list_components"]);
-    const THUMB_RO = "preview thumbnails are read-only";
-    window.addEventListener("message", async (ev) => {
-      const t = thumbs.get(ev.source);
-      if (!t || !t.iframe.contentWindow) return;
-      const d = ev.data || {};
-      if (d.omaPvHeight) return;   // fixed virtual height — thumbs ignore height reports (§7.3)
-      if (!d.omaPv) return;
-      const post = (msg) => t.iframe.contentWindow.postMessage(Object.assign({ omaPvResult: true, id: d.id }, msg), "*");
-      switch (d.method) {
-        case "sendMessage":
-        case "updateContext": post({ result: null }); return;                  // silent no-op
-        case "refresh": post({ result: t.snap }); pushThumb(t); return;         // cached snapshot only — no host traffic
-        case "callTool": {
-          const ca = d.args || {};
-          const tn = String(ca.name || "");
-          const ta = Object.assign({}, ca.args || {});
-          if (isControlPlane(tn)) { post({ error: THUMB_RO }); return; }   // hard-deny, every tier
-          if (t.tier === "local") {
-            // local/system tier: the RO allowlist keeps system-component thumbnails rendering
-            // (the dashboard's overview legitimately needs data_collections); source reads
-            // stay denied even here.
-            if (!THUMB_TOOLS.has(tn)) { post({ error: THUMB_RO }); return; }
-          } else {
-            // non-local tier: only its own bound snapshot — data_list FORCED to the thumb's
-            // collection; enumeration (data_collections/list_components) and source reads
-            // are denied entirely.
-            if (tn !== "data_list") { post({ error: THUMB_RO }); return; }
-            ta.collection = t.name;
-          }
-          try { post({ result: await oma.callTool(tn, ta) }); }
-          catch (e) { post({ error: String(e && e.message || e) }); }
-          return;
-        }
-        default: post({ error: THUMB_RO });   // addItem/updateItem/moveItem/deleteItem/setPref/unknown → all writes
-      }
-    });
 
     // ---- grid rendering: search field + category chips + k-cards ----
     function renderCats() {
@@ -920,8 +820,10 @@ ${coercePref.toString()}
     // Every component in the registry gets a LIVE thumb — settings/dashboard included
     // (settings recurses at most one level: thumbs are inert, so a nested Installed tab
     // can never activate; its default Preferences pane renders from allowlisted RO calls —
-    // manifest source reads are thumb-denied, so declared entries degrade to stored rows).
+    // the declaration comes back with component_html, which IS thumb-allowlisted, so a nested
+    // Preferences pane renders declared entries too — no source read is involved any more).
     function renderLibrary() {
+      for (const h of thumbs.values()) h.unmount();   // embed handles hold listeners — release them
       thumbs.clear();
       renderCats();
       libGrid.innerHTML = "";
@@ -985,8 +887,8 @@ ${coercePref.toString()}
       const coll = collsCache.find((x) => x.collection === c.name);
       const n = coll ? coll.items : 0;
       st.textContent = n + (n === 1 ? " item" : " items") + " saved";
-      oma.callTool("file_usage", { component: c.name }).then((r) => {
-        const u = r?.structuredContent;
+      oma.callTool("file_list", { component: c.name, limit: 1 }).then((r) => {
+        const u = r?.structuredContent?.usage;   // usage rides every file_list page (file_usage retired)
         if (drawerComp !== c || !u || !u.count) return;   // drawer switched, or no files → nothing to add
         st.textContent += " · " + u.count + (u.count === 1 ? " file, " : " files, ") + (u.bytes / 1024).toFixed(1) + " KB";
       }).catch(() => {});
@@ -1059,36 +961,48 @@ ${coercePref.toString()}
       return b;
     }
 
-    // Preview toggle — the drawer's preview is the full READ-WRITE runner for local
-    // components; a non-local tier runs under its engine-computed caps (see the chokepoint).
+    // Preview toggle — the drawer preview is a LIVE embed: caps-enforced read-write through
+    // the runner machine (local tier keeps wildcard-with-denylist semantics; non-local runs
+    // under its engine-computed caps) — the same chokepoint the universal loader uses.
     function pvLabel(on) { document.getElementById("d-pv-lbl").textContent = on ? "Stop preview" : "Preview"; }
+    // A mount takes two awaits, and `pvHandle` is null for both of them — so nothing downstream
+    // could tell "no preview" from "a preview on the way". A second click, or switching the drawer
+    // mid-mount, started a SECOND embed; the winner overwrote pvHandle and the loser's iframe was
+    // dropped by innerHTML with its listeners, parent callbacks and liveEmbeds entry still live
+    // (reproduced: one leaked message listener per occurrence). `pvGen` is what tells them apart:
+    // every start claims a number, and a result whose number is stale unmounts itself and returns.
+    let pvGen = 0;
     async function startPreview(c) {
-      pvName = c.name; pvSnap = null; pvTier = "local"; pvCaps = {};
-      const gen = ++pvGen;
-      rateReset();
+      stopPreview();                       // also bumps pvGen, retiring anything in flight
+      const gen = pvGen;
+      pvStarting = true;
       document.getElementById("d-live").hidden = false;
       pvLabel(true);
-      const sc = (await oma.callTool("component_html", { name: c.name }))?.structuredContent || {};
-      if (gen !== pvGen) return;   // drawer switched / preview stopped while the source was in flight
-      // capture {tier, caps} BEFORE the child document exists — no tier at all (an engine
-      // predating tiers) counts as "local", matching the universal loader's tier branch
-      pvTier = sc.tier == null ? "local" : sc.tier;
-      pvCaps = sc.caps || {};
-      pv.srcdoc = injectDoc(sc.html || "");
-      pv.onload = async () => {
-        const r = await oma.callTool("data_list", { collection: c.name });
-        if (gen !== pvGen) return;   // a different preview was selected while this fetch was in flight
-        if (r?.structuredContent) { pvSnap = r.structuredContent; pushPv(); }
-      };
+      try {
+        const h = await oma.embed(c.name, { into: document.getElementById("pv-wrap"), preset: "live", heights: { min: 140, max: 560 } });
+        if (gen !== pvGen) { h.unmount(); return; }   // superseded while mounting
+        pvHandle = h;
+      } catch (e) {
+        if (gen !== pvGen) return;         // a stale failure must not tear down the CURRENT preview
+        const errEl = document.getElementById("d-err");
+        errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+        stopPreview();
+      } finally {
+        if (gen === pvGen) pvStarting = false;
+      }
     }
     function stopPreview() {
-      pvGen++; pv.onload = null; pv.srcdoc = ""; pvName = null; pvSnap = null; pvTier = "local"; pvCaps = {};
+      pvGen++;                             // retire any mount still in flight
+      pvStarting = false;
+      if (pvHandle) { pvHandle.unmount(); pvHandle = null; }
+      document.getElementById("pv-wrap").innerHTML = "";
       document.getElementById("d-live").hidden = true;
       pvLabel(false);
     }
     document.getElementById("d-preview").onclick = () => {
       if (!drawerComp) return;
-      if (pvName) stopPreview(); else startPreview(drawerComp);
+      // "mounting" counts as ON, or the toggle starts a second one instead of cancelling the first.
+      if (pvHandle || pvStarting) stopPreview(); else startPreview(drawerComp);
     };
 
     // Delete — honors the confirm_delete shared pref with an in-widget two-click confirm
@@ -1117,6 +1031,7 @@ ${coercePref.toString()}
         const r = await oma.callTool("delete_component", { command_id: crypto.randomUUID(), name: c.name, actor: "human" });
         if (r && r.isError) { errEl.textContent = (r.content && r.content[0] && r.content[0].text) || "Delete failed."; errEl.hidden = false; return; }
         manifests.delete(c.name);
+        declsRaw.delete(c.name);
         closeDrawer();
         await loadComponents();   // history is retained server-side (tombstone); the grid refreshes
       } catch (e) {
@@ -1124,162 +1039,113 @@ ${coercePref.toString()}
       }
     };
 
-    // ---- RW preview hardening (security-model v0.2) ----
-    // Sliding-window rate limits for the previewed child: writes 60/min, refresh 6/min,
-    // messages 3 per 10s. Reset per preview (one child at a time). On top of the rates:
-    // the CONTROL_PLANE hard-deny (all tiers), snapshot-bound id checks on EVERY write path,
-    // and — for non-local tiers — the engine-computed caps, mirroring shell.mjs runnerMount.
-    const RATE = {
-      writes:   { limit: 60, win: 60000, hits: [] },
-      refresh:  { limit: 6,  win: 60000, hits: [] },
-      messages: { limit: 3,  win: 10000, hits: [] },
-    };
-    function rateReset() { for (const k in RATE) RATE[k].hits.length = 0; }
-    function rateTake(kind) {
-      const r = RATE[kind], now = Date.now();
-      while (r.hits.length && now - r.hits[0] > r.win) r.hits.shift();
-      if (r.hits.length >= r.limit) throw new Error("rate limit: too many " + kind + " from the preview (" + r.limit + "/" + (r.win / 1000) + "s) — slow down");
-      r.hits.push(now);
-    }
-    // Write-shaped data tools that count against the write budget on the generic path.
-    // (save_component / delete_component / security_set are not merely write-shaped — they
-    // are CONTROL_PLANE and hard-denied before any rate accounting happens.)
-    const WRITEISH = new Set(["data_add_item", "data_update_item", "data_move_item", "data_delete_item"]);
-
-    // Parent-side setPref for the preview child — full settings-design §2.6 validation, group
-    // FORCED to the previewed component (the child cannot name a different group); last-write-wins.
-    async function proxySetPref(name, a) {
-      const key = a.key, value = a.value;
-      if (typeof key !== "string" || !KEY_RE.test(key) || /^(security_|_)/.test(key))
-        throw new Error("setPref: invalid or reserved key");
-      const t = typeof value;
-      if (t !== "string" && t !== "number" && t !== "boolean") throw new Error("setPref: value must be a scalar");
-      if (t === "string" && value.length > 4096) throw new Error("setPref: value too long");
-      const cid = () => crypto.randomUUID();
-      const add = () => oma.callTool("data_add_item", { command_id: cid(), collection: "settings", group: name, fields: { key, value }, actor: "human" });
-      const it = curStored(name, key);
-      let r;
-      if (it) {
-        r = await oma.callTool("data_update_item", { command_id: cid(), id: it.id, fields: { value }, actor: "human" });
-        if (r && r.isError) r = await add();   // concurrently deleted → re-create
-      } else r = await add();
-      await oma.refresh();   // our own bound collection — re-renders the forms and re-pushes prefs
-      return r;
-    }
-
-    window.addEventListener("message", async (ev) => {
-      const d = ev.data || {};
-      if (ev.source !== pv.contentWindow || !pvName) return;
-      if (d.omaPvHeight && typeof d.h === "number") { pv.style.height = Math.min(Math.max(d.h + 4, 140), 560) + "px"; return; }
-      if (!d.omaPv) return;
-      const cid = () => crypto.randomUUID();
-      const name = pvName, gen = pvGen, local = pvTier === "local", caps = pvCaps || {};
-      // v0.2 id-addressed-op collection binding (security-model §1.3(2)): an id-addressed write
-      // may only target an item of the child's bound collection, checked against the snapshot
-      // the parent holds — a guessed foreign id is refused before it reaches the engine.
-      const bound = (id) => { if (!pvSnap || !pvSnap.items.some((i) => i.id === id)) throw new Error("out of scope: id is not in the previewed collection"); };
-      // OCC on the typed write path (parity with the top-level shell's versionOf): the version
-      // the parent-held snapshot last saw rides along, so a concurrent edit surfaces as a
-      // version conflict instead of a silent clobber.
-      const verOf = (id) => { const it = pvSnap && pvSnap.items.find((i) => i.id === id); return it ? it.version : undefined; };
-      // Non-local settings-collection writes need caps.settings_write (runner rule); local is
-      // trusted-by-design (same-document co-equal with the AI everywhere else) and skips it.
-      const settingsGuard = (target) => {
-        if (!local && String(target == null ? "" : target).trim() === "settings" && caps.settings_write !== true)
-          throw new Error("settings write denied by policy");
-      };
-      // caps.delete_items for non-local tiers: allow | confirm (native confirm(), degrading
-      // to DENY where hosts suppress dialogs in sandboxed iframes) | deny — mirrors runnerMount.
-      const confirmDelete = () => {
-        if (local || caps.delete_items === "allow") return;
-        if (caps.delete_items === "confirm") {
-          let okd = false;
-          try { okd = typeof window.confirm === "function" && window.confirm('App "' + name + '" wants to delete an item. Allow?') === true; } catch { okd = false; }
-          if (okd) return;
-          throw new Error("delete not confirmed (or confirmation unavailable in this host)");
-        }
-        throw new Error("delete denied by policy");
-      };
-      try {
-        let result;
-        switch (d.method) {
-          case "addItem":    rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_add_item", { command_id: cid(), collection: name, group: d.args.group || "", fields: d.args.fields || {}, position: d.args.position, actor: "human" }); break;
-          case "updateItem": bound(d.args.id); rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_update_item", { command_id: cid(), id: d.args.id, fields: d.args.fields, expected_version: verOf(d.args.id), actor: "human" }); break;
-          case "moveItem":   bound(d.args.id); rateTake("writes"); settingsGuard(name); result = await oma.callTool("data_move_item", { command_id: cid(), id: d.args.id, group: d.args.group, position: d.args.position, expected_version: verOf(d.args.id), actor: "human" }); break;
-          case "deleteItem": bound(d.args.id); rateTake("writes"); settingsGuard(name); confirmDelete(); result = await oma.callTool("data_delete_item", { command_id: cid(), id: d.args.id, expected_version: verOf(d.args.id), actor: "human" }); break;
-          case "refresh":    rateTake("refresh"); result = (await oma.callTool("data_list", { collection: name }))?.structuredContent; break;
-          case "setPref":
-            // setPref is a settings-collection WRITE; non-local tiers need the cap (runner rule)
-            if (!local && caps.settings_write !== true) throw new Error("setPref denied by policy");
-            rateTake("writes"); result = await proxySetPref(name, d.args || {}); break;
-          case "callTool": {
-            const ca = d.args || {};
-            const tn = String(ca.name || "");
-            const ta = Object.assign({}, ca.args || {});
-            // Control-plane hard-deny — PERMANENT, every tier incl. local: a preview must
-            // never rewrite security policy or mutate the registry (see CONTROL_PLANE).
-            if (isControlPlane(tn)) throw new Error('preview: tool "' + tn + '" is control-plane and never available to a previewed component');
-            if (WRITEISH.has(tn)) rateTake("writes");
-            if (tn === "data_add_item") {
-              // advisory guard (settings-design §2.7): a preview must not seed foreign settings groups
-              // (normalized like store.mjs — it TRIMS the collection, so "settings " would land there)
-              if (String(ta.collection ?? "").trim() === "settings" && (ta.group || "") !== name)
-                throw new Error("preview: data_add_item into a foreign settings group is blocked");
-            }
-            // id-addressed writes bind to the previewed collection on the GENERIC path too,
-            // ALL tiers (§1.3(2)): the id must resolve in the parent-held snapshot.
-            if (tn === "data_update_item" || tn === "data_move_item" || tn === "data_delete_item") {
-              bound(ta.id);
-              settingsGuard(name);
-              if (tn === "data_delete_item") confirmDelete();
-              if (!local) ta.actor = "human";   // runner-stamped provenance (local passthrough stays raw)
-            }
-            if (!local) {
-              // Non-local tier: enforce the engine-computed caps, mirroring shell.mjs
-              // runnerMount. (Local keeps the permissive-but-denylisted passthrough — a
-              // local component is trusted-by-design, it runs same-document elsewhere.)
-              const callAllow = Array.isArray(caps.call_tools) ? caps.call_tools : [];
-              if (callAllow.indexOf("*") === -1 && callAllow.indexOf(tn) === -1) throw new Error('tool "' + tn + '" not allowed');
-              if ((tn === "component_html" || tn === "get_component" || tn === "get_component_version") && caps.read_source !== true) throw new Error("component source read denied");
-              // file tools: gate by file_read / file_write caps + bind component to the previewed
-              // one (own-files-only) — mirrors shell.mjs runnerMount.
-              if (tn === "file_read" || tn === "file_list" || tn === "file_usage") {
-                if (caps.file_read !== true) throw new Error("file read denied by policy");
-                ta.component = name;
-              }
-              if (tn === "file_write" || tn === "file_write_begin" || tn === "file_write_chunk" || tn === "file_write_commit" || tn === "file_write_abort" || tn === "file_delete") {
-                if (caps.file_write !== true) throw new Error("file write denied by policy");
-                if (tn === "file_write" || tn === "file_write_begin" || tn === "file_delete") ta.component = name;
-              }
-              if (tn === "data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
-              if (tn === "data_list") { rateTake("refresh"); if (caps.cross_collection_read !== true) ta.collection = name; }
-              if (tn === "data_add_item") {
-                ta.actor = "human";
-                if (caps.cross_collection_write !== true) ta.collection = name;
-                settingsGuard(ta.collection);
-              }
-            }
-            result = await oma.callTool(tn, ta);
-            break;
-          }
-          case "sendMessage":
-            if (!local && caps.send_message !== true) { result = { isError: true, content: [{ type: "text", text: "sendMessage denied by policy" }] }; break; }
-            rateTake("messages"); result = await oma.sendMessage(d.args.text); break;
-          case "updateContext":
-            if (!local && caps.update_context !== true) { result = null; break; }   // silent deny by design (§5 v0.2)
-            rateTake("messages"); result = await oma.updateContext(d.args.text); break;
-          default: throw new Error("unknown " + d.method);
-        }
-        if (gen !== pvGen) return;   // preview switched mid-call — never leak results into the new child
-        pv.contentWindow.postMessage({ omaPvResult: true, id: d.id, result }, "*");
-        const sc = result?.structuredContent || (d.method === "refresh" ? result : null);
-        if (sc && Array.isArray(sc.items) && sc.collection === name) pvSnap = sc;   // only the child's OWN collection may become its snapshot
-        pushPv();   // §2.7: push {snapshot, prefs} after every proxied child call
-      } catch (e) {
-        if (gen !== pvGen) return;
-        pv.contentWindow.postMessage({ omaPvResult: true, id: d.id, error: String(e && e.message || e) }, "*");
+    // ---- Data pane (write-set D): collections × ownership × the ledger ----
+    // Ownership is DECLARED (a component's #oma-manifest collections list), by-name (the
+    // default binding convention), or absent — an orphan, which is LEGAL (seeding may precede
+    // the app). Adoption is an authoring act, so the button asks the AI rather than editing
+    // manifests from here. The ledger view needs `via` and undo, which live on the /rpc
+    // internal path only (no AI face carries them) — so it renders in the browser view alone.
+    const declsRaw = new Map();   // name -> raw declaration (loadManifest fills it)
+    // The grammar keys collections by NAME — {"collections":{"trips":{…}}} — and the store
+    // REJECTS the array form outright ("manifest.collections must be an object"). This once
+    // tested Array.isArray, so the ownership column was empty for every conforming manifest
+    // (2026-07-27 audit, two panels independently).
+    const dataComps = new Map();  // name -> row from the FULL registry (archived included)
+    const collOwners = (coll) => {
+      const names = [];
+      for (const name of dataComps.keys()) {
+        const d = declsRaw.get(name);
+        const decl = d && d.collections && typeof d.collections === "object" && !Array.isArray(d.collections) ? d.collections : null;
+        if (decl && Object.prototype.hasOwnProperty.call(decl, coll)) names.push(name);
       }
-    });
+      return names;
+    };
+    async function loadData() {
+      const box = document.getElementById("data-rows");
+      try {
+        const r = await oma.callTool("data_collections", {});
+        collsCache = r?.structuredContent?.collections || [];
+        collsLoaded = true;
+      } catch { box.textContent = "Couldn't load collections."; return; }
+      // Ownership must see the WHOLE registry: an archived app still stewards its data, and the
+      // default list (featured+listed) would silently strip its chip from the Data pane.
+      try {
+        const full = await oma.callTool("list_components", { kind: "any", visibility: "any" });
+        dataComps.clear();
+        for (const c of full?.structuredContent?.components || []) dataComps.set(c.name, c);
+        await Promise.all([...dataComps.keys()].filter((n) => !declsRaw.has(n)).map((n) => loadManifest(n)));
+      } catch { for (const c of compsCache) if (!dataComps.has(c.name)) dataComps.set(c.name, c); }
+      const compNames = new Set([...dataComps.keys(), ...compsCache.map((c) => c.name)]);
+      box.innerHTML = "";
+      if (!collsCache.length) box.append(el("p", "k-mut note", "No data yet — everything an app saves will show up here."));
+      for (const c of [...collsCache].sort((a, b) => a.collection.localeCompare(b.collection))) {
+        const row = el("div", "drow");
+        row.append(lbl(c.collection, c.items + (c.items === 1 ? " item" : " items") + (c.last_activity ? " · " + ago(c.last_activity) : "")));
+        const own = el("span", "own");
+        const declared = collOwners(c.collection);
+        if (declared.length) for (const n of declared) own.append(el("span", "k-chip on", n));
+        else if (SYSTEM_COLLECTIONS.has(c.collection)) own.append(el("span", "k-chip", "system"));
+        else if (compNames.has(c.collection)) own.append(el("span", "k-chip", c.collection + " · by name"));
+        else {
+          own.append(el("span", "k-badge", "orphan"));
+          const adopt = el("button", "k-btn ghost", "Adopt…");
+          adopt.title = "Ask the AI to declare this collection in one of your apps";
+          adopt.onclick = () => oma.sendMessage('Adopt my "' + c.collection + '" data collection: pick (or build) the right app and declare the collection in its #oma-manifest block.');
+          own.append(adopt);
+        }
+        row.append(own);
+        box.append(row);
+      }
+      const sa = !!oma.standalone;
+      document.getElementById("data-ledger").hidden = !sa;
+      document.getElementById("data-ledger-note").hidden = sa;
+      if (!sa) { document.getElementById("data-ledger-link").href = oma.viewBase + "settings"; return; }
+      const sel = document.getElementById("data-coll");
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const all = el("option", null, "All collections"); all.value = ""; sel.append(all);
+      for (const c of collsCache) { const o = el("option", null, c.collection); o.value = c.collection; sel.append(o); }
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+      loadLedger();
+    }
+    async function loadLedger() {
+      const box = document.getElementById("data-events");
+      const coll = document.getElementById("data-coll").value;
+      let events = [];
+      try {
+        const r = await oma.callTool("_ledger_recent", { ...(coll ? { collection: coll } : {}), limit: 50 });
+        events = r?.structuredContent?.events || [];
+      } catch { box.textContent = "Couldn't load the ledger."; return; }
+      box.innerHTML = "";
+      if (!events.length) box.append(el("p", "k-mut note", "No activity yet."));
+      const VERB = { item_added: "added", item_updated: "updated", item_moved: "moved", item_deleted: "deleted",
+        component_saved: "saved app", component_deleted: "deleted app", component_archived: "archived",
+        file_written: "wrote file", file_deleted: "deleted file" };
+      for (const ev of events) {
+        const row = el("div", "devt");
+        row.append(el("span", "k-num", "#" + ev.seq));
+        const who = ev.actor + (ev.via && ev.via.component ? " · via " + ev.via.component : "");
+        const what = (VERB[ev.type] || ev.type) + " " + (ev.type.startsWith("component_") || ev.type.startsWith("file_") ? ev.id : String(ev.id).slice(0, 8))
+          + (ev.fields ? " " + jstr(ev.fields).slice(0, 80) : "") + (ev.to != null ? " → " + (ev.to || "(ungrouped)") : "");
+        row.append(el("span", "what k-num", who + " · " + what));
+        row.append(el("span", "k-num k-mut", ago(ev.ts)));
+        if (ev.undoable) {
+          const b = el("button", "k-btn ghost", "Undo");
+          b.onclick = async () => {
+            b.disabled = true;
+            // Pin the seq we SHOWED: if a concurrent write advanced this target since the pane
+            // rendered, the store refuses (stale_undo) rather than reverting the newer write.
+            const r = await oma.callTool("_undo_last", { target: ev.id, expected_seq: ev.seq }).catch(() => null);
+            if (r && !r.isError) { flashSaved(); loadData(); }
+            else { flash(false); if (r && r.structuredContent && r.structuredContent.error === "stale_undo") loadData(); else b.disabled = false; }
+          };
+          row.append(b);
+        }
+        box.append(row);
+      }
+    }
+    document.getElementById("data-reload").onclick = loadLedger;
+    document.getElementById("data-coll").onchange = loadLedger;
 
     // ---- boot: About stats, component grid, manifests (settings-design §4.3 data flow) ----
     async function loadComponents() {
@@ -1296,8 +1162,12 @@ ${coercePref.toString()}
       renderPrefs();
     }
     async function loadManifest(name) {
-      try { manifests.set(name, parseManifest((await oma.callTool("component_html", { name }))?.structuredContent?.html || "")); }
-      catch { manifests.set(name, null); }
+      try {
+        const d = (await oma.callTool("component_html", { name }))?.structuredContent?.declaration;
+        declsRaw.set(name, d || null);          // the Data pane's ownership source (collections key)
+        manifests.set(name, useDeclaration(d)); // the prefs panes' filtered view (settings/uses_shared)
+      }
+      catch { declsRaw.set(name, null); manifests.set(name, null); }
     }
     (async () => {
       try {
