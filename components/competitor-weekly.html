@@ -1,0 +1,449 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="A weekly recap of the competitor accounts you name — posts, top post, themes, and what changed. Add handles to competitor-watchlist; each week ask the AI to gather public activity for every active account and write one competitor-reports row per account (week_start = the Monday of that week, YYYY-MM-DD). The component stays zero-network and renders whatever the collections hold; it recaps rivals, never rewrites them.">
+  <meta name="oma-category" content="Creator & Growth">
+  <script type="application/json" id="oma-fixtures">
+{ "items": [
+  { "id": "5c1f9a02-7d43-4c1b-9a6e-2f8b4d901a11", "collection": "competitor-watchlist", "group": "", "position": 1, "fields": { "handle": "@arcadebuilds", "name": "Mika Tan", "note": "AI micro-tools, ships weekly", "status": "active" }, "version": 1 },
+  { "id": "8e2d7b34-1a55-4e0c-8b7f-3c9a5e012b22", "collection": "competitor-watchlist", "group": "", "position": 2, "fields": { "handle": "@thereplyguy", "name": "Dev Kohli", "note": "Growth threads, aggressive CTAs", "status": "active" }, "version": 1 },
+  { "id": "2a9c4f56-3b77-4d2e-9c8a-4d0b6f123c33", "collection": "competitor-watchlist", "group": "", "position": 3, "fields": { "handle": "@quietmaker", "name": "Ana Sofía", "note": "Story-led product posts", "status": "paused" }, "version": 1 },
+  { "id": "7b3e5d78-4c99-4f3a-8d9b-5e1c7a234d44", "collection": "competitor-reports", "group": "", "position": 1, "fields": { "week_start": "2026-07-20", "handle": "@arcadebuilds", "posts_count": 9, "engagement": "6.1K likes · 1.4K reposts", "top_post": "Shipped a tiny tool that turns any CSV into a shareable chart in 10 seconds. Free while it's rough.", "top_post_stats": "2.3K likes · 610 reposts · 148 replies", "themes": "launches, build in public, free tools", "formats": "1 thread · 6 posts · 2 demos", "change_note": "First time pairing every launch post with a 20-second demo clip." }, "version": 1 },
+  { "id": "9d4f6e90-5daa-4a4b-9eac-6f2d8b345e55", "collection": "competitor-reports", "group": "", "position": 2, "fields": { "week_start": "2026-07-20", "handle": "@thereplyguy", "posts_count": 13, "engagement": "4.2K likes · 890 reposts", "top_post": "Nobody reads your pinned tweet. Your last 3 replies ARE your pinned tweet.", "top_post_stats": "1.8K likes · 420 reposts · 96 replies", "themes": "reply strategy, hooks, audience growth", "formats": "2 threads · 11 posts", "change_note": "Dropped daily threads to two; single-line takes are doing the volume now." }, "version": 1 },
+  { "id": "4e5a7f12-6ebb-4b5c-8fbd-7a3e9c456f66", "collection": "competitor-reports", "group": "", "position": 3, "fields": { "week_start": "2026-07-13", "handle": "@arcadebuilds", "posts_count": 7, "engagement": "3.9K likes · 720 reposts", "top_post": "I keep a 'boring wins' log — 30 seconds a day. It's the only reason I ship weekly.", "top_post_stats": "1.1K likes · 240 reposts · 58 replies", "themes": "build in public, habits", "formats": "1 thread · 6 posts", "change_note": "Quiet week; engagement carried by one habit post." }, "version": 1 },
+  { "id": "6f8b9a34-7fcc-4c6d-9ace-8b4f0d567a77", "collection": "competitor-reports", "group": "", "position": 4, "fields": { "week_start": "2026-07-13", "handle": "@thereplyguy", "posts_count": 16, "engagement": "3.5K likes · 610 reposts", "top_post": "Your first 100 followers come from other people's audiences. Act like it.", "top_post_stats": "990 likes · 205 reposts · 44 replies", "themes": "audience growth, distribution", "formats": "3 threads · 13 posts", "change_note": "Testing question-ending hooks on every post." }, "version": 1 },
+  { "id": "1a2b3c45-8add-4d7e-8bdf-9c5a1e678b88", "collection": "competitor-reports", "group": "", "position": 5, "fields": { "week_start": "2026-07-13", "handle": "@quietmaker", "posts_count": 4, "engagement": "2.8K likes · 380 reposts", "top_post": "We removed our pricing page FAQ. Support tickets fell. Sometimes fewer words is the feature.", "top_post_stats": "1.6K likes · 210 reposts · 88 replies", "themes": "product stories, pricing", "formats": "4 posts", "change_note": "Longer story posts, no threads at all." }, "version": 1 }
+] }
+  </script>
+<title>Competitor Weekly</title>
+<style>
+  .shell { max-width: 920px; margin: 0 auto; padding: var(--k-s3); }
+
+  .appbar { padding: var(--k-s3) var(--k-s4); gap: var(--k-s3); }
+  .mark {
+    width: 42px; height: 42px; flex: none;
+    display: grid; place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    color: var(--accent);
+  }
+  .mark svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .eyebrow {
+    font-family: var(--font-mono); font-size: 10px; font-weight: 700;
+    letter-spacing: .11em; text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+  .appbar h1 { margin: 2px 0 0; font-size: 17px; line-height: 1.2; }
+
+  :root { --accent: var(--color-text-info, var(--color-ring-primary, #3b6cf6)); }
+
+  .band {
+    display: flex; align-items: baseline; gap: var(--k-s4); flex-wrap: wrap;
+    margin: 0 0 var(--k-s4); padding: var(--k-s3) var(--k-s4);
+    border-radius: var(--border-radius-lg);
+    background: color-mix(in oklab, var(--accent) 10%, transparent);
+  }
+  .band-main strong { display: block; font-size: 30px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .band-main span { font-size: var(--font-text-sm-size); color: var(--color-text-secondary); }
+  .band-stat { font-size: var(--font-text-sm-size); color: var(--color-text-secondary); }
+  .band-stat b { display: block; font-size: 15px; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }
+
+  .reports { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: var(--k-s3); max-height: 430px; overflow: auto; padding: 2px; margin-bottom: var(--k-s4); }
+  .rep-head { display: flex; align-items: baseline; gap: var(--k-s2); }
+  .rep-head .handle { font-weight: 700; }
+  .rep-head .name { color: var(--color-text-tertiary); font-size: var(--font-text-sm-size); }
+  .rep-nums { display: flex; align-items: baseline; gap: var(--k-s2); margin: var(--k-s2) 0; }
+  .rep-nums strong { font-size: 22px; font-variant-numeric: tabular-nums; }
+  .delta { font-size: var(--font-text-sm-size); font-variant-numeric: tabular-nums; }
+  .delta.up { color: var(--color-text-success, var(--accent)); }
+  .delta.down { color: var(--color-text-danger); }
+  .rep-eng { font-size: var(--font-text-sm-size); color: var(--color-text-secondary); }
+  .quote {
+    margin: var(--k-s2) 0; padding: var(--k-s2) var(--k-s3);
+    border-left: 2px solid var(--accent);
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in oklab, var(--color-text-primary) 4%, transparent);
+    font-size: var(--font-text-sm-size);
+  }
+  .quote .stats { display: block; margin-top: 4px; color: var(--color-text-tertiary); font-variant-numeric: tabular-nums; }
+  .themes { display: flex; flex-wrap: wrap; gap: 6px; margin: var(--k-s2) 0 0; }
+  .change {
+    margin-top: var(--k-s2); font-size: var(--font-text-sm-size);
+    color: var(--color-text-secondary);
+  }
+  .change b { color: var(--accent); font-weight: 600; }
+  .rep-quiet { display: grid; place-content: center; min-height: 120px; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size); border-style: dashed; }
+
+  .watch-head { align-items: baseline; margin-bottom: var(--k-s2); }
+  .watch-head h2 { margin: 0; font-size: 14px; }
+  #watchList { list-style: none; margin: var(--k-s2) 0 0; padding: 0; max-height: 240px; overflow: auto; }
+  .w-note { color: var(--color-text-tertiary); font-size: var(--font-text-sm-size); }
+  .w-handle { font-weight: 600; }
+  li.paused .w-handle, li.paused .w-note { color: var(--color-text-tertiary); }
+
+  @media (max-width: 540px) {
+    .reports { grid-template-columns: 1fr; }
+    .band { gap: var(--k-s3); }
+  }
+  [data-density="compact"] .shell { padding: var(--k-s2); }
+  [data-density="compact"] .reports { gap: var(--k-s2); }
+  @media (prefers-reduced-motion: no-preference) {
+    .reports .k-card { transition: transform var(--k-t) var(--k-ease); }
+  }
+</style>
+<script type="application/json" id="oma-manifest">
+{
+  "manifest_version": 2,
+  "settings": [
+    { "key": "weeks_shown", "type": "number", "label": "Weeks shown in history", "default": 4, "min": 1, "max": 12, "step": 1 }
+  ],
+  "uses_shared": ["locale", "confirm_delete", "density"],
+  "collections": {
+    "competitor-watchlist": {
+      "label_field": "handle",
+      "fields": {
+        "handle": { "type": "string", "required": true },
+        "name": { "type": "string" },
+        "note": { "type": "string" },
+        "status": { "type": "string" }
+      },
+      "strict": true
+    },
+    "competitor-reports": {
+      "label_field": "handle",
+      "fields": {
+        "week_start": { "type": "string", "required": true },
+        "handle": { "type": "string", "required": true },
+        "posts_count": { "type": "number" },
+        "engagement": { "type": "string" },
+        "top_post": { "type": "string" },
+        "top_post_stats": { "type": "string" },
+        "themes": { "type": "string" },
+        "formats": { "type": "string" },
+        "change_note": { "type": "string" }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app"
+}
+</script>
+</head>
+<body>
+<main class="shell">
+  <header class="appbar k-row">
+    <div class="mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"></circle>
+        <circle cx="12" cy="12" r="4.5"></circle>
+        <path d="M12 12 18.5 5.5"></path>
+        <circle cx="12" cy="12" r="0.6"></circle>
+      </svg>
+    </div>
+    <div class="ident k-grow">
+      <div class="eyebrow">Competitive intel</div>
+      <h1>Competitor Weekly</h1>
+    </div>
+    <button id="compileBtn" class="k-btn sec" type="button">Compile this week</button>
+  </header>
+
+  <section class="band" id="band" aria-label="Overview"></section>
+
+  <nav class="k-tabs" id="weekTabs" aria-label="Weeks"></nav>
+
+  <section class="reports" id="reports" aria-label="Weekly reports"></section>
+
+  <section class="watch" aria-label="Watchlist">
+    <div class="k-row watch-head">
+      <h2 class="k-grow">Watchlist</h2>
+      <button id="pasteToggle" class="k-btn ghost" type="button">Paste many</button>
+    </div>
+    <div id="pasteBox" hidden>
+      <textarea id="pasteArea" class="k-field" rows="4" style="width:100%" placeholder="One account per line: @handle  optional note"></textarea>
+      <div class="k-row" style="margin-top:var(--k-s2)">
+        <button id="pasteAdd" class="k-btn" type="button">Add all</button>
+      </div>
+    </div>
+    <form id="addForm" class="k-row">
+      <input id="handleInput" class="k-field" placeholder="@handle" style="width:150px" autocomplete="off">
+      <input id="noteInput" class="k-field k-grow" placeholder="Why you watch them (optional)" autocomplete="off">
+      <button class="k-btn" type="submit">Add</button>
+    </form>
+    <ul id="watchList"></ul>
+  </section>
+</main>
+
+<script type="module">
+  const WATCHLIST = "competitor-watchlist";
+  const REPORTS = "competitor-reports";
+  const $ = (id) => document.getElementById(id);
+
+  let model = { accounts: [], reports: [] };
+  let preview = false;
+  let selectedWeek = null;          // transient UI state — survives re-renders
+
+  const el = (tag, className, text) => {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  };
+
+  // ---- dates: store the fact, render the judgment --------------------------------
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const locale = () => { const l = oma.pref("locale", "auto"); return l === "auto" ? navigator.language : l; };
+  function weekLabel(weekStart) {
+    const start = dateOnly(weekStart);
+    const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
+    const fmt = new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" });
+    return `${fmt.format(start)} – ${fmt.format(end)}`;
+  }
+
+  // ---- data: preview fixtures OR live collections --------------------------------
+  const fixtureRows = (items) => ({
+    accounts: items.filter((i) => i.collection === WATCHLIST),
+    reports: items.filter((i) => i.collection === REPORTS),
+  });
+
+  let pulling = null;
+  function pull(state) {
+    if (pulling) return pulling;
+    pulling = (async () => {
+      const bound = (state || oma.state).items || [];
+      const fixed = fixtureRows(bound);
+      if (fixed.accounts.length || fixed.reports.length) {
+        preview = true;
+        model = fixed;
+      } else {
+        preview = false;
+        const [w, r] = await Promise.all([oma.readCollection(WATCHLIST), oma.readCollection(REPORTS)]);
+        model = { accounts: w.items, reports: r.items };
+      }
+      render();
+    })().finally(() => { pulling = null; });
+    return pulling;
+  }
+
+  async function write(tool, args) {
+    await oma.callTool(tool, { command_id: crypto.randomUUID(), actor: "human", ...args });
+    await pull();
+  }
+
+  // ---- render ---------------------------------------------------------------------
+  function weeksAvailable() {
+    const seen = [...new Set(model.reports.map((r) => r.fields.week_start).filter(Boolean))];
+    seen.sort().reverse();
+    return seen.slice(0, oma.pref("weeks_shown", 4));
+  }
+
+  function render() {
+    document.body.dataset.density = oma.pref("density", "comfortable");
+    const weeks = weeksAvailable();
+    if (!selectedWeek || !weeks.includes(selectedWeek)) selectedWeek = weeks[0] || null;
+    renderBand(weeks);
+    renderTabs(weeks);
+    renderReports();
+    renderWatchlist();
+    $("compileBtn").hidden = oma.standalone || !model.accounts.some((a) => a.fields.status !== "paused");
+  }
+
+  function renderBand(weeks) {
+    const band = $("band");
+    band.innerHTML = "";
+    const active = model.accounts.filter((a) => a.fields.status !== "paused").length;
+    const main = el("div", "band-main");
+    main.append(el("strong", "", String(active)), el("span", "", active === 1 ? "account tracked" : "accounts tracked"));
+    band.appendChild(main);
+    const week = weeks[0];
+    const rows = model.reports.filter((r) => r.fields.week_start === selectedWeek);
+    const stats = [
+      ["Selected week", selectedWeek ? weekLabel(selectedWeek) : "—"],
+      ["Reports", selectedWeek ? `${rows.length}/${model.accounts.length || 0}` : "—"],
+      ["Posts logged", rows.length ? String(rows.reduce((n, r) => n + (Number(r.fields.posts_count) || 0), 0)) : "—"],
+    ];
+    for (const [label, value] of stats) {
+      const s = el("div", "band-stat");
+      s.append(el("b", "", value), document.createTextNode(label));
+      band.appendChild(s);
+    }
+  }
+
+  function renderTabs(weeks) {
+    const nav = $("weekTabs");
+    nav.innerHTML = "";
+    nav.hidden = weeks.length < 2;
+    for (const week of weeks) {
+      const tab = el("button", "k-tab" + (week === selectedWeek ? " on" : ""), weekLabel(week));
+      tab.type = "button";
+      tab.onclick = () => { selectedWeek = week; render(); };
+      nav.appendChild(tab);
+    }
+  }
+
+  function prevWeekOf(week) {
+    const all = [...new Set(model.reports.map((r) => r.fields.week_start).filter(Boolean))].sort().reverse();
+    const i = all.indexOf(week);
+    return i >= 0 && i + 1 < all.length ? all[i + 1] : null;
+  }
+
+  function renderReports() {
+    const wrap = $("reports");
+    wrap.innerHTML = "";
+    if (!model.accounts.length && !model.reports.length) {
+      const empty = el("div", "k-empty");
+      empty.append(
+        el("p", "", "Name the rivals worth watching — this app turns them into one honest recap a week."),
+        el("p", "k-mut", "Add handles below (or paste many), then tell the AI: “Compile this week’s Competitor Weekly.”"),
+      );
+      wrap.appendChild(empty);
+      return;
+    }
+    if (!selectedWeek) {
+      const empty = el("div", "k-empty");
+      empty.append(
+        el("p", "", "Watchlist ready — no weekly report yet."),
+        el("p", "k-mut", "Press “Compile this week”: the AI gathers each active account’s public posts and writes the recap here."),
+      );
+      wrap.appendChild(empty);
+      return;
+    }
+    const rows = model.reports.filter((r) => r.fields.week_start === selectedWeek);
+    const byHandle = new Map(rows.map((r) => [r.fields.handle, r]));
+    const known = new Set(model.accounts.map((a) => a.fields.handle));
+    const prev = prevWeekOf(selectedWeek);
+    const prevRows = prev ? new Map(model.reports.filter((r) => r.fields.week_start === prev).map((r) => [r.fields.handle, r])) : new Map();
+
+    let i = 0;
+    for (const account of model.accounts) {
+      const f = account.fields;
+      const report = byHandle.get(f.handle);
+      if (!report && f.status === "paused") continue;
+      const card = el("article", "k-card k-stagger");
+      card.style.setProperty("--i", i++);
+      const head = el("div", "rep-head");
+      head.append(el("span", "handle", f.handle), el("span", "name", f.name || ""));
+      card.appendChild(head);
+      if (!report) {
+        card.classList.add("rep-quiet");
+        card.appendChild(el("div", "", "No report yet this week"));
+        wrap.appendChild(card);
+        continue;
+      }
+      const r = report.fields;
+      const nums = el("div", "rep-nums");
+      nums.appendChild(el("strong", "", String(Number(r.posts_count) || 0)));
+      nums.appendChild(el("span", "k-mut", "posts"));
+      const prevReport = prevRows.get(f.handle);
+      if (prevReport) {
+        const d = (Number(r.posts_count) || 0) - (Number(prevReport.fields.posts_count) || 0);
+        if (d) nums.appendChild(el("span", "delta " + (d > 0 ? "up" : "down"), (d > 0 ? "▲" : "▼") + Math.abs(d) + " vs prior"));
+      }
+      card.appendChild(nums);
+      if (r.engagement) card.appendChild(el("div", "rep-eng", r.engagement + (r.formats ? " · " + r.formats : "")));
+      if (r.top_post) {
+        const q = el("blockquote", "quote", "“" + r.top_post + "”");
+        if (r.top_post_stats) q.appendChild(el("span", "stats", r.top_post_stats));
+        card.appendChild(q);
+      }
+      if (r.themes) {
+        const t = el("div", "themes");
+        for (const theme of String(r.themes).split(",").map((s) => s.trim()).filter(Boolean)) t.appendChild(el("span", "k-chip static", theme));
+        card.appendChild(t);
+      }
+      if (r.change_note) {
+        const c = el("p", "change");
+        c.append(el("b", "", "New: "), document.createTextNode(r.change_note));
+        card.appendChild(c);
+      }
+      wrap.appendChild(card);
+    }
+    // Reports for handles no longer on the watchlist — shown, never lost.
+    const orphans = rows.filter((r) => !known.has(r.fields.handle));
+    for (const report of orphans) {
+      const card = el("article", "k-card");
+      const head = el("div", "rep-head");
+      head.append(el("span", "handle", report.fields.handle || "—"), el("span", "name", "not on watchlist"));
+      card.appendChild(head);
+      card.appendChild(el("div", "rep-eng", `${Number(report.fields.posts_count) || 0} posts` + (report.fields.engagement ? " · " + report.fields.engagement : "")));
+      wrap.appendChild(card);
+    }
+  }
+
+  function renderWatchlist() {
+    const list = $("watchList");
+    list.innerHTML = "";
+    for (const account of model.accounts) {
+      const f = account.fields;
+      const li = el("li", "k-li" + (f.status === "paused" ? " paused" : ""));
+      const label = el("span", "k-grow");
+      label.append(el("span", "w-handle", f.handle), document.createTextNode(" "), el("span", "w-note", [f.name, f.note].filter(Boolean).join(" · ")));
+      const toggle = el("button", "k-chip" + (f.status === "paused" ? "" : " on"), f.status === "paused" ? "paused" : "active");
+      toggle.type = "button";
+      toggle.title = "Toggle active / paused";
+      toggle.onclick = () => write("data_update_item", { collection: WATCHLIST, id: account.id, fields: { status: f.status === "paused" ? "active" : "paused" } });
+      const del = el("button", "k-btn ghost danger", "×");
+      del.type = "button";
+      del.setAttribute("aria-label", "Remove " + f.handle);
+      del.onclick = () => {
+        if (oma.pref("confirm_delete", true) && del.dataset.armed !== "1") {
+          del.dataset.armed = "1";
+          del.textContent = "Sure?";
+          setTimeout(() => { if (del.isConnected && del.dataset.armed) { del.dataset.armed = ""; del.textContent = "×"; } }, 3000);
+          return;
+        }
+        write("data_delete_item", { collection: WATCHLIST, id: account.id });
+      };
+      li.append(label, toggle, del);
+      list.appendChild(li);
+    }
+  }
+
+  // ---- actions --------------------------------------------------------------------
+  const normalizeHandle = (raw) => {
+    const h = raw.trim().replace(/^@+/, "");
+    return h ? "@" + h : "";
+  };
+
+  $("addForm").onsubmit = (e) => {
+    e.preventDefault();
+    const handle = normalizeHandle($("handleInput").value);
+    if (!handle) return;
+    const note = $("noteInput").value.trim();
+    $("handleInput").value = "";
+    $("noteInput").value = "";
+    write("data_add_item", { collection: WATCHLIST, fields: { handle, note, status: "active" } });
+  };
+
+  $("pasteToggle").onclick = () => { $("pasteBox").hidden = !$("pasteBox").hidden; };
+  $("pasteAdd").onclick = async () => {
+    const lines = $("pasteArea").value.split("\n").map((l) => l.trim()).filter(Boolean);
+    for (const line of lines) {
+      const [first, ...rest] = line.split(/\s+/);
+      const handle = normalizeHandle(first);
+      if (!handle) continue;
+      await oma.callTool("data_add_item", { command_id: crypto.randomUUID(), actor: "human", collection: WATCHLIST, fields: { handle, note: rest.join(" "), status: "active" } });
+    }
+    $("pasteArea").value = "";
+    $("pasteBox").hidden = true;
+    await pull();
+  };
+
+  $("compileBtn").onclick = () => {
+    const active = model.accounts.filter((a) => a.fields.status !== "paused").map((a) => a.fields.handle).join(", ");
+    oma.sendMessage(
+      `Compile Competitor Weekly for: ${active}. For each account, gather this week's public X activity and add ONE competitor-reports row with fields ` +
+      `{week_start: this week's Monday as YYYY-MM-DD, handle, posts_count, engagement, top_post (short quote only), top_post_stats, themes (comma-separated), formats, change_note (what changed vs last week)}. ` +
+      `Skip paused accounts. Don't rewrite or imitate their content — this is a recap, not a ghostwriter.`
+    );
+  };
+
+  // ---- lifecycle ------------------------------------------------------------------
+  oma.ready(pull);
+  oma.onChange(pull);
+  oma.onPrefChange(() => render());
+  setInterval(() => { if (!document.hidden && !preview) pull(); }, 30_000);
+</script>
+</body>
+</html>
