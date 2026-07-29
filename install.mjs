@@ -63,8 +63,8 @@ const hostArg = (argv.find((a) => a.startsWith("--host=")) || "").split("=")[1]
   || (argv.includes("--host") ? argv[argv.indexOf("--host") + 1] : null);
 
 // TEMPORARY (2026-07-28): Claude Desktop 1.24012.9 and Claude Code share a chat-surface bridge
-// regression that silently drops the loader widget's boot-time calls — open_component hangs at
-// "Loading component…" while the per-component dynamic tools' direct-embed path renders and
+// regression that silently drops the loader widget's boot-time calls — open_app hangs at
+// "Loading app…" while the per-app dynamic tools' direct-embed path renders and
 // operates correctly on both. Their registrations opt into dynamic tools until upstream fixes
 // the bridge; remove together with the KNOWN-ISSUES entry.
 const ANTHROPIC_HOST_ENV = { OMA_DYNAMIC_TOOLS: "1" };

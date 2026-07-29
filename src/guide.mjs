@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// guide.mjs — the component authoring contract, returned by the get_component_guide tool.
-// This is what an AI reads BEFORE writing a component. Keep it tight, exact, example-led.
+// guide.mjs — the app authoring contract, returned by the get_app_guide tool.
+// This is what an AI reads BEFORE writing an app. Keep it tight, exact, example-led.
 
-export const GUIDE = `# open-mcp-apps — component authoring guide
+export const GUIDE = `# open-mcp-apps — app authoring guide
 
-A component is ONE self-contained HTML document. The engine wraps it with a shell that
-provides \`window.oma\` (data + persistence + host theming). Your component only renders
+An app is ONE self-contained HTML document. The engine wraps it with a shell that
+provides \`window.oma\` (data + persistence + host theming). Your app only renders
 UI and calls \`window.oma\`. Rules:
 
 - NO external resources (no CDN scripts, no remote CSS/images/fonts, no fetch). The sandbox
@@ -16,36 +16,36 @@ UI and calls \`window.oma\`. Rules:
   window.oma (the pattern below is all you need).
 - Do NOT import any SDK and do NOT touch postMessage — the shell owns the MCP bridge.
 - Put your logic in <script type="module"> (the shell's module runs first, so window.oma exists).
-- **Your component is CODE, not a database.** Anything that is DATA — rows, entries, a question
+- **Your app is CODE, not a database.** Anything that is DATA — rows, entries, a question
   bank, a catalogue, a month of expenses — goes into the collection with \`data_batch\`, never into
   a literal in your source. See "Seeding data" below. This one is a rule, not a preference.
 - **Write it like source, not like a bundle**: one statement per line, real indentation, normal
-  spacing. Never minify or pack lines. Every later change goes through \`edit_component\`, which
+  spacing. Never minify or pack lines. Every later change goes through \`edit_app\`, which
   matches EXACT strings — a 300-character line has no small edit inside it, so a compressed
-  component can only ever be rewritten whole, at full price, for the rest of its life.
+  app can only ever be rewritten whole, at full price, for the rest of its life.
 - Keep it under ~100KB — and if you are near that, the reason is almost always data in the source.
   (Reads are WINDOWED for a reason: some hosts silently drop the middle of a tool result past
-  roughly 45KB, so source travels in windows and edits go through edit_component — a lean
-  component is one you can still read in a couple of windows.)
+  roughly 45KB, so source travels in windows and edits go through edit_app — a lean
+  app is one you can still read in a couple of windows.)
 
 ## Data model
 
-Each component is bound at open-time to ONE *collection* — the single collection its manifest
+Each app is bound at open-time to ONE *collection* — the single collection its manifest
 declares, else its own name (several declared → see \`Multi-collection apps\` below).
 A collection is a flat list of items:
 
   item = { id: string, group: string, position: number, fields: object, version: number }
 
-- \`group\`  — YOUR component defines its meaning (kanban column, list section, "" if unused).
+- \`group\`  — YOUR app defines its meaning (kanban column, list section, "" if unused).
   Show rows with an unrecognized group in a fallback section — never counted but invisible.
-- \`fields\` — YOUR component defines the shape (e.g. {title, done, notes, due, color}).
+- \`fields\` — YOUR app defines the shape (e.g. {title, done, notes, due, color}).
 - \`version\`/\`position\`/\`id\` — managed by the engine. Never invent them.
 
 ### Seeding data (what keeps an app cheap to own)
 
 Building an app that starts with content — 30 practice questions, a reading list, last month's
 expenses? The content goes into the COLLECTION first, with \`data_batch\` (up to 200 commands in
-one transaction), and the component renders whatever it finds there:
+one transaction), and the app renders whatever it finds there:
 
   data_batch { command_id: "<one fresh uuid>", commands: [
     { type: "add_item", collection: "quiz", fields: { q: "…", options: ["…","…"], answer: 0 } },
@@ -57,11 +57,11 @@ batch-level one, and a command missing it fails, which rolls the whole batch bac
 \`command_id\` covers the batch — the per-command ids are derived from it, so don't generate 200.
 
 Do NOT put those rows in your HTML as a JS array, however convenient it looks. If you do:
-- the component grows with the data, and every later edit re-sends all of it;
+- the app grows with the data, and every later edit re-sends all of it;
 - "add ten more" becomes a full rewrite instead of one \`data_batch\` call;
 - nothing can search, filter, export or share the data, and no other app can read it;
 - the user cannot add a row themselves without you editing code;
-- the data dies with the component, which defeats the entire point of this engine.
+- the data dies with the app, which defeats the entire point of this engine.
 Data in a source literal is the one mistake that makes an app expensive to keep.
 
 **When the data is THEIRS and you don't have it.** This is the common case, and it is the one that
@@ -105,10 +105,10 @@ UI state (an open input, a drag) in variables outside render().
 
 ## Refresh semantics (one ledger, one \`seq\`)
 
-Every store write — item edits in ANY collection, component saves/installs, file writes —
+Every store write — item edits in ANY collection, app saves/installs, file writes —
 appends to a single ledger and bumps one global \`seq\`. Three consequences:
 - \`state.version\` IS that global seq, not a per-collection counter: it can move while your
-  items are identical (another app wrote, a component was installed), and a re-render with
+  items are identical (another app wrote, an app was installed), and a re-render with
   unchanged items is normal. Treat version as "something changed somewhere"; diff items if
   you need "did MY data change".
 - onChange only ever carries YOUR bound collection's snapshot — other collections' contents
@@ -119,7 +119,7 @@ appends to a single ledger and bumps one global \`seq\`. Three consequences:
 
 ## Multi-collection apps (fetch what you render)
 
-Several declared collections ⇒ the widget binds to the component's NAME (usually an empty
+Several declared collections ⇒ the widget binds to the app's NAME (usually an empty
 collection): \`oma.state.items\` is NOT your data, and \`onChange\` stays SILENT about the
 collections you render — the staleness poll checks the BOUND one only. "Never poll yourself"
 is its privilege alone. So fetch what you render, and own the staleness:
@@ -156,7 +156,7 @@ Rules:
    nothing to go stale.
 3. A past date is DATA, not an error: render "overdue by N days", never clamp to "due today".
 4. Date-only strings parse as UTC in JS (new Date("2026-08-01")) — build local dates from
-   components or your "today" boundary lands a day off for half the planet.
+   apps or your "today" boundary lands a day off for half the planet.
 
 Copy these two — they carry the traps (UTC parse, DST, ceil-vs-floor) so you don't:
 
@@ -185,16 +185,16 @@ render the truth? Every "N days left", every recurring item, every "overdue" fla
   oma.updateContext(text) // silently updates the AI's context (no chat message; the AI
                             // sees it next turn; each call REPLACES the previous context).
 
-This is how a component closes the loop without typing: let the user act in the UI, then
+This is how an app closes the loop without typing: let the user act in the UI, then
 offer one button that reports the outcome, e.g.
   btn.onclick = () => oma.sendMessage("Decisions ready: " + summary + " — please proceed.");
 
 ## User preferences (oma.pref)
 
-Users configure components in the central "settings" app. Read preferences with the
+Users configure apps in the central "settings" app. Read preferences with the
 SYNC getter (never fetch the settings collection yourself):
 
-  oma.pref(key, fallback)   // merged: your component's override ▸ global ▸ fallback.
+  oma.pref(key, fallback)   // merged: your app's override ▸ global ▸ fallback.
                               // The FALLBACK'S TYPE drives coercion — pass a boolean/
                               // number/string fallback and junk stored values fall back
                               // safely instead of reaching your code.
@@ -202,7 +202,7 @@ SYNC getter (never fetch the settings collection yourself):
                               // a normal onChange re-render also fires, so a single
                               // render(state) that calls oma.pref() stays correct free.
   oma.setPref(key, value)   // persist one of YOUR OWN settings (scalar values only).
-                              // You can only write your own component's namespace.
+                              // You can only write your own app's namespace.
 
 Standard shared keys — use these, do NOT invent near-duplicates:
 
@@ -223,11 +223,11 @@ Example: const l = oma.pref("locale","auto");
            oma.deleteItem(id);
          };
 
-### Declaring what your component is (the engine reads this on save)
+### Declaring what your app is (the engine reads this on save)
 
-Everything a component says about ITSELF goes in ONE block inside its own document. The engine reads
+Everything an app says about ITSELF goes in ONE block inside its own document. The engine reads
 that block when you save and stores what it finds — the document is the only place you declare, and
-\`save_component\` takes no manifest or scene parameters.
+\`save_app\` takes no manifest or scene parameters.
 
   <script type="application/json" id="oma-manifest">
   { "manifest_version": 2,
@@ -246,7 +246,7 @@ Keys, all optional — declare what you use:
 - \`settings\` — your own options; the settings app renders a form for them (keys lowercase
   snake_case; types boolean | number | enum | string). Read them with \`oma.pref(key, fallback)\`.
 - \`uses_shared\` — which SHARED preferences you honour, so the settings app groups them with you.
-- \`collections\` — which collections this component looks after. Naming one claims it for the
+- \`collections\` — which collections this app looks after. Naming one claims it for the
   lifecycle side (export, archive views, retention) and costs nothing else. Add \`fields\` and the
   ENGINE validates every write to that collection — from you, from the AI, from anywhere:
   \`{ "trips": { "fields": { "title": {"type":"string","required":true} }, "strict": true } }\`.
@@ -264,7 +264,7 @@ Rules, because the engine enforces them:
 - **Write \`<\\/script>\`** if a string in your JSON needs those characters — the same rule as any inline
   script. A literal \`</script>\` ends the block early and the JSON then fails to parse.
 - **No block = keep** whatever was declared before. An **empty block** (\`{}\` or whitespace) = clear
-  it, including its Library filing (\`scene\`) and \`kind\`. So editing a component without touching its
+  it, including its Library filing (\`scene\`) and \`kind\`. So editing an app without touching its
   block never loses its declaration, and clearing is something you say.
 - Bad JSON is refused with the parser's position, so fix it and save again.
 
@@ -278,7 +278,7 @@ Short notes — this guide is your contract, not a sandbox:
   "security_" or "_", and the store rejects security:* / policy:* on the data_* path.
   oma.callTool is an unscoped escape hatch that is not yet capability-gated (the v0.2
   runner caps close it) — treat every reserved namespace as off-limits regardless.
-- Stay inside window.oma. Components shared through a future library run sandboxed with
+- Stay inside window.oma. Apps shared through a future library run sandboxed with
   filtered capabilities: cross-collection reads/writes and arbitrary oma.callTool are
   denied when packaged, so build against your own bound collection only.
 
@@ -288,7 +288,7 @@ Short notes — this guide is your contract, not a sandbox:
   oma.standalone  // true in a plain browser tab (no chat attached): sendMessage will
                     // show a notice instead of sending — data operations all still work.
 
-Components run unchanged across hosts; use these only to fine-tune (e.g. hide a
+Apps run unchanged across hosts; use these only to fine-tune (e.g. hide a
 "Send to AI" button when oma.standalone).
 
 ## Sandbox limits (these fail SILENTLY — never use them)
@@ -333,10 +333,10 @@ Don't hardcode white/black backgrounds. Root on transparent or var(--color-backg
 
 ## The system kit — already in your document
 
-The engine injects a small class kit into EVERY component it renders. You do not import it, paste
+The engine injects a small class kit into EVERY app it renders. You do not import it, paste
 it or declare it; the classes below simply work, they are all built from the tokens above, and
 they follow the user's theme automatically. Reach for them first — CSS was measured at a third of
-every hand-written component, and most of that third was these same classes written again.
+every hand-written app, and most of that third was these same classes written again.
 
   layout    .k-row (flex row + gap)  .k-grow (fill)  .k-grid (auto card grid)  .k-li (list line)
   text      .k-h1  .k-sub  .k-mut  .k-num (tabular)  .k-code  .k-ellip / .k-ellip2 (clamp)
@@ -389,7 +389,7 @@ important things visible:
 - Aim for a comfortable one-screen default and let content scroll WITHIN it. Don't hard-code a
   fixed pixel body height that clips on small windows — cap the scroll AREA, not the body.
 
-## Minimal working component (copy this shape)
+## Minimal working app (copy this shape)
 
 \`\`\`html
 <!DOCTYPE html>
@@ -438,33 +438,33 @@ important things visible:
 
 ## Workflow — skeleton first, then grow it
 
-Ship a SMALL working component, open it, then add to it. This is not a matter of taste: a first
+Ship a SMALL working app, open it, then add to it. This is not a matter of taste: a first
 save that tries to be the finished app is where the expensive failures happen — the user waits
 through a long generation, and a defect anywhere means paying for the whole document again. After
-the skeleton, each addition is an \`edit_component\` of a few lines that the user can see land.
+the skeleton, each addition is an \`edit_app\` of a few lines that the user can see land.
 
-1. **list_components** — does something suitable already exist? Reuse it. \`open_component
-   {component, collection}\` re-points an existing app at different data, which costs almost nothing.
+1. **list_apps** — does something suitable already exist? Reuse it. \`open_app
+   {app, collection}\` re-points an existing app at different data, which costs almost nothing.
 2. **Seed the data** if the app starts with content: \`data_batch\` first (see "Seeding data").
-   The component is then written against real rows instead of guessing at a shape.
+   The app is then written against real rows instead of guessing at a shape.
 3. **Write the skeleton** — the app bar, one \`render(state)\` that draws the collection, and the
-   single most important interaction. Save it with \`save_component {name, html, description}\` and
-   open it with \`open_component {component}\`; it renders immediately after saving.
-4. **Grow it** with \`edit_component {component, expected_version, edits: [{old_string, new_string}]}\`
+   single most important interaction. Save it with \`save_app {name, html, description}\` and
+   open it with \`open_app {app}\`; it renders immediately after saving.
+4. **Grow it** with \`edit_app {app, expected_version, edits: [{old_string, new_string}]}\`
    — exact-match replacements, no whole-source round trip. One feature per call, each one openable.
    This is the MAIN path, not a repair tool. Say what you added and let the user steer the next one.
    **Do not re-read before editing what you just saved**: a successful save means your copy IS the
    stored source, byte for byte, and every save/edit receipt carries the version the next edit needs.
-   \`get_component\` is for source you did not write this conversation — or after a version conflict
+   \`get_app\` is for source you did not write this conversation — or after a version conflict
    tells you someone else changed it.
    **Anchor on the SMALLEST string that is unique** — a line or two, not a whole function. You pay
    for old_string AND new_string on every edit, so a small change wrapped in a big anchor costs what
    a big change costs. (Measured: an author whose real change was 2.9KB sent 13KB, because 78% of it
    was surrounding context it did not need to touch.) If a short anchor is ambiguous, make it unique
    by extending it a line at a time — not by pasting the whole block around it.
-5. **Full rewrites are the exception**: get_component (windowed — note its version) →
-   save_component WITH expected_version (an overwrite without it is refused: a save that never read
-   the current source is how a live component gets eaten). Every save keeps history.
+5. **Full rewrites are the exception**: get_app (windowed — note its version) →
+   save_app WITH expected_version (an overwrite without it is refused: a save that never read
+   the current source is how a live app gets eaten). Every save keeps history.
 
 \`data_batch\` details: up to 200 write commands in ONE transaction; each is
 {type: "add_item" | "update_item" | "move_item" | "delete_item", …} with exactly the arguments of
@@ -491,7 +491,7 @@ before your last save is the cheapest correctness you will buy all day.
 // from day one, and a chapter whose capability is still behind a flag says exactly that.
 //
 // Each chapter STANDS ALONE: an author who pulls `style` must not be missing a prerequisite from
-// `basics`. That is why the shared header (what a component is, the hard rules) rides on all of them.
+// `basics`. That is why the shared header (what an app is, the hard rules) rides on all of them.
 const HEAD_END = GUIDE.indexOf("## Data model");
 const PREAMBLE = GUIDE.slice(0, HEAD_END);
 
@@ -524,18 +524,18 @@ const CHAPTERS = {
     "Replying to the AI from the UI",
     "User preferences (oma.pref)", "Security & capabilities", "Environment awareness (optional)",
     "Sandbox limits (these fail SILENTLY — never use them)", "The system kit — already in your document",
-    "Minimal working component (copy this shape)",
+    "Minimal working app (copy this shape)",
     "Workflow — skeleton first, then grow it",
     // Last on purpose: it is the check you run at the END, and an author reading straight through
     // meets it exactly where it applies — after the workflow, before the save.
     "Before you save: read their sentence back") +
-    `\n## More chapters\n\nget_component_guide {topic: "style"} — design tokens, house style, app shell, first-screen layout.\n` +
+    `\n## More chapters\n\nget_app_guide {topic: "style"} — design tokens, house style, app shell, first-screen layout.\n` +
     `{topic: "embed"} — putting one app inside another. {topic: "functions"} — exposing callable functions (not yet shipped).\n`,
   style: () => PREAMBLE + pick(...STYLE_TITLES) +
-    `\n## Related\n\nget_component_guide {topic: "basics"} for the API contract and a working template.\n`,
+    `\n## Related\n\nget_app_guide {topic: "basics"} for the API contract and a working template.\n`,
   embed: () => PREAMBLE + `## Embedding one app inside another
 
-\`oma.embed(name, opts)\` mounts another component INSIDE yours — sandboxed, depth 1 (an embedded
+\`oma.embed(name, opts)\` mounts another app INSIDE yours — sandboxed, depth 1 (an embedded
 child cannot embed further). DIRECT mode only: in a sandboxed app \`oma.embed\` reads \`undefined\`.
 
 \`\`\`js
@@ -551,16 +551,16 @@ engine's stored source, tier and caps are resolved for you) · \`heights: {min,m
 hand sizing to your CSS (thumbnails, previews). Returns \`{ el, unmount, refresh }\`.
 
 The child runs behind the same runner machine the loader uses: its trust tier and capability
-grants are the ENGINE's answer for that component — embedding does not widen them. Before reaching
-for embed, remember several components can read the SAME collection; that is still the cheapest
+grants are the ENGINE's answer for that app — embedding does not widen them. Before reaching
+for embed, remember several apps can read the SAME collection; that is still the cheapest
 "one view inside another" and needs no mounting at all.
 
-get_component_guide {topic: "basics"} for the API contract.
+get_app_guide {topic: "basics"} for the API contract.
 `,
   functions: () => PREAMBLE + `## Exposing callable functions\n\n` +
     `Not available yet — declared functions (callable without rendering the UI) ship behind a flag with the\n` +
     `function pillar. Today an app's logic runs when the app is open; data written by anyone is visible to everyone.\n` +
-    `\nget_component_guide {topic: "basics"} for what you can build now.\n`,
+    `\nget_app_guide {topic: "basics"} for what you can build now.\n`,
 };
 
 export function guideChapter(topic) {

@@ -10,34 +10,34 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Open ANY component from the registry by name as an interactive widget — use when the user wants to SEE or OPERATE the data (to merely read facts, use data_list — no UI). Works IMMEDIATELY for components saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear). Prefer reusing a component on a different collection over creating near-duplicate components.",
+    "description": "Open ANY app from the registry by name as an interactive widget — use when the user wants to SEE or OPERATE the data (to merely read facts, use data_list — no UI). Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear). Prefer reusing an app on a different collection over creating near-duplicate apps.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "properties": {
-        "collection": {
-          "description": "data collection to bind (default: the one the component declares, else its own name)",
+        "app": {
+          "description": "app name in the registry (see list_apps)",
           "type": "string"
         },
-        "component": {
-          "description": "component name in the registry (see list_components)",
+        "collection": {
+          "description": "data collection to bind (default: the one the app declares, else its own name)",
           "type": "string"
         }
       },
       "required": [
-        "component"
+        "app"
       ],
       "type": "object"
     },
-    "name": "open_component",
+    "name": "open_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "collection": {
+        "app": {
           "type": "string"
         },
-        "component": {
+        "collection": {
           "type": "string"
         },
         "eot": {
@@ -107,11 +107,11 @@
         "collection",
         "items",
         "version",
-        "component"
+        "app"
       ],
       "type": "object"
     },
-    "title": "Open any component"
+    "title": "Open any app"
   },
   {
     "_meta": {
@@ -121,7 +121,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Internal: returns raw component HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_component to read source.",
+    "description": "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -134,7 +134,7 @@
           "type": "string"
         },
         "offset": {
-          "description": "window the html (same grammar as get_component); omit for the whole document",
+          "description": "window the html (same grammar as get_app); omit for the whole document",
           "type": "number"
         }
       },
@@ -143,7 +143,7 @@
       ],
       "type": "object"
     },
-    "name": "component_html",
+    "name": "app_html",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -275,14 +275,14 @@
       ],
       "type": "object"
     },
-    "title": "Component HTML (internal)"
+    "title": "App HTML (internal)"
   },
   {
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "READ THIS FIRST before creating or editing a component. Returns the window.oma API contract, available CSS design tokens, the data model, and a minimal working component template.",
+    "description": "READ THIS FIRST before creating or editing an app. Returns the window.oma API contract, available CSS design tokens, the data model, and a minimal working app template.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -301,8 +301,8 @@
       },
       "type": "object"
     },
-    "name": "get_component_guide",
-    "title": "Component authoring guide"
+    "name": "get_app_guide",
+    "title": "App authoring guide"
   },
   {
     "_meta": {
@@ -312,7 +312,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List UI components in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
+    "description": "List UI apps in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -335,7 +335,7 @@
           "type": "integer"
         },
         "name": {
-          "description": "exact component name — the fastest way to answer \"open my X\"",
+          "description": "exact app name — the fastest way to answer \"open my X\"",
           "type": "string"
         },
         "visibility": {
@@ -352,15 +352,15 @@
       },
       "type": "object"
     },
-    "name": "list_components",
-    "title": "List components"
+    "name": "list_apps",
+    "title": "List apps"
   },
   {
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read a component's HTML source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big component read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_component / save_component.",
+    "description": "Read an app's HTML source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -383,7 +383,7 @@
       ],
       "type": "object"
     },
-    "name": "get_component",
+    "name": "get_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -427,7 +427,7 @@
       ],
       "type": "object"
     },
-    "title": "Get component source"
+    "title": "Get app source"
   },
   {
     "annotations": {
@@ -436,7 +436,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Create or update a UI component in the persistent registry. The HTML must follow the contract from get_component_guide (single self-contained HTML using window.oma; no external resources). After saving, open it IMMEDIATELY with open_component. Saving an existing name creates a new version (history kept).",
+    "description": "Create or update a UI app in the persistent registry. The HTML must follow the contract from get_app_guide (single self-contained HTML using window.oma; no external resources). After saving, open it IMMEDIATELY with open_app. Saving an existing name creates a new version (history kept).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -447,11 +447,11 @@
           "type": "string"
         },
         "description": {
-          "description": "one line: what this component shows and what data fields it uses",
+          "description": "one line: what this app shows and what data fields it uses",
           "type": "string"
         },
         "expected_version": {
-          "description": "REQUIRED when overwriting an existing component: the version you read (get_component). Creating a new name needs none",
+          "description": "REQUIRED when overwriting an existing app: the version you read (get_app). Creating a new name needs none",
           "type": "number"
         },
         "html": {
@@ -459,14 +459,14 @@
           "type": "string"
         },
         "manifest": {
-          "description": "RETIRED — declare inside the html (see get_component_guide)"
+          "description": "RETIRED — declare inside the html (see get_app_guide)"
         },
         "name": {
-          "description": "component name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')",
+          "description": "app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')",
           "type": "string"
         },
         "scene": {
-          "description": "RETIRED — declare inside the html (see get_component_guide)"
+          "description": "RETIRED — declare inside the html (see get_app_guide)"
         }
       },
       "required": [
@@ -475,7 +475,7 @@
       ],
       "type": "object"
     },
-    "name": "save_component",
+    "name": "save_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -528,7 +528,7 @@
       ],
       "type": "object"
     },
-    "title": "Save component"
+    "title": "Save app"
   },
   {
     "annotations": {
@@ -537,7 +537,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Surgical edits to a component WITHOUT round-tripping the whole source: each edit replaces old_string (which must match exactly once, or set replace_all) with new_string. All edits apply together against expected_version, or nothing applies. No pre-read needed for source you just saved — your copy is byte-exact and your receipt carries the version; get_component is for source you did not write. The #oma-manifest block is re-read on save.",
+    "description": "Surgical edits to an app WITHOUT round-tripping the whole source: each edit replaces old_string (which must match exactly once, or set replace_all) with new_string. All edits apply together against expected_version, or nothing applies. No pre-read needed for source you just saved — your copy is byte-exact and your receipt carries the version; get_app is for source you did not write. The #oma-manifest block is re-read on save.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -550,12 +550,12 @@
           ],
           "type": "string"
         },
-        "command_id": {
-          "description": "idempotency key — generate a fresh uuid per action",
+        "app": {
+          "description": "app name (this tool says `app`; save_app and get_app say `name`)",
           "type": "string"
         },
-        "component": {
-          "description": "component name (this tool says `component`; save_component and get_component say `name`)",
+        "command_id": {
+          "description": "idempotency key — generate a fresh uuid per action",
           "type": "string"
         },
         "edits": {
@@ -581,19 +581,19 @@
           "type": "array"
         },
         "expected_version": {
-          "description": "REQUIRED — the version the edits were authored against (from get_component)",
+          "description": "REQUIRED — the version the edits were authored against (from get_app)",
           "type": "number"
         }
       },
       "required": [
         "command_id",
-        "component",
+        "app",
         "expected_version",
         "edits"
       ],
       "type": "object"
     },
-    "name": "edit_component",
+    "name": "edit_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -646,7 +646,7 @@
       ],
       "type": "object"
     },
-    "title": "Edit component source"
+    "title": "Edit app source"
   },
   {
     "annotations": {
@@ -655,7 +655,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Flip a component out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_components {visibility: \"archived\"} shows them. This is the KEEP-everything half of the pair: to remove an app and the data only it used, delete_component with data:\"cascade\" (permanent).",
+    "description": "Flip an app out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_apps {visibility: \"archived\"} shows them. This is the KEEP-everything half of the pair: to remove an app and the data only it used, delete_app with data:\"cascade\" (permanent).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -668,6 +668,9 @@
           ],
           "type": "string"
         },
+        "app": {
+          "type": "string"
+        },
         "archived": {
           "description": "true = archive; false = bring it back (listed)",
           "type": "boolean"
@@ -675,19 +678,16 @@
         "command_id": {
           "description": "idempotency key — generate a fresh uuid per action",
           "type": "string"
-        },
-        "component": {
-          "type": "string"
         }
       },
       "required": [
         "command_id",
-        "component",
+        "app",
         "archived"
       ],
       "type": "object"
     },
-    "name": "archive_component",
+    "name": "archive_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -718,7 +718,7 @@
       ],
       "type": "object"
     },
-    "title": "Archive / restore a component"
+    "title": "Archive / restore an app"
   },
   {
     "_meta": {
@@ -728,7 +728,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_component for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
+    "description": "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_app for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1196,7 +1196,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind a component to. Renders no UI.",
+    "description": "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind an app to. Renders no UI.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1259,7 +1259,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Add an item to a collection. `group` is the component-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
+    "description": "Add an item to a collection. `group` is the app-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -1764,13 +1764,13 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List the files an app (component) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
+    "description": "List the files an app (app) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "properties": {
-        "component": {
+        "app": {
           "description": "the app whose files to list",
           "type": "string"
         },
@@ -1788,7 +1788,7 @@
         }
       },
       "required": [
-        "component"
+        "app"
       ],
       "type": "object"
     },
@@ -1796,7 +1796,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "eot": {
@@ -1806,10 +1806,10 @@
           "items": {
             "additionalProperties": false,
             "properties": {
-              "backend": {
+              "app": {
                 "type": "string"
               },
-              "component": {
+              "backend": {
                 "type": "string"
               },
               "created_at": {
@@ -1835,7 +1835,7 @@
               }
             },
             "required": [
-              "component",
+              "app",
               "path",
               "sha256",
               "size",
@@ -1889,7 +1889,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "files",
         "usage",
         "files_version"
@@ -1903,13 +1903,13 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_component, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
+    "description": "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_app, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "length": {
@@ -1926,7 +1926,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "path"
       ],
       "type": "object"
@@ -1935,7 +1935,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "data_base64": {
@@ -1980,7 +1980,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "path",
         "mime",
         "size",
@@ -2004,12 +2004,12 @@
     },
     "inputSchema": {
       "properties": {
-        "command_id": {
-          "description": "idempotency key — a fresh uuid per write",
+        "app": {
+          "description": "the app this file belongs to",
           "type": "string"
         },
-        "component": {
-          "description": "the app this file belongs to",
+        "command_id": {
+          "description": "idempotency key — a fresh uuid per write",
           "type": "string"
         },
         "data_base64": {
@@ -2031,7 +2031,7 @@
       },
       "required": [
         "command_id",
-        "component",
+        "app",
         "path",
         "data_base64"
       ],
@@ -2041,7 +2041,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "files_version": {
@@ -2064,7 +2064,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "path",
         "size",
         "mime",
@@ -2089,13 +2089,13 @@
     },
     "inputSchema": {
       "properties": {
-        "component": {
+        "app": {
           "description": "the app this file will belong to",
           "type": "string"
         }
       },
       "required": [
-        "component"
+        "app"
       ],
       "type": "object"
     },
@@ -2224,7 +2224,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "files_version": {
@@ -2247,7 +2247,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "path",
         "size",
         "mime",
@@ -2313,11 +2313,11 @@
     },
     "inputSchema": {
       "properties": {
-        "command_id": {
-          "description": "idempotency key (uuid)",
+        "app": {
           "type": "string"
         },
-        "component": {
+        "command_id": {
+          "description": "idempotency key (uuid)",
           "type": "string"
         },
         "expected_version": {
@@ -2329,7 +2329,7 @@
       },
       "required": [
         "command_id",
-        "component",
+        "app",
         "path"
       ],
       "type": "object"
@@ -2338,7 +2338,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "deleted": {
@@ -2352,7 +2352,7 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "path",
         "deleted",
         "files_version"
@@ -2366,7 +2366,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List an app's checkpoints as {checkpoint, ts, html_size} — metadata only, NEVER the html (keeps context small; use get_component for the current source). Checkpoint 1 is the oldest; restore_component takes that number. History survives delete_component (tombstone).",
+    "description": "List an app's checkpoints as {checkpoint, ts, html_size} — metadata only, NEVER the html (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone).",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2381,7 +2381,7 @@
       ],
       "type": "object"
     },
-    "name": "component_history",
+    "name": "app_history",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2427,14 +2427,14 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from component_history; after restoring, open_component to view it.",
+    "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from app_history; after restoring, open_app to view it.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "properties": {
         "checkpoint": {
-          "description": "which checkpoint to restore, 1 = the oldest (see component_history)",
+          "description": "which checkpoint to restore, 1 = the oldest (see app_history)",
           "type": "number"
         },
         "command_id": {
@@ -2451,8 +2451,8 @@
       ],
       "type": "object"
     },
-    "name": "restore_component",
-    "title": "Restore a component version"
+    "name": "restore_app",
+    "title": "Restore an app version"
   },
   {
     "_meta": {
@@ -2464,13 +2464,13 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Internal: the widget loader reports whether a component's html mounted cleanly. A failure report about the current version triggers an automatic rollback to the previous version (history preserved, max 3 per component per server run). Not normally called by the AI — use restore_component to roll back deliberately.",
+    "description": "Internal: the widget loader reports whether an app's html mounted cleanly. A failure report about the current version triggers an automatic rollback to the previous version (history preserved, max 3 per app per server run). Not normally called by the AI — use restore_app to roll back deliberately.",
     "execution": {
       "taskSupport": "forbidden"
     },
     "inputSchema": {
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "error": {
@@ -2481,12 +2481,12 @@
           "type": "boolean"
         },
         "version": {
-          "description": "the component version that was rendering",
+          "description": "the app version that was rendering",
           "type": "number"
         }
       },
       "required": [
-        "component",
+        "app",
         "version",
         "ok"
       ],
@@ -2496,7 +2496,7 @@
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "component": {
+        "app": {
           "type": "string"
         },
         "new_version": {
@@ -2518,13 +2518,13 @@
         }
       },
       "required": [
-        "component",
+        "app",
         "ok",
         "reverted"
       ],
       "type": "object"
     },
-    "title": "Report component render health (internal)"
+    "title": "Report app render health (internal)"
   },
   {
     "annotations": {
@@ -2533,7 +2533,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Delete an app. data:\"keep\" (default) removes only the app; data:\"cascade\" ALSO deletes the data only this app was using — permanently, with no undo. Cascade is two steps: call it once to get a plan (what would be deleted, what would be kept and why), show the user, then call again with that plan_token. Collections another app also uses are NEVER deleted. To keep everything and just clear the shelf, use archive_component instead.",
+    "description": "Delete an app. data:\"keep\" (default) removes only the app; data:\"cascade\" ALSO deletes the data only this app was using — permanently, with no undo. Cascade is two steps: call it once to get a plan (what would be deleted, what would be kept and why), show the user, then call again with that plan_token. Collections another app also uses are NEVER deleted. To keep everything and just clear the shelf, use archive_app instead.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2572,8 +2572,8 @@
       ],
       "type": "object"
     },
-    "name": "delete_component",
-    "title": "Delete component"
+    "name": "delete_app",
+    "title": "Delete app"
   },
   {
     "_meta": {
@@ -2583,7 +2583,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Browse the built-in library: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_component {component: \"library\"} shows the browsable library app.",
+    "description": "Browse the built-in library: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_app {app: \"library\"} shows the browsable library app.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2822,7 +2822,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Components read effective values via oma.pref(); this tool only describes what exists. Read-only.",
+    "description": "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Apps read effective values via oma.pref(); this tool only describes what exists. Read-only.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2932,7 +2932,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "For every component: its author, trust tier, whether it's a locked system component, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
+    "description": "For every app: its author, trust tier, whether it's a locked system app, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
     "execution": {
       "taskSupport": "forbidden"
     },
@@ -2940,11 +2940,11 @@
       "properties": {},
       "type": "object"
     },
-    "name": "component_permissions",
+    "name": "app_permissions",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
-        "components": {
+        "apps": {
           "items": {
             "additionalProperties": false,
             "properties": {
@@ -3035,11 +3035,11 @@
         }
       },
       "required": [
-        "components"
+        "apps"
       ],
       "type": "object"
     },
-    "title": "Component permissions overview"
+    "title": "App permissions overview"
   },
   {
     "_meta": {

@@ -68,7 +68,7 @@ ok("two declarations are refused rather than resolved (any pick leaves some read
 console.log("\n3. what used to need a browser to answer");
 // Both of these were live holes in the tokenizer version. Under a byte grammar the first is simply
 // found (position is irrelevant, and documented as such — the authoritative record of what a
-// component declared is the materialised column, not a rendering), and the second cannot arise
+// app declared is the materialised column, not a rendering), and the second cannot arise
 // because there is no tokenizer state to double-escape into.
 ok("a block inside a <template> is found, because position is not part of the grammar",
   readDeclaration(`<template>${DECLARATION_OPEN}{"functions":{"x":{}}}</script></template>`).state === "present");
@@ -77,7 +77,7 @@ ok("a `<!--<script>` sequence has nothing to confuse — the block ends at the f
 ok("...and the JSON that runs past its own </script> simply fails to parse, loudly",
   readDeclaration(`${DECLARATION_OPEN}{"n":"</script>"}</script>`).error === "manifest_bad_json");
 
-console.log("\n4. real components — the corpus is not the only input that matters");
+console.log("\n4. real apps — the corpus is not the only input that matters");
 for (const name of ["dashboard", "bill-calendar", "keep-in-touch", "settings"]) {
   const html = readFileSync(join(ROOT, "components", `${name}.html`), "utf8");
   const r = readDeclaration(html);
@@ -88,7 +88,7 @@ for (const name of ["dashboard", "bill-calendar", "keep-in-touch", "settings"]) 
 // consumer-side `Array.isArray(m.settings)` gate used to drop on the floor.
 const noSettings = ["bill-calendar", "habit-streaks", "keep-in-touch", "savings-goals", "spending-journal"]
   .filter((n) => { const r = readDeclaration(readFileSync(join(ROOT, "components", `${n}.html`), "utf8")); return r.state === "present" && r.value.settings === undefined; });
-ok("a declaration with no `settings` key is still a declaration (5 shipped components rely on it)", noSettings.length === 5, `saw ${noSettings.length}`);
+ok("a declaration with no `settings` key is still a declaration (5 shipped apps rely on it)", noSettings.length === 5, `saw ${noSettings.length}`);
 
 console.log("\n5. bounds");
 const big = `<script type="application/json" id="oma-manifest">{"pad":"${"x".repeat(MAX_DECLARATION_BYTES)}"}</script>`;

@@ -11,7 +11,7 @@
 //   (--db <path> targets a specific store; OMA_DB does the same. Default: the shared per-user store.)
 //
 // WHY THIS EXISTS. Every other way into this registry goes through the AI: it writes the html and
-// save_component stores it. That is the right default — but it makes the AI's context window the
+// save_app stores it. That is the right default — but it makes the AI's context window the
 // upper bound on what an app can BE. An app you build in your own editor, with your own bundler,
 // against your own libraries, has no such ceiling. The trade you accept by using this door is that
 // the AI can no longer iterate on it: your file is the source of truth, you rebuild and re-install.
@@ -21,13 +21,13 @@
 // Bundle whatever you like into it; the engine injects the kit CSS, the host's design tokens and
 // `window.oma`, and renders it in a sandboxed iframe. Declare your collection in an
 // `#oma-manifest` block. The full contract: `node -e 'import("./src/guide.mjs").then(m =>
-// console.log(m.GUIDE))'`, or ask the AI for get_component_guide.
+// console.log(m.GUIDE))'`, or ask the AI for get_app_guide.
 //
-// PROVENANCE, AND WHY THE DEFAULT IS "TRUSTED". A component's author decides whether it runs
+// PROVENANCE, AND WHY THE DEFAULT IS "TRUSTED". An app's author decides whether it runs
 // direct — holding the real window.oma, co-equal with the AI — or behind the sandboxed runner with
 // caps. This door installs as `human`, i.e. DIRECT: on your own machine, a file you wrote is
 // exactly as trustworthy as you are, and anything stricter would be theater (the same argument the
-// engine makes for AI-authored components). `--sandboxed` installs as `guest` instead, which is
+// engine makes for AI-authored apps). `--sandboxed` installs as `guest` instead, which is
 // what a hosted ingress will have to do by default — there the author and the operator are not the
 // same person. Use it to see what your app can still do with no capabilities at all.
 //
@@ -37,10 +37,10 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { basename, extname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
-import { openStore, MAX_COMPONENT_HTML } from "./src/store.mjs";
-import { tierOf, TIER_CAPS, RESERVED_COMPONENT_NAMES, LOCKED_COMPONENTS } from "./src/contracts.mjs";
+import { openStore, MAX_APP_HTML } from "./src/store.mjs";
+import { tierOf, TIER_CAPS, RESERVED_APP_NAMES, LOCKED_APPS } from "./src/contracts.mjs";
 import { readDeclaration } from "./src/manifest-block.mjs";
-import { OMA_REFERENCE_RE } from "./src/tools/components.mjs";
+import { OMA_REFERENCE_RE } from "./src/tools/apps.mjs";
 
 // Same shape the store enforces — stated here so the CLI can explain a bad name before the write.
 const NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -74,8 +74,8 @@ const store = dbPath ? openStore(resolve(dbPath)) : openStore();
 // Provenance is invisible everywhere else on the CLI, and it is the one thing that decides how an
 // app runs. That makes "what is installed and whose is it" the natural companion to installing.
 if (flag("list")) {
-  const rows = store.listComponents();
-  if (!rows.length) console.log("(no components installed)");
+  const rows = store.listApps();
+  if (!rows.length) console.log("(no apps installed)");
   else {
     const w = Math.max(...rows.map((r) => r.name.length));
     for (const r of rows) {
@@ -83,7 +83,7 @@ if (flag("list")) {
       console.log(`  ${r.name.padEnd(w)}  v${String(r.version).padEnd(4)} ${String(r.html_size).padStart(7)}B  ` +
         `by ${r.author.padEnd(7)} ${tier === "local" ? "direct" : tier}`);
     }
-    console.log(`\n${rows.length} component(s). "direct" = holds the real window.oma; anything else runs behind the sandboxed runner.`);
+    console.log(`\n${rows.length} app(s). "direct" = holds the real window.oma; anything else runs behind the sandboxed runner.`);
   }
   store.close();
   process.exit(0);
@@ -101,11 +101,11 @@ const name = (val("name") || basename(path, extname(path))).trim();
 
 if (!NAME_RE.test(name))
   die(`"${name}" is not a valid app name (lowercase letters, digits and dashes, starting with a letter, max 32). Use --name.`);
-if (RESERVED_COMPONENT_NAMES.has(name)) die(`"${name}" is a reserved namespace — pick another name.`);
-if (LOCKED_COMPONENTS.has(name)) die(`"${name}" is a system component that ships with the engine — pick another name.`);
+if (RESERVED_APP_NAMES.has(name)) die(`"${name}" is a reserved namespace — pick another name.`);
+if (LOCKED_APPS.has(name)) die(`"${name}" is a system app that ships with the engine — pick another name.`);
 if (!html.trim()) die("that file is empty — an app is something a person opens.");
-if (html.length > MAX_COMPONENT_HTML)
-  die(`${html.length.toLocaleString()} bytes exceeds the ${MAX_COMPONENT_HTML.toLocaleString()}-byte limit for one document. ` +
+if (html.length > MAX_APP_HTML)
+  die(`${html.length.toLocaleString()} bytes exceeds the ${MAX_APP_HTML.toLocaleString()}-byte limit for one document. ` +
       `An app is ONE self-contained file; if your bundle is bigger than this, ship less of it (the engine already provides the kit CSS and design tokens).`);
 
 // Warnings, never refusals: this door's job is to install what you wrote, and a document that
@@ -124,7 +124,7 @@ else if (decl.state === "bad")
 const actor = flag("sandboxed") ? "guest" : "human";
 const tier = tierOf(actor);
 const caps = TIER_CAPS[tier];
-const existing = store.getComponent(name);
+const existing = store.getApp(name);
 
 console.log(`  file      ${path}`);
 console.log(`  name      ${name}`);
@@ -147,7 +147,7 @@ if (flag("dry-run")) { console.log("\n(dry run — nothing written)"); store.clo
 // a malformed declaration must hear about it — silently clearing it would be the worst outcome
 // here, where there is no conversation in which to notice.
 const r = store.execute({
-  type: "save_component", command_id: randomUUID(), name, html,
+  type: "save_app", command_id: randomUUID(), name, html,
   description: val("description") || "", actor, host: "install-app",
   ...(existing ? { expected_version: existing.version } : {}),
 });
@@ -162,11 +162,11 @@ if (!r.ok) {
 
 console.log(`\n✓ installed "${name}" v${r.version}${r.created ? "" : ` (was v${existing.version})`}`);
 if (r.note) console.log(`  note: ${r.note}`);
-// The dynamic per-component tool (open_<name>) is registered by the running server when IT does the
+// The dynamic per-app tool (open_<name>) is registered by the running server when IT does the
 // save. This door writes underneath a server that may already be up, so say the one thing that
-// would otherwise read as "my app did not install": open_component works immediately either way.
-console.log(`  open it: ask the AI to open "${name}" (open_component). A server that was already running`);
-console.log(`           picks it up on its next restart if you use per-component tools.`);
+// would otherwise read as "my app did not install": open_app works immediately either way.
+console.log(`  open it: ask the AI to open "${name}" (open_app). A server that was already running`);
+console.log(`           picks it up on its next restart if you use per-app tools.`);
 if (tier !== "local")
   console.log(`  sandboxed: it can read and write its OWN collection through the runner bridge, and nothing else.`);
 

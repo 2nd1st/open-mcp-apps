@@ -19,7 +19,7 @@ Brief 验收自查：manifest 两集合均含 fields；周视图的今天/训练
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training Log</title>
-<meta name="description" content="After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this component itself remains zero-network. Track weekly completion and strength trends.">
+<meta name="description" content="After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this app itself remains zero-network. Track weekly completion and strength trends.">
 <meta name="oma-category" content="Health & Habits">
 
 <script type="application/json" id="oma-manifest">
@@ -1314,7 +1314,7 @@ Brief 验收自查：manifest 两集合均含 fields；周视图的今天/训练
         <circle cx="64" cy="13" r="2"/>
       </svg>
       <b data-i18n="emptyTitle">Seed your exercise library from ExerciseDB</b>
-      <span data-i18n="emptyBody">After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This component itself stays zero-network. You can also log one session or paste older records.</span>
+      <span data-i18n="emptyBody">After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This app itself stays zero-network. You can also log one session or paste older records.</span>
       <div class="empty-actions">
         <button class="k-btn" id="seedButton" type="button" data-i18n="seedButton">Ask AI to seed from ExerciseDB</button>
         <button class="k-btn sec" id="emptyRecordButton" type="button" data-i18n="addManually">Add manually</button>
@@ -1441,7 +1441,7 @@ Brief 验收自查：manifest 两集合均含 fields；周视图的今天/训练
   const STR = {
     en: {
       documentTitle: "Training Log",
-      metaDescription: "After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this component itself remains zero-network. Track weekly completion and strength trends.",
+      metaDescription: "After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this app itself remains zero-network. Track weekly completion and strength trends.",
       appName: "Training Log",
       eyebrow: "Strength rhythm",
       reviewWeek: "Ask AI to review this week",
@@ -1452,7 +1452,7 @@ Brief 验收自查：manifest 两集合均含 fields；周视图的今天/训练
       historyLabel: "Training history",
       weekRhythm: "This week's rhythm",
       emptyTitle: "Seed your exercise library from ExerciseDB",
-      emptyBody: "After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This component itself stays zero-network. You can also log one session or paste older records.",
+      emptyBody: "After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This app itself stays zero-network. You can also log one session or paste older records.",
       seedButton: "Ask AI to seed from ExerciseDB",
       addManually: "Add manually",
       batchPaste: "Paste batch",
@@ -1550,7 +1550,7 @@ Brief 验收自查：manifest 两集合均含 fields；周视图的今天/训练
       batchRefreshSuffix: "; refresh also failed: {error}",
       batchSavedRefreshFailed: "Saved {count} rows, but refresh failed: {error}",
       batchSaved: "Imported {count} training rows.",
-      seedPrompt: "Use host-side network access to fetch an exercise catalog from the ExerciseDB API. Build my weekly plan in training-plan with day values mon..sun, a focus, and an exercises array. Write ExerciseDB entries as objects with name, muscle, and equipment fields, mapping ExerciseDB target to muscle, and batch-write suitable plan rows. The Training Log component itself is zero-network, so all API access must happen on the host side. Ask me for goals, experience, available equipment, or training days when needed. Only add training-sessions history we actually discussed; do not invent completed workouts. Tell me exactly what you wrote.",
+      seedPrompt: "Use host-side network access to fetch an exercise catalog from the ExerciseDB API. Build my weekly plan in training-plan with day values mon..sun, a focus, and an exercises array. Write ExerciseDB entries as objects with name, muscle, and equipment fields, mapping ExerciseDB target to muscle, and batch-write suitable plan rows. The Training Log app itself is zero-network, so all API access must happen on the host side. Ask me for goals, experience, available equipment, or training days when needed. Only add training-sessions history we actually discussed; do not invent completed workouts. Tell me exactly what you wrote.",
       noFixedPlan: "No fixed plan",
       missingTopSet: "top set not entered",
       missingVolume: "volume not entered",

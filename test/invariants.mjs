@@ -44,7 +44,7 @@ const FLAGS = {
   OMA_DB:             { kind: "product",  why: "database location override (tests, multi-tenant hosts)" },
   OMA_HOST:           { kind: "product",  why: "host label when clientInfo.name is unavailable" },
   OMA_FILE_BACKEND:   { kind: "product",  why: "swappable file-plane backend" },
-  OMA_DYNAMIC_TOOLS:  { kind: "product",  why: "opt-in per-component open_<name> tools; DEFAULT OFF because every save_component would invalidate the whole conversation's prompt cache" },
+  OMA_DYNAMIC_TOOLS:  { kind: "product",  why: "opt-in per-app open_<name> tools; DEFAULT OFF because every save_app would invalidate the whole conversation's prompt cache" },
   OMA_QUERY:          { kind: "construction", removeBy: "2026-09-15",
                         why: "gates EXECUTION of data_query, never its registration — a tool that appears mid-life invalidates every cached tool list, so the seat ships from day one and the flag decides whether calling it works. Off until a live-model eval shows models reach for it instead of pulling rows; the fallback (read and count) is always available, which is what makes the flag safe to leave off" },
   // OMA_PROBE / OMA_PROBE_OUT retired 2026-07-27 with src/tools/probe.mjs, exactly as their entry
@@ -82,7 +82,7 @@ function shippedSources() {
 const sources = shippedSources();
 const allowed = (rel) => TOOL_REGISTRATION_ALLOWED.some((a) => (typeof a === "string" ? a === rel : a.test(rel)));
 
-// All three registration calls, not just server.registerTool: open_component and the per-component
+// All three registration calls, not just server.registerTool: open_app and the per-app
 // open_<name> tools go through the MCP-Apps helpers, so matching only .registerTool( would let
 // 1 of the 33 tools — and every ui:// resource — escape the rule.
 const REGISTRATION_CALL = /(?:\.registerTool|registerAppTool|registerAppResource)\s*\(/;
@@ -127,13 +127,13 @@ ok("every flag says why it exists", missingWhy.length === 0,
   `no why: ${missingWhy.map(([n]) => n).join(", ")}`);
 
 console.log("3. one answer to \"what does this app open on\"");
-// contracts.mjs defaultCollectionFor carries that rule for the server (open_component, /view, the
+// contracts.mjs defaultCollectionFor carries that rule for the server (open_app, /view, the
 // self-contained per-app resource). runtime-core childPreviewSnapshot carries it for the preview
-// machines, because a browser component cannot import from src/. Two copies is what the codebase
+// machines, because a browser app cannot import from src/. Two copies is what the codebase
 // already ruled against — "a second copy of what does this app open on is a second answer waiting
 // to disagree" (contracts.mjs) — so if there must be two, a machine has to hold them equal.
 //
-// This is not hypothetical: the preview side previously used `collection === componentName`, which
+// This is not hypothetical: the preview side previously used `collection === appName`, which
 // disagrees with the server for every app that declares a single collection under another name.
 // SIX of the shipped manifests do (build-progress, project-tasks, and the multi-collection apps),
 // and every one of them previewed empty.
@@ -148,8 +148,8 @@ console.log("3. one answer to \"what does this app open on\"");
     const src = readFileSync(join(dir, f), "utf-8");
     const m = src.match(/<script[^>]*id=["']oma-manifest["'][^>]*>([\s\S]*?)<\/script>/);
     const manifest = m ? m[1].trim() : null;
-    // Both sides get the SAME component, expressed the way each one receives it: the server reads
-    // a stored row, the preview reads the parsed declaration handed back by component_html.
+    // Both sides get the SAME app, expressed the way each one receives it: the server reads
+    // a stored row, the preview reads the parsed declaration handed back by app_html.
     let declaration = null;
     try { declaration = manifest ? JSON.parse(manifest) : null; } catch { declaration = null; }
     // "seed" is what the shipped set actually is; tierOf maps it to the local tier, which is the
@@ -160,7 +160,7 @@ console.log("3. one answer to \"what does this app open on\"");
     checked++;
     if (server !== preview) disagree.push(`${name}: server=${server} preview=${preview}`);
   }
-  ok(`${checked} shipped component(s): the preview binding equals the server binding`,
+  ok(`${checked} shipped app(s): the preview binding equals the server binding`,
     disagree.length === 0, disagree.join("\n      "));
 }
 

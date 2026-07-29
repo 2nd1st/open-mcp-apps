@@ -6,9 +6,9 @@
 //   node uninstall.mjs --yes        non-interactive: unregister from all detected hosts (no confirm)
 //   node uninstall.mjs --host codex  only the named host(s); comma-ok: claude,codex,claude-code
 //   node uninstall.mjs --check       read-only: print which hosts currently have it (+ store location)
-//   node uninstall.mjs --purge       ALSO delete the shared store — your components + data + files. Irreversible.
+//   node uninstall.mjs --purge       ALSO delete the shared store — your apps + data + files. Irreversible.
 //
-// By default the shared store is KEPT, so a later re-install restores every component and all data
+// By default the shared store is KEPT, so a later re-install restores every app and all data
 // untouched. Only --purge deletes it. Node built-ins only, so it runs without npm install.
 
 import { execFileSync } from "node:child_process";
@@ -195,7 +195,7 @@ if (hostArg) {
 if (!selected.length) {
   console.log(`open-mcp-apps is not registered in any${hostArg ? " matching" : " detected"} host — nothing to unregister.`);
   if (PURGE && storeExists) {
-    if (!YES && !(await confirm(`Still DELETE the shared store (all components + data + files) at\n  ${dataDir()}\n? [y/N] `))) { console.log("✗ cancelled."); process.exit(0); }
+    if (!YES && !(await confirm(`Still DELETE the shared store (all apps + data + files) at\n  ${dataDir()}\n? [y/N] `))) { console.log("✗ cancelled."); process.exit(0); }
     purgeStore();
     console.log(`\n  shared store DELETED: ${purged}`);
   } else if (storeExists) {
@@ -207,7 +207,7 @@ if (!selected.length) {
 // Confirm (unless --yes).
 if (!YES) {
   const line = `Remove open-mcp-apps from: ${selected.map((a) => a.label).join(", ")}` +
-    (PURGE ? "\nand DELETE the shared store (all components + data + files)" : "  (the shared store is KEPT)");
+    (PURGE ? "\nand DELETE the shared store (all apps + data + files)" : "  (the shared store is KEPT)");
   const ok = await confirm(line + "\nProceed? [y/N] ");
   if (!ok) { console.log("✗ cancelled — nothing was changed."); process.exit(0); }
 }
@@ -228,7 +228,7 @@ for (const { a, out } of applied) {
   console.log(`     config: ${out.configLoc}`);
   if (out.note) console.log(`     note: ${out.note}`);
 }
-console.log(purged ? `\n  shared store DELETED: ${purged}` : `\n  shared store kept: ${db}${storeExists ? "  (re-install restores every component + all data)" : ""}`);
+console.log(purged ? `\n  shared store DELETED: ${purged}` : `\n  shared store kept: ${db}${storeExists ? "  (re-install restores every app + all data)" : ""}`);
 
 const restarts = [...new Set(applied.map(({ a }) => a.restart).filter(Boolean))];
 if (restarts.length) {

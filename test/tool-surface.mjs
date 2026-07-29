@@ -42,11 +42,11 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //           call is the trade the ratchet exists to make visible, not to forbid.
 //   38,000  E11 landed: src/cache-hints.mjs drops the redundant $schema declaration, -3,172 B
 //           (~793 tk). A ratchet that only ever loosens is a budget; this one tightens.
-//   39,200  Write-set A, the discovery face: list_components gained name/kind/visibility/limit
+//   39,200  Write-set A, the discovery face: list_apps gained name/kind/visibility/limit
 //           (answering "open my X" in ONE call instead of listing a whole registry), and
-//           get_component_guide gained the frozen topic enum. +908 B measured.
+//           get_app_guide gained the frozen topic enum. +908 B measured.
 //           Deliberately temporary: paid back below, in the very next write-set.
-//   37,900  The declaration face moved INTO the component document, so save_component stopped
+//   37,900  The declaration face moved INTO the app document, so save_app stopped
 //           carrying a nested manifest schema in its input: 39,196 -> 37,773 B measured. The debt
 //           the entry above promised to repay, repaid with 227 B of change — and the vocabulary can
 //           grow from here without touching this number at all, which was the point.
@@ -69,21 +69,21 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //           it returns with its executor, priced as one release-time cache break.)
 //   48,500  write-set C: the v0.3 face froze at **37 tools** — the real ratchet is now the SEAT
 //           COUNT, which this file pins exactly (order + membership golden). Measured 47,342 B.
-//           The +5.7K is schema, not prose: −2 seats (file_usage, get_component_version), +3 seats
-//           (edit_component, call_function, archive_component), windowed-read grammar
+//           The +5.7K is schema, not prose: −2 seats (file_usage, get_app_version), +3 seats
+//           (edit_app, call_function, archive_app), windowed-read grammar
 //           (offset/length/next_offset) on three reads, write receipts (saveAckSchema) on the
-//           component writes, and returned/total/next_cursor/eot self-verification keys on every
-//           page. The description pass DID run (window rationale told once, at get_component;
+//           app writes, and returned/total/next_cursor/eot self-verification keys on every
+//           page. The description pass DID run (window rationale told once, at get_app;
 //           data_query references data_list's grammar instead of restating it; data_list stopped
 //           describing the refusal behaviour C deleted). One grammar for windows, one for pages,
 //           one filter table — zero new dialects.
-//   48,600  fix (c): +93 B — component_html declares `collection`, the binding the loader needs to
+//   48,600  fix (c): +93 B — app_html declares `collection`, the binding the loader needs to
 //           paint. It is ONE key on ONE internal tool, and the alternative was to smuggle it through
 //           structuredContent undeclared (which the SDK does allow — validateToolOutput returns
-//           early with no outputSchema). Rejected: component_html ALREADY declares html/caps/tier,
+//           early with no outputSchema). Rejected: app_html ALREADY declares html/caps/tier,
 //           so a fourth silent key makes the schema lie, and this one is read on every first paint.
 //           The rule, so the next person does not re-litigate it per tool: a tool declares its whole
-//           answer or none of it — delete_component declares nothing and is legible for it; partial
+//           answer or none of it — delete_app declares nothing and is legible for it; partial
 //           is the only forbidden shape.
 //           The price is one prompt-cache invalidation for every user, and it is NOT the reason to
 //           hesitate: v0.3.2 already rewrites four tools' text and schemas (golden 80,911 → 81,624),
@@ -116,7 +116,13 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 // lands inside the 9,800–11,000 tk per-round overhead measured independently against the real
 // tokenizer. Re-calibrate with count_tokens if the ratio is ever in doubt; gate on bytes.
 // (Compact, not the pretty golden: indentation inflates the golden ~1.7× and is not sent anywhere.)
-const SURFACE_BYTES_CAP = 48_600;
+//   47,935  v0.4.0 · component -> app. The cap goes DOWN for the first time: 48,589 -> 47,890
+//           measured, 699 B back, and the new cap is measured + 45 so the recovered room cannot be
+//           spent without an explicit decision. 684 B was the theoretical ceiling (114 golden
+//           occurrences x 6 chars); the real number beat it because renaming a tool shortens its
+//           name in the seat AND in every description that references it. What did NOT change is
+//           the part worth pinning: still 36 seats, same order, same membership.
+const SURFACE_BYTES_CAP = 47_935;
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
@@ -164,9 +170,9 @@ console.log("2. dialect + caching hints (src/cache-hints.mjs)");
     "if a schema gained definitions/$ref/tuple-items, its declaration is KEPT on purpose — see cache-hints.mjs");
   const hints = JSON.parse(raw);
   ok(`ttlMs present (${hints.ttlMs})`, typeof hints.ttlMs === "number" && hints.ttlMs >= 0);
-  // The default configuration registers no per-component tools, so this list is identical for every
+  // The default configuration registers no per-app tools, so this list is identical for every
   // tenant and may be shared. It becomes "private" the moment OMA_DYNAMIC_TOOLS puts a tenant's own
-  // component names in it — declaring THAT public would leak them through a shared cache.
+  // app names in it — declaring THAT public would leak them through a shared cache.
   ok('cacheScope is "public" with dynamic tools off', hints.cacheScope === "public", hints.cacheScope);
 }
 

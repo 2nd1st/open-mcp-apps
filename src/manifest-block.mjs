@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// manifest-block.mjs — read a component's DECLARATION out of its own document.
+// manifest-block.mjs — read an app's DECLARATION out of its own document.
 //
-// A component declares what it is in one place: a JSON block inside its own HTML. The engine reads
-// that block when the component is saved and materialises it into the `manifest` column, so the
+// An app declares what it is in one place: a JSON block inside its own HTML. The engine reads
+// that block when the app is saved and materialises it into the `manifest` column, so the
 // document is the single source and the column is a view of it. Two consequences worth stating:
 //
 //   · The declaration vocabulary can grow forever without touching tools/list. Every byte of a tool
@@ -38,16 +38,16 @@
 //
 // Position is irrelevant: head, body, even inside a comment. That is a consequence of scanning bytes,
 // it is documented, and it costs nothing — the JSON is inert wherever it sits, and the authoritative
-// answer to "what did this component declare" is not the document at all. It is the materialised
+// answer to "what did this app declare" is not the document at all. It is the materialised
 // column, which is exact, greppable, and what the Library and any review pass should read.
 
 /** The one spelling. Written out rather than assembled so that a grep for the literal string in a
- *  component finds the same thing the engine looks for. */
+ *  app finds the same thing the engine looks for. */
 export const DECLARATION_OPEN = '<script type="application/json" id="oma-manifest">';
 const CLOSE = "</script";
 // A script start tag that MENTIONS the marker without being the canonical opening. This is how a
 // near-miss becomes an error instead of a silence — and why the check is scoped to a tag rather than
-// to the bare word: a component (this engine's own settings app, for one) may perfectly well discuss
+// to the bare word: an app (this engine's own settings app, for one) may perfectly well discuss
 // "oma-manifest" in a comment, and prose must never be mistaken for a declaration attempt.
 const NEAR_MISS = /<script\b[^>]*oma-manifest/i;
 
@@ -88,7 +88,7 @@ export function readDeclaration(html) {
   const b = extractManifestBlock(html);
   if (b.occurrences > 1)
     return { state: "bad", error: "duplicate_manifest_block",
-      detail: `the declaration block appears ${b.occurrences} times — a component declares itself exactly once` };
+      detail: `the declaration block appears ${b.occurrences} times — an app declares itself exactly once` };
   if (b.malformed)
     return { state: "bad", error: "manifest_block_malformed",
       detail: `the declaration must open with exactly: ${DECLARATION_OPEN} — a <script> tag mentioning the marker in any other spelling is refused rather than ignored` };

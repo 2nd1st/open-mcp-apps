@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// shell.mjs — wraps a stored component's HTML with the oma shell at ui:// serve time.
+// shell.mjs — wraps a stored app's HTML with the oma shell at ui:// serve time.
 // Injects (1) the bundled shell runtime (window.oma + MCP bridge) and (2) a design-token
-// fallback stylesheet, so components can use var(--color-*) etc. and look right on any host.
+// fallback stylesheet, so apps can use var(--color-*) etc. and look right on any host.
 
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -47,12 +47,12 @@ export const TOKEN_FALLBACK_CSS = `
 body { font-family: var(--font-sans); color: var(--color-text-primary); }
 `;
 
-// The system UI kit — 25 component classes (.k-btn .k-card .k-chip .k-field .k-tab …), all of
-// them token-derived. It used to be inlined at SEED time into the three system components via a
-// marker, which made it invisible to every OTHER author: measured across four real components
+// The system UI kit — 25 app classes (.k-btn .k-card .k-chip .k-field .k-tab …), all of
+// them token-derived. It used to be inlined at SEED time into the three system apps via a
+// marker, which made it invisible to every OTHER author: measured across four real apps
 // (three model-written, one hand-written) the `k-` usage was ZERO and the guide never named it,
-// while CSS was 32-47% of every component. So the kit is now INJECTED into every rendered
-// document — the author gets it for free, and the guide (get_component_guide) teaches it.
+// while CSS was 32-47% of every app. So the kit is now INJECTED into every rendered
+// document — the author gets it for free, and the guide (get_app_guide) teaches it.
 //
 // It stays in components/ and stays MIT (components/LICENSE names "the design-kit CSS"
 // explicitly); this module only READS it, so the licence of the bytes is unchanged.
@@ -63,11 +63,11 @@ export function KIT_CSS() {
   return kitCss;
 }
 
-// The universal loader: mounts ANY registry component at runtime. This is what makes a
-// just-saved component openable IMMEDIATELY via the static open_component tool, without
+// The universal loader: mounts ANY registry app at runtime. This is what makes a
+// just-saved app openable IMMEDIATELY via the static open_app tool, without
 // waiting for the host to refresh its tool list (Claude Desktop propagates listChanged
-// slowly). It fetches the component HTML over the bridge and, for tier "local" (or an old
-// engine whose component_html carries no tier), mounts it into this document exactly as
+// slowly). It fetches the app HTML over the bridge and, for tier "local" (or an old
+// engine whose app_html carries no tier), mounts it into this document exactly as
 // before. Any OTHER tier is untrusted and runs behind the sandboxed runner — which since
 // write-set D is the ONE enforcement piece in src/runner.mjs, reached through oma.embed
 // (the loader document carries the bundled runtime, so the machine ships with it; nothing
@@ -81,8 +81,8 @@ export function KIT_CSS() {
 // lives inside `oma.ready(...)`. That was fine until the premise failed: if the bridge never
 // delivers its first state, or window.oma does not exist at all (the module graph failed, the
 // runtime threw), the callback is never invoked and NOTHING speaks. The user sits on the static
-// "Loading component…" forever — measured on a page refresh in prod and stg, with no retry
-// counter, no error, and no component_html call ever reaching the server.
+// "Loading app…" forever — measured on a page refresh in prod and stg, with no retry
+// counter, no error, and no app_html call ever reaching the server.
 //
 // So the last line of defence cannot be built on the thing that might be broken:
 //   · a CLASSIC script, not type="module" — a module is deferred and dies with the module graph
@@ -112,7 +112,7 @@ function show(msg) { document.body.innerHTML = '<div style="padding:24px;text-al
 //
 // This ONE document serves every app, so its identity can only ever arrive from the host. When a
 // host re-renders a cached widget without replaying the call that opened it, the loader genuinely
-// cannot know — and the old sentence, "No component specified.", named none of the channels it had
+// cannot know — and the old sentence, "No app specified.", named none of the channels it had
 // checked, which is precisely what anyone diagnosing it needs. There is no cheaper answer available
 // to us: the MCP Apps spec has no widget-state persistence, and resourceUri exists only on a TOOL
 // or a RESOURCE (McpUiToolMeta / McpUiResourceMeta) — never on a tool RESULT — so one tool cannot
@@ -122,9 +122,9 @@ function show(msg) { document.body.innerHTML = '<div style="padding:24px;text-al
 // WHICH CALL DID THE HOST BIND THIS RENDER TO — the one signal that says whether waiting can work.
 //
 // Measured (ChatGPT web, 2026-07-29, from this loader's own dump): a re-render replays the TURN'S
-// FIRST tool call verbatim, arguments and tool definition together. A turn that ran get_component
-// or data_collections before open_component therefore hands us an envelope addressed to that other
-// call — toolInput = {"name":"dev-probe"} with toolInfo.tool = get_component's definition.
+// FIRST tool call verbatim, arguments and tool definition together. A turn that ran get_app
+// or data_collections before open_app therefore hands us an envelope addressed to that other
+// call — toolInput = {"name":"dev-probe"} with toolInfo.tool = get_app's definition.
 // Returns that tool's name only when it is positively NOT one of ours; anything unknown returns
 // null, because guessing wrong here would blame the host for our own failure to know.
 function boundToolName() {
@@ -139,7 +139,7 @@ function boundToolName() {
 
 // WHICH APP AM I — three questions, all answerable now, and then we stop.
 //
-//   1. did someone just tell us (live toolInput / N11's state.component)?
+//   1. did someone just tell us (live toolInput / N11's state.app)?
 //   2. did the host replay a note we wrote on a previous mount (__OMA_IDENTITY__)?
 //      This is the one that survives a re-render bound to another call.
 //   3. neither — so say so, immediately.
@@ -152,8 +152,8 @@ function boundToolName() {
 // of the one screen that explains what happened. Measured, too: every re-render that failed was
 // handed another call's envelope verbatim — an envelope that will never name us, no matter how
 // long we hold it.
-function componentName(state) {
-  var live = (oma.toolInput && oma.toolInput.component) || state.component;
+function appName(state) {
+  var live = (oma.toolInput && oma.toolInput.app) || state.app;
   if (live) return live;
   try { return window.__OMA_IDENTITY__() || null; } catch (e) { return null; }
 }
@@ -164,8 +164,8 @@ function identityChannels() {
   try { ti = oma.toolInput || null; } catch (e) {}
   try { st = oma.state || null; } catch (e) {}
   try { hc = window.__OMA_HOST_CONTEXT__ || null; } catch (e) {}
-  ch.push(["toolInput.component", ti && ti.component ? ti.component : null]);
-  ch.push(["state.component", st && st.component ? st.component : null]);
+  ch.push(["toolInput.app", ti && ti.app ? ti.app : null]);
+  ch.push(["state.app", st && st.app ? st.app : null]);
   ch.push(["state.collection", st && st.collection ? st.collection : null]);
   var info = hc && hc.toolInfo;
   ch.push(["hostContext.toolInfo.id", info && info.id != null ? String(info.id) : null]);
@@ -173,7 +173,7 @@ function identityChannels() {
   // The channel that does not depend on the host binding this render to the right call.
   var kept = null;
   try { kept = (window.openai && window.openai.widgetState && window.openai.widgetState.__oma) || null; } catch (e) {}
-  ch.push(["openai.widgetState.__oma", kept && kept.component ? kept.component : null]);
+  ch.push(["openai.widgetState.__oma", kept && kept.app ? kept.app : null]);
   return ch;
 }
 function lost() {
@@ -183,7 +183,7 @@ function lost() {
   try { d.toolInput = oma.toolInput || null; } catch (e) { d.toolInput = "READ FAILED: " + e; }
   try {
     var s = oma.state || {};
-    d.state = { component: s.component, collection: s.collection, host: s.host, version: s.version, total: s.total, items: (s.items || []).length };
+    d.state = { app: s.app, collection: s.collection, host: s.host, version: s.version, total: s.total, items: (s.items || []).length };
   } catch (e) { d.state = "READ FAILED: " + e; }
   try { d.hostContext = window.__OMA_HOST_CONTEXT__ === undefined ? "undefined (bridge never connected — host sent no context)" : window.__OMA_HOST_CONTEXT__; } catch (e) { d.hostContext = "READ FAILED: " + e; }
   try { d.url = location.href; d.referrer = document.referrer || null; d.frameName = window.name || null; } catch (e) {}
@@ -272,13 +272,13 @@ function mount(html) {
 // A REJECTION inside a window is a real host answer (denied, tool error) and is terminal —
 // every window sits under the runtime's own 10s bridge deadline, so a deadline rejection can
 // only belong to an attempt already abandoned here (and the settled flag discards it).
-function fetchComponentHtml(name) {
+function fetchAppHtml(name) {
   const WINDOWS = [3000, 5000, 7000, 9000];
   return new Promise(function (resolve, reject) {
     let attempt = 0;
     function go() {
       const n = attempt++;
-      if (n > 0) show("Loading component… (retry " + n + " of " + (WINDOWS.length - 1) + ")");
+      if (n > 0) show("Loading app… (retry " + n + " of " + (WINDOWS.length - 1) + ")");
       let settled = false;
       const timer = setTimeout(function () {
         if (settled) return;
@@ -286,7 +286,7 @@ function fetchComponentHtml(name) {
         if (attempt < WINDOWS.length) go();
         else reject(new Error("the host did not answer " + WINDOWS.length + " attempts — close and reopen this widget"));
       }, WINDOWS[n]);
-      oma.callTool("component_html", { name }).then(function (r) {
+      oma.callTool("app_html", { name }).then(function (r) {
         if (settled) return;
         settled = true; clearTimeout(timer); resolve(r);
       }, function (e) {
@@ -302,11 +302,11 @@ oma.ready(async (state) => {
   // We are alive: from here the ladder below owns the failure surface, so stand the watchdog down.
   try { window.__OMA_LOADER_STARTED__ = true; } catch (e) {}
   try {
-    const name = componentName(state);
+    const name = appName(state);
     if (!name) return lost();
-    const r = await fetchComponentHtml(name);
+    const r = await fetchAppHtml(name);
     const sc = (r && r.structuredContent) || {};
-    if (!sc.html) return show('Component "' + name + '" not found in the registry.');
+    if (!sc.html) return show('App "' + name + '" not found in the registry.');
     // BIND FROM THE ANSWER WE ALREADY HAVE. This one document serves every app, so it cannot be
     // baked with a binding the way a per-app document is — which left state.collection waiting on a
     // host push that a refresh does not always replay, and every write going out as collection:null.
@@ -321,8 +321,8 @@ oma.ready(async (state) => {
     if (sc.tier == null || sc.tier === "local") {
       // Identity for the runtime's render-health reporter (auto-revert): on this loader path the
       // runtime module has already evaluated, so the globals are simply read later at error time.
-      window.__OMA_COMPONENT__ = name;
-      if (sc.version != null) window.__OMA_COMPONENT_VERSION__ = sc.version;
+      window.__OMA_APP__ = name;
+      if (sc.version != null) window.__OMA_APP_VERSION__ = sc.version;
       return mount(sc.html);
     }
     document.body.innerHTML = "";
@@ -333,7 +333,7 @@ oma.ready(async (state) => {
       tier: sc.tier,
       collection: sc.collection || state.collection || name,
     });
-  } catch (e) { show("Failed to load component: " + (e && e.message ? e.message : e)); }
+  } catch (e) { show("Failed to load app: " + (e && e.message ? e.message : e)); }
 });
 `;
 
@@ -342,10 +342,10 @@ oma.ready(async (state) => {
 // Still valid JSON — JSON.parse and the JS parser both read < as "<".
 const scriptJson = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 
-// Host design tokens supplied by the EMBEDDER. Components are written against the host's
+// Host design tokens supplied by the EMBEDDER. Apps are written against the host's
 // token layer (var(--color-text-info, …)); a chat host provides it, but an embedder that
 // renders widgets in its own product — the hosted shell, any other integration — has to
-// supply one or every component falls back to the neutral defaults above and looks foreign
+// supply one or every app falls back to the neutral defaults above and looks foreign
 // inside it.
 //
 // Deliberately a MAP, not a CSS string. The removed brandCss option took a raw blob and a
@@ -366,19 +366,19 @@ function hostTokenStyle(tokens) {
   return decls.length === 0 ? "" : `<style data-oma="host-tokens">:root{${decls.join(";")}}</style>\n`;
 }
 
-/** The universal-loader document: the ONE page that knows how to open a component of any tier.
+/** The universal-loader document: the ONE page that knows how to open an app of any tier.
  *
- *  opts.standalone — {endpoint, collection, component, …}: browser-viewer mode, the same shape
- *  wrapComponent takes, and it must be defined BEFORE the runtime module evaluates for the same
+ *  opts.standalone — {endpoint, collection, app, …}: browser-viewer mode, the same shape
+ *  wrapApp takes, and it must be defined BEFORE the runtime module evaluates for the same
  *  reason. Passing it is what lets the local /view route reuse this document instead of keeping a
- *  second copy of the tier branch: a non-local component has no direct-mount path anywhere, so the
+ *  second copy of the tier branch: a non-local app has no direct-mount path anywhere, so the
  *  route that used to fail closed now serves THIS, and the loader does what it does under a host —
- *  read component_html (over /rpc here), see a non-local tier, hand the source to oma.embed and
+ *  read app_html (over /rpc here), see a non-local tier, hand the source to oma.embed and
  *  let the runner enforce caps. One tier branch, two transports.
  *
- *  The loader carries `component` in `standalone` rather than as its own global: __OMA_COMPONENT__
- *  is the identity of the document's OWN component (render-health reports it), and the loader is
- *  not the component — it mounts one. state.component is where the loader reads the name. */
+ *  The loader carries `app` in `standalone` rather than as its own global: __OMA_APP__
+ *  is the identity of the document's OWN app (render-health reports it), and the loader is
+ *  not the app — it mounts one. state.app is where the loader reads the name. */
 export function wrapLoader(opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
 ${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
@@ -386,45 +386,45 @@ ${kitStyle(KIT_CSS())}
 <script data-oma="watchdog">${LOADER_WATCHDOG}</script>
 <script type="module" data-oma="runtime">${runtime()}</script>
 <script type="module" data-oma="loader">${LOADER_JS}</script>
-</head><body><div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-family:var(--font-sans)">Loading component…</div></body></html>`;
+</head><body><div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-family:var(--font-sans)">Loading app…</div></body></html>`;
 }
 
 /**
- * Wrap component HTML into the final document.
- * opts.standalone — {endpoint, events, collection, component, chrome, viewBase}: browser-viewer
+ * Wrap app HTML into the final document.
+ * opts.standalone — {endpoint, events, collection, app, chrome, viewBase}: browser-viewer
  * mode (no MCP host); the config global must be defined BEFORE the runtime module evaluates.
  * endpoint/events default to "/rpc" and "/events"; an embedding front door (hosted shell)
  * points them at its own same-origin proxy paths. chrome:false renders the BARE widget —
  * no viewer bar, no stage framing — for shells that own the surrounding chrome. viewBase is
- * the base path for component→component links (window.oma.viewBase, default "/view/"); an
+ * the base path for app→app links (window.oma.viewBase, default "/view/"); an
  * embedding shell points it at its own mount base. It flows through window.__OMA_STANDALONE__
  * to the runtime as-is — no other engine code change is needed for it to reach oma.viewBase.
- * opts.component — component name, injected as window.__OMA_COMPONENT__ so the runtime knows
+ * opts.app — app name, injected as window.__OMA_APP__ so the runtime knows
  * its identity on the dynamic-tools resource path (the generic loader cannot carry it).
  */
-export function wrapComponent(componentHtml, opts = {}) {
-  // The early-error buffer is a CLASSIC script and goes FIRST: component classic inline scripts
+export function wrapApp(appHtml, opts = {}) {
+  // The early-error buffer is a CLASSIC script and goes FIRST: app classic inline scripts
   // run at parse time BEFORE the (deferred) runtime module, so only a parse-time hook can see
   // their errors. The runtime drains this buffer for the render-health report (auto-revert).
   const inject =
     `<script data-oma="early-errors">window.__OMA_EARLY_ERRORS__=[];(function(b){function p(m){if(b.length<5)b.push(String(m).slice(0,300))}window.addEventListener("error",function(e){p((e&&e.message)||"script error")});window.addEventListener("unhandledrejection",function(e){p((e&&e.reason&&e.reason.message)||e.reason||"unhandled rejection")});})(window.__OMA_EARLY_ERRORS__)</script>\n` +
     (opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : "") +
-    (opts.component ? `<script data-oma="component">window.__OMA_COMPONENT__=${scriptJson(opts.component)}</script>\n` : "") +
+    (opts.app ? `<script data-oma="app">window.__OMA_APP__=${scriptJson(opts.app)}</script>\n` : "") +
     (opts.collection ? `<script data-oma="collection">window.__OMA_COLLECTION_HINT__=${scriptJson(opts.collection)}</script>\n` : "") +
-    (opts.version != null ? `<script data-oma="component-version">window.__OMA_COMPONENT_VERSION__=${scriptJson(opts.version)}</script>\n` : "") +
+    (opts.version != null ? `<script data-oma="app-version">window.__OMA_APP_VERSION__=${scriptJson(opts.version)}</script>\n` : "") +
     `<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>\n` +
     hostTokenStyle(opts.tokens) + // after the fallbacks, so the embedder's values win
     kitStyle(KIT_CSS()) + "\n" + // …and after the tokens, since every kit colour reads one
     `<script type="module" data-oma="runtime">${runtime()}</script>\n`;
 
-  // Put the shell BEFORE the component's own markup/scripts so window.oma exists first
+  // Put the shell BEFORE the app's own markup/scripts so window.oma exists first
   // (module scripts execute in document order).
-  if (/<head[^>]*>/i.test(componentHtml)) {
-    return componentHtml.replace(/<head[^>]*>/i, (m) => m + "\n" + inject);
+  if (/<head[^>]*>/i.test(appHtml)) {
+    return appHtml.replace(/<head[^>]*>/i, (m) => m + "\n" + inject);
   }
-  if (/<html[^>]*>/i.test(componentHtml)) {
-    return componentHtml.replace(/<html[^>]*>/i, (m) => m + "\n<head>" + inject + "</head>");
+  if (/<html[^>]*>/i.test(appHtml)) {
+    return appHtml.replace(/<html[^>]*>/i, (m) => m + "\n<head>" + inject + "</head>");
   }
   // Fragment: build a full document around it.
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body>${componentHtml}</body></html>`;
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body>${appHtml}</body></html>`;
 }

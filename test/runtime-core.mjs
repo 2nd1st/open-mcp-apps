@@ -151,7 +151,7 @@ ok("no events ⇒ advance the mark to latest (a foreign write costs a probe, nev
 ok("an unknown shape walks — being safe beats being clever", decideChanges(null).kind === "walk");
 
 console.log("6. viaOf — the frozen object form");
-ok("component form", viaOf("my-app").component === "my-app" && viaOf("my-app").function === undefined);
+ok("app form", viaOf("my-app").app === "my-app" && viaOf("my-app").function === undefined);
 ok("function form", viaOf("my-app", "tick").function === "tick");
 ok("invalid names stamp nothing (a write never fails over its shadow)",
   viaOf("BAD NAME!") === undefined && viaOf("") === undefined && viaOf(null) === undefined);
@@ -200,7 +200,7 @@ console.log("7. themeVars — the user theme layer (tokens, never a stylesheet)"
     bad.length === 1 && bad[0][0] === "--v" && bad[0][1] === "var(--color-text-info, #3b6cf6)");
   ok("junk input yields nothing rather than throwing",
     themeVars(null).length === 0 && themeVars("nope").length === 0 && themeVars(undefined).length === 0);
-  ok("the prefix is outside the declared-key charset, so it cannot collide with a component pref",
+  ok("the prefix is outside the declared-key charset, so it cannot collide with an app pref",
     !/^[a-z][a-z0-9_]*$/.test(THEME_KEY_PREFIX + "--color-text-info"));
 }
 
@@ -248,10 +248,10 @@ console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app"
   // The roster travels: inert has no host to ask, so an app with an EMPTY collection is invisible
   // unless the embedder supplies the registry listing it already holds.
   const roster = [{ name: "notes" }, { name: "empty-app" }];
-  ok("the components roster survives the slice (inert list_components has no other source)",
-    childPreviewSnapshot(rows, { app: "notes", declaration: null, components: roster, tier: "local" }).components.length === 2);
+  ok("the apps roster survives the slice (inert list_apps has no other source)",
+    childPreviewSnapshot(rows, { app: "notes", declaration: null, apps: roster, tier: "local" }).apps.length === 2);
   ok("…and is an empty list, never undefined, when the embedder has none",
-    Array.isArray(childPreviewSnapshot(rows, { app: "notes", declaration: null, tier: "local" }).components));
+    Array.isArray(childPreviewSnapshot(rows, { app: "notes", declaration: null, tier: "local" }).apps));
 
   // Grammar defence: a manifest is data, and the store REJECTS the array form — a reader that
   // accepted it would silently bind to nothing.
@@ -261,7 +261,7 @@ console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app"
   ok("junk rows are dropped, not carried into a sandbox",
     childPreviewSnapshot([null, { collection: "notes" }, "x"], { app: "notes", declaration: null, tier: "local" }).items.length === 1);
 
-  // 🔴 THE TIER GATE. A manifest is written BY the component, so honouring it for an UNREVIEWED
+  // 🔴 THE TIER GATE. A manifest is written BY the app, so honouring it for an UNREVIEWED
   // app (share-install, T19 P-c) would let that app name its way into rows the parent has already
   // fetched — the shared snapshot is right there, and the slice is the only thing separating them.
   // Same gate contracts.mjs puts on the same question, and it FAILS CLOSED.

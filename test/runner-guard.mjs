@@ -44,13 +44,13 @@ console.log("1. the walls no cap combination can open");
 {
   const io = makeIo();
   const g = guard(FULL, io);
-  ok("control-plane tools denied under FULL caps + wildcard", await throws(() => g("callTool", { name: "save_component", args: {} }), /not available/));
-  ok("…case/padding variants too", await throws(() => g("callTool", { name: "  Save_Component ", args: {} }), /not available/));
+  ok("control-plane tools denied under FULL caps + wildcard", await throws(() => g("callTool", { name: "save_app", args: {} }), /not available/));
+  ok("…case/padding variants too", await throws(() => g("callTool", { name: "  Save_App ", args: {} }), /not available/));
   ok("library_* reserved prefix denied", await throws(() => g("callTool", { name: "library_install", args: {} }), /not available/));
   ok("internal `_` RPC names denied (undo and the via ledger never reach a child)",
     await throws(() => g("callTool", { name: "_undo_last", args: {} }), /not available/));
   ok("data_batch denied even under wildcard (the F2 seam, closed by name)",
-    await throws(() => g("callTool", { name: "data_batch", args: {} }), /not available to components/));
+    await throws(() => g("callTool", { name: "data_batch", args: {} }), /not available to apps/));
   ok("nothing above ever reached io", io.calls.length === 0);
 }
 
@@ -60,11 +60,11 @@ console.log("2. writes: identity is FORCED, never child-supplied");
   const g = guard(FULL, io);
   await g("addItem", { fields: { t: 1 } });
   const w = io.calls[0];
-  ok("typed write stamps actor:human + via:{component:child}", w.args.actor === "human" && w.args.via.component === "child-app");
-  await g("callTool", { name: "data_add_item", args: { collection: "elsewhere", via: { component: "forged" }, actor: "agent", fields: {} } });
+  ok("typed write stamps actor:human + via:{app:child}", w.args.actor === "human" && w.args.via.app === "child-app");
+  await g("callTool", { name: "data_add_item", args: { collection: "elsewhere", via: { app: "forged" }, actor: "agent", fields: {} } });
   const w2 = io.calls[1];
   ok("generic-path write: via/actor OVERWRITTEN (a forged via dies at the chokepoint)",
-    w2.args.via.component === "child-app" && w2.args.actor === "human");
+    w2.args.via.app === "child-app" && w2.args.actor === "human");
   ok("cross_collection_write=true lets the collection through", w2.args.collection === "elsewhere");
   const io2 = makeIo();
   await guard({ ...FULL, cross_collection_write: false }, io2)("callTool", { name: "data_add_item", args: { collection: "elsewhere", fields: {} } });
@@ -73,7 +73,7 @@ console.log("2. writes: identity is FORCED, never child-supplied");
     const io3 = makeIo();
     await guard(FULL, io3)("callFunction", { function: "tick", args: {} });
     const c = io3.calls[0];
-    return c.name === "call_function" && c.args.component === "child-app" && c.args.via.component === "child-app" && !!c.args.command_id;
+    return c.name === "call_function" && c.args.app === "child-app" && c.args.via.app === "child-app" && !!c.args.command_id;
   })());
 }
 
@@ -85,7 +85,7 @@ console.log("3. scope, write policy, settings and delete guards");
   await g("updateItem", { id: "in1", fields: {} });
   // LAST-WRITE-WINS, matching direct mode (Leo 2026-07-27). Sending the version the child was last
   // SHOWN made a second rapid click carry a pre-echo stale one; here the resulting conflict came
-  // back as an isError the child bridge RESOLVES with, so a component that ignores the return value
+  // back as an isError the child bridge RESOLVES with, so an app that ignores the return value
   // lost the write with nothing on screen. Explicit OCC is still reachable through generic callTool.
   ok("a typed write does NOT send expected_version — one policy for one verb, LWW like direct mode",
     io.calls[0].args.expected_version === undefined);
@@ -122,11 +122,11 @@ console.log("4. reads: binding + caps");
   const io3 = makeIo();
   const rc = await guard({ ...FULL, cross_collection_read: false }, io3)("readCollection", { collection: "other" });
   ok("readCollection binds too", rc.collection === "bound");
-  ok("component source reads need read_source", await throws(
-    () => guard({ ...FULL, read_source: false }, makeIo())("callTool", { name: "get_component", args: {} }), /source read denied/));
+  ok("app source reads need read_source", await throws(
+    () => guard({ ...FULL, read_source: false }, makeIo())("callTool", { name: "get_app", args: {} }), /source read denied/));
   const io4 = makeIo();
-  await guard(FULL, io4)("callTool", { name: "file_read", args: { component: "other", path: "x" } });
-  ok("file reads bound to the child's OWN files", io4.calls[0].args.component === "child-app");
+  await guard(FULL, io4)("callTool", { name: "file_read", args: { app: "other", path: "x" } });
+  ok("file reads bound to the child's OWN files", io4.calls[0].args.app === "child-app");
   ok("file reads need the cap", await throws(
     () => guard({ ...FULL, file_read: false }, makeIo())("filesRead", { path: "x" }), /file read denied/));
   const fr = await guard(FULL, makeIo())("filesRead", { path: "x" });
@@ -146,8 +146,8 @@ console.log("5. rates — one table, enforced");
 
 console.log("5b. …and the notice says WHOSE budget ran out, once");
 // Both halves are measured defects (2026-07-28), not hypotheticals. The stamps are per-guard, so
-// a preview starves its OWN allowance — yet the notice named the component, and settings' Installed
-// grid reported 'Component "dashboard" hit its refresh rate limit' while the real dashboard was
+// a preview starves its OWN allowance — yet the notice named the app, and settings' Installed
+// grid reported 'App "dashboard" hit its refresh rate limit' while the real dashboard was
 // fine. It said it four times, too: every refused call notified, so ten installed apps meant a
 // toast storm. A notice that misattributes is worse than none — the user goes looking at an app
 // that has nothing wrong with it.
@@ -165,8 +165,8 @@ console.log("5b. …and the notice says WHOSE budget ran out, once");
   ok("one notice per saturation episode, not one per refused call", preview.length === 1, `${preview.length} notices`);
   ok("a starved PREVIEW does not read as the app being throttled",
     /^Preview of "child-app"/.test(preview[0] || "") && /app itself is unaffected/.test(preview[0] || ""), preview[0]);
-  ok("a live widget still reports as the component itself",
-    /^Component "child-app"/.test(live[0] || "") && live.length === 1, live[0]);
+  ok("a live widget still reports as the app itself",
+    /^App "child-app"/.test(live[0] || "") && live.length === 1, live[0]);
 }
 
 console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's inert preset does");
@@ -198,15 +198,15 @@ console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's 
     listed.structuredContent?.items?.length === 1, JSON.stringify(listed.structuredContent));
   const unknown = await oma.callTool("something_else", {});
   ok("an unrelated tool still answers empty, not wrong", JSON.stringify(unknown.structuredContent) === "{}");
-  // A meta component asks WHICH collections exist, and WHICH apps exist, before it asks for rows.
+  // A meta app asks WHICH collections exist, and WHICH apps exist, before it asks for rows.
   // Answering either with an empty envelope renders an app whose whole job is "show me everything"
   // as though the user owned nothing — on the machine that composes PUBLIC preview pages.
   const cols = await oma.callTool("data_collections", {});
   ok("the stub derives data_collections from the same fixtures",
     cols.structuredContent.collections.map((c) => c.collection).sort().join() === "a,b", JSON.stringify(cols.structuredContent));
-  const bare = await oma.callTool("list_components", {});
+  const bare = await oma.callTool("list_apps", {});
   ok("with no roster supplied it answers an EMPTY list — honest, and never undefined",
-    Array.isArray(bare.structuredContent.components) && bare.structuredContent.components.length === 0);
+    Array.isArray(bare.structuredContent.apps) && bare.structuredContent.apps.length === 0);
 
   // ⚠️ This pair replaces a single `Array.isArray(...)` assertion that passed on `[]` — i.e. it
   // passed whether or not the roster was ever wired, and it was covering a half-finished fix.
@@ -215,12 +215,12 @@ console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's 
   const withRoster = stubOmaScript("a", items, [{ name: "a" }, { name: "empty-app" }]);
   const w2 = {};
   new Function("window", withRoster.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, ""))(w2);
-  const named = await w2.oma.callTool("list_components", {});
+  const named = await w2.oma.callTool("list_apps", {});
   ok("…and hands back the composer's roster VERBATIM when there is one",
-    named.structuredContent.components.map((c) => c.name).sort().join() === "a,empty-app",
-    JSON.stringify(named.structuredContent.components));
+    named.structuredContent.apps.map((c) => c.name).sort().join() === "a,empty-app",
+    JSON.stringify(named.structuredContent.apps));
   ok("…including the app that has no rows at all (the whole point of carrying a roster)",
-    named.structuredContent.components.some((c) => c.name === "empty-app"));
+    named.structuredContent.apps.some((c) => c.name === "empty-app"));
 }
 
 console.log("5c2. …and it counts collections in a container that has no inherited keys (N7)");
@@ -278,24 +278,24 @@ console.log("5c3. the preview document TELLS its embedder how tall it is");
 
 console.log("5d. the PARENTED inert preset answers the same two questions from its snapshot");
 // The other inert machine. Its roster arrives through oma.embed's childSnap, which used to
-// rebuild the snapshot from an explicit key list and dropped `components` on the floor — so this
+// rebuild the snapshot from an explicit key list and dropped `apps` on the floor — so this
 // half of "both preview machines now agree" was never true. Pinned on the guard directly.
 {
   const snap = {
     collection: "a",
     items: [{ id: "i1", group: "", position: 1, fields: { t: "x" }, version: 1, collection: "a" }],
-    components: [{ name: "a" }, { name: "empty-app" }],
+    apps: [{ name: "a" }, { name: "empty-app" }],
     version: 3,
   };
   const g = guard(FULL, makeIo({ snapshot: () => snap }), "inert", "local");
-  const roster = await g("callTool", { name: "list_components", args: {} });
-  ok("inert answers list_components from the snapshot's roster",
-    roster.structuredContent.components.map((c) => c.name).sort().join() === "a,empty-app",
-    JSON.stringify(roster.structuredContent.components));
+  const roster = await g("callTool", { name: "list_apps", args: {} });
+  ok("inert answers list_apps from the snapshot's roster",
+    roster.structuredContent.apps.map((c) => c.name).sort().join() === "a,empty-app",
+    JSON.stringify(roster.structuredContent.apps));
   const noRoster = await guard(FULL, makeIo({ snapshot: () => ({ collection: "a", items: [], version: 1 }) }), "inert", "local")(
-    "callTool", { name: "list_components", args: {} });
+    "callTool", { name: "list_apps", args: {} });
   ok("…and an empty list when the embedder had none, never undefined",
-    Array.isArray(noRoster.structuredContent.components) && noRoster.structuredContent.components.length === 0);
+    Array.isArray(noRoster.structuredContent.apps) && noRoster.structuredContent.apps.length === 0);
 }
 
 console.log("6. presets — readonly refuses writes; inert touches nothing");
@@ -305,15 +305,15 @@ console.log("6. presets — readonly refuses writes; inert touches nothing");
   ok("readonly: every write path refuses", await throws(() => g("addItem", { fields: {} }), /read-only/));
   const snap = await g("refresh", {});
   ok("readonly: refresh answers from the cached snapshot, zero io", snap.collection === "bound" && io.calls.length === 0);
-  await g("callTool", { name: "list_components", args: {} });
-  ok("readonly local tier keeps the three-tool browse allowance", io.calls[0].name === "list_components");
+  await g("callTool", { name: "list_apps", args: {} });
+  ok("readonly local tier keeps the three-tool browse allowance", io.calls[0].name === "list_apps");
   const io2 = makeIo();
   await guard(FULL, io2, "readonly", "unreviewed")("callTool", { name: "data_list", args: { collection: "other" } });
   ok("readonly non-local: only data_list, FORCED to the bound collection", io2.calls[0].args.collection === "bound");
   ok("readonly non-local: enumeration denied", await throws(
-    () => guard(FULL, makeIo(), "readonly", "unreviewed")("callTool", { name: "list_components", args: {} }), /read-only/));
+    () => guard(FULL, makeIo(), "readonly", "unreviewed")("callTool", { name: "list_apps", args: {} }), /read-only/));
   ok("readonly: control-plane still walled", await throws(
-    () => guard(FULL, makeIo(), "readonly", "local")("callTool", { name: "save_component", args: {} }), /not available/));
+    () => guard(FULL, makeIo(), "readonly", "local")("callTool", { name: "save_app", args: {} }), /not available/));
   const io3 = makeIo();
   const gi = guard(FULL, io3, "inert");
   const w = await gi("addItem", { fields: {} });
@@ -365,7 +365,7 @@ console.log("7. the child document + bridge surface");
   const kitted = composeChildDoc("<h1>x</h1>", { tokenCss: "<style>:root{}</style>", kitCss: ".k-btn{color:red}" });
   ok("the kit travels into the child (a separate document inherits no CSS)",
     kitted.includes('<style data-oma="kit">.k-btn{color:red}</style>'));
-  ok("…after the tokens it reads, and before the component's own markup",
+  ok("…after the tokens it reads, and before the app's own markup",
     kitted.indexOf("data-oma=\"kit\"") > kitted.indexOf("<style>:root{}") && kitted.indexOf("data-oma=\"kit\"") < kitted.indexOf("<h1>"));
   ok("no kit supplied ⇒ no empty tag emitted", !composeChildDoc("<p>x</p>").includes("data-oma=\"kit\""));
   ok("bridge treats an explicit `changed` as a change, even at an unmoved version",
@@ -402,7 +402,7 @@ console.log("9. write-set D adversarial review — the four P0 holes, pinned shu
   await guard(FULL, io2)("callTool", { name: "data_changes", args: { collection: "other", since: 0 } });
   ok("…and still free with cross_collection_read", io2.calls[0].args.collection === "other");
 
-  // P0-4: the chunked family carries no `component` — only an id minted server-side.
+  // P0-4: the chunked family carries no `app` — only an id minted server-side.
   const uploadIo = (overrides) => makeIo({
     callTool: async (name, args) => { overrides.calls.push({ name, args }); return { structuredContent: name === "file_write_begin" ? { upload_id: "up-A" } : { ok: true } }; },
     ...overrides,
@@ -410,19 +410,19 @@ console.log("9. write-set D adversarial review — the four P0 holes, pinned shu
   const calls = [];
   const gA = guard(FULL, uploadIo({ calls }));
   ok("an upload_id this child never opened is refused", await throws(
-    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-VICTIM", data_base64: "QQ==" } }), /not opened by this component/));
+    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-VICTIM", data_base64: "QQ==" } }), /not opened by this app/));
   await gA("callTool", { name: "file_write_begin", args: {} });
-  ok("file_write_begin is still component-bound", calls[0].args.component === "child-app");
+  ok("file_write_begin is still app-bound", calls[0].args.app === "child-app");
   await gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } });
   ok("…and its OWN id then works", calls[1].name === "file_write_chunk");
   await gA("callTool", { name: "file_write_commit", args: { upload_id: "up-A", path: "f.txt" } });
   ok("commit retires the id — a replay after commit is refused", await throws(
-    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } }), /not opened by this component/));
+    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } }), /not opened by this app/));
   const calls2 = [];
   const gB = guard(FULL, uploadIo({ calls: calls2 }));
   await gB("callTool", { name: "file_write_begin", args: {} });
   ok("a SECOND child holding the same id string is still refused (per-guard set)", await throws(
-    () => gA("callTool", { name: "file_write_abort", args: { upload_id: "up-A" } }), /not opened by this component/));
+    () => gA("callTool", { name: "file_write_abort", args: { upload_id: "up-A" } }), /not opened by this app/));
   ok("the chunked family still needs the file_write cap at all", await throws(
     () => guard({ ...FULL, file_write: false }, makeIo())("callTool", { name: "file_write_chunk", args: { upload_id: "x" } }), /file write denied/));
 

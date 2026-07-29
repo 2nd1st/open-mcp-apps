@@ -1,7 +1,7 @@
 {
   "name": "open-mcp-apps",
-  "version": "0.3.2",
-  "description": "Give your AI a persistent, reusable UI — it builds the component once, you keep it forever. An open MCP App engine.",
+  "version": "0.4.0",
+  "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
   "directories": {
     "test": "test"
   },

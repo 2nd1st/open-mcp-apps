@@ -1,8 +1,8 @@
 /* components/_system.css — open-mcp-app system UI kit v1. INJECTED by the engine into every
-   rendered document (wrapComponent / wrapLoader / the sandboxed child / server-composed previews),
-   so every component gets these classes for free — no marker, no copy, nothing to import.
-   It used to be inlined at seed time into the three system components only, which made it
-   invisible to authors: measured k- usage across four real components was ZERO.
+   rendered document (wrapApp / wrapLoader / the sandboxed child / server-composed previews),
+   so every app gets these classes for free — no marker, no copy, nothing to import.
+   It used to be inlined at seed time into the three system apps only, which made it
+   invisible to authors: measured k- usage across four real apps was ZERO.
    All colors derive from host design tokens; fallback chains end in the shell fallbacks.
    Compact on purpose; hard cap 10KB source — it ships with EVERY widget. */
 :root{

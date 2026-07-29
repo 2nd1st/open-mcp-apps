@@ -12,7 +12,7 @@
 // up as a failing build rather than a silent regression. If the handler is not where we expect, we
 // leave the server exactly as it was — a missing optimisation, never a broken listing.
 
-import { LOADER_URI } from "./tools/components.mjs";
+import { LOADER_URI } from "./tools/apps.mjs";
 
 // Keywords whose MEANING differs between draft-07 and 2020-12. If a schema uses none of them, the
 // two dialects agree on every keyword it actually contains, so the declaration carries no
@@ -66,8 +66,8 @@ function dropRedundantDialect(value) {
  *
  *   · dynamic tools OFF (the default): every tenant sees the identical 34 tools. Nothing in the
  *     list is user-specific, so "public" is true and lets shared infrastructure cache it once.
- *   · dynamic tools ON: the list contains one open_<name> per component, i.e. THIS tenant's
- *     component names. Declaring that "public" would leak them through a shared cache. "private"
+ *   · dynamic tools ON: the list contains one open_<name> per app, i.e. THIS tenant's
+ *     app names. Declaring that "public" would leak them through a shared cache. "private"
  *     confines reuse to the same authorization context.
  *
  * Getting this wrong is not a performance bug, it is a cross-tenant disclosure — which is why the
@@ -75,7 +75,7 @@ function dropRedundantDialect(value) {
  */
 export function listCacheHints({ dynamicTools }) {
   return dynamicTools
-    ? { ttlMs: 10_000, cacheScope: "private" }   // changes whenever a component is saved
+    ? { ttlMs: 10_000, cacheScope: "private" }   // changes whenever an app is saved
     : { ttlMs: 300_000, cacheScope: "public" }; // fixed for the life of the process
 }
 
@@ -85,11 +85,11 @@ export function listCacheHints({ dynamicTools }) {
  *
  * There are exactly two kinds of document behind our `ui://` space, and they want opposite hints:
  *
- *   · STORE-DERIVED — the per-component resources and the list that enumerates them. The bytes are
- *     the user's own app, and the list is the user's own component names. `private`, because a
+ *   · STORE-DERIVED — the per-app resources and the list that enumerates them. The bytes are
+ *     the user's own app, and the list is the user's own app names. `private`, because a
  *     shared cache serving one tenant's app to another is a disclosure, not a slow render. And
  *     `ttlMs: 0` — "immediately stale, re-fetch when needed" — because the AI can rewrite a
- *     component mid-sentence: any freshness window we promise here is a window in which the user
+ *     app mid-sentence: any freshness window we promise here is a window in which the user
  *     sees the app they just changed, unchanged. We have no basis to promise one, so we promise
  *     none. (Spec: 0 is a defined value, not the absence of a hint.)
  *   · ENGINE-CONSTANT — answers built from the engine binary alone. Byte-identical for every tenant
@@ -169,7 +169,7 @@ export function installCacheHints(server, { dynamicTools }) {
   // Resources are wrapped one by one and each is optional: a server with no resources registered
   // has no such handler, and that is not an error.
   for (const [method, hints] of [
-    ["resources/list", STORE_DERIVED],           // enumerates ui:// per component = tenant names
+    ["resources/list", STORE_DERIVED],           // enumerates ui:// per app = tenant names
     ["resources/templates/list", ENGINE_CONSTANT], // URI patterns only (pinned empty by the smoke)
   ]) {
     const list = handlers.get(method);

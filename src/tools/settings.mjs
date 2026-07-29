@@ -8,7 +8,7 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { SETTINGS_COLLECTION, RESERVED_KEY_RE } from "../store.mjs";
-import { RO, WRITE, snapshotSchema, ackSchema, capsShape, SHARED_PREFS, LOCKED_COMPONENTS, tierOf, CAP_NAMES } from "../contracts.mjs";
+import { RO, WRITE, snapshotSchema, ackSchema, capsShape, SHARED_PREFS, LOCKED_APPS, tierOf, CAP_NAMES } from "../contracts.mjs";
 
 export function register(ctx) {
   const { server, store, hostName, failNote, fail, computeCaps, toAck } = ctx;
@@ -19,7 +19,7 @@ export function register(ctx) {
     {
       title: "Shared preference catalog",
       annotations: RO,
-      description: "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Components read effective values via oma.pref(); this tool only describes what exists. Read-only.",
+      description: "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Apps read effective values via oma.pref(); this tool only describes what exists. Read-only.",
       inputSchema: {},
       outputSchema: {
         shared: z.array(z.object({
@@ -39,14 +39,14 @@ export function register(ctx) {
 
   // ------------------------------------------------------ permissions overview (settings pane)
   server.registerTool(
-    "component_permissions",
+    "app_permissions",
     {
-      title: "Component permissions overview",
+      title: "App permissions overview",
       annotations: RO,
-      description: "For every component: its author, trust tier, whether it's a locked system component, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
+      description: "For every app: its author, trust tier, whether it's a locked system app, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
       inputSchema: {},
       outputSchema: {
-        components: z.array(z.object({
+        apps: z.array(z.object({
           name: z.string(), author: z.string(),
           tier: z.enum(["local", "library-reviewed", "unreviewed"]),
           locked: z.boolean(), caps: capsShape,
@@ -54,15 +54,15 @@ export function register(ctx) {
       },
     },
     async () => {
-      const components = store.listComponents().map((c) => {
+      const apps = store.listApps().map((c) => {
         const tier = tierOf(c.author);
-        return { name: c.name, author: c.author, tier, locked: LOCKED_COMPONENTS.has(c.name), caps: computeCaps(c.name, tier) };
+        return { name: c.name, author: c.author, tier, locked: LOCKED_APPS.has(c.name), caps: computeCaps(c.name, tier) };
       });
-      const text = components.length
-        ? "Component permissions:\n" + components.map((c) =>
+      const text = apps.length
+        ? "App permissions:\n" + apps.map((c) =>
             `  - ${c.name} · tier ${c.tier} (by ${c.author})${c.locked ? " · LOCKED" : ""} · files ${c.caps.file_read ? "r" : "-"}${c.caps.file_write ? "w" : "-"} · sendMessage ${c.caps.send_message ? "on" : "off"}`).join("\n")
-        : "No components installed.";
-      return { content: [{ type: "text", text }], structuredContent: { components } };
+        : "No apps installed.";
+      return { content: [{ type: "text", text }], structuredContent: { apps } };
     },
   );
 
@@ -70,7 +70,7 @@ export function register(ctx) {
   // The ONLY path that can write reserved security:*/policy:* keys. Privilege travels
   // out-of-band (store.executePrivileged), NEVER as a command field — so a prompt-injected
   // data_* call carrying {privileged:true} still hits the guard. Intended for the settings-app
-  // Permissions UI; per-component capability policy is enforced at the RUNNER (this only keeps
+  // Permissions UI; per-app capability policy is enforced at the RUNNER (this only keeps
   // the policy store itself tamper-evident — see docs/security-model.md §4).
   server.registerTool(
     "security_set",

@@ -1,5 +1,5 @@
 {
-  "_comment": "Canonical demo world — one consistent person's data, anchored to 2026-07-24, that screenshots, /view previews, and the first-party fixtures (dashboard/settings/library *.fixtures.json) derive from. Each key is a collection in the fixtures state shape {items:[...]}; fields mirror the shipped example components. Fixed ISO dates only — never Date.now().",
+  "_comment": "Canonical demo world — one consistent person's data, anchored to 2026-07-24, that screenshots, /view previews, and the first-party fixtures (dashboard/settings/library *.fixtures.json) derive from. Each key is a collection in the fixtures state shape {items:[...]}; fields mirror the shipped example apps. Fixed ISO dates only — never Date.now().",
   "bill-calendar": { "items": [
     { "id": "bc1", "group": "paid", "position": 1, "fields": { "name": "Rent", "amount": 1850, "currency": "USD", "due_date": "2026-07-08", "frequency": "monthly", "autopay": true, "paid_date": "2026-07-07" }, "version": 1 },
     { "id": "bc2", "group": "overdue", "position": 1, "fields": { "name": "Gym membership", "amount": 34.5, "currency": "USD", "due_date": "2026-07-22", "frequency": "monthly", "autopay": false, "paid_date": "" }, "version": 1 },

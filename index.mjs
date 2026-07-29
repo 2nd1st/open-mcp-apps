@@ -7,19 +7,19 @@
 // The engine stays single-tenant and transport-agnostic: a consumer picks the
 // isolation unit by the path it passes to openStore (one SQLite file = one
 // tenant), builds an engine per transport with createEngine(store, opts), and
-// serves widgets via the wrapComponent/wrapLoader documents. See README.
+// serves widgets via the wrapApp/wrapLoader documents. See README.
 
 export { createEngine, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor } from "./src/engine.mjs";
 export {
   openStore, defaultDbDir, defaultDbPath,
   SCHEMA_VERSION,
-  COMPONENT_NAME_RE, MAX_COMPONENT_HTML, SETTINGS_COLLECTION,
+  APP_NAME_RE, MAX_APP_HTML, SETTINGS_COLLECTION,
   RESERVED_KEY_RE, MAX_ITEM_FIELDS_BYTES,
   FILE_PATH_RE, MAX_FILE_BYTES, MAX_FILE_INLINE_BYTES,
   MAX_APP_FILE_BYTES, MAX_APP_FILE_COUNT,
   MAX_TOTAL_FILE_BYTES, MAX_TOTAL_FILE_COUNT,
 } from "./src/store.mjs";
-export { wrapComponent, wrapLoader, TOKEN_FALLBACK_CSS, KIT_CSS } from "./src/shell.mjs";
+export { wrapApp, wrapLoader, TOKEN_FALLBACK_CSS, KIT_CSS } from "./src/shell.mjs";
 // The ONE sandbox/preview machine (write-set D): embedding shells compose preview documents
 // and enforcement from these instead of keeping hand-synced copies.
 export {
@@ -28,4 +28,4 @@ export {
 } from "./src/runner.mjs";
 export { openFileChannel } from "./src/files.mjs";
 export { GUIDE } from "./src/guide.mjs";
-export { seedSystemComponents } from "./seed.mjs";
+export { seedSystemApps } from "./seed.mjs";

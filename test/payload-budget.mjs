@@ -73,7 +73,7 @@ await client.connect(new StdioClientTransport({
  *  emitted  — the whole result object, i.e. everything we put on the wire.
  *  text     — content[] only, which is what the MODEL is billed for on the widget path.
  *
- *  Probed live in claude.ai on 2026-07-26, on BOTH paths: after open_component (a widget tool) and
+ *  Probed live in claude.ai on 2026-07-26, on BOTH paths: after open_app (a widget tool) and
  *  after data_list (not a widget tool), the model could name nothing beyond what the text carried.
  *  So on THAT host structuredContent does not reach the model — it is routed to the widget — which
  *  is the asymmetry E1Δ is built on.

@@ -20,7 +20,7 @@ const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: tru
 // Applied to what the engine actually retains:
 //   · item edits/moves   → the ledger records them (item_updated{fields}, item_moved{from,to}), so
 //                          replaying from item_added reconstructs any point in time  → NOT destructive
-//   · component writes   → the html lives in component_history (see store.mjs schema)  → NOT destructive
+//   · app writes   → the html lives in app_history (see store.mjs schema)  → NOT destructive
 //   · settings writes    → ordinary items, same ledger                                 → NOT destructive
 //   · FILE overwrites    → the previous blob becomes an orphan and the GC sweep unlinks it. The bytes
 //                          are gone and nothing here can return them                   → DESTRUCTIVE
@@ -93,12 +93,12 @@ const snapshotSchema = {
 };
 // Per-app file metadata (the ref index shape; bytes never ride here — see file_read's data_base64).
 const fileMetaShape = z.object({
-  component: z.string(), path: z.string(), sha256: z.string(), size: z.number(),
+  app: z.string(), path: z.string(), sha256: z.string(), size: z.number(),
   mime: z.string(), version: z.number(), backend: z.string(),
   created_at: z.string(), updated_at: z.string(),
 });
-// The pinned caps shape (see CAP_NAMES/TIER_CAPS below) — served by component_html to the
-// loader/runner and by component_permissions to the settings Permissions pane.
+// The pinned caps shape (see CAP_NAMES/TIER_CAPS below) — served by app_html to the
+// loader/runner and by app_permissions to the settings Permissions pane.
 const capsShape = z.object({
   call_tools: z.array(z.string()), send_message: z.boolean(), update_context: z.boolean(),
   delete_items: z.enum(["allow", "confirm", "deny"]),
@@ -107,30 +107,32 @@ const capsShape = z.object({
   file_read: z.boolean(), file_write: z.boolean(),
 });
 
-// Reserved settings groups (docs/settings-design.md §8): a group is a component name, so
-// these may never BE component names. Blocks naming only — not writes into those groups.
+// Reserved settings groups (docs/settings-design.md §8): a group is an app name, so
+// these may never BE app names. Blocks naming only — not writes into those groups.
 // The last three are not vocabulary hygiene, they are a brick-the-server guard, and the mine is
 // live: install.mjs turns OMA_DYNAMIC_TOOLS on for every Anthropic host, and a per-app tool is
-// named `open_${name.replaceAll("-","_")}`. So an app called `component` registers `open_component`
+// named `open_${name.replaceAll("-","_")}`. So an app called `app` registers `open_app`
 // — the static opener's own name — the SDK throws on the duplicate, createEngine throws, and the
-// server no longer starts. At that point `delete_component` cannot be reached either: the only way
+// server no longer starts. At that point `delete_app` cannot be reached either: the only way
 // out is editing SQLite by hand. `app` collides with the loader URI the same way.
-// `component` and `app` are this product's own house vocabulary, so "make me a component tracker"
+// `app` and `component` are this product's own house vocabulary, so "make me an app tracker"
 // is a plausible thing for a user to say — which is exactly why a name cannot be allowed to reach
-// into the tool namespace.
-const RESERVED_COMPONENT_NAMES = new Set([
+// into the tool namespace. `component` is the RETIRED house word (v0.4.0) and stays refused: the
+// ledger, the archived docs and every store older than v0.4 still carry it, so letting it back in
+// through the front door would put a user's app and our own history under one word.
+const RESERVED_APP_NAMES = new Set([
   "security", "engine", "host", "system", "shell", "oma",
-  "component", "app", "loader",
+  "app", "component", "loader",
 ]);
 
-// The components the engine SHIPS and seeds into every fresh store. One definition, because two
+// The apps the engine SHIPS and seeds into every fresh store. One definition, because two
 // places need it for unrelated reasons and a drifting copy would be silent: seed.mjs decides what
-// to install, and engine.mjs uses "owns a component that is not one of these" as the signal that a
+// to install, and engine.mjs uses "owns an app that is not one of these" as the signal that a
 // user is past onboarding (see buildInstructions).
-const SEEDED_COMPONENTS = new Set(["settings", "dashboard", "library"]);
+const SEEDED_APPS = new Set(["settings", "dashboard", "library"]);
 
 // The SHARED preference catalog (P4 code/UI split): the ENGINE owns what shared prefs exist,
-// their types/defaults/labels; the settings component only RENDERS what ui_prefs_schema
+// their types/defaults/labels; the settings app only RENDERS what ui_prefs_schema
 // returns. One source of truth — a regenerated/broken settings UI can't redefine the catalog.
 const SHARED_PREFS = [
   { key: "locale", type: "string", label: "Locale", default: "auto", maxlength: 35,
@@ -154,12 +156,12 @@ const SHARED_PREFS = [
     desc: "Your name, for a personal greeting." },
 ];
 
-// Locked SYSTEM components: their UI + logic ship WITH the engine (import-fixed) and must never be
+// Locked SYSTEM apps: their UI + logic ship WITH the engine (import-fixed) and must never be
 // overwritten by the AI or a (possibly regenerated/hostile) widget through the TOOL surface. The
 // seed path and privileged installers write the store DIRECTLY (store.execute), so they are exempt
 // by construction — this lock lives at the tool boundary, not in the store. "dashboard" is
 // deliberately NOT here (it's the user's editable personal launcher); user apps stay editable too.
-const LOCKED_COMPONENTS = new Set(["settings", "library"]);
+const LOCKED_APPS = new Set(["settings", "library"]);
 
 // The 9 scenario-taxonomy category slugs (authoritative source: the shared
 // scenario-taxonomy doc, verified 2026-07-22; shared contract per
@@ -172,24 +174,24 @@ const SCENE_CATEGORIES = new Set([
 // ------------------------------------------------------------- default collection binding
 /** Which collection an app opens on when the caller names none.
  *
- *  It used to be the component's own NAME, full stop — the `collections` a component declares in
+ *  It used to be the app's own NAME, full stop — the `collections` an app declares in
  *  its #oma-manifest block took no part at all, so an app whose rows live under a different name
  *  opened BLANK (measured on 8 of 9 authoring runs; two models wrote their own workaround around
  *  it rather than report it). Now: an UNAMBIGUOUS declaration wins. Two or more declared and there
  *  is no "the" collection to pick, so the name stays the default and the caller can still say.
  *
- *  Lives here, not in the tool, because /view (http.mjs) mounts components by the same rule and a
+ *  Lives here, not in the tool, because /view (http.mjs) mounts apps by the same rule and a
  *  second copy of "what does this app open on" is a second answer waiting to disagree.
- *  Exported through engine.mjs alongside tierOf, for embedding shells that mount components too. */
+ *  Exported through engine.mjs alongside tierOf, for embedding shells that mount apps too. */
 const defaultCollectionFor = (comp) => {
   if (!comp) return null;
   // TIER GATE, and it is the whole reason this is a function and not two lines at the call site.
-  // The manifest is written BY THE COMPONENT. For a local (first-party / AI-authored) component
+  // The manifest is written BY THE APP. For a local (first-party / AI-authored) app
   // that is just it telling us where its own rows live. For an UNREVIEWED one it would be the
-  // component choosing what it is bound to — and the bound collection is precisely what the runner
+  // app choosing what it is bound to — and the bound collection is precisely what the runner
   // grants full typed read/write on regardless of cross_collection_read/write. A published
-  // component declaring `{"collections":{"private-ledger":{}}}` would then be handed another app's
-  // rows by the act of opening it. Untrusted components bind to their own NAME, full stop.
+  // app declaring `{"collections":{"private-ledger":{}}}` would then be handed another app's
+  // rows by the act of opening it. Untrusted apps bind to their own NAME, full stop.
   if (comp.manifest && tierOf(comp.author) === "local") {
     try {
       const names = Object.keys(JSON.parse(comp.manifest).collections || {});
@@ -203,7 +205,7 @@ const defaultCollectionFor = (comp) => {
 };
 
 // ------------------------------------------------------------------ trust tiers & caps
-// docs/security-model.md §2.3 step 1 + §3: component_html returns {html, author, tier, caps}.
+// docs/security-model.md §2.3 step 1 + §3: app_html returns {html, author, tier, caps}.
 // The ENGINE is the single reader of security:*/policy:* when building caps; the RUNNER
 // (wrapLoader's runner branch) enforces them. No install-tier column exists yet, so every
 // non-local author resolves to the STRICTEST tier ("unreviewed"). Exported: /view (http.mjs)
@@ -211,24 +213,24 @@ const defaultCollectionFor = (comp) => {
 const tierOf = (author) =>
   // "library" = install_from_library provenance. OSS library content is FIRST-PARTY (we author
   // every entry — the same files the seed path installs as local), so it runs DIRECT like any
-  // locally-authored component (Leo 2026-07-24: no review exists in OSS because there is nothing
+  // locally-authored app (Leo 2026-07-24: no review exists in OSS because there is nothing
   // to review; the runner + review flow arrive together with the SaaS user-publishing pipeline).
   // The author stamp still tracks provenance + drives library update detection.
   author === "agent" || author === "human" || author === "seed" || author === "library" ? "local"
   : "unreviewed";
 // Fail-closed placeholder for DIRECT render paths (docs/security-model.md §2.3): any surface
-// that would hand a component the real window.oma with full trust must refuse non-local tiers
+// that would hand an app the real window.oma with full trust must refuse non-local tiers
 // until a runner exists on that path. Deliberately shell-free — no window.oma, no scripts.
-// ONE surface still serves it: the per-component ui:// resource, which IS direct mode and has no
+// ONE surface still serves it: the per-app ui:// resource, which IS direct mode and has no
 // loader to delegate to. /view used to as well and no longer does — it serves wrapLoader() for a
-// non-local tier, which reaches the runner the same way the open_component path does.
-const RUNNER_REQUIRED_HTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sandboxed runner required</title></head><body style="font-family:system-ui;max-width:560px;margin:40px auto;color-scheme:light dark"><h3>Component not rendered</h3><p>This component requires sandboxed runner mode, which isn't available on this path yet. Open it with <code>open_component</code> instead — the universal loader runs non-local components behind a sandboxed runner.</p></body></html>`;
+// non-local tier, which reaches the runner the same way the open_app path does.
+const RUNNER_REQUIRED_HTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sandboxed runner required</title></head><body style="font-family:system-ui;max-width:560px;margin:40px auto;color-scheme:light dark"><h3>App not rendered</h3><p>This app requires sandboxed runner mode, which isn't available on this path yet. Open it with <code>open_app</code> instead — the universal loader runs non-local apps behind a sandboxed runner.</p></body></html>`;
 // Pinned caps shape — the runner builds against these exact field names:
 //   { call_tools: string[] (["*"] = wildcard sentinel), send_message: bool, update_context: bool,
 //     delete_items: "allow"|"confirm"|"deny", cross_collection_read: bool,
 //     cross_collection_write: bool, settings_write: bool, read_source: bool }
 // CONTRACT: these snake_case names are also the ONLY cap suffixes computeCaps reads from
-// policy keys — security:<component>:<cap> / policy:defaults:<tier>:<cap>. A key with any
+// policy keys — security:<app>:<cap> / policy:defaults:<tier>:<cap>. A key with any
 // other suffix (e.g. dotted "sendMessage") is stored but never consulted; security_set flags
 // such keys with a warning at write time.
 const CAP_NAMES = ["call_tools", "send_message", "update_context", "delete_items",
@@ -248,7 +250,7 @@ const TIER_CAPS = {
   // (always on); call_tools gates only the generic passthrough. data_collections is deliberately
   // NOT in call_tools: collection discovery IS a cross-collection read and the runner refuses it
   // while cross_collection_read is false — listing it here would advertise a cap that can never
-  // execute. A reviewed meta-component that truly needs discovery gets an explicit
+  // execute. A reviewed meta-app that truly needs discovery gets an explicit
   // security:<name>:* overlay (cross_collection_read + call_tools), not a preset grant.
   "library-reviewed": { call_tools: ["data_list"], send_message: false,
     update_context: false, delete_items: "confirm", cross_collection_read: false,
@@ -312,7 +314,7 @@ const EOT = "·eot";
 /** Serialized size of what we are about to hand over. The only honest way to ask "does this fit". */
 const sizeOf = (body) => JSON.stringify(body).length;
 
-/** A WINDOW into one large text — the chunk primitive shared by get_component / component_html /
+/** A WINDOW into one large text — the chunk primitive shared by get_app / app_html /
  *  file_read, so "read something big" has ONE grammar (offset/length in, next_offset out) instead
  *  of a dialect per tool. Derived from RESULT_BUDGET, never a second constant: the caller hands in
  *  `wrap` (slice → the body that will actually ship) and the slice shrinks until the WRAPPED body
@@ -350,7 +352,7 @@ function textWindow(whole, { offset, length } = {}, wrap = (t) => t) {
  *  Four forms, and the names are the point:
  *    ack   — a write happened. One row, never a collection (redesign row #1).
  *    page  — a bounded slice of many rows, always with its true total and how to continue.
- *    chunk — a window into ONE large thing (component source, file text).
+ *    chunk — a window into ONE large thing (app source, file text).
  *    fail  — nothing happened, and why. Carries state when state helps the retry.
  */
 function envelope(kind, body, { returned, total, next, text }) {
@@ -410,7 +412,7 @@ const cmdArgs = {
 export {
   RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE,
   itemShape, snapshotSchema, ackSchema, fileMetaShape, capsShape,
-  RESERVED_COMPONENT_NAMES, SEEDED_COMPONENTS, SHARED_PREFS, LOCKED_COMPONENTS, SCENE_CATEGORIES,
+  RESERVED_APP_NAMES, SEEDED_APPS, SHARED_PREFS, LOCKED_APPS, SCENE_CATEGORIES,
   tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor,
   CAP_NAMES, TIER_CAPS, coerceCap,
   cmdArgs,

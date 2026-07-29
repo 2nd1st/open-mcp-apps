@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// runner.mjs — THE enforcement piece for sandboxed component children (write-set D).
+// runner.mjs — THE enforcement piece for sandboxed app children (write-set D).
 //
 // Before this module there were three hand-kept copies of the same machine — the loader's
 // runnerMount (shell.mjs), settings.html's thumbnail bridge, settings.html's drawer bridge —
@@ -55,7 +55,7 @@ export const TOKEN_NAMES = [
 ];
 
 /** The system UI kit as a head <style>. ONE definition of the tag, shared by every composer
- *  (this file's two, plus shell.mjs's wrapComponent/wrapLoader) so the data-oma marker that
+ *  (this file's two, plus shell.mjs's wrapApp/wrapLoader) so the data-oma marker that
  *  identifies it — and that shell-runtime reads it back by — cannot drift between them.
  *  The CSS text itself is supplied by the caller: it lives in components/_system.css (MIT)
  *  and only a node-side reader (shell.mjs KIT_CSS) can reach the file. */
@@ -90,7 +90,7 @@ export function tokenCSS(doc, substitute) {
 // one definition. The closing tag is split so this file can travel inside HTML safely.
 export const BRIDGE = [
   "<script>(function(){",
-  'var S={collection:null,items:[],version:0,component:null,host:null},TI={};',
+  'var S={collection:null,items:[],version:0,app:null,host:null},TI={};',
   'var readyCbs=[],changeCbs=[],prefCbs=[],isReady=false,seq=0,pending={},P=null,urlCache={},TA=[];',
   // coercePref mirrors runtime-core semantics: the FALLBACK's type drives coercion.
   'function coercePref(v,f){var t=typeof f;',
@@ -120,7 +120,7 @@ export const BRIDGE = [
   'if(d.prefs&&typeof d.prefs==="object"){var CK=d.compKeys||{};',
   'if(P===null){P=d.prefs;}',
   'else{var old=P;P=d.prefs;var k;',
-  'for(k in P)if(!(k in old)||old[k]!==P[k]){firePref(k,P[k],old[k],CK[k]?"component":"global");pc=true;}',
+  'for(k in P)if(!(k in old)||old[k]!==P[k]){firePref(k,P[k],old[k],CK[k]?"app":"global");pc=true;}',
   'for(k in old)if(!(k in P)){firePref(k,undefined,old[k],"global");pc=true;}}}',
   // Item count is part of "changed" (the zero-row-open lesson, write-set C): a fresh walk can
   // share a version with an earlier empty push, and eating that repaint leaves the child blank.
@@ -151,15 +151,15 @@ export const BRIDGE = [
   "})();</scr" + "ipt>",
 ].join("\n");
 
-/** Child document composition. WE build the outer document — the component's own <head> is
- *  NEVER trusted as an injection anchor: anchoring on it lets a hostile component emit a
+/** Child document composition. WE build the outer document — the app's own <head> is
+ *  NEVER trusted as an injection anchor: anchoring on it lets a hostile app emit a
  *  <script> BEFORE its <head>, which per HTML parsing runs before an injected CSP meta is
  *  parsed, so its network egress escapes the policy entirely (reproduced in Chrome). The
  *  untrusted markup goes wholesale inside OUR <body>: its doctype/head degrade to tag-soup,
  *  its scripts still execute — but only AFTER the CSP (the FIRST element of OUR <head>). */
 export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE } = {}) {
   // Layer order is the cascade: neutral fallbacks, then the embedder's (substituted) tokens, then
-  // the kit, then the component's own markup and <style>. The child's THEME arrives at runtime as
+  // the kit, then the app's own markup and <style>. The child's THEME arrives at runtime as
   // inline custom properties on its <html>, which outrank all of these — same as in the parent.
   return "<!doctype html><html><head>" + RUNNER_CSP + '<meta charset="utf-8">' +
     (fallbackCss ? '<style data-oma="token-fallback">' + fallbackCss + "</style>" : "") +
@@ -170,16 +170,16 @@ export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss 
 export const RATES = { writes: [60, 60000], refresh: [6, 60000], messages: [3, 10000] };
 
 // Tool-name families the guard routes by. WRITE_TOOLS get actor+via stamping and the writes
-// rate; the file families gate on file caps with component binding.
+// rate; the file families gate on file caps with app binding.
 const DATA_WRITE_TOOLS = new Set(["data_add_item", "data_update_item", "data_move_item", "data_delete_item"]);
 const FILE_READ_TOOLS = new Set(["file_read", "file_list"]);
 const FILE_WRITE_TOOLS = new Set(["file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_write_abort", "file_delete"]);
-const FILE_BIND_TOOLS = new Set(["file_write", "file_write_begin", "file_delete"]);   // carry `component` — forced to the caller
-// The chunked family carries NO component, only an upload_id, so there is nothing to force:
+const FILE_BIND_TOOLS = new Set(["file_write", "file_write_begin", "file_delete"]);   // carry `app` — forced to the caller
+// The chunked family carries NO app, only an upload_id, so there is nothing to force:
 // binding has to be by WHICH ids this guard opened (see myUploads in makeGuard). They were
 // previously assumed to "inherit begin's binding", which is not a thing the wire supports.
 const UPLOAD_ID_TOOLS = new Set(["file_write_chunk", "file_write_commit", "file_write_abort"]);
-const READONLY_LOCAL_TOOLS = new Set(["data_list", "data_collections", "list_components"]); // thumbnail allowance (system components preview richly)
+const READONLY_LOCAL_TOOLS = new Set(["data_list", "data_collections", "list_apps"]); // thumbnail allowance (system apps preview richly)
 
 /**
  * Build the parent-side chokepoint. Every child call — typed method or generic callTool —
@@ -187,13 +187,13 @@ const READONLY_LOCAL_TOOLS = new Set(["data_list", "data_collections", "list_com
  * result) on refusal; the mount layer relays either to the child.
  *
  * cfg:
- *   name       child component name (the binding target for collection/file/function forcing)
+ *   name       child app name (the binding target for collection/file/function forcing)
  *   coll       bound collection
  *   caps       engine-computed caps (absent fields mean DENY — strictest)
  *   tier       child tier ("local" | ...) — the readonly preset's allowance nuance
  *   preset     "live" | "readonly" | "inert"
  *   io         { callTool, sendMessage, updateContext, snapshot, settingsIds, readCollection,
- *                readFile(component, path) → {base64, mime}, notify, confirm, uuid } — ALL
+ *                readFile(app, path) → {base64, mime}, notify, confirm, uuid } — ALL
  *                effects go through io, so the whole policy is node-testable with fakes.
  */
 export function makeGuard(cfg) {
@@ -208,7 +208,7 @@ export function makeGuard(cfg) {
   const notify = (m) => { try { io.notify && io.notify(m); } catch {} };
 
   // Chunked-upload ids THIS guard opened. Per-guard (so per mounted child), which is the whole
-  // point: an id another component holds is not in this set and cannot be appended to.
+  // point: an id another app holds is not in this set and cannot be appended to.
   const myUploads = new Set();
 
   // The other half of the control-plane instrument (the server half is in engine.mjs). A refusal
@@ -216,8 +216,8 @@ export function makeGuard(cfg) {
   // it can be recorded is the widget console. Name, tier and preset only: enough to answer "was it
   // us?", nothing that could carry a user's data.
   const refuseControlPlane = (tn) => {
-    try { console.warn(`[oma] control-plane refused: ${tn} (component=${name} tier=${tier || "?"} preset=${preset})`); } catch {}
-    throw new Error('tool "' + tn + '" is not available to components');
+    try { console.warn(`[oma] control-plane refused: ${tn} (app=${name} tier=${tier || "?"} preset=${preset})`); } catch {}
+    throw new Error('tool "' + tn + '" is not available to apps');
   };
 
   const stamps = { writes: [], refresh: [], messages: [] };
@@ -231,8 +231,8 @@ export function makeGuard(cfg) {
     if (arr.length >= limit) {
       // WHOSE budget this was, said correctly. These stamps are PER-GUARD, i.e. per mounted
       // child, so a preview is starving its own allowance and not the app's — but the notice
-      // named the component alone, which made settings' Installed grid report
-      // 'Component "dashboard" hit its refresh rate limit' while the real dashboard was
+      // named the app alone, which made settings' Installed grid report
+      // 'App "dashboard" hit its refresh rate limit' while the real dashboard was
       // untouched (measured 2026-07-28: a thumbnail fans out one data_list per collection on
       // mount and runs out at six). The user cannot tell a starved thumbnail from a throttled
       // app unless the sentence says which one it is.
@@ -242,7 +242,7 @@ export function makeGuard(cfg) {
       if (!saturated[kind]) {
         saturated[kind] = true;
         notify(preset === "live"
-          ? 'Component "' + name + '" hit its ' + kind + " rate limit."
+          ? 'App "' + name + '" hit its ' + kind + " rate limit."
           : 'Preview of "' + name + '" hit its ' + kind + " rate limit — the app itself is unaffected.");
       }
       throw new Error(kind + " rate limit exceeded");
@@ -256,7 +256,7 @@ export function makeGuard(cfg) {
   // and for the same reason (shell-runtime's long note: a widget write is the user rapid-clicking
   // their OWN UI, and sending the version they were last SHOWN made the second click carry a
   // pre-echo stale one). Here it was worse than a visible error: the guard hands the conflict back
-  // as an isError result, the child bridge RESOLVES with it, and a component that doesn't inspect
+  // as an isError result, the child bridge RESOLVES with it, and an app that doesn't inspect
   // the return value loses the write with nothing on screen. Two policies for one verb, split by
   // tier, is also exactly the drift seam this module exists to remove (Leo 2026-07-27).
   // Explicit OCC is still reachable: a caller that genuinely needs it passes expected_version
@@ -273,12 +273,12 @@ export function makeGuard(cfg) {
     if (caps.delete_items === "allow") return;
     if (caps.delete_items === "confirm") {
       let okd = false;
-      try { okd = io.confirm ? io.confirm('Component "' + name + '" wants to delete an item. Allow?') === true : false; } catch { okd = false; }
+      try { okd = io.confirm ? io.confirm('App "' + name + '" wants to delete an item. Allow?') === true : false; } catch { okd = false; }
       if (okd) return;
       notify("Delete refused (not confirmed, or confirmation unavailable in this host).");
       throw new Error("delete not confirmed");
     }
-    notify('Component "' + name + '" tried to delete an item — denied by policy.');
+    notify('App "' + name + '" tried to delete an item — denied by policy.');
     throw new Error("delete denied");
   }
 
@@ -308,15 +308,15 @@ export function makeGuard(cfg) {
     // checked BEFORE the allowlist/wildcard so no cap combination can reach them.
     if (isControlPlaneTool(tl)) refuseControlPlane(tn);
     if (!wildcard && callAllow.indexOf(tn) === -1) throw new Error('tool "' + tn + '" not allowed');
-    if ((tn === "component_html" || tn === "get_component") && caps.read_source !== true) throw new Error("component source read denied");
+    if ((tn === "app_html" || tn === "get_app") && caps.read_source !== true) throw new Error("app source read denied");
     if (FILE_READ_TOOLS.has(tn)) {
       if (caps.file_read !== true) throw new Error("file read denied by policy");
-      ta.component = name;   // a child reaches its OWN files only
+      ta.app = name;   // a child reaches its OWN files only
     }
     if (FILE_WRITE_TOOLS.has(tn)) {
       if (caps.file_write !== true) throw new Error("file write denied by policy");
-      if (FILE_BIND_TOOLS.has(tn)) ta.component = name;
-      else if (UPLOAD_ID_TOOLS.has(tn) && !myUploads.has(String(ta.upload_id == null ? "" : ta.upload_id))) throw new Error("upload_id was not opened by this component");
+      if (FILE_BIND_TOOLS.has(tn)) ta.app = name;
+      else if (UPLOAD_ID_TOOLS.has(tn) && !myUploads.has(String(ta.upload_id == null ? "" : ta.upload_id))) throw new Error("upload_id was not opened by this app");
     }
     if (tn === "data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
     // Every collection-addressed READ is bound the same way. data_changes was the one left out,
@@ -329,12 +329,12 @@ export function makeGuard(cfg) {
     // A batch is the model's bulk verb, not a widget's: forwarding it would need every
     // per-command rule above re-implemented inside the batch — one missed line is a
     // cross-app escape (adversarial F2). Children write one command at a time.
-    if (tn === "data_batch") { notify('Component "' + name + '" tried data_batch — not available to components.'); throw new Error("data_batch is not available to components"); }
-    // A child may call ONLY its own component's functions (the designed free path); the
-    // callee is forced, so a second hop through another component is unreachable by shape.
+    if (tn === "data_batch") { notify('App "' + name + '" tried data_batch — not available to apps.'); throw new Error("data_batch is not available to apps"); }
+    // A child may call ONLY its own app's functions (the designed free path); the
+    // callee is forced, so a second hop through another app is unreachable by shape.
     if (tn === "call_function") {
       rate("writes");
-      ta.component = name;
+      ta.app = name;
       ta.via = via();
       if (!ta.command_id) ta.command_id = uuid();
     }
@@ -393,7 +393,7 @@ export function makeGuard(cfg) {
       case "filesList":
         if (caps.file_read !== true) throw new Error("file read denied by policy");
         rate("refresh");
-        return io.callTool("file_list", { component: name });
+        return io.callTool("file_list", { app: name });
       case "filesRead":
         if (caps.file_read !== true) throw new Error("file read denied by policy");
         rate("refresh");
@@ -410,7 +410,7 @@ export function makeGuard(cfg) {
         return guardCallTool(a || {});
       case "sendMessage":
         if (caps.send_message !== true) {
-          notify('Component "' + name + '" tried to send a chat message — denied by policy.');
+          notify('App "' + name + '" tried to send a chat message — denied by policy.');
           return { isError: true, content: [{ type: "text", text: "sendMessage denied by policy" }] };
         }
         rate("messages");
@@ -426,7 +426,7 @@ export function makeGuard(cfg) {
 
   // Read-only preview (library thumbnails): reads answer from the cached snapshot or a
   // narrow allowlist; every write path refuses. Local-tier children keep the three-tool
-  // browse allowance (system components preview richly); everything else gets exactly a
+  // browse allowance (system apps preview richly); everything else gets exactly a
   // bound data_list.
   async function readonly(method, a) {
     switch (method) {
@@ -453,7 +453,7 @@ export function makeGuard(cfg) {
     }
   }
 
-  // Inert (library fixtures): ZERO host IO. Writes pretend to succeed so demo components
+  // Inert (library fixtures): ZERO host IO. Writes pretend to succeed so demo apps
   // animate; reads answer from the fixed snapshot; everything else resolves empty.
   //
   // Multi-collection apps made "answer from the snapshot" load-bearing: they self-fetch every
@@ -482,16 +482,16 @@ export function makeGuard(cfg) {
         const ta = (a && a.args) || {};
         if (tn === "data_list") return { content: [], structuredContent: fxRows(ta.collection) };
         if (tn === "data_version") return { content: [], structuredContent: { seq: snap().version || 1 } };
-        // Meta components ask WHICH collections exist before they ask for rows (dashboard draws a
+        // Meta apps ask WHICH collections exist before they ask for rows (dashboard draws a
         // card per collection). Answering that with an empty envelope makes the preview of an app
         // whose whole job is "show me everything" render as though the user owns nothing — the same
         // failure the multi-collection fxRows work already fixed one call earlier. Derive it from
         // the snapshot the preview was handed: same rows, same truth, still zero host IO.
         // #10: an installed app with an EMPTY collection is invisible to a row-derived answer, so a
-        // preview of a meta component lost it entirely when thumbnails moved from readonly (which
+        // preview of a meta app lost it entirely when thumbnails moved from readonly (which
         // could read the registry) to inert (which cannot). The snapshot carries the roster when the
         // embedder has one; absent, the honest answer is still an empty list.
-        if (tn === "list_components") return { content: [], structuredContent: { components: snap().components || [] } };
+        if (tn === "list_apps") return { content: [], structuredContent: { apps: snap().apps || [] } };
         if (tn === "data_collections") {
           const bound = snap().collection;
           const counts = new Map();
@@ -521,15 +521,15 @@ export function makeGuard(cfg) {
  *  (its predecessors lived in library.html and the hosted data plane, hand-synced).
  *  The close tag is split so this source never contains a literal one; JSON's "</" become
  *  "<\/" (an identity escape in JS strings) so fixture data can't break out of the tag. */
-export function stubOmaScript(name, items, components) {
-  const snap = { collection: name, items: items || [], version: 1, component: name, host: "library-preview",
-    ...(components && components.length ? { components } : {}) };
+export function stubOmaScript(name, items, apps) {
+  const snap = { collection: name, items: items || [], version: 1, app: name, host: "library-preview",
+    ...(apps && apps.length ? { apps } : {}) };
   return "<script>window.oma=(function(){var S=" +
     JSON.stringify(snap).replace(/<\//g, "<\\/") +
     ";var ok=Promise.resolve({ok:true});" +
     // Serve the fetch paths from the SAME fixture rows the snapshot carries — the parentless
     // twin of the guard's fxRows, and for the identical reason. It used to answer every
-    // readCollection with {items:[]} and every callTool with {}, on the theory that a component
+    // readCollection with {items:[]} and every callTool with {}, on the theory that an app
     // reads its data from oma.state. Half of them don't: self-fetching per collection is the
     // GUIDE's canonical pattern, and the guard's inert preset had already learned that an empty
     // envelope reads as CORRUPT data rather than as "no rows". Measured 2026-07-28 on this
@@ -554,21 +554,21 @@ export function stubOmaScript(name, items, components) {
     "pref:function(k,f){return f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok}," +
     "deleteItem:function(){return ok},refresh:function(){return Promise.resolve(R())}," +
     // The same two answers the parented inert guard gives. This is the machine that composes
-    // PUBLIC preview pages (hosted /library today, share pages next), and a meta component asks
+    // PUBLIC preview pages (hosted /library today, share pages next), and a meta app asks
     // "which collections exist" before it asks for rows — answering that with an empty envelope
     // renders an app whose whole job is "show me everything" as though the user owned nothing.
     "callTool:function(n,a){return Promise.resolve(n==='data_list'?{content:[],structuredContent:R(a&&a.collection)}" +
     ":n==='data_collections'?{content:[],structuredContent:{collections:C()}}" +
-    ":n==='list_components'?{content:[],structuredContent:{components:S.components||[]}}" +
+    ":n==='list_apps'?{content:[],structuredContent:{apps:S.apps||[]}}" +
     ":{content:[],structuredContent:{}})}," +
     "readCollection:function(c){return Promise.resolve(R(c))},callFunction:function(){return ok}," +
     "files:{list:function(){return Promise.resolve({files:[]})},read:function(){return Promise.reject(new Error(\"not available in this preview\"))},url:function(){return Promise.reject(new Error(\"not available in this preview\"))}}," +
-    "sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{component:S.component,collection:S.collection},host:S.host,standalone:true};})();</scr" +
+    "sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{app:S.app,collection:S.collection},host:S.host,standalone:true};})();</scr" +
     "ipt>";
 }
 
 /** A complete, self-contained inert preview document: CSP-first, caller-supplied token CSS,
- *  the stub above, and the component markup wholesale in OUR body (same anchoring doctrine
+ *  the stub above, and the app markup wholesale in OUR body (same anchoring doctrine
  *  as composeChildDoc). Consumed by the hosted /library preview server — which used to keep
  *  a hand-synced copy of every piece of this. */
 // A preview iframe is `sandbox="allow-scripts"` with no `allow-same-origin` — deliberately, so the
@@ -584,21 +584,21 @@ const HEIGHT_BROADCAST =
   'window.addEventListener("load",function(){ro.observe(document.body);s()})}' +
   'else window.addEventListener("load",s);})();</scr' + "ipt>";
 
-export function composePreviewDoc(html, { name, items = [], components = [], tokenCss = "", kitCss = "" } = {}) {
+export function composePreviewDoc(html, { name, items = [], apps = [], tokenCss = "", kitCss = "" } = {}) {
   return "<!doctype html><html><head>" + RUNNER_CSP +
     '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, components) + "</head><body>" + html +
+    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, apps) + "</head><body>" + html +
     HEIGHT_BROADCAST + "</body></html>";
 }
 
 /** Walk file_read's byte windows and hand back the whole file as base64 parts + metadata.
  *  Parts are decoded/concatenated by the caller (byte-level, so no alignment assumption).
  *  Lives here because both the direct-mode oma.files and the guard's filesRead share it. */
-export async function readFileParts(callTool, component, path) {
+export async function readFileParts(callTool, app, path) {
   const parts = [];
   let offset = 0, meta = null;
   for (;;) {
-    const r = await callTool("file_read", { component, path, ...(offset ? { offset } : {}) });
+    const r = await callTool("file_read", { app, path, ...(offset ? { offset } : {}) });
     if (r && r.isError) { const t = (r.content || []).find((c) => c.type === "text"); throw new Error((t && t.text.split("\n")[0]) || "file read failed"); }
     const sc = r && r.structuredContent;
     if (!sc || typeof sc.data_base64 !== "string") throw new Error("file read returned no bytes");

@@ -4,7 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <style>
-  /* component-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
+  /* app-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
   body { max-width: 760px; margin-inline: auto; }   /* /view comfort — a no-op inside chat iframes */
   .pane { display: none; }
   .pane.on { display: block; }
@@ -221,7 +221,7 @@
     const RESERVED = (k) => /^(security_|_)/.test(k) || /^(security|policy):/.test(k);
     // Theme tokens live in this same collection (group "" = everywhere, group "<app>" = that app
     // only) so the whole feature costs zero tool seats. They are NOT preferences, so they get
-    // their own micro-group instead of reading as undeclared strays next to a component's options.
+    // their own micro-group instead of reading as undeclared strays next to an app's options.
     const THEME = (k) => k.slice(0, 6) === "theme:";
     // TOP_KEYS render first, unfolded (frozen 2026-07-25: the two decisions users revisit);
     // every other catalog key folds into "More options" under these micro-groups. A key the
@@ -288,7 +288,7 @@ function coercePref(v, fallback) {
       if (t.dataset.p === "data") loadData();         // fresh collections + ownership + ledger every visit
     };
 
-    // ---- Permissions pane (P4): renders component_permissions; overrides write through
+    // ---- Permissions pane (P4): renders app_permissions; overrides write through
     // security_set (security:<name>:<cap>) — the ONLY tool that may touch reserved keys.
     // Local tier = direct render = full trust (switches would be theater — shown read-only);
     // runner tiers (library installs, pasted comps) get real switches the runner enforces.
@@ -307,7 +307,7 @@ function coercePref(v, fallback) {
     // NO buttons rather than a dead one. A failed refetch keeps the previous cache.
     let permsCache = null;
     async function fetchPerms() {
-      try { return (permsCache = (await oma.callTool("component_permissions", {}))?.structuredContent?.components || []); }
+      try { return (permsCache = (await oma.callTool("app_permissions", {}))?.structuredContent?.apps || []); }
       catch { return null; }
     }
     async function loadPerms() {
@@ -317,7 +317,7 @@ function coercePref(v, fallback) {
       document.getElementById("perm-empty").hidden = rows.length > 0;
       box.innerHTML = "";
       for (const c of rows) {
-        // OSS keeps this pane SIMPLE: local components (which is everything in OSS — own, AI-built
+        // OSS keeps this pane SIMPLE: local apps (which is everything in OSS — own, AI-built
         // and library apps alike) get one clean line. The switch UI below only materializes for
         // future non-local tiers (shared/published apps), so no dead controls are shown today.
         const originLabel = c.author === "library" ? "App Store install" : c.author === "seed" ? "system" : "by " + c.author;
@@ -530,8 +530,8 @@ function coercePref(v, fallback) {
       }
       return f.children.length ? f : null;
     }
-    // One <details> per component with any of {parsed manifest, stored keys, uses_shared};
-    // meta components (settings, dashboard) included — "meta" is not a preference concept.
+    // One <details> per app with any of {parsed manifest, stored keys, uses_shared};
+    // meta apps (settings, dashboard) included — "meta" is not a preference concept.
     function compSection(name) {
       const pending = bootingManifests && !manifests.has(name);   // manifest still in flight
       const mf = manifests.get(name) || null;
@@ -695,7 +695,7 @@ function coercePref(v, fallback) {
     //
     // Two gates used to live here and both were wrong. `manifest_version !== 1` would have made every
     // v2 declaration vanish silently; `!Array.isArray(m.settings)` was already dropping the whole
-    // declaration of five shipped components — the ones that declare only `uses_shared` — so their
+    // declaration of five shipped apps — the ones that declare only `uses_shared` — so their
     // preferences section never appeared and their shared-pref grouping was always empty. The rule
     // now is: read the keys that are present, ignore the rest.
     function useDeclaration(m) {
@@ -753,7 +753,7 @@ function coercePref(v, fallback) {
     // ONE snapshot for ALL thumbnails, fetched by the parent, shared by every child.
     //
     // The thumbnails used to mount with the "readonly" preset — a real child that really calls the
-    // host. That looked cheap until a meta component was in the grid: dashboard renders a card per
+    // host. That looked cheap until a meta app was in the grid: dashboard renders a card per
     // collection, so it fans out one data_list per collection ON MOUNT and runs out of its own
     // per-mount refresh budget at six (measured 2026-07-28 — 10 collections, 4 cards drawn, and a
     // toast that named the APP rather than the preview). A thumbnail has no business doing a full
@@ -770,7 +770,7 @@ function coercePref(v, fallback) {
     // THE INPUTS GATE — wait for the data, do not answer without it.
     //
     // A thumb mounts from an IntersectionObserver the moment its card nears the viewport. The grid
-    // is rendered by loadComponents(), and boot only asks data_collections AFTERWARDS — a whole
+    // is rendered by loadApps(), and boot only asks data_collections AFTERWARDS — a whole
     // host round trip later. So on first paint the observer normally fires FIRST, and answering it
     // with an empty snapshot is not a rare race, it is the ordinary path.
     //
@@ -832,12 +832,12 @@ function coercePref(v, fallback) {
         // is bound to — builder-progress lives in build-progress — so 6 of 17 shipped apps previewed
         // empty. We hand over the declaration and let one rule decide.
         //
-        // The roster travels too: a meta component asks list_components, and inert has no host to
+        // The roster travels too: a meta app asks list_apps, and inert has no host to
         // ask. Names only — the same registry listing this pane already holds.
         const roster = compsCache.map((c) => ({ name: c.name, description: c.description || "" }));
         const h = await oma.embed(name, { into: th, preset: "inert", heights: false,
           declaration: declsRaw.get(name),
-          snapshot: { items: all, version: 1, components: roster } });
+          snapshot: { items: all, version: 1, apps: roster } });
         if (!th.isConnected) { h.unmount(); return; }   // grid re-rendered while mounting
         th.querySelector(".k-skel")?.remove();
         thumbs.set(name, h);
@@ -901,7 +901,7 @@ function coercePref(v, fallback) {
       thumbIO.observe(th);
       return card;
     }
-    // Every component in the registry gets a thumb — settings/dashboard included.
+    // Every app in the registry gets a thumb — settings/dashboard included.
     //
     // ⚠️ This comment has now been wrong TWICE, in opposite directions, within one day. Both the
     // error and the correction are kept, because the pattern is the lesson (2026-07-29):
@@ -916,14 +916,14 @@ function coercePref(v, fallback) {
     // read answered from the snapshot the pane hands it. Recursion is bounded by inertness
     // itself: a nested Installed tab has no host to mount anything against.
     //
-    // Still true, and deliberate: component_html is NOT reachable from a preview
-    // (READONLY_LOCAL_TOOLS is {data_list, data_collections, list_components}), so a nested
+    // Still true, and deliberate: app_html is NOT reachable from a preview
+    // (READONLY_LOCAL_TOOLS is {data_list, data_collections, list_apps}), so a nested
     // Preferences pane renders WITHOUT declared entries. Widening a preview's reach to "read any
-    // component's source" is the wrong trade for a 130px thumbnail, and READONLY_LOCAL_TOOLS is
+    // app's source" is the wrong trade for a 130px thumbnail, and READONLY_LOCAL_TOOLS is
     // the boundary third-party apps will arrive at (T19 P-c share-install).
     //
     // Why inert at all: under the old readonly preset each thumb was a real child that really
-    // called the host, so a meta component (dashboard fans out one data_list per collection)
+    // called the host, so a meta app (dashboard fans out one data_list per collection)
     // exhausted its own per-mount refresh budget on mount — measured 2026-07-28.
     function renderLibrary() {
       for (const h of thumbs.values()) h.unmount();   // embed handles hold listeners — release them
@@ -992,7 +992,7 @@ function coercePref(v, fallback) {
       const coll = collsCache.find((x) => x.collection === c.name);
       const n = coll ? coll.items : 0;
       st.textContent = n + (n === 1 ? " item" : " items") + " saved";
-      oma.callTool("file_list", { component: c.name, limit: 1 }).then((r) => {
+      oma.callTool("file_list", { app: c.name, limit: 1 }).then((r) => {
         const u = r?.structuredContent?.usage;   // usage rides every file_list page (file_usage retired)
         if (drawerComp !== c || !u || !u.count) return;   // drawer switched, or no files → nothing to add
         st.textContent += " · " + u.count + (u.count === 1 ? " file, " : " files, ") + (u.bytes / 1024).toFixed(1) + " KB";
@@ -1014,19 +1014,19 @@ function coercePref(v, fallback) {
     document.getElementById("d-close").onclick = closeDrawer;
     document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerComp) closeDrawer(); });   // document-level — works before focus ever enters the drawer
     document.getElementById("d-open").onclick = () =>
-      drawerComp && oma.sendMessage(`Open the "${drawerComp.name}" component (open_component).`);
+      drawerComp && oma.sendMessage(`Open the "${drawerComp.name}" app (open_app).`);
 
     async function loadHistory(c) {
       const ol = document.getElementById("d-hist");
       ol.innerHTML = "";
       let hist = null;
       try {
-        const r = await oma.callTool("component_history", { name: c.name });
+        const r = await oma.callTool("app_history", { name: c.name });
         hist = r?.structuredContent?.history || null;
       } catch { hist = null; }
       if (drawerComp !== c) return;   // drawer switched while the history was in flight
       if (!hist || !hist.length) hist = [{ checkpoint: 1, ts: c.updated_at, html_size: c.html_size }];   // degrade: the current one only
-      // Restore = version rollback of a REGISTERED component only (restore_component); locked
+      // Restore = version rollback of a REGISTERED app only (restore_app); locked
       // apps never show it (the engine refuses), and no permissions truth means no button.
       const perm = permsCache && permsCache.find((p) => p.name === c.name);
       const restorable = perm && !perm.locked;
@@ -1057,10 +1057,10 @@ function coercePref(v, fallback) {
         const errEl = document.getElementById("d-err");
         errEl.hidden = true;
         try {
-          const r = await oma.callTool("restore_component", { command_id: crypto.randomUUID(), name: c.name, checkpoint });
+          const r = await oma.callTool("restore_app", { command_id: crypto.randomUUID(), name: c.name, checkpoint });
           if (r && r.isError) throw new Error((r.content && r.content[0] && r.content[0].text) || "Restore failed.");
           await loadManifest(c.name);   // the restored html may declare different settings
-          await loadComponents();       // grid, prefs and version badges refresh
+          await loadApps();       // grid, prefs and version badges refresh
           const cur = compsCache.find((x) => x.name === c.name);
           if (drawerComp === c && cur) openDrawer(cur);   // fresh header + history for the new version
         } catch (e) {
@@ -1116,7 +1116,7 @@ function coercePref(v, fallback) {
     };
 
     // Delete — honors the confirm_delete shared pref with an in-widget two-click confirm
-    // (window.confirm is unreliable in sandboxed widget iframes), then delete_component.
+    // (window.confirm is unreliable in sandboxed widget iframes), then delete_app.
     let delArmed = false, delArmT = 0;
     function confirmDeleteOn() {
       const it = curStored("settings", "confirm_delete") || curStored("", "confirm_delete");
@@ -1138,19 +1138,19 @@ function coercePref(v, fallback) {
       }
       disarmDelete();
       try {
-        const r = await oma.callTool("delete_component", { command_id: crypto.randomUUID(), name: c.name, actor: "human" });
+        const r = await oma.callTool("delete_app", { command_id: crypto.randomUUID(), name: c.name, actor: "human" });
         if (r && r.isError) { errEl.textContent = (r.content && r.content[0] && r.content[0].text) || "Delete failed."; errEl.hidden = false; return; }
         manifests.delete(c.name);
         declsRaw.delete(c.name);
         closeDrawer();
-        await loadComponents();   // history is retained server-side (tombstone); the grid refreshes
+        await loadApps();   // history is retained server-side (tombstone); the grid refreshes
       } catch (e) {
         errEl.textContent = String(e && e.message || e); errEl.hidden = false;
       }
     };
 
     // ---- Data pane (write-set D): collections × ownership × the ledger ----
-    // Ownership is DECLARED (a component's #oma-manifest collections list), by-name (the
+    // Ownership is DECLARED (an app's #oma-manifest collections list), by-name (the
     // default binding convention), or absent — an orphan, which is LEGAL (seeding may precede
     // the app). Adoption is an authoring act, so the button asks the AI rather than editing
     // manifests from here. The ledger view needs `via` and undo, which live on the /rpc
@@ -1180,9 +1180,9 @@ function coercePref(v, fallback) {
       // Ownership must see the WHOLE registry: an archived app still stewards its data, and the
       // default list (featured+listed) would silently strip its chip from the Data pane.
       try {
-        const full = await oma.callTool("list_components", { kind: "any", visibility: "any" });
+        const full = await oma.callTool("list_apps", { kind: "any", visibility: "any" });
         dataComps.clear();
-        for (const c of full?.structuredContent?.components || []) dataComps.set(c.name, c);
+        for (const c of full?.structuredContent?.apps || []) dataComps.set(c.name, c);
         await Promise.all([...dataComps.keys()].filter((n) => !declsRaw.has(n)).map((n) => loadManifest(n)));
       } catch { for (const c of compsCache) if (!dataComps.has(c.name)) dataComps.set(c.name, c); }
       const compNames = new Set([...dataComps.keys(), ...compsCache.map((c) => c.name)]);
@@ -1230,12 +1230,13 @@ function coercePref(v, fallback) {
       if (!events.length) box.append(el("p", "k-mut note", "No activity yet."));
       const VERB = { item_added: "added", item_updated: "updated", item_moved: "moved", item_deleted: "deleted",
         component_saved: "saved app", component_deleted: "deleted app", component_archived: "archived",
+        component_renamed: "renamed app",
         file_written: "wrote file", file_deleted: "deleted file" };
       for (const ev of events) {
         const row = el("div", "devt");
         row.append(el("span", "k-num", "#" + ev.seq));
-        const who = ev.actor + (ev.via && ev.via.component ? " · via " + ev.via.component : "");
-        const what = (VERB[ev.type] || ev.type) + " " + (ev.type.startsWith("component_") || ev.type.startsWith("file_") ? ev.id : String(ev.id).slice(0, 8))
+        const who = ev.actor + (ev.via && ev.via.app ? " · via " + ev.via.app : "");
+        const what = (VERB[ev.type] || ev.type) + " " + (ev.type.startsWith("app_") || ev.type.startsWith("file_") ? ev.id : String(ev.id).slice(0, 8))
           + (ev.fields ? " " + jstr(ev.fields).slice(0, 80) : "") + (ev.to != null ? " → " + (ev.to || "(ungrouped)") : "");
         row.append(el("span", "what k-num", who + " · " + what));
         row.append(el("span", "k-num k-mut", ago(ev.ts)));
@@ -1257,11 +1258,11 @@ function coercePref(v, fallback) {
     document.getElementById("data-reload").onclick = loadLedger;
     document.getElementById("data-coll").onchange = loadLedger;
 
-    // ---- boot: About stats, component grid, manifests (settings-design §4.3 data flow) ----
-    async function loadComponents() {
+    // ---- boot: About stats, app grid, manifests (settings-design §4.3 data flow) ----
+    async function loadApps() {
       const permsP = fetchPerms();   // locked-state truth rides along — the registry and permissions move together
-      const comps = await oma.callTool("list_components", {});
-      compsCache = comps?.structuredContent?.components || [];
+      const comps = await oma.callTool("list_apps", {});
+      compsCache = comps?.structuredContent?.apps || [];
       await permsP;
       // COUNT RULE: "N apps" = what the user made or installed — system collections AND locked
       // built-ins are excluded, so a fresh install honestly reads 0. The Installed grid below
@@ -1273,7 +1274,7 @@ function coercePref(v, fallback) {
     }
     async function loadManifest(name) {
       try {
-        const d = (await oma.callTool("component_html", { name }))?.structuredContent?.declaration;
+        const d = (await oma.callTool("app_html", { name }))?.structuredContent?.declaration;
         declsRaw.set(name, d || null);          // the Data pane's ownership source (collections key)
         manifests.set(name, useDeclaration(d)); // the prefs panes' filtered view (settings/uses_shared)
       }
@@ -1295,7 +1296,7 @@ function coercePref(v, fallback) {
         prefsLoading = false;
         renderPrefs();
         document.getElementById("ask-ai").hidden = !!oma.standalone;   // no chat to tell when standalone
-        await loadComponents();   // grid + stored-key sections appear before manifests finish loading
+        await loadApps();   // grid + stored-key sections appear before manifests finish loading
         const colls = await oma.callTool("data_collections", {});
         collsCache = colls?.structuredContent?.collections || [];
         collsLoaded = true;

@@ -49,7 +49,7 @@
     box-shadow: var(--shadow-md, 0 18px 52px color-mix(in oklab, var(--text) 9%, transparent));
   }
   /* In the browser viewer the runtime's STAGE already provides the elevated card — drop this
-     component's own frame there so the page isn't a card inside a card. (Chat keeps it.)
+     app's own frame there so the page isn't a card inside a card. (Chat keeps it.)
      overflow must open up too, or the sticky toolbar would have no scrollport to stick in. */
   .standalone .store { width: 100%; overflow: visible; border: 0; border-radius: 0; background: transparent; box-shadow: none; }
 
@@ -347,7 +347,7 @@
   .g-card:has(.badge-up)::before { background: linear-gradient(90deg, var(--warning), color-mix(in oklab, var(--warning) 10%, transparent)); opacity: 1; }
   .g-card:has(.badge-mut) { border-style: dashed; }
 
-  /* Live component art: a fixed-height, inert window with a scaled natural-width iframe. */
+  /* Live app art: a fixed-height, inert window with a scaled natural-width iframe. */
   .pv-wrap {
     position: relative;
     height: 200px;
@@ -767,7 +767,7 @@
 
 <script type="module">
   // Browser viewer detection: the runtime's stage frames the page there — .standalone lets the
-  // CSS drop this component's own outer card so we never render a card inside a card.
+  // CSS drop this app's own outer card so we never render a card inside a card.
   if (window.oma && oma.standalone) document.documentElement.classList.add("standalone");
   const CAT_ORDER = ["Health & Habits", "Money", "Planning", "People"];   // known first, others appended
   const WIDE = new Set(["meal-planner", "bill-calendar"]);                // calendar-grid apps span 2 tracks
@@ -1017,7 +1017,7 @@
     back?.focus();
   }
   // Installed entries point at settings for manage/remove — the drawer never grows its own
-  // remove button (cross-component ruling: Remove lives in settings' Installed drawer).
+  // remove button (cross-app ruling: Remove lives in settings' Installed drawer).
   const manage = (e) => !(e.installed && e.from_library) ? "" : oma.standalone
     ? `<a class="k-btn ghost" href="${esc(oma.viewBase + "settings")}">Manage in Settings</a>`
     : '<button class="k-btn ghost" data-settings>Manage in Settings</button>';
@@ -1110,7 +1110,7 @@
   async function install(name) {
     // v0: every entry is local, so Add always routes through install_from_library. Remote index
     // entries will route through library_install {id, command_id} (SRI-verified) when that tool
-    // lands — cross-component ruling §2-7 — over this same busy/error/reload cycle.
+    // lands — cross-app ruling §2-7 — over this same busy/error/reload cycle.
     busy = name; errName = errText = ""; render();
     try {
       const r = await oma.callTool("install_from_library", { name, command_id: uuid() });

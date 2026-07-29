@@ -1,20 +1,20 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// tools/library.mjs — the bundled component library: browse, preview, install.
+// tools/library.mjs — the bundled app library: browse, preview, install.
 // Registered by engine.mjs. Moved here verbatim: the tool surface is byte-identical to before
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { listLibrary, readLibraryComponent } from "../library.mjs";
-import { RO, WRITE, itemShape, RESERVED_COMPONENT_NAMES, LOCKED_COMPONENTS, tierOf } from "../contracts.mjs";
+import { listLibrary, readLibraryApp } from "../library.mjs";
+import { RO, WRITE, itemShape, RESERVED_APP_NAMES, LOCKED_APPS, tierOf } from "../contracts.mjs";
 
 export function register(ctx) {
-  const { server, store, hostName, failNote, fail, registerComponent } = ctx;
+  const { server, store, hostName, failNote, fail, registerApp } = ctx;
 
-  // ------------------------------------------------------------------ library (component library)
+  // ------------------------------------------------------------------ library (app library)
   // The repo's components/ dir is a curated first-party library. Installing FROM it saves the
-  // component with actor "library" (provenance + update detection) → tier local → runs DIRECT,
+  // app with actor "library" (provenance + update detection) → tier local → runs DIRECT,
   // exactly like the user's own apps: it's our content, there is nothing to review in OSS.
   // The SaaS user-publishing pipeline later adds review + the runner tier on the same seam.
   // The `library` system app is the browsable UI over these tools.
@@ -23,7 +23,7 @@ export function register(ctx) {
     {
       title: "List library apps",
       annotations: RO,
-      description: "Browse the built-in library: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_component {component: \"library\"} shows the browsable library app.",
+      description: "Browse the built-in library: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_app {app: \"library\"} shows the browsable library app.",
       inputSchema: {},
       outputSchema: {
         entries: z.array(z.object({
@@ -36,14 +36,14 @@ export function register(ctx) {
     },
     async () => {
       const entries = listLibrary().map((e) => {
-        const cur = store.getComponent(e.name);
+        const cur = store.getApp(e.name);
         const from_library = !!cur && cur.author === "library";
-        const update_available = from_library && cur.html !== (readLibraryComponent(e.name)?.html ?? cur.html);
+        const update_available = from_library && cur.html !== (readLibraryApp(e.name)?.html ?? cur.html);
         return { name: e.name, title: e.title, description: e.description, category: e.category, size: e.size, has_preview: e.has_preview, installed: !!cur, from_library, update_available };
       });
       const text = entries.length
         ? "Library apps:\n" + entries.map((e) => `  - ${e.name} — ${e.title}${e.installed ? (e.update_available ? " [installed, update available]" : " [installed]") : ""}${e.description ? ` — ${e.description}` : ""}`).join("\n")
-        : "The library is empty (no library components shipped in this install).";
+        : "The library is empty (no library apps shipped in this install).";
       return { content: [{ type: "text", text }], structuredContent: { entries } };
     },
   );
@@ -73,7 +73,7 @@ export function register(ctx) {
       },
     },
     async (a) => {
-      const entry = readLibraryComponent(a.name);
+      const entry = readLibraryApp(a.name);
       if (!entry) return fail(`No "${a.name}" in the library. library_list shows what's available.`);
       return {
         content: [{ type: "text", text: `(library preview payload for "${entry.name}" — ${entry.html.length} chars, ${entry.fixtures ? entry.fixtures.items.length + " mock items" : "no fixtures"}; consumed by the library app)` }],
@@ -95,26 +95,26 @@ export function register(ctx) {
       outputSchema: { name: z.string(), version: z.number(), tier: z.string(), updated: z.boolean().optional() },
     },
     async (a) => {
-      // Same name guards as save_component — this is a registry WRITE path and must refuse what
+      // Same name guards as save_app — this is a registry WRITE path and must refuse what
       // the tool boundary refuses (reserved namespaces + locked system UIs), not rely on the
       // library dir happening to contain no such files.
-      if (RESERVED_COMPONENT_NAMES.has(a.name) || LOCKED_COMPONENTS.has(a.name))
+      if (RESERVED_APP_NAMES.has(a.name) || LOCKED_APPS.has(a.name))
         return fail(`"${a.name}" is a reserved/system name — not installable.`);
-      const entry = readLibraryComponent(a.name);
+      const entry = readLibraryApp(a.name);
       if (!entry) return fail(`No "${a.name}" in the library. library_list shows what's available.`);
-      const cur = store.getComponent(a.name);
+      const cur = store.getApp(a.name);
       if (cur && cur.author !== "library")
         return fail(`"${a.name}" already exists in your registry as a ${cur.author}-authored app — NOT overwriting it with the library version. Delete or rename the existing one first if you want the library app.`);
       if (cur && cur.html === entry.html)
-        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}). Open it with open_component.` }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), updated: false } };
+        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}). Open it with open_app.` }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), updated: false } };
       const r = store.execute({
-        type: "save_component", declaration_policy: "salvage", command_id: a.command_id || randomUUID(),
+        type: "save_app", declaration_policy: "salvage", command_id: a.command_id || randomUUID(),
         name: a.name, html: entry.html, description: entry.description || entry.title, actor: "library", host: hostName(),
       });
       if (!r.ok) return fail(failNote(r));
-      registerComponent(a.name);
+      registerApp(a.name);
       return {
-        content: [{ type: "text", text: `Installed "${a.name}" v${r.version} from the library. Open it now with open_component {component: "${a.name}"}.` }],
+        content: [{ type: "text", text: `Installed "${a.name}" v${r.version} from the library. Open it now with open_app {app: "${a.name}"}.` }],
         structuredContent: { name: a.name, version: r.version, tier: tierOf("library"), updated: !!cur },
       };
     },

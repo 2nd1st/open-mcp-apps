@@ -539,10 +539,10 @@ STRUCTURE RULES
   };
 
   // ===== section: state and shared helpers =====
-  // Meta dashboard: the read path stays data_collections → list_components → one data_list per
+  // Meta dashboard: the read path stays data_collections → list_apps → one data_list per
   // collection, now split into a shell-first phase and an in-place preview hydration phase.
   const known = {};
-  let appsCache = [];   // installed components (list_components) — name-join + "New" cards + undo
+  let appsCache = [];   // installed apps (list_apps) — name-join + "New" cards + undo
   const PIN_KIND = "dashboard.pin/1"; // stamp on every pin row this UI writes — only stamped rows are managed
   const pins = new Map();          // app name -> [stamped pin item ids] (this dashboard's own bound collection)
   const previousCounts = new Map();
@@ -554,7 +554,7 @@ STRUCTURE RULES
   let busy = false;
   let booted = false;
   let loaded = false;          // first data_collections landed — gates re-renders from echoes
-  let compsLoaded = false;     // list_components healthy — gates the undo cluster
+  let compsLoaded = false;     // list_apps healthy — gates the undo cluster
   let dashBaseVersion = 0;     // this dashboard's version when first seen…
   let dashEdited = false;      // …a later bump means an edit landed this session (undo chip)
   let expanded = false;        // "Show all N apps" pressed (per-session, never persisted)
@@ -623,7 +623,7 @@ STRUCTURE RULES
       const value = fields[field];
       if (typeof value === "string" && value.trim()) return value.trim();
     }
-    // Fallback order matters: a component with no label_field and no title-ish key used to get
+    // Fallback order matters: an app with no label_field and no title-ish key used to get
     // whatever string came first — for date-keyed rows that was a bare "2026-07-28" on every tile
     // (live-test 2026-07-28). Prefer a human string; take a date only when it is ALL there is,
     // and then at least set it like a date instead of an ISO literal.
@@ -743,8 +743,8 @@ STRUCTURE RULES
     }
   }
 
-  // One entry per app: collections and installed components name-joined (known[name] convention);
-  // a component with no data yet becomes a soft "New" card in the same frame.
+  // One entry per app: collections and installed apps name-joined (known[name] convention);
+  // an app with no data yet becomes a soft "New" card in the same frame.
   function currentEntries() {
     const hiddenApps = new Set(DASH.hiddenApps || []);
     const map = new Map();
@@ -1040,9 +1040,9 @@ STRUCTURE RULES
     const items = snap && snap !== false ? snap.items : null;
     const count = items ? items.length : meta?.items || 0;
     const url = comp && oma.standalone ? `${oma.viewBase}${comp.name}` : "";
-    // DATA THAT OUTLIVED ITS APP. Deleting a component has always kept its collection (that is the
+    // DATA THAT OUTLIVED ITS APP. Deleting an app has always kept its collection (that is the
     // point — the data is yours, the app is just one view of it), so a collection can still be here
-    // when its component is not. This card used to look exactly like a working app and offer to
+    // when its app is not. This card used to look exactly like a working app and offer to
     // open it; the open then failed with "no app named X", which is the worst of both worlds —
     // Leo hit it on a real tenant, twice across two stores. Say what it is instead.
     const orphan = !comp && Boolean(meta);
@@ -1058,7 +1058,7 @@ STRUCTURE RULES
       node.style.setProperty("--enter-index", String(Math.max(0, index - revealFrom)));
     }
 
-    const open = () => url ? location.assign(url) : oma.sendMessage(`Open my ${quoted(name)} app. (use open_component)`);
+    const open = () => url ? location.assign(url) : oma.sendMessage(`Open my ${quoted(name)} app. (use open_app)`);
     if (openable) {
       node.tabIndex = 0;
       node.setAttribute("role", "button");
@@ -1261,18 +1261,18 @@ STRUCTURE RULES
     setSync("loading", booted ? "Checking for updates…" : "Gathering everything…");
     try {
       // Phase 1 — three parallel round trips: the seq stamp for the poll gate, the collection
-      // shapes (enough for real card shells), and the component registry (name-join + undo).
-      const [versionResult, collectionsResult, componentsResult] = await Promise.allSettled([
+      // shapes (enough for real card shells), and the app registry (name-join + undo).
+      const [versionResult, collectionsResult, appsResult] = await Promise.allSettled([
         oma.callTool("data_version", {}),
         oma.callTool("data_collections", {}),
-        oma.callTool("list_components", {}),
+        oma.callTool("list_apps", {}),
       ]);
       if (collectionsResult.status === "rejected") throw collectionsResult.reason;
       lastSeq = versionResult.status === "fulfilled" ? versionResult.value?.structuredContent?.seq ?? -1 : -1;
-      compsLoaded = componentsResult.status === "fulfilled";
+      compsLoaded = appsResult.status === "fulfilled";
       if (compsLoaded) {
-        appsCache = componentsResult.value?.structuredContent?.components || [];
-        const dash = appsCache.find((component) => component.name === "dashboard");
+        appsCache = appsResult.value?.structuredContent?.apps || [];
+        const dash = appsCache.find((app) => app.name === "dashboard");
         if (dash && !dashBaseVersion) dashBaseVersion = dash.version;
         else if (dash && dash.version > dashBaseVersion) dashEdited = true; // an edit landed while we watched
       }
@@ -1352,11 +1352,11 @@ STRUCTURE RULES
   //
   // It used to send "Show me the ready-made
   // apps I can add." into the chat; the message arrived fine, and then the assistant's call to
-  // library_list was REFUSED because the call originated from a component (measured on ChatGPT,
+  // library_list was REFUSED because the call originated from an app (measured on ChatGPT,
   // 2026-07-28). That approval layer is the host's, and it is right to have it.
   //
-  // The structure is worth naming, because it repeats: the component asked the AI precisely
-  // BECAUSE the component may not browse the library itself (library_* is control-plane, refused
+  // The structure is worth naming, because it repeats: the app asked the AI precisely
+  // BECAUSE the app may not browse the library itself (library_* is control-plane, refused
   // to any sandboxed child). So the request was app-originated at both ends — and an
   // app-originated privileged call is exactly what a careful host stops. Opening the library as a
   // LINK asks for no privilege at all, and works wherever links open.

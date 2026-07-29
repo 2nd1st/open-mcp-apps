@@ -6,8 +6,8 @@
 // SEPARATION OF CONCERNS (this is the whole security point):
 //   - store.mjs owns the REF INDEX (the `file` table): idempotency, OCC, quota, versioning, the ledger.
 //     It never touches file bytes and imports no fs beyond the existing mkdirSync.
-//   - THIS module owns the BYTES, behind a swappable FileBackend keyed by (component, sha256). It is the
-//     SOLE importer of node:fs for blobs. Content-addressing is PER-APP (files/<component>/<sha>.blob),
+//   - THIS module owns the BYTES, behind a swappable FileBackend keyed by (app, sha256). It is the
+//     SOLE importer of node:fs for blobs. Content-addressing is PER-APP (files/<app>/<sha>.blob),
 //     which keeps within-app dedup + is traversal-immune by construction (the on-disk name is a validated
 //     hex hash — user input NEVER becomes a path segment) AND eliminates the cross-app content-existence
 //     oracle a global CAS would need to hide.
@@ -20,19 +20,19 @@
 import { promises as fsp } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { COMPONENT_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES } from "./store.mjs";
+import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES } from "./store.mjs";
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const sha256hex = (buf) => createHash("sha256").update(buf).digest("hex");
 
 // ------------------------------------------------------------------ the swappable seam
 // FileBackend interface (documented, not enforced — plain JS). Every method is keyed by
-// (component, sha256) and is async, so a remote HTTP implementation fits unchanged:
-//   putBlob(component, sha, bytes) -> {size}   // content-idempotent: no-op if the blob already exists
-//   getBlob(component, sha)        -> Buffer | null
-//   hasBlob(component, sha)        -> boolean   // the sync-diff primitive (remote upload + within-app dedup)
-//   statBlob(component, sha)       -> {size} | null
-//   deleteBlob(component, sha)     -> void      // GC ONLY; refcounting is enforced ABOVE, in the ref index
+// (app, sha256) and is async, so a remote HTTP implementation fits unchanged:
+//   putBlob(app, sha, bytes) -> {size}   // content-idempotent: no-op if the blob already exists
+//   getBlob(app, sha)        -> Buffer | null
+//   hasBlob(app, sha)        -> boolean   // the sync-diff primitive (remote upload + within-app dedup)
+//   statBlob(app, sha)       -> {size} | null
+//   deleteBlob(app, sha)     -> void      // GC ONLY; refcounting is enforced ABOVE, in the ref index
 // The local backend also exposes an OPTIONAL async *enumerate() for orphan sweeping (fs-specific; a remote
 // backend sweeps server-side and omits it).
 
@@ -45,27 +45,27 @@ export class LocalFileBackend {
 
   // Build the on-disk path AFTER validating both segments — defense in depth. The content-addressed
   // name means user input is never a path segment, so this is a belt over the structural suspenders.
-  _paths(component, sha) {
-    if (!COMPONENT_NAME_RE.test(String(component))) throw new Error("bad_component");
+  _paths(app, sha) {
+    if (!APP_NAME_RE.test(String(app))) throw new Error("bad_app");
     if (!SHA_RE.test(String(sha))) throw new Error("bad_sha256");
-    const dir = join(this.filesRoot, component);
+    const dir = join(this.filesRoot, app);
     const p = join(dir, sha + ".blob");
     if (!resolve(p).startsWith(resolve(dir) + sep)) throw new Error("path_escape");
     return { dir, p };
   }
 
-  async statBlob(component, sha) {
-    const { p } = this._paths(component, sha);
+  async statBlob(app, sha) {
+    const { p } = this._paths(app, sha);
     try { const st = await fsp.stat(p); return { size: st.size }; }
     catch (e) { if (e.code === "ENOENT") return null; throw e; }
   }
 
-  async hasBlob(component, sha) {
-    return (await this.statBlob(component, sha)) !== null;
+  async hasBlob(app, sha) {
+    return (await this.statBlob(app, sha)) !== null;
   }
 
-  async getBlob(component, sha) {
-    const { p } = this._paths(component, sha);
+  async getBlob(app, sha) {
+    const { p } = this._paths(app, sha);
     try { return await fsp.readFile(p); }
     catch (e) { if (e.code === "ENOENT") return null; throw e; }
   }
@@ -75,10 +75,10 @@ export class LocalFileBackend {
   // opts.force skips the exists-check and ALWAYS re-writes (same content by definition of the address;
   // rename is atomic) — used by the channel's post-commit re-assert, where the point is to land bytes
   // with a FRESH mtime after any straggler GC unlink, not to save a write.
-  async putBlob(component, sha, bytes, opts = {}) {
-    const { dir, p } = this._paths(component, sha);
+  async putBlob(app, sha, bytes, opts = {}) {
+    const { dir, p } = this._paths(app, sha);
     if (!opts.force) {
-      const existing = await this.statBlob(component, sha);
+      const existing = await this.statBlob(app, sha);
       if (existing) return { size: existing.size };
     }
     await fsp.mkdir(dir, { recursive: true });
@@ -100,8 +100,8 @@ export class LocalFileBackend {
   // the window. A refcount-0 read races the writer that is about to (re)commit a ref: the writer
   // always (re)writes its blob with a fresh mtime, so "old enough" ≈ "genuinely unreferenced".
   // Fresh orphans that slip through are reclaimed by the next sweep once they age past the guard.
-  async deleteBlob(component, sha, opts = {}) {
-    const { p } = this._paths(component, sha);
+  async deleteBlob(app, sha, opts = {}) {
+    const { p } = this._paths(app, sha);
     try {
       if (opts.ifOlderThanMs) {
         const st = await fsp.stat(p);
@@ -112,7 +112,7 @@ export class LocalFileBackend {
     catch (e) { if (e.code !== "ENOENT") throw e; }
   }
 
-  // Yield every stored blob as {component, sha} so the channel can GC ones with no ref row. Local-only.
+  // Yield every stored blob as {app, sha} so the channel can GC ones with no ref row. Local-only.
   async *enumerate() {
     let comps;
     try { comps = await fsp.readdir(this.filesRoot, { withFileTypes: true }); }
@@ -122,7 +122,7 @@ export class LocalFileBackend {
       let blobs;
       try { blobs = await fsp.readdir(join(this.filesRoot, c.name)); }
       catch (e) { if (e.code === "ENOENT") continue; throw e; }
-      for (const f of blobs) if (f.endsWith(".blob")) yield { component: c.name, sha: f.slice(0, -5) };
+      for (const f of blobs) if (f.endsWith(".blob")) yield { app: c.name, sha: f.slice(0, -5) };
     }
   }
 
@@ -154,8 +154,8 @@ export class LocalFileBackend {
 
   // Materialize the staged bytes at the content address WITHOUT consuming the staging file.
   // Content-idempotent: an existing blob wins (identical content by definition of the address).
-  async linkStaging(id, component, sha) {
-    const { dir, p } = this._paths(component, sha);
+  async linkStaging(id, app, sha) {
+    const { dir, p } = this._paths(app, sha);
     const src = this._stagingPath(id);
     await fsp.mkdir(dir, { recursive: true });
     try { await fsp.link(src, p); }
@@ -213,23 +213,23 @@ export function selectBackend({ dataDir }) {
 export function makeFileChannel({ store, backend }) {
   // put: durable blob FIRST, then the ref (idempotent + OCC + quota) in the store's sync tx, then GC any
   // sha the overwrite freed. If the ref write fails, a freshly-written blob is an orphan → left for sweep.
-  async function put(component, path, data, { mime = "application/octet-stream", command_id, expected_version } = {}) {
-    if (!COMPONENT_NAME_RE.test(String(component))) return { ok: false, error: "bad_component" };
+  async function put(app, path, data, { mime = "application/octet-stream", command_id, expected_version } = {}) {
+    if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
     if (String(path).includes("..") || !FILE_PATH_RE.test(String(path))) return { ok: false, error: "bad_path" };
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
     if (bytes.length > MAX_FILE_BYTES) return { ok: false, error: "file_too_large" };
     const sha = sha256hex(bytes);
-    const had = await backend.hasBlob(component, sha);
-    if (!had) await backend.putBlob(component, sha, bytes);
+    const had = await backend.hasBlob(app, sha);
+    if (!had) await backend.putBlob(app, sha, bytes);
     const r = store.execute({
       type: "write_file", command_id: command_id || randomUUID(),
-      component, path, sha256: sha, size: bytes.length, mime, expected_version,
+      app, path, sha256: sha, size: bytes.length, mime, expected_version,
     });
     if (!r.ok) {
       // The store rejected (quota / OCC / bad input): a blob WE just wrote is now an unreferenced orphan.
       // The GC AGE GUARD skips it while fresh (a concurrent dedup-put may be about to reference it); the
       // next sweep reclaims it once it ages out — disk hygiene is eventual, correctness is immediate.
-      if (!had && store.blobRefcount(component, sha) === 0) await backend.deleteBlob(component, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
+      if (!had && store.blobRefcount(app, sha) === 0) await backend.deleteBlob(app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
       return r;
     }
     // Ref committed (refcount ≥ 1). A concurrent delete/overwrite GC may have unlinked the blob between our
@@ -240,30 +240,30 @@ export function makeFileChannel({ store, backend }) {
     //     straggler can no longer remove them.
     //   - fresh path (had=false): our own write is the newest thing at that address; the age guard already
     //     protects it. Re-check + rewrite only if somehow missing.
-    if (had) await backend.putBlob(component, sha, bytes, { force: true });
-    else if (!(await backend.hasBlob(component, sha))) await backend.putBlob(component, sha, bytes, { force: true });
-    if (r.freed_sha && store.blobRefcount(component, r.freed_sha) === 0) await backend.deleteBlob(component, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
-    if (!r.meta) r.meta = store.statFile(component, path); // idempotent replay short-circuits before meta is built
+    if (had) await backend.putBlob(app, sha, bytes, { force: true });
+    else if (!(await backend.hasBlob(app, sha))) await backend.putBlob(app, sha, bytes, { force: true });
+    if (r.freed_sha && store.blobRefcount(app, r.freed_sha) === 0) await backend.deleteBlob(app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
+    if (!r.meta) r.meta = store.statFile(app, path); // idempotent replay short-circuits before meta is built
     return r;
   }
 
   // get: read the ref, fetch bytes, RE-HASH and fail closed on mismatch (tamper / bit-rot).
-  async function get(component, path) {
-    const meta = store.statFile(component, path);
+  async function get(app, path) {
+    const meta = store.statFile(app, path);
     if (!meta) return null;
-    const bytes = await backend.getBlob(component, meta.sha256);
+    const bytes = await backend.getBlob(app, meta.sha256);
     if (!bytes) return null;
-    if (sha256hex(bytes) !== meta.sha256) throw new Error(`file integrity check failed: ${component}/${path}`);
+    if (sha256hex(bytes) !== meta.sha256) throw new Error(`file integrity check failed: ${app}/${path}`);
     return { meta, bytes };
   }
 
-  function stat(component, path) { return store.statFile(component, path); }
-  function list(component, prefix) { return { files: store.listFiles(component, prefix), usage: store.fileUsage(component) }; }
-  function usage(component) { return store.fileUsage(component); }
+  function stat(app, path) { return store.statFile(app, path); }
+  function list(app, prefix) { return { files: store.listFiles(app, prefix), usage: store.fileUsage(app) }; }
+  function usage(app) { return store.fileUsage(app); }
 
-  async function del(component, path, { command_id, expected_version } = {}) {
-    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), component, path, expected_version });
-    if (r.ok && r.freed_sha && store.blobRefcount(component, r.freed_sha) === 0) await backend.deleteBlob(component, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS });
+  async function del(app, path, { command_id, expected_version } = {}) {
+    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), app, path, expected_version });
+    if (r.ok && r.freed_sha && store.blobRefcount(app, r.freed_sha) === 0) await backend.deleteBlob(app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS });
     return r;
   }
 
@@ -275,7 +275,7 @@ export function makeFileChannel({ store, backend }) {
   const UPLOAD_TTL_MS = 30 * 60 * 1000;   // idle time (since last append) before an upload expires
   const MAX_ACTIVE_UPLOADS = 16;          // DoS floor — concurrent staged uploads across all apps
   const GC_AGE_GUARD_MS = 60 * 1000;      // never GC-unlink a blob fresher than this (see deleteBlob)
-  const uploads = new Map();              // upload_id → {component, stagingId, bytes, hash, touched, busy}
+  const uploads = new Map();              // upload_id → {app, stagingId, bytes, hash, touched, busy}
 
   function dropUpload(u, id) { uploads.delete(id); backend.dropStaging(u.stagingId).catch(() => {}); }
   function liveUpload(id) {
@@ -285,14 +285,14 @@ export function makeFileChannel({ store, backend }) {
     return u;
   }
 
-  async function beginUpload(component) {
-    if (!COMPONENT_NAME_RE.test(String(component))) return { ok: false, error: "bad_component" };
+  async function beginUpload(app) {
+    if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
     if (typeof backend.openStaging !== "function") return { ok: false, error: "backend_no_staging" };
     for (const [id, u] of uploads) if (Date.now() - u.touched > UPLOAD_TTL_MS) dropUpload(u, id); // lazy expiry
     if (uploads.size >= MAX_ACTIVE_UPLOADS) return { ok: false, error: "too_many_uploads" };
     const stagingId = await backend.openStaging();
     const upload_id = randomUUID();
-    uploads.set(upload_id, { component: String(component), stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
+    uploads.set(upload_id, { app: String(app), stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
     return { ok: true, upload_id, bytes: 0 };
   }
 
@@ -351,15 +351,15 @@ export function makeFileChannel({ store, backend }) {
         if (prior.event_type !== "file_written") return { ok: false, error: "command_id_reused" };
         const p = prior.payload || {};
         if (p.path !== String(path)) return { ok: false, error: "command_id_reused" };
-        // If a LIVE upload is being aimed at this old command_id, its component must match the
+        // If a LIVE upload is being aimed at this old command_id, its app must match the
         // original commit's — otherwise this is a reused id, and answering "success" would leave
         // the new upload silently uncommitted.
         const uLive = uploads.get(String(upload_id));
-        if (uLive && uLive.component !== p.component) return { ok: false, error: "command_id_reused" };
+        if (uLive && uLive.app !== p.app) return { ok: false, error: "command_id_reused" };
         // The ORIGINAL receipt, from the event that made this command idempotent — never from the
         // current file row, which a later overwrite (or delete) may have moved on.
         return { ok: true, idempotent: true,
-          meta: { component: p.component, path: p.path, sha256: p.sha256, size: p.size, mime: p.mime || "application/octet-stream", version: prior.seq } };
+          meta: { app: p.app, path: p.path, sha256: p.sha256, size: p.size, mime: p.mime || "application/octet-stream", version: prior.seq } };
       }
     }
     const u = liveUpload(upload_id);
@@ -379,23 +379,23 @@ export function makeFileChannel({ store, backend }) {
           return { ok: false, error: "sha256_mismatch", actual: have, staged_bytes: u.bytes };
       }
       const sha = u.hash.digest("hex");
-      const had = await backend.hasBlob(u.component, sha);
-      try { if (!had) await backend.linkStaging(u.stagingId, u.component, sha); }
+      const had = await backend.hasBlob(u.app, sha);
+      try { if (!had) await backend.linkStaging(u.stagingId, u.app, sha); }
       catch (e) { dropUpload(u, String(upload_id)); if (e.code === "ENOENT") return { ok: false, error: "upload_expired" }; throw e; } // staging swept/aborted underneath → clean error, not a crash
       const r = store.execute({
         type: "write_file", command_id: command_id || randomUUID(),
-        component: u.component, path, sha256: sha, size: u.bytes, mime, expected_version,
+        app: u.app, path, sha256: sha, size: u.bytes, mime, expected_version,
       });
       if (!r.ok) {
-        if (!had && store.blobRefcount(u.component, sha) === 0) await backend.deleteBlob(u.component, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
+        if (!had && store.blobRefcount(u.app, sha) === 0) await backend.deleteBlob(u.app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
         dropUpload(u, String(upload_id)); // the store said no — the upload is spent either way (hash is consumed)
         return r;
       }
       // Same TOCTOU close as put(): re-link UNCONDITIONALLY (EEXIST is a cheap no-op; a GC'd blob is
       // re-materialized from the still-held staging file), then GC the freed sha behind the age guard.
-      try { await backend.linkStaging(u.stagingId, u.component, sha); } catch { /* EEXIST handled inside; anything else → sweep reconciles */ }
-      if (r.freed_sha && store.blobRefcount(u.component, r.freed_sha) === 0) await backend.deleteBlob(u.component, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
-      if (!r.meta) r.meta = store.statFile(u.component, path);
+      try { await backend.linkStaging(u.stagingId, u.app, sha); } catch { /* EEXIST handled inside; anything else → sweep reconciles */ }
+      if (r.freed_sha && store.blobRefcount(u.app, r.freed_sha) === 0) await backend.deleteBlob(u.app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
+      if (!r.meta) r.meta = store.statFile(u.app, path);
       dropUpload(u, String(upload_id));
       return r;
     } catch (e) {
@@ -416,11 +416,11 @@ export function makeFileChannel({ store, backend }) {
   async function sweepOrphans() {
     let swept = 0;
     if (typeof backend.enumerate === "function") {
-      for await (const { component, sha } of backend.enumerate()) {
+      for await (const { app, sha } of backend.enumerate()) {
         // AGE GUARD: a refcount-0 read can race a writer about to commit a ref for this sha; that
         // writer always (re)writes the blob with a fresh mtime, so only OLD unreferenced blobs are
         // truly orphans. Fresh ones get another look on the next sweep.
-        if (store.blobRefcount(component, sha) === 0) { await backend.deleteBlob(component, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }); swept++; }
+        if (store.blobRefcount(app, sha) === 0) { await backend.deleteBlob(app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }); swept++; }
       }
     }
     // Plain putBlob temp files: 5-min grace. Chunked ".upload" staging: the contractual idle TTL

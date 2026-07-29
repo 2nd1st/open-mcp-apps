@@ -17,7 +17,7 @@ rmSync(TMP, { recursive: true, force: true });
 const store = openStore(join(TMP, "open-mcp-apps.db")); // store.dataDir = TMP → files under TMP/files
 const ch = openFileChannel(store);
 const filesRoot = join(TMP, "files");
-const blobCount = (component) => { try { return readdirSync(join(filesRoot, component)).filter((f) => f.endsWith(".blob")).length; } catch { return 0; } };
+const blobCount = (app) => { try { return readdirSync(join(filesRoot, app)).filter((f) => f.endsWith(".blob")).length; } catch { return 0; } };
 
 let pass = 0, fail = 0;
 const ok = (name, cond) => (cond ? (pass++, console.log("  ✓ " + name)) : (fail++, console.log("  ✗ " + name)));
@@ -60,7 +60,7 @@ ok("same path in two apps → separate dirs + separate content", existsSync(join
 ok("stat is app-scoped (each app resolves its OWN content)", ch.stat("app-a", "shared-name.txt") !== null && ch.stat("app-a", "shared-name.txt").sha256 !== ch.stat("app-b", "shared-name.txt").sha256);
 
 console.log("6. bad input fails closed BEFORE touching the backend");
-ok("bad component rejected", (await ch.put("Bad Comp!", "x.txt", "y")).error === "bad_component");
+ok("bad app rejected", (await ch.put("Bad Comp!", "x.txt", "y")).error === "bad_app");
 ok("traversal path rejected", (await ch.put("notes", "../escape", "y")).error === "bad_path");
 
 console.log("7. sweepOrphans — unlink AGED blobs with no ref row, keep referenced + fresh ones");
@@ -218,7 +218,7 @@ console.log("11. write-set C appends — chunk dedup, sha precheck, and the comm
   const u5 = await ch.beginUpload("other-comp");
   await ch.appendUpload(u5.upload_id, enc("zzz"));
   const cross = await ch.commitUpload(u5.upload_id, "r.bin", { command_id: "c15-replay" });
-  ok("a different component's live upload cannot ride an old command_id", cross.ok === false && cross.error === "command_id_reused");
+  ok("a different app's live upload cannot ride an old command_id", cross.ok === false && cross.error === "command_id_reused");
   await ch.abortUpload(u5.upload_id);
 }
 

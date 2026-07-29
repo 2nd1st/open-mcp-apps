@@ -1,12 +1,12 @@
 // Fixture corpus for the #oma-manifest extraction grammar spike.
-// Every fixture is a COMPLETE component-ish html document (what save_component receives).
+// Every fixture is a COMPLETE app-ish html document (what save_app receives).
 const S = "script";           // avoid literal </script> in THIS file's own source where not needed
 const CLOSE = "</" + S + ">";
 
 export const FIXTURES = [
   {
     name: "F01-baseline-v1-head",
-    why: "the 9 seeded components' actual shape (head, after </style>)",
+    why: "the 9 seeded apps' actual shape (head, after </style>)",
     html: `<!DOCTYPE html><html><head><style>b{}</style>
 <script type="application/json" id="oma-manifest">
 { "manifest_version": 1, "settings": [], "uses_shared": ["locale"] }
@@ -166,7 +166,7 @@ ${CLOSE}
   },
   {
     name: "F19-v1-legacy-block",
-    why: "the 9 shipped components are manifest_version:1 — a v2 engine must still extract them (and settings.html:651 currently HARD-rejects anything !== 1, the mirror hazard)",
+    why: "the 9 shipped apps are manifest_version:1 — a v2 engine must still extract them (and settings.html:651 currently HARD-rejects anything !== 1, the mirror hazard)",
     html: `<html><head>
 <script type="application/json" id="oma-manifest">
 {"manifest_version":1,"uses_shared":["locale","week_start","date_format","currency","density","confirm_delete"]}

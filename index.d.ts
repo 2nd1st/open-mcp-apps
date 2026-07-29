@@ -12,7 +12,7 @@ export interface EngineOptions {
    *  gets them appended. */
   instructions?: string;
   /** Base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787"). When present,
-   *  list_components prints a real <viewBase>/view/<name> link per app; absent = no link. */
+   *  list_apps prints a real <viewBase>/view/<name> link per app; absent = no link. */
   viewBase?: string;
 }
 
@@ -34,29 +34,29 @@ export function createEngine(store: Store, opts?: EngineOptions): unknown;
 export function tierOf(author: string | null | undefined): "local" | "unreviewed";
 export const RUNNER_REQUIRED_HTML: string;
 /** Which collection an app opens on when the caller names none: the one collection its
- *  #oma-manifest declares, else its own name. Use it wherever you MOUNT a component, so an
- *  embedding shell binds by the same rule as open_component and the engine's own viewer. */
+ *  #oma-manifest declares, else its own name. Use it wherever you MOUNT an app, so an
+ *  embedding shell binds by the same rule as open_app and the engine's own viewer. */
 export function defaultCollectionFor(
-  component: { name?: string; manifest?: string | null } | null | undefined,
+  app: { name?: string; manifest?: string | null } | null | undefined,
 ): string | null;
 
-/** Wrap component HTML into the final widget document (injects the oma runtime).
+/** Wrap app HTML into the final widget document (injects the oma runtime).
  * standalone (browser-viewer mode, no MCP host): endpoint/events default to "/rpc" and
  * "/events" — an embedding front door points them at its own same-origin proxy paths;
  * chrome:false renders the BARE widget (no viewer bar/stage) for shells that own the chrome;
- * viewBase is the component→component link base surfaced as window.oma.viewBase (default
+ * viewBase is the app→app link base surfaced as window.oma.viewBase (default
  * "/view/") — an embedding shell points it at its own mount base.
  * tokens are the embedder's host design tokens, written after the neutral fallbacks so they
- * win: components read the host token layer, so an embedder without one renders them foreign
+ * win: apps read the host token layer, so an embedder without one renders them foreign
  * to its own product. Custom-property names must match /^--[a-z][a-z0-9-]*$/ and values are
  * restricted to a CSS-value charset (no <, >, ;, braces, backslash); anything else throws. */
-export function wrapComponent(componentHtml: string, opts?: {
-  standalone?: { endpoint?: string; events?: string; collection?: string; component?: string; chrome?: boolean; viewBase?: string };
-  component?: string;
+export function wrapApp(appHtml: string, opts?: {
+  standalone?: { endpoint?: string; events?: string; collection?: string; app?: string; chrome?: boolean; viewBase?: string };
+  app?: string;
   version?: number;
   tokens?: Record<string, string>;
 }): string;
-/** The universal-loader ui:// document served for the static open_component tool. */
+/** The universal-loader ui:// document served for the static open_app tool. */
 export function wrapLoader(): string;
 
 /** Per-store file channel (opaque user-file storage); memoized per store. */
@@ -64,8 +64,8 @@ export function openFileChannel(store: Store): unknown;
 
 export const GUIDE: string;
 
-/** Idempotently install the built-in system components (settings/dashboard/library) into a store — embedders call this after openStore() to provision a fresh registry. */
-export function seedSystemComponents(store: Store, opts?: { log?: (line: string) => void }): Array<{
+/** Idempotently install the built-in system apps (settings/dashboard/library) into a store — embedders call this after openStore() to provision a fresh registry. */
+export function seedSystemApps(store: Store, opts?: { log?: (line: string) => void }): Array<{
   name: string;
   action: "seeded" | "unchanged" | "skipped" | "error";
   version?: number;
@@ -73,8 +73,8 @@ export function seedSystemComponents(store: Store, opts?: { log?: (line: string)
 }>;
 
 export const SCHEMA_VERSION: number;
-export const COMPONENT_NAME_RE: RegExp;
-export const MAX_COMPONENT_HTML: number;
+export const APP_NAME_RE: RegExp;
+export const MAX_APP_HTML: number;
 export const SETTINGS_COLLECTION: string;
 export const RESERVED_KEY_RE: RegExp;
 export const MAX_ITEM_FIELDS_BYTES: number;
@@ -88,10 +88,10 @@ export const MAX_TOTAL_FILE_COUNT: number;
 
 // ── the sandbox/preview machine (write-set D: src/runner.mjs, one copy) ──────────────────────
 
-/** The canonical no-host design-token fallback stylesheet (what wrapComponent injects). */
+/** The canonical no-host design-token fallback stylesheet (what wrapApp injects). */
 export const TOKEN_FALLBACK_CSS: string;
 /** The system UI kit CSS (components/_system.css, MIT), read from disk on first call.
- *  wrapComponent/wrapLoader inject it themselves; pass it to composePreviewDoc so a
+ *  wrapApp/wrapLoader inject it themselves; pass it to composePreviewDoc so a
  *  server-composed preview shows the same widget the runtime would. */
 export function KIT_CSS(): string;
 /** The kit as a head <style> with the data-oma marker every composer agrees on. */
@@ -108,9 +108,9 @@ export const BRIDGE: string;
 export function composeChildDoc(html: string, opts?: { tokenCss?: string; kitCss?: string; bridge?: string }): string;
 /** A complete, self-contained INERT preview document (stub oma seeded with fixture items) —
  *  what a hosted /library preview server serves instead of keeping hand-synced copies. */
-export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; components?: unknown[]; tokenCss?: string; kitCss?: string }): string;
+export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; apps?: unknown[]; tokenCss?: string; kitCss?: string }): string;
 /** The inert stub window.oma script for a standalone preview document. */
-export function stubOmaScript(name: string, items?: unknown[], components?: unknown[]): string;
+export function stubOmaScript(name: string, items?: unknown[], apps?: unknown[]): string;
 /** Build the parent-side caps chokepoint every sandboxed child call funnels through. */
 export function makeGuard(cfg: {
   name: string;
@@ -123,6 +123,6 @@ export function makeGuard(cfg: {
 /** Walk file_read's byte windows; parts decode-and-concatenate byte-wise (never assume 3-alignment). */
 export function readFileParts(
   callTool: (name: string, args: Record<string, unknown>) => Promise<unknown>,
-  component: string,
+  app: string,
   path: string,
 ): Promise<{ mime?: string; sha256?: string; size?: number; parts: string[] }>;

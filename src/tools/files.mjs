@@ -5,7 +5,7 @@
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
-import { COMPONENT_NAME_RE, MAX_FILE_INLINE_BYTES, MAX_FILE_BYTES } from "../store.mjs";
+import { APP_NAME_RE, MAX_FILE_INLINE_BYTES, MAX_FILE_BYTES } from "../store.mjs";
 import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, fileMetaShape, answer, toMcp, sizeOf, RESULT_BUDGET } from "../contracts.mjs";
 
 export function register(ctx) {
@@ -15,30 +15,30 @@ export function register(ctx) {
   // Opaque user-file storage the AI uses to stash + retrieve files the user hands it (chat
   // attachments, generated exports). Bytes ride a swappable backend (src/files.mjs); these tools
   // mirror the data_* shape. The file_read/file_write caps exist as the tier SEAM but are NOT gated
-  // here — direct/AI use is local-tier (full). The runner enforces them for untrusted components
+  // here — direct/AI use is local-tier (full). The runner enforces them for untrusted apps
   // once tiering lands. We store bytes OPAQUELY: any file, accepted wholesale, never interpreted.
   server.registerTool(
     "file_list",
     {
       title: "List app files",
       annotations: RO,
-      description: "List the files an app (component) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
+      description: "List the files an app (app) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
       inputSchema: {
-        component: z.string().describe("the app whose files to list"),
+        app: z.string().describe("the app whose files to list"),
         prefix: z.string().optional().describe("only paths starting with this prefix"),
         limit: z.number().optional().describe("page size (default 200)"),
         cursor: z.string().optional().describe("opaque cursor from the previous page's next_cursor"),
       },
       outputSchema: {
-        component: z.string(), files: z.array(fileMetaShape),
+        app: z.string(), files: z.array(fileMetaShape),
         usage: z.object({ bytes: z.number(), count: z.number() }), files_version: z.number(),
         returned: z.number().optional(), total: z.number().optional(),
         next_cursor: z.string().nullable().optional(), note: z.string().optional(), eot: z.string().optional(),
       },
     },
     async (a) => {
-      if (!COMPONENT_NAME_RE.test(a.component || "")) return fail("Invalid app name.");
-      const { files: all } = fileChannel.list(a.component, a.prefix);
+      if (!APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
+      const { files: all } = fileChannel.list(a.app, a.prefix);
       const lim = Math.max(1, Math.min(Number(a.limit) || 200, 1000));
       let start = 0;
       if (a.cursor) {
@@ -49,9 +49,9 @@ export function register(ctx) {
         if (start === -1) start = all.length;
       }
       let files = all.slice(start, start + lim);
-      const usage = store.fileUsage(a.component);
+      const usage = store.fileUsage(a.app);
       let note;
-      const bodyOf = (rows) => ({ component: a.component, files: rows,
+      const bodyOf = (rows) => ({ app: a.app, files: rows,
         usage: { bytes: usage.bytes, count: usage.count }, files_version: store.filesVersion(),
         ...(note ? { note } : {}) });
       // Metadata is small, but paths are caller-sized — same budget discipline as every page.
@@ -64,10 +64,10 @@ export function register(ctx) {
       const next = start + files.length < all.length && files.length
         ? Buffer.from(files.at(-1).path, "utf8").toString("base64url") : null;
       const text = files.length
-        ? `Files for "${a.component}" — ${files.length} of ${all.length} (${usage.bytes} bytes total):\n` +
+        ? `Files for "${a.app}" — ${files.length} of ${all.length} (${usage.bytes} bytes total):\n` +
           files.map((f) => `  - ${f.path} (${f.mime}, ${f.size} bytes, v${f.version})`).join("\n") +
           (next ? "\nmore: pass next_cursor" : "") + (note ? `\n${note}` : "")
-        : `No files stored for "${a.component}"${a.prefix ? ` under "${a.prefix}"` : ""}.`;
+        : `No files stored for "${a.app}"${a.prefix ? ` under "${a.prefix}"` : ""}.`;
       return toMcp(answer.page(bodyOf(files), { returned: files.length, total: all.length, next, text }));
     },
   );
@@ -77,29 +77,29 @@ export function register(ctx) {
     {
       title: "Read an app file",
       annotations: RO,
-      description: "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_component, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
+      description: "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_app, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
       inputSchema: {
-        component: z.string(), path: z.string().describe("the file's logical name"),
+        app: z.string(), path: z.string().describe("the file's logical name"),
         offset: z.number().optional().describe("byte offset to read from (default 0)"),
         length: z.number().optional().describe("max bytes for this window (default fits the result budget)"),
       },
       outputSchema: {
-        component: z.string(), path: z.string(), mime: z.string(), size: z.number(), sha256: z.string(), version: z.number(),
+        app: z.string(), path: z.string(), mime: z.string(), size: z.number(), sha256: z.string(), version: z.number(),
         offset: z.number().optional(), next_offset: z.number().nullable().optional(),
         returned: z.number().optional(), total: z.number().optional(),
         data_base64: z.string().optional(), eot: z.string().optional(),
       },
     },
     async (a) => {
-      if (!COMPONENT_NAME_RE.test(a.component || "")) return fail("Invalid app name.");
-      const meta = fileChannel.stat(a.component, a.path);
-      if (!meta) return fail(`No file "${a.path}" stored for "${a.component}". Use file_list to see what exists.`);
+      if (!APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
+      const meta = fileChannel.stat(a.app, a.path);
+      if (!meta) return fail(`No file "${a.path}" stored for "${a.app}". Use file_list to see what exists.`);
       let got;
-      try { got = await fileChannel.get(a.component, a.path); }
+      try { got = await fileChannel.get(a.app, a.path); }
       catch { return fail(`File "${a.path}" failed its integrity check (content-hash mismatch) — it may be corrupted.`); }
       if (!got) return fail(`File "${a.path}" is missing its stored bytes.`);
       const whole = got.bytes;
-      const base = { component: a.component, path: a.path, mime: meta.mime, size: meta.size, sha256: meta.sha256, version: meta.version };
+      const base = { app: a.app, path: a.path, mime: meta.mime, size: meta.size, sha256: meta.sha256, version: meta.version };
       const at = Math.max(0, Math.min(Math.floor(Number(a.offset) || 0), whole.length));
       // Raw-byte window, shrunk until the base64 body fits the budget — the same doctrine as every
       // other window, in the units a file actually has. (base64 inflates 4/3, hence the 3/4.)
@@ -129,22 +129,22 @@ export function register(ctx) {
       description: "Store a file for an app (create or overwrite by path). `data_base64` is the file bytes, base64-encoded — pass any file the user gave you or that you generated. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
       inputSchema: {
         command_id: z.string().describe("idempotency key — a fresh uuid per write"),
-        component: z.string().describe("the app this file belongs to"),
+        app: z.string().describe("the app this file belongs to"),
         path: z.string().describe("logical file name, e.g. 'receipt.pdf' or 'exports/2026-q1.csv'"),
         data_base64: z.string().describe("file bytes, base64-encoded"),
         mime: z.string().optional().describe("content type, e.g. 'image/png' (default application/octet-stream)"),
         expected_version: z.number().optional().describe("the version you last saw, for optimistic concurrency (optional)"),
       },
-      outputSchema: { component: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
+      outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
     },
     async (a) => {
       let bytes;
       try { bytes = Buffer.from(a.data_base64 || "", "base64"); } catch { return fail("data_base64 is not valid base64."); }
       if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Single-call write is limited to ${MAX_FILE_INLINE_BYTES} bytes; this file is ${bytes.length}. Use the chunked path: file_write_begin → file_write_chunk (in order) → file_write_commit.`);
-      const r = await fileChannel.put(a.component, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
+      const r = await fileChannel.put(a.app, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
       if (!r.ok) return fail(fileFailNote(r));
       const m = r.meta;
-      return { content: [{ type: "text", text: `Stored "${a.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${a.component}".${r.idempotent ? " (already stored)" : ""}` }], structuredContent: { component: a.component, path: a.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() } };
+      return { content: [{ type: "text", text: `Stored "${a.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${a.app}".${r.idempotent ? " (already stored)" : ""}` }], structuredContent: { app: a.app, path: a.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() } };
     },
   );
 
@@ -158,11 +158,11 @@ export function register(ctx) {
       title: "Begin a chunked file write",
       annotations: WRITE_NOT_IDEMPOTENT,  // no idempotency key: replaying it starts another upload / appends the bytes again
       description: `Start a chunked upload for a file too big for file_write's single call. Returns an upload_id; send the bytes in order with file_write_chunk (each chunk up to ~${Math.floor(MAX_FILE_INLINE_BYTES / 1024 / 1024)} MiB of raw bytes), then file_write_commit names the file. Uploads expire after 30 idle minutes; per-file ceiling ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MiB.`,
-      inputSchema: { component: z.string().describe("the app this file will belong to") },
+      inputSchema: { app: z.string().describe("the app this file will belong to") },
       outputSchema: { upload_id: z.string(), chunk_limit_bytes: z.number(), file_limit_bytes: z.number() },
     },
     async (a) => {
-      const r = await fileChannel.beginUpload(a.component);
+      const r = await fileChannel.beginUpload(a.app);
       if (!r.ok) return fail(fileFailNote(r));
       return {
         content: [{ type: "text", text: `Upload started (id ${r.upload_id}). Send chunks in order with file_write_chunk, then file_write_commit.` }],
@@ -208,15 +208,15 @@ export function register(ctx) {
         expected_version: z.number().optional(),
         expected_sha256: z.string().optional().describe("precheck: refuse (losslessly — the upload survives) if the staged bytes hash differently"),
       },
-      outputSchema: { component: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
+      outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
     },
     async (a) => {
       const r = await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version, expected_sha256: a.expected_sha256 });
       if (!r.ok) return fail(fileFailNote(r));
       const m = r.meta;
       return {
-        content: [{ type: "text", text: `Stored "${m.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${m.component}".${r.idempotent ? " (already committed by this command_id — nothing re-uploaded)" : ""}` }],
-        structuredContent: { component: m.component, path: m.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() },
+        content: [{ type: "text", text: `Stored "${m.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${m.app}".${r.idempotent ? " (already committed by this command_id — nothing re-uploaded)" : ""}` }],
+        structuredContent: { app: m.app, path: m.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() },
       };
     },
   );
@@ -242,13 +242,13 @@ export function register(ctx) {
       title: "Delete an app file",
       annotations: DESTRUCTIVE,
       description: "Permanently delete one file an app has stored.",
-      inputSchema: { command_id: z.string().describe("idempotency key (uuid)"), component: z.string(), path: z.string(), expected_version: z.number().optional() },
-      outputSchema: { component: z.string(), path: z.string(), deleted: z.boolean(), files_version: z.number() },
+      inputSchema: { command_id: z.string().describe("idempotency key (uuid)"), app: z.string(), path: z.string(), expected_version: z.number().optional() },
+      outputSchema: { app: z.string(), path: z.string(), deleted: z.boolean(), files_version: z.number() },
     },
     async (a) => {
-      const r = await fileChannel.del(a.component, a.path, { command_id: a.command_id, expected_version: a.expected_version });
+      const r = await fileChannel.del(a.app, a.path, { command_id: a.command_id, expected_version: a.expected_version });
       if (!r.ok) return fail(fileFailNote(r));
-      return { content: [{ type: "text", text: `Deleted "${a.path}" from "${a.component}".` }], structuredContent: { component: a.component, path: a.path, deleted: true, files_version: store.filesVersion() } };
+      return { content: [{ type: "text", text: `Deleted "${a.path}" from "${a.app}".` }], structuredContent: { app: a.app, path: a.path, deleted: true, files_version: store.filesVersion() } };
     },
   );
 

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// shell-runtime.js — the browser-side runtime injected into EVERY component.
+// shell-runtime.js — the browser-side runtime injected into EVERY app.
 //
-// This is the whole reason AI-written components work: a component never touches the MCP
+// This is the whole reason AI-written apps work: an app never touches the MCP
 // bridge, uuids, versions, or persistence. It only calls the tiny `window.oma` API and
 // re-renders on change. The shell owns the ui/initialize handshake, tool calls, idempotency
 // keys, optimistic-concurrency versions, and host theming.
@@ -13,8 +13,8 @@
 // mini-bridge, caps chokepoint) lives ONCE in runner.mjs and is reached here as oma.embed.
 //
 // NOT a security boundary (docs/security-model.md §2): this runtime shares the document with
-// the component's own scripts, so nothing here can gate a hostile component. Untrusted
-// (non-local) components run one level down behind the runner, never in direct mode.
+// the app's own scripts, so nothing here can gate a hostile app. Untrusted
+// (non-local) apps run one level down behind the runner, never in direct mode.
 //
 // Bundled by build.mjs into dist/shell.js and inlined by shell.mjs when serving ui://.
 
@@ -37,26 +37,26 @@ const SA = typeof window !== "undefined" ? window.__OMA_STANDALONE__ : undefined
 // Changed to `{}` — an honest empty declaration. We have NO reading on what a host does when a
 // capability it saw yesterday is absent today, which is exactly why this rides alone in its own
 // commit: if a host reacts badly it reverts as one line, tangled with nothing.
-const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, {});
+const hostApp = new App({ name: "open-mcp-apps", version: "0.1.0" }, {});
 
 // `version` is the GLOBAL ledger seq of the last adopted read (stamped in the read's own
-// transaction server-side); `total`/`truncated` are the walk's honesty marks — a component
+// transaction server-side); `total`/`truncated` are the walk's honesty marks — an app
 // can render "N of M" instead of pretending a capped projection is the collection.
-// The direct-embed (per-component resource) document carries its binding as an injected global:
+// The direct-embed (per-app resource) document carries its binding as an injected global:
 // on hosts whose toolinput/toolresult pushes never deliver a collection (measured on Claude
 // Desktop 1.24012.9 dynamic-tools mode), the widget otherwise reaches interactivity unbound and
 // every write bounces off the server as collection:null.
 const BOUND_HINT = (typeof window !== "undefined" && window.__OMA_COLLECTION_HINT__) || null;
-// The SAME stamp, for the same reason, and it was missing. wrapComponent injects both globals
-// before the runtime evaluates, so a per-app document knows its own name at t=0 — but `component`
+// The SAME stamp, for the same reason, and it was missing. wrapApp injects both globals
+// before the runtime evaluates, so a per-app document knows its own name at t=0 — but `app`
 // started at null anyway, which left the first-wins rule in ontoolresult to be won by whoever
 // spoke first. On a host that hands a widget another call's envelope (measured, ChatGPT web) or in
 // a turn that opens two apps at once, that first speaker can be a DIFFERENT app, and this document
 // would then answer with a name that is not its own. A document that was stamped with its identity
 // should never have to be told what it is.
 // Null on the universal loader, correctly: it is stamped only after it resolves and mounts.
-const BAKED_NAME = (typeof window !== "undefined" && window.__OMA_COMPONENT__) || null;
-let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, component: BAKED_NAME, host: null };
+const BAKED_NAME = (typeof window !== "undefined" && window.__OMA_APP__) || null;
+let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, app: BAKED_NAME, host: null };
 let toolInput = {};
 let readyDeadline = null;
 let ready = false;
@@ -75,7 +75,7 @@ function markReady() {
   if (ready || readying) return;
   readying = true;
   const flush = () => {
-    lastMerged = currentMerged();   // diff baseline — component identity is known by now
+    lastMerged = currentMerged();   // diff baseline — app identity is known by now
     // …and so is the PER-APP theme layer, which is why it is re-applied here. Prefs are fetched at
     // connect, in parallel with the host's ontoolinput, so ingestPrefs can (and on the universal
     // loader path usually does) run while compName() is still null — computing a theme with the
@@ -85,7 +85,7 @@ function markReady() {
     applyThemeVars(themeVars(currentMerged()));
     ready = true;
     for (const cb of readyCbs.splice(0)) { try { cb(state); } catch (e) { console.error("[oma] ready handler threw", e); } }
-    emit();                         // ONE warm first paint — covers onChange-only components
+    emit();                         // ONE warm first paint — covers onChange-only apps
   };
   Promise.race([
     prefsPromise ?? (prefsPromise = syncPrefs()),
@@ -106,7 +106,7 @@ function adopt(snap) {
     version: snap.version ?? state.version,
     total: typeof snap.total === "number" ? snap.total : snap.items.length,
     truncated: !!snap.truncated,
-    component: snap.component ?? state.component,
+    app: snap.app ?? state.app,
     host: snap.host ?? state.host,
   };
   if (!unchanged && ready) emit();                            // pre-ready emits deferred to flush
@@ -118,9 +118,9 @@ function adopt(snap) {
   return true;
 }
 
-// A shell-owned error banner: AI-written components rarely handle failures, so persistence
+// A shell-owned error banner: AI-written apps rarely handle failures, so persistence
 // problems must be visible without their cooperation. Attached to <html>, not <body> —
-// components commonly rewrite body.innerHTML on render.
+// apps commonly rewrite body.innerHTML on render.
 function omaNotify(msg) {
   let el = document.getElementById("__oma_notice");
   if (!el) {
@@ -144,7 +144,7 @@ function omaNotify(msg) {
 // Claude Code, same bridge stack): calls sent in an early post-mount window vanish — the
 // renderer logs "oncalltool handler replaced" and requests on the replaced handler are lost.
 // Ten seconds is far beyond any real engine round-trip; the rejection flows through the same
-// tagged-error path as any transport failure, so render-health never blames the component.
+// tagged-error path as any transport failure, so render-health never blames the app.
 const BRIDGE_DEADLINE_MS = 10_000;
 function withDeadline(p, what) {
   return new Promise((resolve, reject) => {
@@ -164,10 +164,10 @@ async function rawCall(name, args) {
       if (!res.ok) throw new Error("HTTP " + res.status);
       return await res.json(); // a CallToolResult
     }
-    return await withDeadline(app.callServerTool({ name, arguments: args }), name);
+    return await withDeadline(hostApp.callServerTool({ name, arguments: args }), name);
   } catch (e) {
     // Tag every failure that originates from a TOOL CALL (host declined, bridge blip, transport
-    // error). The render-health reporter must never mistake these for a broken component — a
+    // error). The render-health reporter must never mistake these for a broken app — a
     // transient environment failure would otherwise auto-revert a perfectly healthy version.
     if (e && typeof e === "object") { try { e.omaToolCallError = true; } catch {} }
     throw e;
@@ -284,7 +284,7 @@ async function call(name, args) {
         if (state.collection === "settings") {
           if (advance) lastSettingsVersion = state.version;
           // ingestPrefs only emits when the MERGED map moved, and a settings widget writing ANOTHER
-          // component's group (exactly what the settings app does) moves nothing of its own — so the
+          // app's group (exactly what the settings app does) moves nothing of its own — so the
           // app that just wrote a row never re-rendered its own list, and the watermark had already
           // advanced so no poll would repair it. The bound state DID change: emit for it, and let
           // ingestPrefs handle the pref-cache side without owning the repaint.
@@ -313,21 +313,21 @@ async function call(name, args) {
   }
 }
 
-// ---- preferences: prefetched at boot, group-indexed (component-name-INDEPENDENT),
+// ---- preferences: prefetched at boot, group-indexed (app-name-INDEPENDENT),
 // merged lazily per read — identity may not be known yet when the data arrives.
 // Resolver evaluated at EVERY use, never cached into data structures: the loader path
 // learns the name only via ontoolinput/ontoolresult (guaranteed by ready()-flush time).
 // WHO WE ARE, most trustworthy first.
 //
-// `__OMA_COMPONENT__` is OURS: a per-app document is stamped with it at serve time by
-// wrapComponent, and on the loader path the loader writes it only after it has resolved and
+// `__OMA_APP__` is OURS: a per-app document is stamped with it at serve time by
+// wrapApp, and on the loader path the loader writes it only after it has resolved and
 // mounted the app. Either way it is a fact about the document we are running in. The other two
 // come from the host, and the host can hand a widget another call's envelope — measured on
 // ChatGPT web, both modes. It ranked LAST, so the one channel that cannot be misdelivered was
 // the one we consulted only when the misdeliverable ones were empty.
 const compName = () =>
-  (typeof window !== "undefined" && window.__OMA_COMPONENT__) ||
-  state.component || (toolInput && toolInput.component) || null;
+  (typeof window !== "undefined" && window.__OMA_APP__) ||
+  state.app || (toolInput && toolInput.app) || null;
 
 // Exact coercion, shared verbatim with the mini-bridge (docs/settings-design.md §2.1):
 // the FALLBACK's type drives it, so junk stored values degrade to the fallback safely.
@@ -372,7 +372,7 @@ function indexPrefs(items) {
     }
   }
 }
-function currentMerged() {                         // merged view for THIS component, NOW
+function currentMerged() {                         // merged view for THIS app, NOW
   const m = new Map(prefGlobal), g = prefByGroup.get(compName());
   if (g) for (const [k, v] of g) m.set(k, v);
   return m;
@@ -391,14 +391,14 @@ function ingestPrefs(items, notify) {
   const next = currentMerged(), prev = lastMerged;
   lastMerged = next;
   const changed = [];
-  const scopeOf = (k) => prefByGroup.get(compName())?.has(k) ? "component" : "global";
+  const scopeOf = (k) => prefByGroup.get(compName())?.has(k) ? "app" : "global";
   for (const [k, v] of next) if (!prev.has(k) || prev.get(k) !== v)
     changed.push({ key: k, value: v, oldValue: prev.get(k), scope: scopeOf(k) });
   for (const [k, v] of prev) if (!next.has(k))
     changed.push({ key: k, value: undefined, oldValue: v, scope: "global" });
   if (changed.length) {
     for (const c of changed) for (const cb of prefCbs) { try { cb(c); } catch (e) { console.error("[oma] onPrefChange handler threw", e); } }
-    emit();   // render-from-state components repaint with the new pref values for free
+    emit();   // render-from-state apps repaint with the new pref values for free
     return true;
   }
   return false;
@@ -441,10 +441,10 @@ let hostVars = null;              // the host's own variable map, kept so a remo
 // turn contains more than one tool call, the FIRST mount is bound correctly — and a later
 // re-render replays the FIRST call of that turn instead of the one that opened the app:
 //
-//   turn: get_component{name:"dev-probe"} → open_component{component:"dev-probe"}
+//   turn: get_app{name:"dev-probe"} → open_app{app:"dev-probe"}
 //   after refresh the widget was handed  toolInput = {name:"dev-probe"}
-//                                        toolInfo.tool = get_component's definition
-//   turn: data_collections{} → open_component{...}
+//                                        toolInfo.tool = get_app's definition
+//   turn: data_collections{} → open_app{...}
 //   after refresh                        toolInput = {}   toolInfo.tool = data_collections
 //
 // Both are verbatim the OTHER call's arguments, so this is not "the host sent nothing" — it is the
@@ -463,17 +463,17 @@ function rememberIdentity() {
   try {
     const oai = window.openai;
     if (!oai || typeof oai.setWidgetState !== "function") return;
-    const name = toolInput.component || state.component;
+    const name = toolInput.app || state.app;
     if (!name) return;
     const prev = oai.widgetState || {};
     const mine = prev[STATE_KEY] || {};
-    if (mine.component === name && mine.collection === state.collection && mine.host === state.host) return;
+    if (mine.app === name && mine.collection === state.collection && mine.host === state.host) return;
     // Preserve whatever the app itself keeps here — we are a guest in this object. `host` rides
     // along because it has the same shape of problem: it can only arrive on a channel a mis-bound
     // re-render never delivers, which is why a refreshed widget reported host:null all week. This
     // is not a second derivation of it — it is the one we were told, written down.
     oai.setWidgetState({ ...prev, [STATE_KEY]: {
-      component: name, collection: state.collection || null, host: state.host || null } });
+      app: name, collection: state.collection || null, host: state.host || null } });
   } catch (_) { /* a host that rejects the write leaves us exactly where we were */ }
 }
 /** What the host replayed to us about ourselves, if it kept anything. Read-only. */
@@ -491,16 +491,16 @@ function recallIdentity() {
 // coming. It is a plain question now, answered from what we know and what the host kept for us.
 try {
   window.__OMA_IDENTITY__ = () => {
-    const name = toolInput.component || state.component;
+    const name = toolInput.app || state.app;
     if (name) return name;
     // Nothing live — but the host may be carrying the note we wrote on a previous mount. This is
     // what survives a re-render the host binds to the wrong call.
     const kept = recallIdentity();
-    if (!kept || !kept.component) return null;
-    if (!state.component) state.component = kept.component;
+    if (!kept || !kept.app) return null;
+    if (!state.app) state.app = kept.app;
     if (!state.collection && kept.collection) state.collection = kept.collection;
     if (!state.host && kept.host) state.host = kept.host;
-    return kept.component;
+    return kept.app;
   };
 } catch (_) { /* no window (test rig): the loader is the only caller and it has one */ }
 
@@ -508,7 +508,7 @@ try {
 // JSON-RPC id plus a tool definition — is engine plumbing, not something an app should be built
 // on. Whether authors should get the useful half (platform, displayMode, locale, timeZone) is a
 // separate API decision that deserves its own thinking, not a passenger on this one. So it rides
-// the same internal __OMA_* channel the loader already uses for component identity.
+// the same internal __OMA_* channel the loader already uses for app identity.
 function applyTheme(ctx) {
   if (!ctx) return;
   try {
@@ -528,10 +528,10 @@ function applyTheme(ctx) {
 }
 
 // The user theme layer: `theme:--*` settings rows, merged per oma.pref's own rule (this
-// component's group overrides global), stamped as inline custom properties. Values were already
+// app's group overrides global), stamped as inline custom properties. Values were already
 // charset-checked by themeVars; nothing here can carry a selector or escape a declaration.
 let themeApplied = new Map();
-/** The token names our theme stamped that are scoped to THIS component only. A child embedded by
+/** The token names our theme stamped that are scoped to THIS app only. A child embedded by
  *  us must not inherit them (see tokenCSS's `substitute`): global theme tokens apply to the child
  *  too and are fine to pass down, a per-app one is by definition not the child's. */
 function ownThemeNames() {
@@ -566,8 +566,8 @@ function applyThemeVars(pairs) {
 
 // ---- files (read side): list / bytes / object URL — the knowledge-card render path --------
 const fileUrlCache = new Map();   // path -> {sha256, url}
-async function fileBytes(component, path) {
-  const { parts, mime, sha256 } = await readFileParts(rawCall, component, path);
+async function fileBytes(app, path) {
+  const { parts, mime, sha256 } = await readFileParts(rawCall, app, path);
   // Decode per window and concatenate BYTES (windows are raw byte ranges; base64 strings of
   // adjacent windows are not concatenation-safe unless 3-aligned, so we never assume it).
   const chunks = parts.map((p) => { const s = atob(p); const u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return u; });
@@ -588,7 +588,7 @@ async function fileBytes(component, path) {
 
 // The child is a separate document, so it inherits none of our CSS — the system UI kit has to
 // travel with it. We take it from OUR OWN head rather than bundling a second copy: every
-// document that runs this runtime was composed by wrapComponent/wrapLoader, and both inject
+// document that runs this runtime was composed by wrapApp/wrapLoader, and both inject
 // the kit under the same data-oma marker. One copy of the bytes, no build step, no drift.
 // The neutral token FALLBACK sheet, read the same way and for the same reason as the kit. The child
 // had no fallback layer at all before: every token it saw was whatever the parent's computed value
@@ -619,10 +619,10 @@ function ownKitCss() {
 // data_changes call and re-walks only when something actually happened there.
 const liveEmbeds = new Set();
 
-// ---- the public API components are written against ----
+// ---- the public API apps are written against ----
 window.oma = {
   /** Current snapshot: { collection, items: [{id, group, position, fields, version}], version,
-   *  total, truncated } — total/truncated let a component say "N of M" honestly. */
+   *  total, truncated } — total/truncated let an app say "N of M" honestly. */
   get state() { return state; },
   /** cb(state) once the bridge is connected and initial data has arrived — or, if that never
    *  happens, AFTER A DEADLINE with whatever state we have.
@@ -661,10 +661,10 @@ window.oma = {
   onChange(cb) { changeCbs.push(cb); },
   // actor:"human" in the writes below is enum-constrained AUDIT metadata, never authorization:
   // it is caller-chosen and forgeable in direct mode (security-model §1.4); only a
-  // runner-stamped component identity is trustworthy write provenance. `via` is the same
-  // class of metadata — the component's shadow edge for the Data pane, stripped from every
+  // runner-stamped app identity is trustworthy write provenance. `via` is the same
+  // class of metadata — the app's shadow edge for the Data pane, stripped from every
   // AI-facing read.
-  /** Add an item. fields is any JSON object your component defines. */
+  /** Add an item. fields is any JSON object your app defines. */
   addItem({ group = "", fields = {}, position } = {}) {
     // Direct-embed mode can reach interactivity before any toolinput/toolresult has delivered a
     // binding; sending collection:null just bounces off the server as -32602. Fail loudly and
@@ -702,19 +702,19 @@ window.oma = {
    */
   readCollection(collection, opts) { return readCollection(collection, opts); },
   /**
-   * SYNC merged preference read: own component override ▸ global ▸ fallback, computed
+   * SYNC merged preference read: own app override ▸ global ▸ fallback, computed
    * lazily at call time. The fallback's TYPE drives coercion (junk values → fallback).
    */
   pref(key, fallback) { return coercePref(rawPref(key), fallback); },
   /** cb({key, value, oldValue, scope}) — fired once per key whose EFFECTIVE (merged) value changed. */
   onPrefChange(cb) { prefCbs.push(cb); },
   /**
-   * Persist one of THIS component's own settings (scalar values only). Own group only —
+   * Persist one of THIS app's own settings (scalar values only). Own group only —
    * API-layer scoping, not a security boundary (docs/settings-design.md §8).
    */
   setPref(key, value) {
     const me = compName();
-    if (!me) return Promise.reject(new Error("setPref: unknown component scope"));
+    if (!me) return Promise.reject(new Error("setPref: unknown app scope"));
     if (typeof key !== "string" || !/^[a-z][a-z0-9_]{0,31}$/.test(key) || /^(security_|_)/.test(key))
       return Promise.reject(new Error("setPref: invalid or reserved key"));
     const t = typeof value;
@@ -763,16 +763,16 @@ window.oma = {
   /**
    * Escape hatch: call any tool on the server. SECURITY (security-model §5 v0.3): a full,
    * unmediated passthrough to every registered MCP tool — tolerable ONLY because direct mode
-   * is local-authored-only; untrusted components run behind the runner, which filters calls.
+   * is local-authored-only; untrusted apps run behind the runner, which filters calls.
    */
   callTool(name, args) { return rawCall(name, args || {}); },
   /** Per-app FILES, read side: list(), read(path) → Uint8Array, url(path) → object URL you can
    *  put straight into <img src>/<a href>. Files are written by the AI (file_write); this is
-   *  how a component renders them. */
+   *  how an app renders them. */
   files: {
     list() {
       const me = compName();
-      return rawCall("file_list", { component: me }).then((r) => (r && r.structuredContent) || { files: [] });
+      return rawCall("file_list", { app: me }).then((r) => (r && r.structuredContent) || { files: [] });
     },
     read(path) {
       return fileBytes(compName(), String(path)).then((f) => f.bytes);
@@ -790,17 +790,17 @@ window.oma = {
     },
   },
   /**
-   * Call one of THIS component's own #oma-manifest functions (data in → data out; functions
+   * Call one of THIS app's own #oma-manifest functions (data in → data out; functions
    * never touch UI — the data change comes back through the normal reactive loop). The callee
-   * is always this component: cross-component calls arrive with the function pillar's
+   * is always this app: cross-app calls arrive with the function pillar's
    * callable caps, not before.
    */
   callFunction(fn, args) {
     const me = compName();
-    return rawCall("call_function", { component: me, function: String(fn), args: args || {}, command_id: uuid(), via: viaOf(me) });
+    return rawCall("call_function", { app: me, function: String(fn), args: args || {}, command_id: uuid(), via: viaOf(me) });
   },
   /**
-   * Mount another component INSIDE this one (sandboxed, caps-enforced — the same runner
+   * Mount another app INSIDE this one (sandboxed, caps-enforced — the same runner
    * machine the loader uses; depth 1: an embedded child cannot embed further).
    * opts: { into: Element (required), preset: "live"|"readonly"|"inert", collection, html,
    *         snapshot, heights: {min,max}|false }.
@@ -814,9 +814,9 @@ window.oma = {
     // Inert children never call anything, so provided html is all they need; every other
     // preset resolves the engine truth (source + tier + caps) unless the caller provided it.
     if ((html == null || caps == null) && !(preset === "inert" && html != null)) {
-      const r = await rawCall("component_html", { name: n });
+      const r = await rawCall("app_html", { name: n });
       const sc = (r && r.structuredContent) || {};
-      if (!sc.html) throw new Error('embed: component "' + n + '" not found');
+      if (!sc.html) throw new Error('embed: app "' + n + '" not found');
       if (html == null) html = sc.html;
       if (caps == null) caps = sc.caps || {};
       if (tier == null) tier = sc.tier == null ? "local" : sc.tier;
@@ -829,12 +829,12 @@ window.oma = {
     // preview machines (this one and composePreviewDoc's) cannot drift apart again. An explicit
     // opts.collection still wins: a caller that names a binding means it.
     const share = opts.snapshot
-      ? childPreviewSnapshot(opts.snapshot.items, { app: n, declaration: opts.declaration, components: opts.snapshot.components, tier })
+      ? childPreviewSnapshot(opts.snapshot.items, { app: n, declaration: opts.declaration, apps: opts.snapshot.apps, tier })
       : null;
     const coll = String(opts.collection || (share && share.collection) || (opts.snapshot && opts.snapshot.collection) || n);
     let childSnap = share
-      ? { collection: coll, items: share.items, components: share.components, version: opts.snapshot.version || 0, component: n, host: state.host }
-      : { collection: coll, items: [], version: 0, component: n, host: state.host };
+      ? { collection: coll, items: share.items, apps: share.apps, version: opts.snapshot.version || 0, app: n, host: state.host }
+      : { collection: coll, items: [], version: 0, app: n, host: state.host };
 
     let prefMap = null, compKeys = {}, settingsIds = new Set();
     let prefVersion = -1;     // settings_version behind prefMap — a slow read must not rewind it
@@ -867,7 +867,7 @@ window.oma = {
         snapshot: () => childSnap,
         settingsIds: () => settingsIds,
         readCollection,
-        readFile: (component, path) => fileBytes(component, path).then((f) => {
+        readFile: (app, path) => fileBytes(app, path).then((f) => {
           let s = ""; const b = f.bytes;
           for (let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000));
           return { base64: btoa(s), mime: f.mime };
@@ -895,8 +895,8 @@ window.oma = {
       frame.contentWindow.postMessage({
         omaRunSnapshot: true,
         ...(changed ? { changed: true } : {}),
-        snapshot: { collection: childSnap.collection || coll, items: childSnap.items || [], version: childSnap.version || 0, component: n, host: state.host },
-        toolInput: { component: n, collection: coll },
+        snapshot: { collection: childSnap.collection || coll, items: childSnap.items || [], version: childSnap.version || 0, app: n, host: state.host },
+        toolInput: { app: n, collection: coll },
         prefs: prefMap || {},
         compKeys,
         // The theme layer for THIS child, resolved here: prefMap already merged global with the
@@ -921,7 +921,7 @@ window.oma = {
           : readCollection(coll, preset === "readonly" ? { maxPages: 1 } : undefined)
               .then((s) => {
                 if (dead) return;
-                if ((s.version || 0) >= (childSnap.version || 0)) childSnap = { ...s, component: n, host: state.host };
+                if ((s.version || 0) >= (childSnap.version || 0)) childSnap = { ...s, app: n, host: state.host };
               }).catch(() => {}),
       ]).then(() => { if (!dead) push(); });
     } else { prefMap = {}; }
@@ -984,7 +984,7 @@ window.oma = {
       if (refreshing) return refreshing;
       refreshing = readCollection(coll).then((s) => {
         if (dead) return;
-        if ((s.version || 0) >= (childSnap.version || 0)) { childSnap = { ...s, component: n, host: state.host }; push(); }
+        if ((s.version || 0) >= (childSnap.version || 0)) { childSnap = { ...s, app: n, host: state.host }; push(); }
       }).catch(() => {}).finally(() => { refreshing = null; });
       return refreshing;
     }
@@ -1056,20 +1056,20 @@ window.oma = {
    *  what differs between them is enforcement, not the shape of this object. An app shipped from
    *  outside this repo feature-detects with it; one written by the AI never needs to. */
   get contract() { return RUNTIME_CONTRACT; },
-  /** Arguments of the tool call that mounted this widget (e.g. {component, collection}). */
+  /** Arguments of the tool call that mounted this widget (e.g. {app, collection}). */
   get toolInput() { return toolInput; },
   /** Which host this widget is running in ("claude-ai", "chatgpt", "browser-viewer", …). */
   get host() { return state.host; },
   /** True when running in a plain browser page (no chat attached — sendMessage unavailable). */
   get standalone() { return !!SA; },
   /**
-   * Base path for component→component links (e.g. `oma.viewBase + name`). Defaults to the
+   * Base path for app→app links (e.g. `oma.viewBase + name`). Defaults to the
    * engine viewer's "/view/"; an embedding shell sets standalone.viewBase to its own mount
-   * base so links resolve there. Single source of truth — components never hardcode "/view/".
+   * base so links resolve there. Single source of truth — apps never hardcode "/view/".
    */
   get viewBase() { return (SA && typeof SA.viewBase === "string" && SA.viewBase) || "/view/"; },
   /**
-   * True if `name` is a control-plane tool no component may call via callTool (registry /
+   * True if `name` is a control-plane tool no app may call via callTool (registry /
    * security-policy mutation, and every internal `_`-prefixed RPC). The single source of
    * truth (tool-policy.mjs) — a preview bridge MUST gate on this rather than hand-maintain
    * its own denylist.
@@ -1081,8 +1081,8 @@ window.oma = {
    * DIRECT MODE ONLY, and it exists for exactly one caller: the universal loader. A per-app
    * document is baked with its binding at serve time (`__OMA_COLLECTION_HINT__`), but the loader is
    * ONE document serving every app, so it cannot be — leaving `state.collection` with a single
-   * source, a host push, and `open_component`'s `collection` input optional and usually omitted.
-   * The result of the `component_html` call the loader already makes carries the binding, so the
+   * source, a host push, and `open_app`'s `collection` input optional and usually omitted.
+   * The result of the `app_html` call the loader already makes carries the binding, so the
    * loader hands it over here instead of the runtime waiting to be told.
    *
    * It does NOT recompute anything, and callers must not either: "what does this app open on" has
@@ -1102,23 +1102,23 @@ window.oma = {
    * (e.g. a "Send to AI" button) — never automatically.
    *
    * ⚠️ The resolved value means THE HOST ACCEPTED THE REQUEST. It does NOT mean the user sent
-   * anything, and a component must never render "done" on the strength of it. Both hosts we have
+   * anything, and an app must never render "done" on the strength of it. Both hosts we have
    * first-hand readings for MEDIATE it (Leo, live, 2026-07-28):
    *   · Claude  — the text is placed in the composer, UNSENT. The user still presses send, and
    *               may never do so; this promise resolved long before that.
    *   · ChatGPT — a system modal appears ("An app wants to send this prompt", editable, with
    *               Cancel/Send); pressing Send delivers it with no further confirmation.
    * Either way the outcome happens after we are done, and nothing on the wire reports it (see
-   * docs/wo/proposal-trusted-user-action.md), so the honest thing a component can do is point the
+   * docs/wo/proposal-trusted-user-action.md), so the honest thing an app can do is point the
    * user at the chat — which this does, once, on the caller's behalf.
    */
   sendMessage(text) {
     const t = String(text);
     // GLOBAL degradation: when the chat channel is unavailable (standalone page) or the host
     // rejects/fails the call (Codex widget-proxy -32000, openai/codex#28912), fall back to the
-    // CLIPBOARD — the user pastes the text to their AI. Components just call sendMessage and
+    // CLIPBOARD — the user pastes the text to their AI. Apps just call sendMessage and
     // never need their own fallback; the success path (Claude Desktop) is untouched. The
-    // degraded result is NOT an exception (isError + degraded tag), so components don't crash.
+    // degraded result is NOT an exception (isError + degraded tag), so apps don't crash.
     const degrade = (why) => {
       let p;
       try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject(new Error("no clipboard")); }
@@ -1148,7 +1148,7 @@ window.oma = {
     // what the resolved value does and does not mean. Known consequence, recorded in KNOWN-ISSUES:
     // call sites are fire-and-forget again, so on a host that only stages the text a click can look
     // like nothing happened.
-    return app.sendMessage({ role: "user", content: [{ type: "text", text: t }] })
+    return hostApp.sendMessage({ role: "user", content: [{ type: "text", text: t }] })
       .then((r) => (r && r.isError ? degrade("host declined") : r))
       .catch((e) => degrade((e && e.message) || "send failed"));
   },
@@ -1174,7 +1174,7 @@ window.oma = {
     // null — so reporting {ok:true} on "did not throw" told the caller a tab had opened when none
     // had, and the caller then suppressed its own fallback. `ok` has to mean the thing happened.
     if (SA) { try { return Promise.resolve({ ok: !!window.open(u, "_blank", "noopener") }); } catch (e) { return Promise.resolve({ ok: false }); } }
-    return app.openLink({ url: u })
+    return hostApp.openLink({ url: u })
       .then((r) => ({ ok: !(r && r.isError) }))
       .catch(() => ({ ok: false }));
   },
@@ -1184,7 +1184,7 @@ window.oma = {
    */
   updateContext(text) {
     if (SA) return Promise.resolve();
-    return app.updateModelContext({ content: [{ type: "text", text: String(text) }] })
+    return hostApp.updateModelContext({ content: [{ type: "text", text: String(text) }] })
       .catch((e) => { console.error("[oma] updateContext failed", e); });
   },
 };
@@ -1242,10 +1242,10 @@ document.addEventListener("keydown", markActivity, { capture: true, passive: tru
 
 // ---- render-health: report a broken mount so the engine can AUTO-REVERT to the last good
 // version (local tier only — the engine enforces that plus a per-run budget). Identity comes
-// from the injected globals (__OMA_COMPONENT__/__OMA_COMPONENT_VERSION__ via wrapComponent, or
+// from the injected globals (__OMA_APP__/__OMA_APP_VERSION__ via wrapApp, or
 // set by the loader before mount); no identity/version → no report. First error only, within
 // the initial window; earlier parse-time errors arrive via the __OMA_EARLY_ERRORS__ buffer
-// (a classic script installed before any component code runs).
+// (a classic script installed before any app code runs).
 let bridgeReady;                                          // resolves when rawCall is usable
 const bridgeReadyP = new Promise((r) => { bridgeReady = r; });
 {
@@ -1254,11 +1254,11 @@ const bridgeReadyP = new Promise((r) => { bridgeReady = r; });
   let reported = false;
   const report = (msg) => {
     if (reported) return;
-    const component = compName();
-    const version = typeof window !== "undefined" ? window.__OMA_COMPONENT_VERSION__ : undefined;
-    if (!component || typeof version !== "number") return;
+    const app = compName();
+    const version = typeof window !== "undefined" ? window.__OMA_APP_VERSION__ : undefined;
+    if (!app || typeof version !== "number") return;
     reported = true;
-    bridgeReadyP.then(() => rawCall("render_health", { component, version, ok: false, error: String(msg).slice(0, 300) }))
+    bridgeReadyP.then(() => rawCall("render_health", { app, version, ok: false, error: String(msg).slice(0, 300) }))
       .then((r) => {
         const sc = r && r.structuredContent;
         if (sc && sc.reverted) {
@@ -1271,7 +1271,7 @@ const bridgeReadyP = new Promise((r) => { bridgeReady = r; });
   window.addEventListener("error", (e) => { if (Date.now() - t0 < REPORT_WINDOW_MS) report((e && e.message) || "script error"); });
   window.addEventListener("unhandledrejection", (e) => {
     const r = e && e.reason;
-    if (r && r.omaToolCallError) return;   // environment/tool failure, NOT broken component code — never a revert trigger
+    if (r && r.omaToolCallError) return;   // environment/tool failure, NOT broken app code — never a revert trigger
     if (Date.now() - t0 < REPORT_WINDOW_MS) report((r && r.message) || r || "unhandled rejection");
   });
 }
@@ -1280,15 +1280,15 @@ if (SA) {
   // Browser viewer: no MCP host, no bridge — bind directly and pull. Mounting always walks:
   // there is no pushed tool result here at all.
   state.collection = SA.collection || null;
-  state.component = SA.component || null;
+  state.app = SA.app || null;
   state.host = "browser-viewer";
-  prefsPromise = syncPrefs();  // SA.component is already set — even eager consumers are safe
+  prefsPromise = syncPrefs();  // SA.app is already set — even eager consumers are safe
   walk().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
   bridgeReady();
   // Viewer SHELL (standalone pages only — host chats render the bare widget): a slim fixed top
   // bar so a browser-opened app has navigation and identity instead of floating raw in the tab.
-  // Attached to <html> like omaNotify (components rewrite body.innerHTML), body pushed down via
-  // an injected style so no component content hides underneath.
+  // Attached to <html> like omaNotify (apps rewrite body.innerHTML), body pushed down via
+  // an injected style so no app content hides underneath.
   // SA.chrome === false → skip bar AND stage: an embedding shell (hosted /app) owns the chrome,
   // and the widget renders bare exactly as it does inside a chat host iframe.
   if (SA.chrome !== false) try {
@@ -1296,7 +1296,7 @@ if (SA) {
     bar.id = "__oma_viewer_bar";
     const st = document.createElement("style");
     // The STAGE: a quiet page background with the app centered on one elevated card, so every
-    // component gets the same framing in the browser regardless of its own internal chrome.
+    // app gets the same framing in the browser regardless of its own internal chrome.
     st.textContent = "#__oma_viewer_bar{position:fixed;top:0;left:0;right:0;z-index:2147483646;display:flex;align-items:center;gap:12px;height:46px;padding:0 16px;box-sizing:border-box;font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--color-text-primary,CanvasText);background:color-mix(in srgb,var(--color-background-primary,Canvas) 82%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--color-border-secondary,color-mix(in srgb,CanvasText 12%,Canvas))}" +
       "#__oma_viewer_bar a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px}" +
       "#__oma_viewer_bar a:hover{background:color-mix(in srgb,CanvasText 7%,transparent)}" +
@@ -1310,7 +1310,7 @@ if (SA) {
     back.textContent = "← All apps";
     const name = document.createElement("span");
     name.className = "oma-vb-name";
-    name.textContent = SA.component || "";
+    name.textContent = SA.app || "";
     const brand = document.createElement("span");
     brand.className = "oma-vb-brand";
     brand.textContent = "open-mcp-apps · browser view";
@@ -1344,7 +1344,7 @@ if (SA) {
   // the walk the binding triggers is what the first paint stands on.
   let connected = false;
   const startWalk = () => { if (connected && state.collection) walk(); };
-  app.ontoolinput = (params) => {
+  hostApp.ontoolinput = (params) => {
     const a = (params && (params.arguments || params)) || {};
     toolInput = a;
     // Unconditional, and deliberately so. A guard requiring the envelope to name its app was tried
@@ -1367,18 +1367,18 @@ if (SA) {
     rememberIdentity();          // this is THE channel a re-render replays — write it down
     startWalk();
   };
-  app.ontoolresult = (result) => {
+  hostApp.ontoolresult = (result) => {
     const sc = result && result.structuredContent;
     // IDENTITY IS NOT DATA — take the labels BEFORE the freshness gate gets a vote.
     //
-    // state.component / state.host / state.collection used to be assigned only INSIDE adopt(),
+    // state.app / state.host / state.collection used to be assigned only INSIDE adopt(),
     // past `canAdopt`. But canAdopt exists to stop STALE ROWS from overwriting painted rows
     // (out-of-order replays, truncation, rewinds), and one of its rules is
-    // `items.length !== total ⇒ refuse`. open_component answers with ZERO rows and the
+    // `items.length !== total ⇒ refuse`. open_app answers with ZERO rows and the
     // collection's REAL total — deliberately, the widget fetches its own data — so the moment an
     // app has a single row, its own opening result is refused and the widget can never learn
     // which app it is or which host it is on. Measured: `host: null` on ChatGPT web, DIRECT mode,
-    // first open (Leo, 2026-07-29), and it is one half of the "No component specified." a refresh
+    // first open (Leo, 2026-07-29), and it is one half of the "No app specified." a refresh
     // produces. The host had delivered; we threw it away.
     //
     // A label has no "stale enough to be harmful" state: a widget's app identity does not change
@@ -1388,17 +1388,17 @@ if (SA) {
     // First-wins, like the collection rule this copies: a later result must never rebind a widget
     // that already knows what it is.
     if (sc && typeof sc.collection === "string" && !state.collection) state.collection = sc.collection;
-    if (sc && typeof sc.component === "string" && !state.component) state.component = sc.component;
+    if (sc && typeof sc.app === "string" && !state.app) state.app = sc.app;
     if (sc && typeof sc.host === "string" && !state.host) state.host = sc.host;
     rememberIdentity();          // N11 may have just learned the name from this very result
     if (sc && Array.isArray(sc.items)) { if (!adopt(sc)) startWalk(); }
     else startWalk();
   };
-  app.onhostcontextchanged = (ctx) => applyTheme(ctx);
-  app.onerror = (e) => console.error("[oma] bridge error", e);
+  hostApp.onhostcontextchanged = (ctx) => applyTheme(ctx);
+  hostApp.onerror = (e) => console.error("[oma] bridge error", e);
 
-  app.connect().then(() => {
-    applyTheme(app.getHostContext());
+  hostApp.connect().then(() => {
+    applyTheme(hostApp.getHostContext());
     prefsPromise = syncPrefs();  // bridge must be connected before callServerTool works
     bridgeReady();               // render-health reports queued before connect can flush now
     connected = true;

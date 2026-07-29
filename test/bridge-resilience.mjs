@@ -48,21 +48,21 @@ console.log("1. withDeadline — the runtime's bridge envelope (real source, dea
   ok("a real rejection passes through untouched", err && err.message === "denied");
 
   ok("the bridge call site is wrapped (SA /rpc keeps fetch's own failure modes)",
-    /withDeadline\(app\.callServerTool\(/.test(rt));
+    /withDeadline\(hostApp\.callServerTool\(/.test(rt));
 }
 
 console.log("\n2. loader first paint — fresh-call retry against the early-mount drop window");
 {
   const doc = wrapLoader();
-  const lm = doc.match(/(function fetchComponentHtml[\s\S]*?\n\})\s*\n\s*oma\.ready/);
-  ok("fetchComponentHtml exists in the served loader document", !!lm);
+  const lm = doc.match(/(function fetchAppHtml[\s\S]*?\n\})\s*\n\s*oma\.ready/);
+  ok("fetchAppHtml exists in the served loader document", !!lm);
   const scaled = lm[1].replace("[3000, 5000, 7000, 9000]", "[30, 50, 70, 90]");
   ok("…and the windows literal was found to scale (test rig integrity)", scaled !== lm[1]);
   const build = (callTool) => {
     const calls = { n: 0, shows: [] };
     const oma = { callTool: (...a) => { calls.n++; return callTool(calls.n, ...a); } };
     const show = (msg) => calls.shows.push(msg);
-    const fn = new Function("oma", "show", scaled + "; return fetchComponentHtml;")(oma, show);
+    const fn = new Function("oma", "show", scaled + "; return fetchAppHtml;")(oma, show);
     return { fn, calls };
   };
 
@@ -79,7 +79,7 @@ console.log("\n2. loader first paint — fresh-call retry against the early-moun
     ok("a rejection inside the window is terminal", err && err.message === "denied");
     ok("…after a single send", calls.n === 1, "sent " + calls.n);
   }
-  { // total drop: honest failure text instead of eternal "Loading component…"
+  { // total drop: honest failure text instead of eternal "Loading app…"
     const { fn, calls } = build(() => sink());
     let err = null; try { await fn("x"); } catch (e) { err = e; }
     ok("all-dropped ends in an honest error", err && /did not answer/.test(err.message), err && err.message);
@@ -91,12 +91,12 @@ console.log("\n2. loader first paint — fresh-call retry against the early-moun
 console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c))");
 {
   // The generic loader has no binding of its own — one document serves every app — so
-  // state.collection could only ever arrive as a host push. `open_component`'s `collection` input
+  // state.collection could only ever arrive as a host push. `open_app`'s `collection` input
   // is optional and models routinely omit it, so the common refresh shape is "ontoolinput arrived,
   // ontoolresult did not": the loader knows WHICH app to load and still cannot write, because every
   // data call goes out with collection:null and the runtime refuses it ("No collection bound yet").
   //
-  // The answer was already in hand: the loader fetches component_html before it mounts anything,
+  // The answer was already in hand: the loader fetches app_html before it mounts anything,
   // and the server knows what that app opens on. It sends the binding; the loader applies it. The
   // loader must NOT re-derive it from the name (contracts.mjs: a second copy of "what does this app
   // open on" is a second answer waiting to disagree).
@@ -105,10 +105,10 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   ok("the loader's ready callback exists in the served document", !!rm);
   // The name lookup is the REAL one from the served document, not a stub: it is the piece that
   // decides whether a late-arriving identity is caught or dropped.
-  const cnm = doc.match(/(function componentName\(state\) \{[\s\S]*?\n\})/);
-  ok("componentName exists in the served document", !!cnm);
-  const buildComponentName = (oma, win, show) =>
-    new Function("oma", "window", "show", cnm[1] + "\nreturn componentName;")(oma, win, show);
+  const cnm = doc.match(/(function appName\(state\) \{[\s\S]*?\n\})/);
+  ok("appName exists in the served document", !!cnm);
+  const buildAppName = (oma, win, show) =>
+    new Function("oma", "window", "show", cnm[1] + "\nreturn appName;")(oma, win, show);
 
   const run = async ({ toolInput, result, state }) => {
     const bound = [];
@@ -123,12 +123,12 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
     };
     const win = {};
     const body = rm[1]
-      .replace(/const r = await fetchComponentHtml\(name\);/, "const r = await oma.callTool();");
+      .replace(/const r = await fetchAppHtml\(name\);/, "const r = await oma.callTool();");
     const document = { body: { innerHTML: "x" } };   // the sandboxed branch clears the body first
     const show = (m) => shows.push(m);
-    const fn = new Function("oma", "state", "show", "mount", "window", "document", "componentName",
+    const fn = new Function("oma", "state", "show", "mount", "window", "document", "appName",
       `return (async () => {${body}})();`);
-    await fn(oma, state, show, (h) => mounted.push(h), win, document, buildComponentName(oma, win, show));
+    await fn(oma, state, show, (h) => mounted.push(h), win, document, buildAppName(oma, win, show));
     return { bound, mounted, shows, embeds, win, document };
   };
 
@@ -136,8 +136,8 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   {
     // The shape a refresh actually produces: a name, no collection.
     const r = await run({
-      toolInput: { component: "shopping-list" },
-      state: { collection: null, component: null },
+      toolInput: { app: "shopping-list" },
+      state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 3, collection: "shopping-list" } },
     });
     ok("🔴 the loader binds the runtime from the server's answer",
@@ -149,8 +149,8 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
     // An app whose rows do NOT live under its own name: the loader must use what it was SENT.
     // Re-deriving from the name here is the failure this test exists to make impossible.
     const r = await run({
-      toolInput: { component: "builder-progress" },
-      state: { collection: null, component: null },
+      toolInput: { app: "builder-progress" },
+      state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 1, collection: "build-progress" } },
     });
     ok("…using the collection it was SENT, never the app's name",
@@ -159,8 +159,8 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   {
     // An older engine that does not send one must not make the loader invent a binding.
     const r = await run({
-      toolInput: { component: "legacy" },
-      state: { collection: null, component: null },
+      toolInput: { app: "legacy" },
+      state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 1 } },
     });
     ok("an answer without a collection binds nothing rather than guessing", r.bound.length === 0);
@@ -169,8 +169,8 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   {
     // The sandboxed branch takes the same answer instead of falling back to the name.
     const r = await run({
-      toolInput: { component: "third-party" },
-      state: { collection: null, component: null },
+      toolInput: { app: "third-party" },
+      state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "unreviewed", caps: {}, collection: "tp-rows" } },
     });
     ok("the sandboxed branch is bound from the same answer too",
@@ -189,8 +189,8 @@ console.log("\n2b. the SHIPPED bundle carries the envelope (dist is what browser
 }
 
 console.log("\n2c. a failure surface that survives the runtime being broken");
-// The bug this pins: on a page refresh the widget sat on "Loading component…" forever — no retry
-// counter, no error, and not one component_html call reaching the server. Everything the loader can
+// The bug this pins: on a page refresh the widget sat on "Loading app…" forever — no retry
+// counter, no error, and not one app_html call reaching the server. Everything the loader can
 // SAY lives inside oma.ready(...), so when the bridge never delivered (or window.oma never existed
 // because the module graph died), nothing spoke. Two causes, one symptom; both are asserted here
 // because the readings could not tell them apart and the fix has to cover both.
@@ -227,25 +227,25 @@ console.log("\n3. the recovery paths the deadline unlocks (source pins)");
   ok("addItem refuses an unbound collection loudly instead of sending collection:null",
     /addItem\(\{[\s\S]{0,600}?No collection bound yet/.test(rt));
   // embed() used to rebuild childSnap from an explicit key list, which silently dropped the
-  // `components` roster the embedder had just supplied — a fix that shipped without its effect.
+  // `apps` roster the embedder had just supplied — a fix that shipped without its effect.
   // The DECISION is covered properly in test/runtime-core.mjs §11; this pins the WIRING, which is
   // the part that was missing. It is a source pin and says so: embed needs a DOM to run.
   ok("embed hands its caller's snapshot to childPreviewSnapshot rather than re-deriving it",
     /const share = opts\.snapshot[\s\S]{0,200}childPreviewSnapshot\(/.test(rt));
   ok("…and childSnap carries the sliced items AND the roster (the key that used to be dropped)",
-    /let childSnap = share[\s\S]{0,200}items: share\.items, components: share\.components/.test(rt));
+    /let childSnap = share[\s\S]{0,200}items: share\.items, apps: share\.apps/.test(rt));
 }
 
 console.log("\n4. the Installed grid's preview snapshot — data that arrives LATE must still arrive");
 {
   // Same idea one layer up, and the same failure shape: a thumbnail mounts from an
   // IntersectionObserver as its card nears the viewport, but the pane's collection list is one
-  // more host round trip AWAY at that moment (loadComponents() renders the grid, and only then
+  // more host round trip AWAY at that moment (loadApps() renders the grid, and only then
   // does boot ask data_collections). So the observer normally fires FIRST. Answering that with an
   // empty snapshot is not a rare race — it is the ordinary first paint, and it is permanent: the
   // thumb is recorded in `thumbs`, its skeleton is removed, and nothing mounts it again.
   //
-  // Real source, extracted from the shipped component.
+  // Real source, extracted from the shipped app.
   const settingsSrc = readFileSync(join(ROOT, "components", "settings.html"), "utf-8");
   const m = settingsSrc.match(/(const PREVIEW_ROWS_PER_COLLECTION[\s\S]*?)\n\s*\/\/ Mount = oma\.embed/);
   ok("previewSnapshot + its constants extracted from components/settings.html", !!m);
@@ -339,7 +339,7 @@ console.log("\n2d. the deadline re-arms — it is a guarantee, not a one-shot");
     await sleep(70);
     ok("the first callback is released when the host stays silent", fired.length === 1 && fired[0][0] === "first");
 
-    // A component that calls oma.ready() late — from a click, a lazy import, a second pane.
+    // An app that calls oma.ready() late — from a click, a lazy import, a second pane.
     api.readyFn((s) => fired.push(["late", s]));
     await sleep(70);
     ok("🔴 a callback registered AFTER the deadline fired still gets released, not stranded",
@@ -367,8 +367,8 @@ console.log("\n2e. sendMessage says NOTHING on the success path (deliberate — 
   // a runtime-level guess cannot be right on every host; the caller decides. Pinned because a
   // removal is invisible — nothing here would have failed if the notice quietly came back.
   const body = rt.slice(rt.indexOf("  sendMessage(text) {"), rt.indexOf("  openLink(url) {"));
-  ok("sendMessage's body was located", body.length > 200 && /app\.sendMessage\(/.test(body));
-  const afterSend = body.slice(body.indexOf("return app.sendMessage("));
+  ok("sendMessage's body was located", body.length > 200 && /hostApp\.sendMessage\(/.test(body));
+  const afterSend = body.slice(body.indexOf("return hostApp.sendMessage("));
   ok("no notice fires once the host accepts the request",
     !/omaNotify\(/.test(afterSend), afterSend.slice(0, 300));
   ok("…while the DEGRADED paths still speak (silence is only for the success path)",
@@ -379,22 +379,22 @@ console.log("\n2e. sendMessage says NOTHING on the success path (deliberate — 
 
 console.log("\n5. identity is not data — the freshness gate must not decide what the widget KNOWS");
 {
-  // open_component answers with ZERO rows and the collection's REAL total (by design: the widget
+  // open_app answers with ZERO rows and the collection's REAL total (by design: the widget
   // fetches its own data). canAdopt refuses exactly that shape — `items.length !== total` — which is
-  // correct for ROWS and catastrophic for LABELS, because state.component / state.host / the
+  // correct for ROWS and catastrophic for LABELS, because state.app / state.host / the
   // collection are only ever assigned INSIDE adopt(), after the gate returns.
   //
   // So on the loader path, as soon as the collection has a single row, the widget can never learn
-  // which app it is or which host it is on. That is one half of the "No component specified." a
+  // which app it is or which host it is on. That is one half of the "No app specified." a
   // refresh produces — and it is OUR half: even a host that redelivers perfectly is thrown away.
   //
   // Real source: the ontoolresult handler and adopt(), extracted and run against a scripted result.
-  const handler = rt.match(/app\.ontoolresult = \(result\) => \{([\s\S]*?)\n  \};/);
+  const handler = rt.match(/hostApp\.ontoolresult = \(result\) => \{([\s\S]*?)\n  \};/);
   ok("ontoolresult handler extracted from the runtime", !!handler);
 
   const { canAdopt } = await import("../src/runtime-core.mjs");
   const run = (result, seed = {}) => {
-    const state = { collection: null, items: [], version: 0, total: 0, truncated: false, component: null, host: null, ...seed };
+    const state = { collection: null, items: [], version: 0, total: 0, truncated: false, app: null, host: null, ...seed };
     let adoptCalls = 0, adoptReturned = null;
     // adopt(), reduced to the two things this test is about: the gate, and the assignment that
     // only happens past it. Anything the gate lets through still lands the labels as before.
@@ -403,7 +403,7 @@ console.log("\n5. identity is not data — the freshness gate must not decide wh
       if (!canAdopt(state, snap)) return (adoptReturned = false);
       Object.assign(state, {
         collection: snap.collection ?? state.collection, items: snap.items,
-        version: snap.version ?? state.version, component: snap.component ?? state.component,
+        version: snap.version ?? state.version, app: snap.app ?? state.app,
         host: snap.host ?? state.host,
       });
       return (adoptReturned = true);
@@ -416,42 +416,42 @@ console.log("\n5. identity is not data — the freshness gate must not decide wh
     return { state, adoptCalls, adoptReturned, announced };
   };
 
-  // Exactly what open_component sends when the app already has data.
+  // Exactly what open_app sends when the app already has data.
   const openResult = { structuredContent: {
-    component: "shopping-list", collection: "shopping-list", items: [], version: 412,
+    app: "shopping-list", collection: "shopping-list", items: [], version: 412,
     total: 7, settings_version: 3, files_version: 1, host: "chatgpt",
   } };
 
   const r = run(openResult);
   ok("the freshness gate still REFUSES the zero-row/real-total snapshot — it is not relaxed",
     r.adoptReturned === false);
-  ok("…and yet the widget learns which app it is", r.state.component === "shopping-list", String(r.state.component));
+  ok("…and yet the widget learns which app it is", r.state.app === "shopping-list", String(r.state.app));
   ok("…and which host it is on", r.state.host === "chatgpt", String(r.state.host));
   ok("…and what it is bound to", r.state.collection === "shopping-list", String(r.state.collection));
   ok("no rows were adopted (labels moved, data did not)", r.state.items.length === 0);
 
   // Idempotence / first-wins, the same rule the collection already had: a later result must not
   // rebind a widget that already knows what it is.
-  const r2 = run({ structuredContent: { component: "other-app", collection: "other", items: [], total: 3, host: "claude-ai" } },
-    { component: "shopping-list", host: "chatgpt", collection: "shopping-list" });
+  const r2 = run({ structuredContent: { app: "other-app", collection: "other", items: [], total: 3, host: "claude-ai" } },
+    { app: "shopping-list", host: "chatgpt", collection: "shopping-list" });
   ok("a later result cannot rename a widget that already knows its identity",
-    r2.state.component === "shopping-list" && r2.state.host === "chatgpt" && r2.state.collection === "shopping-list",
-    JSON.stringify({ c: r2.state.component, h: r2.state.host, coll: r2.state.collection }));
+    r2.state.app === "shopping-list" && r2.state.host === "chatgpt" && r2.state.collection === "shopping-list",
+    JSON.stringify({ c: r2.state.app, h: r2.state.host, coll: r2.state.collection }));
 
   // An empty collection was always fine (0 === 0 passes the gate) — that is why this went unnoticed.
-  const r3 = run({ structuredContent: { component: "fresh-app", collection: "fresh-app", items: [], version: 5, total: 0, host: "claude-ai" } });
+  const r3 = run({ structuredContent: { app: "fresh-app", collection: "fresh-app", items: [], version: 5, total: 0, host: "claude-ai" } });
   ok("the empty-collection case still adopts normally (this is why the hole stayed invisible)",
-    r3.adoptReturned === true && r3.state.component === "fresh-app" && r3.state.host === "claude-ai");
+    r3.adoptReturned === true && r3.state.app === "fresh-app" && r3.state.host === "claude-ai");
 
   ok("a result carrying no identity leaves the fields alone rather than nulling them",
-    run({ structuredContent: { collection: "x", items: [], total: 2 } }, { component: "keep", host: "keep-host" }).state.component === "keep");
+    run({ structuredContent: { collection: "x", items: [], total: 2 } }, { app: "keep", host: "keep-host" }).state.app === "keep");
 }
 
 console.log("\n6. the loader's identity-lost surface REPORTS instead of shrugging");
 {
   // The universal loader is one document serving every app, so on a host re-render that replays no
   // tool input it cannot know which app it is. That much is structural. What is NOT structural is
-  // saying "No component specified." and stopping: the channels it checked are exactly the evidence
+  // saying "No app specified." and stopping: the channels it checked are exactly the evidence
   // needed to tell "the host sent nothing" apart from "the host sent something we never read".
   // These run the REAL served source against a paper DOM.
   const doc = wrapLoader();
@@ -490,11 +490,11 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
 
   // undefined, not null: the bridge never connected, so applyTheme never ran and the global was
   // never written. "we were told nothing" and "we never got to ask" are different readings.
-  const bare = runLost({ toolInput: null, state: { component: null, collection: null, items: [] } }, undefined);
+  const bare = runLost({ toolInput: null, state: { app: null, collection: null, items: [] } }, undefined);
   ok("it says, in words, that the widget lost track of which app it is",
     /lost track of which app it is/.test(bare), bare.slice(0, 120));
   ok("…and names every channel it checked, marking the empty ones",
-    /toolInput\.component ✗/.test(bare) && /state\.component ✗/.test(bare) &&
+    /toolInput\.app ✗/.test(bare) && /state\.app ✗/.test(bare) &&
     /toolInfo\.id ✗/.test(bare) && /toolInfo\.tool\.name ✗/.test(bare), bare);
   ok("…and tells the user their data is fine and what to do next",
     /open the app again/.test(bare) && /data is untouched/.test(bare));
@@ -504,12 +504,12 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
   // 🔴 The reading this whole surface exists to produce: a host that replays hostContext but not
   // the tool input. If toolInfo comes back, the widget is recoverable and the dump says so.
   const withInfo = runLost(
-    { toolInput: null, state: { component: null, collection: null, items: [] } },
-    { theme: "dark", toolInfo: { id: 42, tool: { name: "open_component" } } });
+    { toolInput: null, state: { app: null, collection: null, items: [] } },
+    { theme: "dark", toolInfo: { id: 42, tool: { name: "open_app" } } });
   ok("a host that replays toolInfo is reported as SUCH — the id is named, not buried",
     /toolInfo\.id ✓ 42/.test(withInfo), withInfo);
-  ok("…and the tool name it came from is named too (open_<app> vs open_component decides the fix)",
-    /toolInfo\.tool\.name ✓ open_component/.test(withInfo), withInfo);
+  ok("…and the tool name it came from is named too (open_<app> vs open_app decides the fix)",
+    /toolInfo\.tool\.name ✓ open_app/.test(withInfo), withInfo);
   ok("…and the raw host context is in the copyable dump, whole",
     /"theme": "dark"/.test(withInfo) && /"id": 42/.test(withInfo));
 
@@ -524,7 +524,7 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
   // The phrase survives in the comment that explains why it was replaced — what must not survive
   // is the loader RENDERING it and stopping there.
   ok("the dead-end is no longer a rendered outcome",
-    !/show\(\s*["']No component specified/.test(doc) && /if \(!name\) return lost\(\);/.test(doc));
+    !/show\(\s*["']No app specified/.test(doc) && /if \(!name\) return lost\(\);/.test(doc));
 }
 
 console.log("\n7. WHICH APP AM I — answered now, from what we know and what the host kept for us");
@@ -537,22 +537,22 @@ console.log("\n7. WHICH APP AM I — answered now, from what we know and what th
   // call's envelope verbatim — one that will never name us, however long it is held. The
   // subscription's own first line returned early without a name, so it could not even fire.
   const doc = wrapLoader();
-  const cm = doc.match(/(function componentName\(state\) \{[\s\S]*?\n\})/);
-  ok("componentName is in the served document", !!cm);
-  const build = (oma, win) => new Function("oma", "window", cm[1] + "\nreturn componentName;")(oma, win);
+  const cm = doc.match(/(function appName\(state\) \{[\s\S]*?\n\})/);
+  ok("appName is in the served document", !!cm);
+  const build = (oma, win) => new Function("oma", "window", cm[1] + "\nreturn appName;")(oma, win);
 
   ok("a live name in the tool input answers straight away",
-    build({ toolInput: { component: "shopping-list" } }, {})({ component: null }) === "shopping-list");
+    build({ toolInput: { app: "shopping-list" } }, {})({ app: null }) === "shopping-list");
   ok("N11's channel counts as knowing too — a result-only replay lands the name there",
-    build({ toolInput: {} }, {})({ component: "rescued-app" }) === "rescued-app");
+    build({ toolInput: {} }, {})({ app: "rescued-app" }) === "rescued-app");
   ok("🔴 nothing live, but the host kept our note — this is what survives a mis-bound re-render",
-    build({ toolInput: {} }, { __OMA_IDENTITY__: () => "remembered-app" })({ component: null }) === "remembered-app");
+    build({ toolInput: {} }, { __OMA_IDENTITY__: () => "remembered-app" })({ app: null }) === "remembered-app");
   ok("nothing anywhere answers null — immediately, not after a spinner",
-    build({ toolInput: {} }, { __OMA_IDENTITY__: () => null })({ component: null }) === null);
+    build({ toolInput: {} }, { __OMA_IDENTITY__: () => null })({ app: null }) === null);
   ok("a runtime without the identity hook degrades to null instead of throwing",
-    build({ toolInput: {} }, {})({ component: null }) === null);
+    build({ toolInput: {} }, {})({ app: null }) === null);
   ok("it is synchronous — no promise, so no window in which a wrong answer can arrive late",
-    typeof build({ toolInput: { component: "x" } }, {})({}) === "string");
+    typeof build({ toolInput: { app: "x" } }, {})({}) === "string");
 
   ok("the runtime records identity from the tool-INPUT door", /toolInput = a;[\s\S]{0,2500}rememberIdentity\(\);/.test(rt));
   ok("…and from the tool-RESULT door, where N11's rescue lands",
@@ -568,8 +568,8 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
   // MEASURED, ChatGPT web, 2026-07-29, from the loader's own dump. When a turn has more than one
   // tool call, the first mount is bound correctly and a later re-render replays the FIRST call of
   // that turn — verbatim, arguments and tool definition:
-  //   get_component{name:"dev-probe"} → open_component{...}   ⇒ widget got toolInput {name:"dev-probe"}
-  //   data_collections{}              → open_component{...}   ⇒ widget got toolInput {}
+  //   get_app{name:"dev-probe"} → open_app{...}   ⇒ widget got toolInput {name:"dev-probe"}
+  //   data_collections{}              → open_app{...}   ⇒ widget got toolInput {}
   // So the envelope is not missing, it is someone else's, and no guard can tell those apart. What
   // CAN be done is refuse to need telling twice: write the identity down at first mount, into the
   // host's own per-instance state channel.
@@ -578,7 +578,7 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
 
   const build = ({ openai, toolInput = {}, state = {} }) => {
     const win = openai === undefined ? {} : { openai };
-    const st = { collection: null, component: null, host: null, ...state };
+    const st = { collection: null, app: null, host: null, ...state };
     const cbs = [];
     const api = new Function("window", "toolInput", "state", "identityCbs", "console",
       m[1] + "\nreturn { rememberIdentity, recallIdentity, identity: window.__OMA_IDENTITY__ };")(
@@ -592,10 +592,10 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
 
   {
     const oai = fakeOai();
-    const a = build({ openai: oai, toolInput: { component: "shopping-list" }, state: { collection: "shopping-list", host: "chatgpt" } });
+    const a = build({ openai: oai, toolInput: { app: "shopping-list" }, state: { collection: "shopping-list", host: "chatgpt" } });
     a.rememberIdentity();
     ok("🔴 the moment we know, it is written into the host's own state channel",
-      oai.widgetState && oai.widgetState.__oma && oai.widgetState.__oma.component === "shopping-list",
+      oai.widgetState && oai.widgetState.__oma && oai.widgetState.__oma.app === "shopping-list",
       JSON.stringify(oai.widgetState));
     ok("…with the binding and the host name, the two other things a mis-bound replay never delivers",
       oai.widgetState.__oma.collection === "shopping-list" && oai.widgetState.__oma.host === "chatgpt");
@@ -604,17 +604,17 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
     // The app owns this object; we are a guest in one namespaced key.
     const oai = fakeOai();
     oai.setWidgetState({ scrollTop: 120, filter: "open" });
-    const a = build({ openai: oai, toolInput: { component: "trip-board" } });
+    const a = build({ openai: oai, toolInput: { app: "trip-board" } });
     a.rememberIdentity();
     ok("the app's own widget state is preserved, not overwritten",
-      oai.widgetState.scrollTop === 120 && oai.widgetState.filter === "open" && oai.widgetState.__oma.component === "trip-board",
+      oai.widgetState.scrollTop === 120 && oai.widgetState.filter === "open" && oai.widgetState.__oma.app === "trip-board",
       JSON.stringify(oai.widgetState));
   }
   {
     let writes = 0;
     const oai = fakeOai();
     const wrapped = { get widgetState() { return oai.widgetState; }, setWidgetState(v) { writes++; oai.setWidgetState(v); } };
-    const a = build({ openai: wrapped, toolInput: { component: "x" } });
+    const a = build({ openai: wrapped, toolInput: { app: "x" } });
     a.rememberIdentity(); a.rememberIdentity(); a.rememberIdentity();
     ok("writing is idempotent — a poll that re-announces does not re-write every tick", writes === 1, String(writes));
   }
@@ -622,8 +622,8 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
     // 🔴 THE ONE THAT MATTERS: a mis-bound re-render. Nothing live names us, and nothing ever will,
     // because the envelope in flight belongs to another call. Subscribing here waits forever.
     const oai = fakeOai();
-    oai.setWidgetState({ __oma: { component: "dev-probe", collection: "_probe-dev", host: "chatgpt" } });
-    const a = build({ openai: oai, toolInput: { name: "dev-probe" } });   // ← get_component's args, verbatim
+    oai.setWidgetState({ __oma: { app: "dev-probe", collection: "_probe-dev", host: "chatgpt" } });
+    const a = build({ openai: oai, toolInput: { name: "dev-probe" } });   // ← get_app's args, verbatim
     const got = a.identity();
     ok("🔴 a widget handed ANOTHER call's envelope still recovers its own name", got === "dev-probe", String(got));
     ok("…and the binding comes back with it, so writes work rather than bouncing off as collection:null",
@@ -632,8 +632,8 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
   {
     // Live knowledge always beats memory — memory is the fallback, never the authority.
     const oai = fakeOai();
-    oai.setWidgetState({ __oma: { component: "stale-app", collection: "stale" } });
-    const a = build({ openai: oai, toolInput: { component: "live-app" } });
+    oai.setWidgetState({ __oma: { app: "stale-app", collection: "stale" } });
+    const a = build({ openai: oai, toolInput: { app: "live-app" } });
     ok("a live name outranks a remembered one", a.identity() === "live-app", String(a.identity()));
   }
   {
@@ -646,7 +646,7 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
   {
     // A host that offers widgetState but refuses the write must not take the widget down with it.
     const hostile = { widgetState: {}, setWidgetState() { throw new Error("denied"); } };
-    const a = build({ openai: hostile, toolInput: { component: "x" } });
+    const a = build({ openai: hostile, toolInput: { app: "x" } });
     let threw = null;
     try { a.rememberIdentity(); } catch (e) { threw = e; }
     ok("a rejected write leaves us exactly where we were, never mid-paint", threw === null, threw && threw.message);
@@ -658,8 +658,8 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
 
 console.log("\n9. a document that was STAMPED with its identity must not have to be told what it is");
 {
-  // wrapComponent injects __OMA_COMPONENT__ and __OMA_COLLECTION_HINT__ before the runtime
-  // evaluates, so a per-app document knows its own name at t=0 — but `component` started at null
+  // wrapApp injects __OMA_APP__ and __OMA_COLLECTION_HINT__ before the runtime
+  // evaluates, so a per-app document knows its own name at t=0 — but `app` started at null
   // anyway, which left ontoolresult's first-wins rule to be won by whoever spoke first. On a host
   // that hands a widget another call's envelope (measured verbatim, ChatGPT web) or in a turn that
   // opens two apps at once, that first speaker can be a DIFFERENT app.
@@ -667,27 +667,27 @@ console.log("\n9. a document that was STAMPED with its identity must not have to
   ok("the state initializer was located", !!seedM);
   const seeded = (win) => new Function("window", seedM[1] + "\nreturn state;")(win);
   {
-    const st = seeded({ __OMA_COMPONENT__: "trip-board", __OMA_COLLECTION_HINT__: "trip-tasks" });
+    const st = seeded({ __OMA_APP__: "trip-board", __OMA_COLLECTION_HINT__: "trip-tasks" });
     ok("🔴 a stamped document starts KNOWING its own name, not just its binding",
-      st.component === "trip-board" && st.collection === "trip-tasks",
-      JSON.stringify({ c: st.component, coll: st.collection }));
+      st.app === "trip-board" && st.collection === "trip-tasks",
+      JSON.stringify({ c: st.app, coll: st.collection }));
   }
   ok("…so first-wins now protects it: there is nothing left for a foreign envelope to win",
-    /!state\.component/.test(rt));
+    /!state\.app/.test(rt));
   {
     const st = seeded({});
     ok("the universal loader still starts blank — it is stamped only after it resolves and mounts",
-      st.component === null && st.collection === null);
+      st.app === null && st.collection === null);
   }
 
   // ⚠️ The two collection guards that used to live here were REVERTED, and the tests with them:
   // the reading they were built on was the model binding on purpose, and the guards broke the
   // per-app opener's documented `collection` argument. Pinning the reverted behaviour instead, so
   // nobody re-adds them without a measurement:
-  const inM = rt.match(/app\.ontoolinput = \(params\) => \{[\s\S]*?\n  \};/);
+  const inM = rt.match(/hostApp\.ontoolinput = \(params\) => \{[\s\S]*?\n  \};/);
   ok("open_<name>'s collection argument still binds — its app is in the TOOL name, not the args",
     /if \(typeof a\.collection === "string" && a\.collection\) state\.collection = a\.collection;/.test(inM[0]),
-    "a guard requiring a.component would silently drop the AI's explicit binding here");
+    "a guard requiring a.app would silently drop the AI's explicit binding here");
 }
 
 console.log(fail ? `\nFAILURES: ${pass} passed, ${fail} failed` : `\nALL PASS: ${pass} passed, 0 failed`);

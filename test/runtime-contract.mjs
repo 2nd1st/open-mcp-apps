@@ -3,7 +3,7 @@
 // test/runtime-contract.mjs — RUNTIME.md describes the two window.oma surfaces. This makes it true.
 //
 // RUNTIME.md exists for authors who are NOT the AI: someone who built an app in their own editor
-// months ago, installed it with install-app.mjs, and has no get_component_guide in the loop. For
+// months ago, installed it with install-app.mjs, and has no get_app_guide in the loop. For
 // them the document IS the API — and a document that has drifted from the code is worse than none,
 // because it fails in their editor rather than ours.
 //
@@ -81,7 +81,7 @@ const bridgeLiteral = BRIDGE.slice(BRIDGE.indexOf("window.oma={"));
  *  `embed` was present when the strict scan says it is a method the loose one only saw in a call.
  *  "Over-collecting is the safe direction" was wrong — a check that cries wolf gets a growing
  *  ignore-list bolted to it and then gets ignored, which is the exact failure OMA_REFERENCE_RE is
- *  commented about in src/tools/components.mjs.
+ *  commented about in src/tools/apps.mjs.
  *
  *  Depth counting, and a name counts only at a MEMBER-START position: right after the opening
  *  brace, or after a comma that is itself at depth 1. Prefixes are the ones a literal can carry
@@ -151,7 +151,7 @@ console.log("\n2. every name the runtimes expose is documented (no undocumented 
 console.log("\n3. the document and the code agree on the version");
 ok("RUNTIME.md states the contract version the code exports",
   new RegExp(`\\*\\*Contract version: ${RUNTIME_CONTRACT}\\*\\*`).test(doc), `code says ${RUNTIME_CONTRACT}`);
-ok("both runtimes report the SAME number — a component cannot tell them apart by it",
+ok("both runtimes report the SAME number — an app cannot tell them apart by it",
   new RegExp(`get contract\\(\\)\\{return ${RUNTIME_CONTRACT}\\}`).test(BRIDGE)
   && /get contract\(\) \{ return RUNTIME_CONTRACT; \}/.test(runtimeSrc));
 
@@ -161,7 +161,7 @@ console.log("\n4. the claims RUNTIME.md makes about the engine, checked against 
   const runner = readFileSync(join(ROOT, "src", "runner.mjs"), "utf-8");
   const contracts = readFileSync(join(ROOT, "src", "contracts.mjs"), "utf-8");
   ok("the 200,000-byte document limit is the store's real limit",
-    /MAX_COMPONENT_HTML = 200_000/.test(store) && doc.includes("200,000 bytes"));
+    /MAX_APP_HTML = 200_000/.test(store) && doc.includes("200,000 bytes"));
   ok("the sandboxed child really is sandbox=allow-scripts with no allow-same-origin",
     /sandbox[^\n]*allow-scripts/.test(runtimeSrc) && !/allow-same-origin/.test(runtimeSrc)
     && doc.includes('sandbox="allow-scripts"'));
@@ -169,7 +169,7 @@ console.log("\n4. the claims RUNTIME.md makes about the engine, checked against 
     /RUNNER_CSP_POLICY = "default-src 'none'/.test(runner) && doc.includes("default-src 'none'"));
   ok("the unreviewed tier really grants no call_tools",
     /unreviewed: \{ call_tools: \[\]/.test(contracts) && doc.includes("not allowed"));
-  ok("a non-local component really binds to its own name whatever it declared",
+  ok("a non-local app really binds to its own name whatever it declared",
     /tierOf\(comp\.author\) === "local"/.test(contracts) && doc.includes("**always its own name**"));
   ok("provenance really is unoverwritable in both directions (test/provenance.mjs owns the proof)",
     /tierOf\(existing\.author\) !== tierOf\(actor\)/.test(store) && doc.includes("not overwritable in either direction"));

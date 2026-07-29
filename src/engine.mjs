@@ -15,12 +15,12 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { EXTENSION_ID } from "@modelcontextprotocol/ext-apps/server";
 import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE } from "./store.mjs";
-import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_COMPONENTS, answer, toMcp, EOT } from "./contracts.mjs";
+import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_APPS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
 import { isControlPlaneTool } from "./tool-policy.mjs";
 import { ENGINE_VERSION } from "./version.mjs";
 import { installCacheHints } from "./cache-hints.mjs";
-import { register as registerComponentTools } from "./tools/components.mjs";
+import { register as registerAppTools } from "./tools/apps.mjs";
 import { register as registerDataTools } from "./tools/data.mjs";
 import { register as registerFileTools } from "./tools/files.mjs";
 import { register as registerRegistryTools } from "./tools/registry.mjs";
@@ -34,17 +34,17 @@ export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor } from "./contracts.
 
 // Downloaded into the model's context at initialize — this is where the engine teaches the
 // AI WHEN to reach for it, not just what the tools do. Keep it tight; it is always in context.
-const INSTRUCTIONS = `open-mcp-apps gives the user persistent, interactive UI components (widgets) backed by data collections shared between you and the user. Data outlives the conversation.
+const INSTRUCTIONS = `open-mcp-apps gives the user persistent, interactive UI apps (widgets) backed by data collections shared between you and the user. Data outlives the conversation.
 
 FIRST STOP: when the user asks about THEIR data, boards, lists, trackers, or "what do I have" — in any language — call data_collections BEFORE files, cloud connectors, or other sources. Their todos, kanbans, habits, notes, queues, budgets, logs live HERE.
 
 __ONBOARDING_OR_INVENTORY__
 
 ROUTING:
-- A topic maps to an existing app → open_component it as part of answering (nearly free); don't recite its data as text. Real names come from list_components, never from your memory of the chat.
+- A topic maps to an existing app → open_app it as part of answering (nearly free); don't recite its data as text. Real names come from list_apps, never from your memory of the chat.
 - Need a fact, no UI → data_list / data_collections. Acting for the user ("mark X done") → data_* writes; visible widgets refresh themselves.
 - What did the user do while you were away? Their widget edits never pass through this conversation — data_changes is the only tool that attributes them.
-- Building or CHANGING an app → get_component_guide FIRST; the craft lives there, not here. Prefer reusing a component on a new collection over creating near-duplicates.
+- Building or CHANGING an app → get_app_guide FIRST; the craft lives there, not here. Prefer reusing an app on a new collection over creating near-duplicates.
 - "library" is the built-in store of ready-made apps — browse it, or install_from_library directly. dashboard and settings are the other system apps.
 - An app can keep FILES too (file_write / file_list / file_read): images, PDFs, exports — per app, across chats.
 
@@ -54,7 +54,7 @@ WHEN NOT: one-shot visuals or pure discussion — answer in text/charts. Persona
 // The other empty-state shape ("what's actually in our freezer?" — a question about something no
 // app holds yet) is deliberately NOT here: its trigger point is a data read coming back empty, so
 // the guidance rides in data_collections'/data_list's empty replies — the data the model is looking
-// at when it decides (the components.mjs birthday lesson: prose in the resident channel LOST to a
+// at when it decides (the apps.mjs birthday lesson: prose in the resident channel LOST to a
 // fact in the decision channel; and on at least one measured host the tail of this string never
 // reaches the model at all).
 
@@ -71,22 +71,22 @@ function readPref(store, key) {
 // has nothing yet: it says build one app immediately, do not brief, and explicitly do not list
 // what already exists. For someone with ten apps that is not merely expensive, it is WRONG ADVICE.
 // So it is SWAPPED, not trimmed — each half is paid only by the reader it is correct for.
-const ONBOARDING = `GETTING STARTED — your job is to BUILD, not to brief: when the user asks how to use open-mcp-apps, for an intro, or to get set up (however they phrase it), your FIRST move is to build and open ONE app made for THEM. Do NOT open with an explanation or feature tour, do NOT list the components that exist, do NOT ask which app they'd like. Steps: (1) Read them silently — from your memory and past conversations, what do they actually do, track, or keep re-explaining? Ask ONE quick question only if you truly have nothing. (2) Build it now — get_component_guide, seed their REAL current content into the collection with data_batch (from memory and past chats; never placeholder or invented rows — the wow is that it opens already about THEM), save_component, open_component immediately. The guide's craft rules are the bar: this first app is their first impression, make it your best work. (3) Only after it is on screen: one sentence on what it is, then offer a couple more you could build, one line each. (4) Then, conversationally, two things: a NEW component costs tokens once and pays off for anything recurring; and ask — or infer — whether they want you PROACTIVE about future apps or ON-REQUEST, record it with data_add into settings (group "", key "proactivity", value "proactive" | "on-request"), and honor it. Never end your first reply without a rendered app; never pitch settings or dashboard as example apps; skip anything sensitive unless they agree.`;
+const ONBOARDING = `GETTING STARTED — your job is to BUILD, not to brief: when the user asks how to use open-mcp-apps, for an intro, or to get set up (however they phrase it), your FIRST move is to build and open ONE app made for THEM. Do NOT open with an explanation or feature tour, do NOT list the apps that exist, do NOT ask which app they'd like. Steps: (1) Read them silently — from your memory and past conversations, what do they actually do, track, or keep re-explaining? Ask ONE quick question only if you truly have nothing. (2) Build it now — get_app_guide, seed their REAL current content into the collection with data_batch (from memory and past chats; never placeholder or invented rows — the wow is that it opens already about THEM), save_app, open_app immediately. The guide's craft rules are the bar: this first app is their first impression, make it your best work. (3) Only after it is on screen: one sentence on what it is, then offer a couple more you could build, one line each. (4) Then, conversationally, two things: a NEW app costs tokens once and pays off for anything recurring; and ask — or infer — whether they want you PROACTIVE about future apps or ON-REQUEST, record it with data_add into settings (group "", key "proactivity", value "proactive" | "on-request"), and honor it. Never end your first reply without a rendered app; never pitch settings or dashboard as example apps; skip anything sensitive unless they agree.`;
 
 // What replaces it once the user has apps of their own.
 //
 // ⚠️ NOT a list of those apps. That was the first attempt and Leo killed it on grounds we had
-// already accepted once: OMA_DYNAMIC_TOOLS is OFF by default "because every save_component would
+// already accepted once: OMA_DYNAMIC_TOOLS is OFF by default "because every save_app would
 // invalidate the whole conversation's prompt cache" — and this string lives in that prefix (codex
 // carries it inside tool_search's description, which sits in req.tools at the very front). Naming
 // the user's apps here re-introduces the exact property we refused, through a different door.
 // Guiding the model to LIST is the cheap direction: a tool result lands in the conversation body,
 // which only grows, so it caches instead of invalidating.
 //
-// What survives is the part list_components cannot do. This string is the RETRIEVAL INDEX on both
+// What survives is the part list_apps cannot do. This string is the RETRIEVAL INDEX on both
 // hosts (codex: tool_search's description; claude.ai: the connector's), so the model finds us only
 // if the words a person would actually say appear here. Instances change; VOCABULARY does not.
-const INVENTORY = `THE USER ALREADY HAS APPS HERE — they built them in earlier chats and they are still live: trackers, lists, boards, logs, journals, queues, inventories, habits, budgets, reading lists, collections, plans. When anything they say could plausibly BE one of those ("my expenses", "the reading list", "that board", "what am I tracking"), call list_components or data_collections and look — do not assume it does not exist, and do not recreate something under a new name. Use the exact names the registry returns; never invent one. Then open_component it rather than reciting its data as text.`;
+const INVENTORY = `THE USER ALREADY HAS APPS HERE — they built them in earlier chats and they are still live: trackers, lists, boards, logs, journals, queues, inventories, habits, budgets, reading lists, collections, plans. When anything they say could plausibly BE one of those ("my expenses", "the reading list", "that board", "what am I tracking"), call list_apps or data_collections and look — do not assume it does not exist, and do not recreate something under a new name. Use the exact names the registry returns; never invent one. Then open_app it rather than reciting its data as text.`;
 
 // INSTRUCTIONS carry a __PROACTIVITY_STANCE__ placeholder resolved per server start from the user's
 // stored `proactivity` pref (set during onboarding, step 4). Low-frequency setting → reading it once
@@ -106,7 +106,7 @@ function composeInstructions(manual, store) {
     ? "PROACTIVITY — the user chose ON-REQUEST: build or create apps only when asked. Exception: when they clearly want to SEE something that ALREADY has an app, open it anyway — showing an existing app is nearly free."
     : "PROACTIVITY — no preference set yet: open an EXISTING matching app proactively (nearly free), but PROPOSE building a NEW one (which costs tokens once) rather than building unprompted. Settle this with the user during onboarding.";
   // Which half this reader gets. One EXISTS query — on the hosted plane this runs per request.
-  const settled = store.hasComponentOutside(SEEDED_COMPONENTS);
+  const settled = store.hasAppOutside(SEEDED_APPS);
   const dynamic = [
     ["__ONBOARDING_OR_INVENTORY__", settled ? INVENTORY : ONBOARDING],
     ["__PROACTIVITY_STANCE__", stance],
@@ -138,7 +138,7 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  *                        DEPLOYMENT's registration, not of the engine, so it is a knob and never a
  *                        default. Omitted ⇒ the field is not declared and the host uses its own.
  * @param opts.viewBase  base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787").
- *                        When present, list_components prints a real /view/<name> link per app;
+ *                        When present, list_apps prints a real /view/<name> link per app;
  *                        when absent (bare stdio — no viewer exists) it prints none.
  */
 export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain } = {}) {
@@ -163,9 +163,9 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // the OpenAI compatibility spelling of the same fact, stamped at ONE seam so a new tool that
   // widgets call gets it by joining the list, not by remembering a field.
   const WIDGET_CALLABLE = new Set([
-    "data_list", "data_version", "data_changes", "component_html", "render_health",
+    "data_list", "data_version", "data_changes", "app_html", "render_health",
     "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
-    "library_list", "library_preview", "install_from_library", "list_components", "data_collections",
+    "library_list", "library_preview", "install_from_library", "list_apps", "data_collections",
     "ui_prefs_schema", "security_set",
   ]);
   // ONE line per control-plane tool call that REACHES US. Deliberately not a call log: only the
@@ -175,7 +175,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // It exists because a question we could not answer came up and will come up again: when a host
   // refuses an app-originated call, was it us or was it them? Today the answer is undecidable from
   // our side, and the reason is structural rather than an oversight — our denylist
-  // (isControlPlaneTool) lives ONLY in the runner guard, which runs in the browser. A component's
+  // (isControlPlaneTool) lives ONLY in the runner guard, which runs in the browser. An app's
   // refused call therefore never reaches a server at all, so no server log could ever record it.
   // What a server CAN state is the complement, and it is the half that settles the question:
   // "this privileged call arrived and we ran it" ⇒ any refusal the user saw came from upstream;
@@ -263,9 +263,9 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   function failNote(r) {
     if (r.error === "not_found") return "That item no longer exists — refresh.";
     if (r.error === "command_id_reused") return "That command_id was already used by a DIFFERENT command — nothing was done. Use a fresh uuid per action.";
-    if (r.error === "schema_violation") return `schema_violation — rejected by the collection's manifest (declared by "${r.manifest_component}"): ${(r.violations || []).join("; ")}.`;
-    if (r.error === "empty_html") return "empty_html — a component needs something to render: every app here is something a person opens. Send the HTML you want saved.";
-    if (r.error === "bad_name") return "bad_name — component names are lowercase letters, digits and dashes, starting with a letter (max 32 chars).";
+    if (r.error === "schema_violation") return `schema_violation — rejected by the collection's manifest (declared by "${r.manifest_app}"): ${(r.violations || []).join("; ")}.`;
+    if (r.error === "empty_html") return "empty_html — an app needs something to render: every app here is something a person opens. Send the HTML you want saved.";
+    if (r.error === "bad_name") return "bad_name — app names are lowercase letters, digits and dashes, starting with a letter (max 32 chars).";
     if (r.error === "provenance_locked") return `provenance_locked — "${r.name}" was authored outside this conversation (by ${r.author}, trust tier ${r.tier}) and runs under that provenance. Saving over it here would re-stamp it as yours and change what it is allowed to do, so nothing was written. Build your own under a different name, or delete this one first if it should go.`;
     if (r.error === "group_too_long") return `group_too_long — a group is a lane name (max ${r.limit} chars), not a data field.`;
     if (r.conflict) return `Version conflict (expected v${r.expected}) — refresh and retry.`;
@@ -292,7 +292,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     total_too_many_files: "Global file storage has too many files.",
     file_too_large: "That file exceeds the per-file size limit.",
     bad_path: "Invalid file path — use a simple name (no '..', absolute paths, backslashes, or control characters).",
-    bad_component: "Invalid app name for a file.",
+    bad_app: "Invalid app name for a file.",
     bad_sha256: "Internal error: bad content hash.",
     bad_size: "Invalid file size.",
     not_found: "No such file — refresh.",
@@ -312,15 +312,15 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     : r.error === "command_id_reused" ? "That command_id was already used by a DIFFERENT command — use a fresh uuid."
     : FILE_ERRORS[r.error] || `File operation failed: ${r.error || "unknown"}.`;
 
-  // caps = tier preset ⊕ policy:defaults:<tier>:<cap> ⊕ security:<component>:<cap> (last wins).
+  // caps = tier preset ⊕ policy:defaults:<tier>:<cap> ⊕ security:<app>:<cap> (last wins).
   // Rows come from the settings snapshot scanned in items[] order (the same last-wins scan the
   // pref merge uses). Overlays apply verbatim — security_set is the only writer and is privileged.
-  // E13a: caps are decided on TWO axes from here on — what the component is trusted to be (tier),
+  // E13a: caps are decided on TWO axes from here on — what the app is trusted to be (tier),
   // and WHO is asking (caller). Today caller is always "owner" and changes nothing, which is the
-  // whole point: the same component opened by its owner and by a stranger must be able to differ,
+  // whole point: the same app opened by its owner and by a stranger must be able to differ,
   // and every chokepoint that decides caps (shell.mjs runnerMount, the settings mirror,
   // tool-policy) reads this ONE signature. Widening it later means touching all of them at once.
-  function computeCaps(component, tier, caller = "owner") {
+  function computeCaps(app, tier, caller = "owner") {
     void caller;
     const preset = TIER_CAPS[tier] || TIER_CAPS.unreviewed;
     const caps = { ...preset, call_tools: [...preset.call_tools] };
@@ -330,7 +330,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       if (k) byKey.set(k, it.fields.value);
     }
     for (const cap of CAP_NAMES) {
-      for (const key of [`policy:defaults:${tier}:${cap}`, `security:${component}:${cap}`]) {
+      for (const key of [`policy:defaults:${tier}:${cap}`, `security:${app}:${cap}`]) {
         if (!byKey.has(key)) continue;
         const v = coerceCap(cap, byKey.get(key));
         if (v !== undefined) caps[cap] = v;
@@ -340,12 +340,12 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   }
 
   // Every mutating command funnels through here — in data.mjs, and in registry.mjs's
-  // delete_component — so it is shared context, not a data-tools local.
+  // delete_app — so it is shared context, not a data-tools local.
   // `type`/actor/host spread AFTER the args, never before: the four item-write schemas are
   // passthrough (to carry the runner's `via` stamp), so an arg bag can contain a `type` key —
-  // and if the caller's `type` won, `data_add_item {type:"save_component", name, html}` would
+  // and if the caller's `type` won, `data_add_item {type:"save_app", name, html}` would
   // dispatch a control-plane command through a data tool (reproduced: it overwrote a locked
-  // component). The dispatch type is the ONE thing the caller never gets to choose.
+  // app). The dispatch type is the ONE thing the caller never gets to choose.
   //
   // The SAME wall data_batch has always had, applied here too (ITEM_WRITE_KEYS — one table, both
   // write paths). Pinning `type` closed the worst instance; every other unpublished key a caller
@@ -369,9 +369,9 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
-  // components goes first because it hands back registerComponent, which library and registry
-  // need to wire a component that did not exist when their module ran.
-  Object.assign(ctx, registerComponentTools(ctx));
+  // apps goes first because it hands back registerApp, which library and registry
+  // need to wire an app that did not exist when their module ran.
+  Object.assign(ctx, registerAppTools(ctx));
   registerDataTools(ctx);
   registerFileTools(ctx);
   registerRegistryTools(ctx);

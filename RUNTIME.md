@@ -4,7 +4,7 @@
 
 This is the contract for writing an app **outside** this repo — in your own editor, with your own
 bundler — and installing it with `install-app.mjs`. If an AI is writing your app it doesn't need
-this file: it calls `get_component_guide`, which teaches the same API plus the house style, and it
+this file: it calls `get_app_guide`, which teaches the same API plus the house style, and it
 is writing against the engine it is already running on. You are not. That asymmetry is what this
 document is for.
 
@@ -97,7 +97,7 @@ oma.openLink(url) -> {ok}           // DIRECT MODE ONLY. Ask the host to open a 
                                     // (ui/open-link) — the direct counterpart to sendMessage:
                                     // no model, no trust decision. Standalone opens a tab; a
                                     // host that will not open links resolves {ok:false} rather
-                                    // than throwing. Sandboxed (embedded/previewed) components
+                                    // than throwing. Sandboxed (embedded/previewed) apps
                                     // do NOT get this: a URL carries data, so a link opener is
                                     // an outbound channel, and the sandbox closes those.
 oma.updateContext(text)             // silently updates the AI's context for its next turn
@@ -116,8 +116,8 @@ oma.toolInput                       // arguments of the call that mounted this w
 ### Direct mode only (3)
 
 ```js
-oma.embed(name, opts)               // mount another component inside this one (depth 1 — a child cannot embed)
-oma.viewBase                        // base path for component→component links, default "/view/"
+oma.embed(name, opts)               // mount another app inside this one (depth 1 — a child cannot embed)
+oma.viewBase                        // base path for app→app links, default "/view/"
 oma.isControlPlaneTool(name)        // for EMBEDDERS building their own bridge, not for ordinary apps
 ```
 

@@ -18,7 +18,7 @@ export function register(ctx) {
     {
       title: "List collection data",
       annotations: RO,
-      description: "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_component for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
+      description: "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_app for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
       inputSchema: {
         collection: z.string(),
         group: z.string().optional().describe("only items in this group/lane"),
@@ -89,7 +89,7 @@ export function register(ctx) {
         // The commands are NOT re-declared here, on purpose. They are the same four typed commands the
         // single-write tools already publish, the store validates each one exactly as it would alone,
         // and copying their schemas into this one would mean two places to change and two chances to
-        // disagree. The shape is taught once, in get_component_guide.
+        // disagree. The shape is taught once, in get_app_guide.
         commands: z.array(z.record(z.string(), z.any())).describe("[{type: \"add_item\", collection, fields, group?}, {type: \"update_item\", id, fields}, …] — same arguments as the single-write tools"),
       },
       outputSchema: {
@@ -312,7 +312,7 @@ export function register(ctx) {
     {
       title: "List collections",
       annotations: RO,
-      description: "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind a component to. Renders no UI.",
+      description: "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind an app to. Renders no UI.",
       inputSchema: {},
       outputSchema: {
         collections: z.array(z.object({
@@ -325,7 +325,7 @@ export function register(ctx) {
       const collections = store.listCollections();
       // The empty answer CARRIES the rule for the empty state. This fact used to live only in the
       // resident INSTRUCTIONS — the channel that measurably loses (prose lost the birthday fight in
-      // components.mjs, and one measured host truncates the tail of INSTRUCTIONS entirely). "No
+      // apps.mjs, and one measured host truncates the tail of INSTRUCTIONS entirely). "No
       // collections yet." was exactly the reply the model was reading when it gave up on "what's in
       // our freezer?". The note rides BOTH channels because hosts forward either one alone.
       const note = collections.length ? undefined
@@ -342,7 +342,7 @@ export function register(ctx) {
     {
       title: "Add item",
       annotations: WRITE,
-      description: "Add an item to a collection. `group` is the component-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
+      description: "Add an item to a collection. `group` is the app-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
       // The four item-write schemas are PASSTHROUGH objects (a real ZodObject, which the SDK
       // uses as-is instead of wrapping a strip-mode one): the runtime/runner stamps `via` —
       // the shadow provenance edge — onto widget writes, and a strip-mode schema would silently

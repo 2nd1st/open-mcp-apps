@@ -6,9 +6,9 @@
 //                        claude.ai custom connectors / any remote MCP host (via a tunnel).
 //   POST /rpc            plain {name, arguments} -> CallToolResult — used by the browser
 //                        viewer's standalone shell (no MCP host in a plain browser tab).
-//   GET  /view/<name>    render a component in the browser (CLI-friendly: the AI works in
+//   GET  /view/<name>    render an app in the browser (CLI-friendly: the AI works in
 //                        the terminal, the human watches/edits the same data in a tab).
-//   GET  /               index of components with /view links.
+//   GET  /               index of apps with /view links.
 //
 // Run: node src/http.mjs   (PORT=8787 by default)
 // NOTE: anything that can reach this port can read/write the store — keep it local, and
@@ -22,7 +22,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { openStore } from "./store.mjs";
 import { createEngine, tierOf, defaultCollectionFor } from "./engine.mjs";
-import { wrapComponent, wrapLoader } from "./shell.mjs";
+import { wrapApp, wrapLoader } from "./shell.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const PORT = Number(process.env.PORT || 8787);
@@ -88,7 +88,7 @@ const server = http.createServer(async (req, res) => {
       return json(res, 403, { isError: true, content: [{ type: "text", text: "forbidden origin" }] });
     }
     // ---- MCP over Streamable HTTP (stateless: a fresh engine per request; the tool list
-    // is rebuilt from the live registry every time, so new components appear immediately) ----
+    // is rebuilt from the live registry every time, so new apps appear immediately) ----
     if (url.pathname === "/mcp") {
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const body = req.method === "POST" ? JSON.parse((await readBody(req)) || "null") : undefined;
@@ -167,15 +167,15 @@ const server = http.createServer(async (req, res) => {
     // ---- browser viewer ----
     const view = url.pathname.match(/^\/view\/([a-z][a-z0-9-]{0,31})$/);
     if (view && req.method === "GET") {
-      const comp = store.getComponent(view[1]);
-      if (!comp) return html(res, 404, `<h3>No component "${view[1]}"</h3>`);
-      // Same binding rule the open_component tool uses — one answer to "what does this app open on".
+      const comp = store.getApp(view[1]);
+      if (!comp) return html(res, 404, `<h3>No app "${view[1]}"</h3>`);
+      // Same binding rule the open_app tool uses — one answer to "what does this app open on".
       const collection = url.searchParams.get("collection") || defaultCollectionFor(comp);
       // Tier branch (docs/security-model.md §2.3). DIRECT mode — the real window.oma, and this
-      // route's connect-src 'self' reaches /rpc — is for local components only. A non-local one
-      // gets the universal loader instead, which reads component_html over /rpc, sees the tier and
+      // route's connect-src 'self' reaches /rpc — is for local apps only. A non-local one
+      // gets the universal loader instead, which reads app_html over /rpc, sees the tier and
       // hands the source to oma.embed → the runner, with engine-computed caps. Before this branch
-      // the route fail-closed to a placeholder, which was correct while non-local components could
+      // the route fail-closed to a placeholder, which was correct while non-local apps could
       // not exist; the local install door (install-app.mjs --sandboxed) is what made them exist,
       // and an app you cannot open in the viewer is an app you cannot develop against.
       //
@@ -184,22 +184,22 @@ const server = http.createServer(async (req, res) => {
       // settings' Library preview has relied on exactly this since it shipped).
       if (tierOf(comp.author) !== "local")
         return html(res, 200, wrapLoader({
-          standalone: { endpoint: "/rpc", collection, component: view[1],
+          standalone: { endpoint: "/rpc", collection, app: view[1],
             ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         }), { "content-security-policy": VIEW_CSP });
-      return html(res, 200, wrapComponent(comp.html, {
-        // viewBase reaches the RUNTIME only when the operator set one. Component→component links
+      return html(res, 200, wrapApp(comp.html, {
+        // viewBase reaches the RUNTIME only when the operator set one. App→app links
         // default to a relative "/view/", which is correct for a plain local server and wrong behind
         // a path-prefixed proxy — where OMA_VIEW_BASE is exactly the operator saying what the prefix
         // is. Passing it unconditionally would turn every in-app link absolute (127.0.0.1), which
         // silently breaks the ordinary `localhost:PORT` visit: different origin, same server.
-        standalone: { endpoint: "/rpc", collection, component: view[1], ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
+        standalone: { endpoint: "/rpc", collection, app: view[1], ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         version: comp.version,   // render-health identity (auto-revert reports)
       }), { "content-security-policy": VIEW_CSP });
     }
 
     if (url.pathname === "/" && req.method === "GET") {
-      const comps = store.listComponents();
+      const comps = store.listApps();
       const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
       const SYSTEM_ORDER = ["dashboard", "library", "settings"];
       const system = SYSTEM_ORDER.map((n) => comps.find((c) => c.name === n)).filter(Boolean);

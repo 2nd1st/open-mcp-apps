@@ -4,7 +4,7 @@
 //
 // Two things live here, both versioned, both MCP-independent:
 //   1. DATA:      collections of items ({id, group, position, fields, version})
-//   2. COMPONENTS: the UI registry ({name, version, html}) — what the AI creates & reuses
+//   2. APPS: the UI registry ({name, version, html}) — what the AI creates & reuses
 //
 // Invariants (carried over from the proven todo prototype):
 //   - current-state tables + an append-only `change_event` ledger, ONE transaction per command
@@ -28,7 +28,7 @@ import { tierOf } from "./contracts.mjs";
 // Migration-format pin: stamped into PRAGMA user_version AND every change_event payload (`sv`).
 // Export/import + SaaS sync read this to know which event shape they are looking at — bump it on
 // any breaking payload/schema change and translate old values on read. Never reuse a number.
-export const SCHEMA_VERSION = 3;
+export const SCHEMA_VERSION = 4;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS item (
@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS item (
   collection TEXT NOT NULL,
   grp        TEXT NOT NULL DEFAULT '',
   position   REAL NOT NULL DEFAULT 0,
-  fields     TEXT NOT NULL DEFAULT '{}',   -- JSON object, component-defined shape
+  fields     TEXT NOT NULL DEFAULT '{}',   -- JSON object, app-defined shape
   version    INTEGER NOT NULL DEFAULT 1,
   -- E13f/g: WHO owns this row. NULL is today's meaning — shared across the org — and stays the
   -- default forever. Reserved now because principal has to cover member / guest / anon in ONE
@@ -51,7 +51,7 @@ CREATE INDEX IF NOT EXISTS idx_item_collection ON item(collection);
 -- ORDER BY that matches the index columns, so pages never sort the whole collection.
 CREATE INDEX IF NOT EXISTS idx_item_coll_grp_pos ON item(collection, grp, position);
 
-CREATE TABLE IF NOT EXISTS component (
+CREATE TABLE IF NOT EXISTS app (
   name        TEXT PRIMARY KEY,             -- [a-z][a-z0-9-]*; with OMA_DYNAMIC_TOOLS=1 it also surfaces as an open_<name> tool (flag defaults OFF — cache)
   version     INTEGER NOT NULL DEFAULT 1,
   html        TEXT NOT NULL,
@@ -60,16 +60,16 @@ CREATE TABLE IF NOT EXISTS component (
   scene       TEXT,                         -- JSON {category_id, tags?} | NULL — Library taxonomy metadata
   manifest    TEXT,                         -- JSON {collections:{<coll>:{fields:{..},strict?}}} | NULL — declared field contracts, enforced in core()
   -- E4 shape reservations, added early because a column added later cannot describe rows that
-  -- already exist. Two have since been claimed by current law: kind (list_components filters on
-  -- it) and visibility (listing + archive_component live on it). kit_version and server_script
+  -- already exist. Two have since been claimed by current law: kind (list_apps filters on
+  -- it) and visibility (listing + archive_app live on it). kit_version and server_script
   -- remain reservations — written and read by nothing yet.
-  kind        TEXT NOT NULL DEFAULT 'app',  -- app | visual | primitive — lets list_components stop listing non-apps
+  kind        TEXT NOT NULL DEFAULT 'app',  -- app | visual | primitive — lets list_apps stop listing non-apps
   visibility  TEXT NOT NULL DEFAULT 'listed', -- featured | listed | unlisted | archived (archive, curation and the long tail, in one field)
-  kit_version TEXT,                         -- which inlined kit build this component carries (L4)
+  kit_version TEXT,                         -- which inlined kit build this app carries (L4)
   server_script TEXT,                       -- E13d: server-side functions. Reserved now so they never have to live inside the html column
   updated_at  TEXT NOT NULL
 );
-CREATE TABLE IF NOT EXISTS component_history (
+CREATE TABLE IF NOT EXISTS app_history (
   name    TEXT NOT NULL,
   version INTEGER NOT NULL,
   html    TEXT NOT NULL,
@@ -80,28 +80,28 @@ CREATE TABLE IF NOT EXISTS component_history (
 -- File plane (scope b — user files; design: scratchpad/FILE-STORAGE-design.md). Bytes live in a
 -- SWAPPABLE backend (src/files.mjs — local folder now, remote later), NEVER here; this table is the
 -- per-app ref index that drives quota + versioning + audit. Isolation is a KEY, not a convention:
--- PRIMARY KEY (component, path) + WHERE component=? on every read make cross-app addressing impossible.
+-- PRIMARY KEY (app, path) + WHERE app=? on every read make cross-app addressing impossible.
 CREATE TABLE IF NOT EXISTS file (
-  component  TEXT NOT NULL,               -- owning app = isolation namespace (COMPONENT_NAME_RE)
+  app  TEXT NOT NULL,               -- owning app = isolation namespace (APP_NAME_RE)
   path       TEXT NOT NULL,               -- app-chosen logical name; a DB VALUE, never a fs path segment
-  sha256     TEXT NOT NULL,               -- content address → files/<component>/<sha256>.blob in the backend
+  sha256     TEXT NOT NULL,               -- content address → files/<app>/<sha256>.blob in the backend
   size       INTEGER NOT NULL,            -- LOGICAL bytes (drives quota; content-addressed dedup cannot bypass)
   mime       TEXT NOT NULL DEFAULT 'application/octet-stream',
   version    INTEGER NOT NULL DEFAULT 1,  -- +1 per overwrite (OCC token, mirrors item.version)
   backend    TEXT NOT NULL DEFAULT 'local', -- remote seam: 'local' | 'remote' (per-row, mid-migration transparent)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
-  PRIMARY KEY (component, path)
+  PRIMARY KEY (app, path)
 );
-CREATE INDEX IF NOT EXISTS idx_file_component ON file(component);
-CREATE INDEX IF NOT EXISTS idx_file_sha       ON file(component, sha256);
+CREATE INDEX IF NOT EXISTS idx_file_app ON file(app);
+CREATE INDEX IF NOT EXISTS idx_file_sha       ON file(app, sha256);
 
 CREATE TABLE IF NOT EXISTS change_event (
   seq          INTEGER PRIMARY KEY AUTOINCREMENT,
-  aggregate_id TEXT NOT NULL,               -- item id | component name | collection name
+  aggregate_id TEXT NOT NULL,               -- item id | app name | collection name
   command_id   TEXT NOT NULL UNIQUE,        -- idempotency key
   event_type   TEXT NOT NULL,               -- item_added|item_updated|item_moved|item_deleted|component_saved|component_deleted
-  payload      TEXT NOT NULL,               -- JSON (component html NOT included — it's in component_history)
+  payload      TEXT NOT NULL,               -- JSON (app html NOT included — it's in app_history)
   actor        TEXT NOT NULL,             -- see ACTORS: the CLASS that wrote this
   -- 🔴 The one genuinely irreversible reservation. The ledger only grows, so if anonymous writes
   -- ever land without a dimension that distinguishes them, the history can never be sorted into
@@ -153,8 +153,19 @@ CREATE TABLE IF NOT EXISTS ledger_truncation (
 // NOW and rejected nowhere: no code path produces them yet, and when one does it must say so.
 // version N here runs when upgrading a database stamped at N-1. Empty until the first bump; the
 // SHAPE is what E4a is for. Exported as a pure lookup so it can be tested without one.
+// The app table is called `component` in every database old enough to need migration 2 or 3, and
+// `app` in one fresh enough to skip them (v4 renamed it) — and a FRESH store runs this whole ladder
+// too, against empty tables. So the historical steps resolve the name instead of hard-coding either
+// one: hard-coding `app` would make them query a table a v1 file does not have, and hard-coding
+// `component` would break every new install. The v4 step below needs no such care — by the time it
+// runs, renameLegacyTables() has already made the names uniform.
+const eraNames = (db) =>
+  db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='component'").get()
+    ? { app: "component", hist: "component_history", fileApp: "component" }
+    : { app: "app", hist: "app_history", fileApp: "app" };
+
 export const MIGRATIONS = {
-  // v2 — ONE ordinal axis. Three separate counters (item.version, component.version, file.version)
+  // v2 — ONE ordinal axis. Three separate counters (item.version, app.version, file.version)
   // become positions on the ledger, which is the only clock every plane already shares. What this
   // buys: `expected_version` means the same number everywhere, a delta's `seq` is directly usable as
   // the OCC token for the row it describes, and "is my copy current?" stops needing a per-plane
@@ -169,56 +180,126 @@ export const MIGRATIONS = {
   2(db) {
     const head = db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event").get().v;
     // item: last ITEM event for this id. The type restriction is load-bearing: aggregate_id is a
-    // shared namespace, and an item whose id happens to equal a component's name must not inherit
-    // the component's seq.
+    // shared namespace, and an item whose id happens to equal an app's name must not inherit
+    // the app's seq.
     db.exec(`UPDATE item SET version = COALESCE(
                (SELECT MAX(e.seq) FROM change_event e WHERE e.aggregate_id = item.id
                   AND e.event_type IN ('item_added','item_updated','item_moved')), ${head})`);
-    // component: last component_saved for this name. component_history is keyed (name, version), so
-    // it is rewritten in the same pass — otherwise restore_component would look up a version that
+    // app: last component_saved for this name. app_history is keyed (name, version), so
+    // it is rewritten in the same pass — otherwise restore_app would look up a version that
     // no longer exists on the row.
-    const comps = db.prepare("SELECT name, version FROM component").all();
+    const T = eraNames(db);
+    const comps = db.prepare(`SELECT name, version FROM ${T.app}`).all();
     const lastSave = db.prepare(
       "SELECT MAX(seq) AS v FROM change_event WHERE event_type = 'component_saved' AND aggregate_id = ?");
-    const setComp = db.prepare("UPDATE component SET version = ? WHERE name = ?");
-    const rekeyHist = db.prepare("UPDATE component_history SET version = ? WHERE name = ? AND version = ?");
+    const setComp = db.prepare(`UPDATE ${T.app} SET version = ? WHERE name = ?`);
+    const rekeyHist = db.prepare(`UPDATE ${T.hist} SET version = ? WHERE name = ? AND version = ?`);
     for (const c of comps) {
       const seq = lastSave.get(c.name).v ?? head;
-      // History rows for OTHER versions of this component keep their old numbers: they are historical
+      // History rows for OTHER versions of this app keep their old numbers: they are historical
       // positions that no longer collide with anything live, and rewriting them would need an event
       // per version, which the ledger does not have for pre-ledger saves. The CURRENT version is the
       // one that has to agree with the row, because that is the one restore/auto-revert reads.
       rekeyHist.run(seq, c.name, c.version);
       setComp.run(seq, c.name);
     }
-    // file: last file_written for component/path.
+    // file: last file_written for app/path.
     db.exec(`UPDATE file SET version = COALESCE((SELECT MAX(e.seq) FROM change_event e
                WHERE e.event_type = 'file_written'
-                 AND e.aggregate_id = file.component || '/' || file.path), ${head})`);
+                 AND e.aggregate_id = file.${T.fileApp} || '/' || file.path), ${head})`);
   },
   // v3 — the library rename (gallery → library, v0.3.0). Two facts move: the PROVENANCE stamp
   // (author 'gallery' → 'library', which tierOf reads — without this, rows installed by v0.2.0
   // would fall to the strictest tier under a build whose tierOf no longer knows the old word),
-  // and the SYSTEM component's NAME (the seeder would otherwise add 'library' beside a stale
+  // and the SYSTEM app's NAME (the seeder would otherwise add 'library' beside a stale
   // 'gallery' row that nothing locks or lists any more). The LEDGER is deliberately untouched:
   // events are history, history happened under the old name, and rewriting payloads would forge
   // the past — a reader of old events sees 'gallery' and that is the truth of when they occurred.
   3(db) {
-    db.exec(`UPDATE component SET author = 'library' WHERE author = 'gallery'`);
+    const T = eraNames(db);
+    db.exec(`UPDATE ${T.app} SET author = 'library' WHERE author = 'gallery'`);
     // Rename the system row only when the new name is free — a collision would mean a v0.3 build
     // already seeded 'library' into this store, and then the stale row is dropped, not renamed
     // (its html is the OLD build's browse surface; keeping two library UIs helps nobody).
-    const hasNew = db.prepare("SELECT 1 FROM component WHERE name = 'library'").get();
-    const hasOld = db.prepare("SELECT 1 FROM component WHERE name = 'gallery'").get();
+    const hasNew = db.prepare(`SELECT 1 FROM ${T.app} WHERE name = 'library'`).get();
+    const hasOld = db.prepare(`SELECT 1 FROM ${T.app} WHERE name = 'gallery'`).get();
     if (hasOld && !hasNew) {
-      db.exec(`UPDATE component SET name = 'library' WHERE name = 'gallery'`);
-      db.exec(`UPDATE component_history SET name = 'library' WHERE name = 'gallery'`);
+      db.exec(`UPDATE ${T.app} SET name = 'library' WHERE name = 'gallery'`);
+      db.exec(`UPDATE ${T.hist} SET name = 'library' WHERE name = 'gallery'`);
     } else if (hasOld && hasNew) {
-      db.exec(`DELETE FROM component_history WHERE name = 'gallery'`);
-      db.exec(`DELETE FROM component WHERE name = 'gallery'`);
+      db.exec(`DELETE FROM ${T.hist} WHERE name = 'gallery'`);
+      db.exec(`DELETE FROM ${T.app} WHERE name = 'gallery'`);
+    }
+  },
+  // v4 — the component → app rename (v0.4.0). The STRUCTURAL half (both tables, the `file` owner
+  // column, the index name) already ran in renameLegacyTables(), BEFORE the schema DDL — see there
+  // for why it cannot live in this ladder. What is left is the half that touches ROWS.
+  //
+  // `app` only became a reserved name in v0.3.2, and a reserved name is refused at CREATE time —
+  // it was never enforced against rows that already existed. So a store older than that can own an
+  // app literally called `app`, and v0.4 makes that word the house vocabulary: its document would
+  // claim the universal loader's own resource URI. v0.3.2 shipped a guard that keeps the engine
+  // BOOTING in that case (the app silently loses direct embedding); this moves the name out of the
+  // way instead, which is the fix the guard was buying time for.
+  //
+  // And it is WRITTEN DOWN. A name that changes under the user without a record is indistinguishable
+  // from the app having been deleted — the one reading of it we must not leave available.
+  4(db) {
+    const taken = new Set(db.prepare("SELECT name FROM app").all().map((r) => r.name));
+    const ins = db.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts)"
+      + " VALUES (?, ?, ?, ?, ?, ?)");
+    for (const from of RESERVED_RENAMES) {
+      if (!taken.has(from)) continue;
+      let to, i = 1;
+      do { to = `${from}-${i++}`; } while (taken.has(to));
+      db.prepare("UPDATE app SET name = ? WHERE name = ?").run(to, from);
+      db.prepare("UPDATE app_history SET name = ? WHERE name = ?").run(to, from);
+      db.prepare("UPDATE file SET app = ? WHERE app = ?").run(to, from);
+      taken.delete(from); taken.add(to);
+      // `component_renamed`, not `app_renamed`: the ledger's event vocabulary is frozen at the
+      // pre-rename word on purpose (see EVENT_TYPES). ONE vocabulary means a later reader who
+      // filters on the wrong word gets zero rows on their own machine instead of silently missing
+      // history on a user's.
+      ins.run(to, randomUUID(), "component_renamed",
+        JSON.stringify({ from, to, reason: "reserved_name", sv: SCHEMA_VERSION }),
+        "seed", new Date().toISOString());
     }
   },
 };
+
+// Names v4 moves out of the way, in the order it tries them. Not read from RESERVED_APP_NAMES:
+// that set is current law and will keep changing, while a migration must do the same thing in ten
+// years that it does today — a migration whose behaviour drifts with an unrelated edit is a
+// migration nobody can reason about.
+const RESERVED_RENAMES = ["app", "component", "loader"];
+
+// v3 → v4 · the STRUCTURAL half of the component → app rename.
+//
+// Why it is not MIGRATIONS[4]: openStore runs db.exec(SCHEMA) and the addColumn() guards BEFORE
+// the migration ladder, and both name the v4 tables — `CREATE INDEX ... ON file(app)` fails
+// outright against a v3 `file` table, and addColumn("app", …) has no table to alter. The rename
+// therefore has to precede them.
+//
+// Idempotent by inspection of sqlite_master, and in its own transaction: a crash mid-rename leaves
+// the v3 shape untouched and the next open retries from the top. A crash BETWEEN this and the
+// user_version bump leaves v4 tables stamped v3 — forward that is harmless (this is a no-op on the
+// next open and MIGRATIONS[4] still runs); backward it is the same one-way property v4 has anyway.
+export function renameLegacyTables(db) {
+  const has = (n) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(n);
+  if (!has("component")) return false;                 // already v4-shaped, or a fresh database
+  if (has("app")) throw new Error("store has both `component` and `app` tables — refusing to guess which is live");
+  db.transaction(() => {
+    db.exec("ALTER TABLE component RENAME TO app");
+    db.exec("ALTER TABLE component_history RENAME TO app_history");
+    db.exec("ALTER TABLE file RENAME COLUMN component TO app");
+    // SQLite carries an index's DEFINITION through a column rename but not its NAME, and
+    // idx_file_component is the implementation of a security property (see the `file` DDL) — a
+    // stale name on that one is exactly what a later reader "tidies up" without knowing what it
+    // holds up. Drop it; the DDL below recreates it as idx_file_app.
+    db.exec("DROP INDEX IF EXISTS idx_file_component");
+  })();
+  return true;
+}
 export function migrationsBetween(from, to) {
   const steps = [];
   for (let v = from + 1; v <= to; v++) if (MIGRATIONS[v]) steps.push(MIGRATIONS[v]);
@@ -227,17 +308,17 @@ export function migrationsBetween(from, to) {
 
 export const ACTORS = new Set(["agent", "human", "seed", "library", "guest", "anon"]);
 
-// What a component IS (drives what list_components will eventually bother listing) and how visible
+// What an app IS (drives what list_apps will eventually bother listing) and how visible
 // it is. Closed sets for the same reason ACTORS is: a typo'd value would be indistinguishable from
 // a real one, and these decide what the model gets to see.
 // Commands where `actor` is authorship provenance rather than a write class — see execute().
-const AUTHORSHIP_COMMANDS = new Set(["save_component", "delete_component"]);
+const AUTHORSHIP_COMMANDS = new Set(["save_app", "delete_app"]);
 
-export const COMPONENT_KINDS = new Set(["app", "visual", "primitive"]);
+export const APP_KINDS = new Set(["app", "visual", "primitive"]);
 export const VISIBILITIES = new Set(["featured", "listed", "unlisted", "archived"]);
 
-export const COMPONENT_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
-export const MAX_COMPONENT_HTML = 200_000;
+export const APP_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
+export const MAX_APP_HTML = 200_000;
 
 // Security v0.1 content-rules (docs/security-model.md §4–§5), enforced in the store so they
 // bind EVERY caller and transport (the AI, the browser /rpc, a widget) — the engine cannot
@@ -245,7 +326,7 @@ export const MAX_COMPONENT_HTML = 200_000;
 export const SETTINGS_COLLECTION = "settings";
 // Reserved policy namespaces: writable ONLY via executePrivileged (the security_set tool).
 // The colon prefix is outside the settings-design declared-key charset, so it never collides
-// with a component's own preference keys.
+// with an app's own preference keys.
 export const RESERVED_KEY_RE = /^(?:security|policy):/;
 // Per-item DoS floor: no single item's fields JSON may exceed this, for anyone.
 export const MAX_ITEM_FIELDS_BYTES = 32_768;
@@ -296,9 +377,9 @@ export const MAX_FILE_INLINE_BYTES = 5 * 1024 * 1024;         // single-call/dat
 export const MAX_APP_FILE_BYTES   = 5 * 1024 * 1024 * 1024;   // per-app (SUM of ref sizes)
 export const MAX_APP_FILE_COUNT   = 10_000;                   // per-app file count
 export const MAX_TOTAL_FILE_BYTES = 50 * 1024 * 1024 * 1024;  // global
-export const MAX_TOTAL_FILE_COUNT = 200_000;                 // global file-count floor — bounds zero-byte/deduped rows + inodes the byte caps can't (every regex-valid component name is otherwise a fresh per-app budget)
+export const MAX_TOTAL_FILE_COUNT = 200_000;                 // global file-count floor — bounds zero-byte/deduped rows + inodes the byte caps can't (every regex-valid app name is otherwise a fresh per-app budget)
 
-// Component schema manifests: a component declares WHICH collections it stewards and, optionally,
+// App schema manifests: an app declares WHICH collections it stewards and, optionally,
 // field contracts for them. Validation lives HERE (not the engine) so it binds EVERY caller — AI
 // tool, widget mutation, /rpc. Manifest-less collections behave exactly as before.
 //
@@ -306,13 +387,13 @@ export const MAX_TOTAL_FILE_COUNT = 200_000;                 // global file-coun
 // it claims the collection for the lifecycle plane (export/archive view/retention/Data pane) and
 // validates nothing. That split is the point: stewardship is declared, access is decided by caps,
 // and neither implies the other. Requiring `fields` is what made stewardship unaffordable to
-// declare, which is why the collection↔component edge appeared not to exist at all.
+// declare, which is why the collection↔app edge appeared not to exist at all.
 export const MANIFEST_FIELD_TYPES = new Set(["string", "number", "boolean", "object", "array"]);
 export function manifestShapeError(m) {
   if (!m || typeof m !== "object" || Array.isArray(m)) return "manifest must be an object";
-  // `collections` is OPTIONAL at the top level. A component's declaration is mostly about itself —
+  // `collections` is OPTIONAL at the top level. An app's declaration is mostly about itself —
   // its settings, which shared prefs it honours, later its functions and what it embeds — and most
-  // real components declare no collection contract at all. Demanding one made the whole declaration
+  // real apps declare no collection contract at all. Demanding one made the whole declaration
   // unwritable for them.
   if (m.collections != null) {
     if (typeof m.collections !== "object" || Array.isArray(m.collections)) return "manifest.collections must be an object";
@@ -343,13 +424,13 @@ export function manifestShapeError(m) {
     }
   }
   // The rest of the declaration face. Shape only — what each key MEANS is enforced by whoever reads
-  // it (the settings app renders `settings`, list_components filters on `kind`), which is why a key
+  // it (the settings app renders `settings`, list_apps filters on `kind`), which is why a key
   // this build does not know yet is IGNORED rather than rejected: a document written for a newer
   // engine must still save on an older one, or the declaration stops being safe to grow.
   if (m.manifest_version != null && ![1, 2].includes(m.manifest_version)) return "manifest_version must be 1 or 2";
   if (m.settings != null && !Array.isArray(m.settings)) return "manifest.settings must be an array";
   if (m.uses_shared != null && !Array.isArray(m.uses_shared)) return "manifest.uses_shared must be an array";
-  if (m.kind != null && !COMPONENT_KINDS.has(m.kind)) return `manifest.kind must be one of ${[...COMPONENT_KINDS].join("|")}`;
+  if (m.kind != null && !APP_KINDS.has(m.kind)) return `manifest.kind must be one of ${[...APP_KINDS].join("|")}`;
   if (m.scene != null && (typeof m.scene !== "object" || Array.isArray(m.scene))) return "manifest.scene must be an object";
   return null;
 }
@@ -454,13 +535,13 @@ function fieldViolations(spec, fields) {
 // command_id only short-circuits when the prior event is the SAME command (type + target).
 const EVENT_TYPES = {
   add_item: "item_added", update_item: "item_updated", move_item: "item_moved",
-  delete_item: "item_deleted", save_component: "component_saved", delete_component: "component_deleted",
-  archive_component: "component_archived",
+  delete_item: "item_deleted", save_app: "component_saved", delete_app: "component_deleted",
+  archive_app: "component_archived",
   write_file: "file_written", delete_file: "file_deleted",
 };
 
 // The store lives in a FIXED per-user data dir, decoupled from the clone location, so every
-// host (Claude Desktop, Claude Code, Codex) and every clone opens the SAME db — components and
+// host (Claude Desktop, Claude Code, Codex) and every clone opens the SAME db — apps and
 // data stay in sync instead of forking one db per install (the #1 cause of "the two hosts don't
 // see each other's apps"). OMA_DB overrides for tests / isolated stores; an explicit `path` arg
 // wins over everything (the smoke tests pass one).
@@ -478,6 +559,9 @@ export function openStore(path) {
   const db = new Database(dbPath);
   db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");   // N hosts share ONE db → wait out a busy writer instead of throwing SQLITE_BUSY
+  // Before ANY DDL: the v3 tables have to answer to their v4 names first, or the schema below
+  // indexes a column that does not exist yet. See renameLegacyTables().
+  renameLegacyTables(db);
   db.exec(SCHEMA);
   // The server-held delta watermark is gone: it was keyed by (collection, host) and hostName turned
   // out to be unstable (one claude.ai user presents three clientInfo names — measured), on top of
@@ -492,12 +576,12 @@ export function openStore(path) {
     if (!db.pragma(`table_info(${table})`).some((c) => c.name === column))
       db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
   };
-  addColumn("component", "scene", "TEXT");
-  addColumn("component", "manifest", "TEXT");
-  addColumn("component", "kind", "TEXT NOT NULL DEFAULT 'app'");
-  addColumn("component", "visibility", "TEXT NOT NULL DEFAULT 'listed'");
-  addColumn("component", "kit_version", "TEXT");
-  addColumn("component", "server_script", "TEXT");
+  addColumn("app", "scene", "TEXT");
+  addColumn("app", "manifest", "TEXT");
+  addColumn("app", "kind", "TEXT NOT NULL DEFAULT 'app'");
+  addColumn("app", "visibility", "TEXT NOT NULL DEFAULT 'listed'");
+  addColumn("app", "kit_version", "TEXT");
+  addColumn("app", "server_script", "TEXT");
   addColumn("item", "principal", "TEXT");
   addColumn("change_event", "principal", "TEXT");
   // Stamp the migration-format version. 0 = pre-versioned db (same layout as v1) → claim it as v1.
@@ -561,9 +645,9 @@ export function openStore(path) {
        ORDER BY position, id LIMIT @n`),
 
     // Manifest lookup: no in-memory cache staleness across N processes sharing one db — the cache
-    // key is a cheap aggregate that changes whenever any manifest-bearing component row changes.
-    manifestKey: db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(version),0) AS sv, COALESCE(MAX(updated_at),'') AS u FROM component WHERE manifest IS NOT NULL"),
-    manifestRows: db.prepare("SELECT name, manifest FROM component WHERE manifest IS NOT NULL ORDER BY updated_at ASC, name ASC"),
+    // key is a cheap aggregate that changes whenever any manifest-bearing app row changes.
+    manifestKey: db.prepare("SELECT COUNT(*) AS n, COALESCE(SUM(version),0) AS sv, COALESCE(MAX(updated_at),'') AS u FROM app WHERE manifest IS NOT NULL"),
+    manifestRows: db.prepare("SELECT name, manifest FROM app WHERE manifest IS NOT NULL ORDER BY updated_at ASC, name ASC"),
     // `version` is passed in, never computed here: it is the ledger seq of the event that made this
     // row, so the number has to come from the append. Every write below appends FIRST for that
     // reason — the reverse of the old order, and the one detail this merge lives or dies on.
@@ -577,17 +661,17 @@ export function openStore(path) {
     collections: db.prepare(
       "SELECT collection, COUNT(*) AS items, MAX(updated_at) AS last_activity FROM item GROUP BY collection ORDER BY last_activity DESC"
     ),
-    compByName: db.prepare("SELECT * FROM component WHERE name = ?"),
+    compByName: db.prepare("SELECT * FROM app WHERE name = ?"),
     // Ownership evidence for deleteDisposition. Manifests are read whole (the registry is small and
     // a manifest is one JSON blob); via is dug out of the event payload because change_event has no
     // via column — it rides inside the payload, by design (the shadow edge is not a schema field).
-    allCompManifests: db.prepare("SELECT name, manifest FROM component WHERE manifest IS NOT NULL"),
+    allCompManifests: db.prepare("SELECT name, manifest FROM app WHERE manifest IS NOT NULL"),
     viaByCollection: db.prepare(
       `SELECT DISTINCT json_extract(payload, '$.collection') AS collection,
-                       json_extract(payload, '$.via.component') AS via
+                       json_extract(payload, '$.via.app') AS via
          FROM change_event
         WHERE event_type LIKE 'item_%'
-          AND json_extract(payload, '$.via.component') IS NOT NULL
+          AND json_extract(payload, '$.via.app') IS NOT NULL
           AND json_extract(payload, '$.collection') IS NOT NULL`),
     countSettingsGroup: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = 'settings' AND grp = ?"),
     // "Did this collection exist before this app did?" — the cheap question that separates the
@@ -601,18 +685,18 @@ export function openStore(path) {
     // whoever wires that has to bring an ownership answer that survives a pruned tail (a claim
     // recorded on the ROW, not re-derived from history). Tracked as N9.
     firstCollEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
-    // WHERE THIS COMPONENT'S CURRENT LIFE BEGINS — 0 if it has only ever had one.
+    // WHERE THIS APP'S CURRENT LIFE BEGINS — 0 if it has only ever had one.
     //
-    // A delete is a tombstone, so the ledger and component_history keep everything the PREVIOUS
+    // A delete is a tombstone, so the ledger and app_history keep everything the PREVIOUS
     // holder of a name left behind, and a name can be reused. Two destructive decisions were
     // reading those leftovers as if they described the app that bears the name now (see
-    // deleteDisposition and componentHistory). Both need the same question answered, so it is
+    // deleteDisposition and appHistory). Both need the same question answered, so it is
     // asked once, here.
     //
     // "The most recent delete that was FOLLOWED BY a save." The `EXISTS` is what makes the
     // tombstone case come out right: an app that was deleted and never recreated has no save after
     // its final delete, so that delete does not start a new life and the app still owns the life it
-    // had — which is exactly the promise `component_history` makes ("history survives delete").
+    // had — which is exactly the promise `app_history` makes ("history survives delete").
     lifeStart: db.prepare(
       `SELECT COALESCE(MAX(d.seq), 0) AS v
          FROM change_event d
@@ -621,56 +705,56 @@ export function openStore(path) {
                        WHERE s.aggregate_id = d.aggregate_id
                          AND s.event_type = 'component_saved' AND s.seq > d.seq)`),
     firstCompEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE aggregate_id = ? AND event_type = 'component_saved' AND seq > ?"),
-    histSince: db.prepare("SELECT version, ts, length(html) AS html_size FROM component_history WHERE name = ? AND version > ? ORDER BY version DESC"),
+    histSince: db.prepare("SELECT version, ts, length(html) AS html_size FROM app_history WHERE name = ? AND version > ? ORDER BY version DESC"),
     delSettingsGroup: db.prepare("DELETE FROM item WHERE collection = 'settings' AND grp = @grp"),
     delCollectionRows: db.prepare("DELETE FROM item WHERE collection = @collection"),
-    // "Is there a component outside this set?" — EXISTS stops at the first row instead of scanning
+    // "Is there an app outside this set?" — EXISTS stops at the first row instead of scanning
     // the registry, and json_each keeps ONE prepared statement for any set, so the store never has
-    // to know WHICH components are the engine's own. That stays an engine-level concept.
+    // to know WHICH apps are the engine's own. That stays an engine-level concept.
     hasCompOutside: db.prepare(
-      "SELECT EXISTS(SELECT 1 FROM component WHERE name NOT IN (SELECT value FROM json_each(?))) AS v"
+      "SELECT EXISTS(SELECT 1 FROM app WHERE name NOT IN (SELECT value FROM json_each(?))) AS v"
     ),
-    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, kind, visibility, kit_version, updated_at, length(html) AS html_size FROM component ORDER BY name"),
+    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, kind, visibility, kit_version, updated_at, length(html) AS html_size FROM app ORDER BY name"),
     insComp: db.prepare(
-      `INSERT INTO component (name, version, html, description, author, scene, manifest, kind, visibility, updated_at)
+      `INSERT INTO app (name, version, html, description, author, scene, manifest, kind, visibility, updated_at)
        VALUES (@name, @version, @html, @description, @author, @scene, @manifest,
                COALESCE(@kind, 'app'), COALESCE(@visibility, 'listed'), @ts)
        ON CONFLICT(name) DO UPDATE SET version = @version, html = @html,
-         description = CASE WHEN @description = '' THEN component.description ELSE @description END,
+         description = CASE WHEN @description = '' THEN app.description ELSE @description END,
          author = @author,
-         scene = CASE WHEN @scene_set = 1 THEN @scene ELSE component.scene END,
-         manifest = CASE WHEN @manifest_set = 1 THEN @manifest ELSE component.manifest END,
+         scene = CASE WHEN @scene_set = 1 THEN @scene ELSE app.scene END,
+         manifest = CASE WHEN @manifest_set = 1 THEN @manifest ELSE app.manifest END,
          -- three-state, like scene/manifest: absent keeps what is there, present replaces it. A
-         -- plain re-save must never silently reset a component's kind or visibility.
-         kind = COALESCE(@kind, component.kind),
-         visibility = COALESCE(@visibility, component.visibility),
+         -- plain re-save must never silently reset an app's kind or visibility.
+         kind = COALESCE(@kind, app.kind),
+         visibility = COALESCE(@visibility, app.visibility),
          updated_at = @ts`),
-    insCompHist: db.prepare("INSERT OR REPLACE INTO component_history (name, version, html, ts) VALUES (@name, @version, @html, @ts)"),
-    compHist: db.prepare("SELECT version, ts, length(html) AS html_size FROM component_history WHERE name = ? ORDER BY version DESC"),
-    compVersion: db.prepare("SELECT name, version, html, ts FROM component_history WHERE name = ? AND version = ?"),
-    delComp: db.prepare("DELETE FROM component WHERE name = ?"),
-    setCompVisibility: db.prepare("UPDATE component SET visibility = @visibility, version = @version, updated_at = @ts WHERE name = @name"),
+    insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, html, ts) VALUES (@name, @version, @html, @ts)"),
+    compHist: db.prepare("SELECT version, ts, length(html) AS html_size FROM app_history WHERE name = ? ORDER BY version DESC"),
+    compVersion: db.prepare("SELECT name, version, html, ts FROM app_history WHERE name = ? AND version = ?"),
+    delComp: db.prepare("DELETE FROM app WHERE name = ?"),
+    setCompVisibility: db.prepare("UPDATE app SET visibility = @visibility, version = @version, updated_at = @ts WHERE name = @name"),
 
-    // File plane — ref index only (bytes are the backend's job). All reads are component-scoped.
-    fileByKey: db.prepare("SELECT * FROM file WHERE component = ? AND path = ?"),
-    filesByComponent: db.prepare("SELECT component, path, sha256, size, mime, version, backend, created_at, updated_at FROM file WHERE component = ? ORDER BY path"),
-    fileUsageStmt: db.prepare("SELECT COALESCE(SUM(size),0) AS bytes, COUNT(*) AS count FROM file WHERE component = ?"),
+    // File plane — ref index only (bytes are the backend's job). All reads are app-scoped.
+    fileByKey: db.prepare("SELECT * FROM file WHERE app = ? AND path = ?"),
+    filesByApp: db.prepare("SELECT app, path, sha256, size, mime, version, backend, created_at, updated_at FROM file WHERE app = ? ORDER BY path"),
+    fileUsageStmt: db.prepare("SELECT COALESCE(SUM(size),0) AS bytes, COUNT(*) AS count FROM file WHERE app = ?"),
     fileUsageTotalStmt: db.prepare("SELECT COALESCE(SUM(size),0) AS bytes, COUNT(*) AS count FROM file"),
-    blobRefcountStmt: db.prepare("SELECT COUNT(*) AS n FROM file WHERE component = ? AND sha256 = ?"),
+    blobRefcountStmt: db.prepare("SELECT COUNT(*) AS n FROM file WHERE app = ? AND sha256 = ?"),
     filesSeq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event WHERE event_type = 'file_written' OR event_type = 'file_deleted'"),
     insFile: db.prepare(
-      `INSERT INTO file (component, path, sha256, size, mime, version, backend, created_at, updated_at)
-       VALUES (@component, @path, @sha256, @size, @mime, @version, @backend, @ts, @ts)
-       ON CONFLICT(component, path) DO UPDATE SET sha256 = @sha256, size = @size, mime = @mime,
+      `INSERT INTO file (app, path, sha256, size, mime, version, backend, created_at, updated_at)
+       VALUES (@app, @path, @sha256, @size, @mime, @version, @backend, @ts, @ts)
+       ON CONFLICT(app, path) DO UPDATE SET sha256 = @sha256, size = @size, mime = @mime,
          version = @version, backend = @backend, updated_at = @ts`),
-    delFile: db.prepare("DELETE FROM file WHERE component = @component AND path = @path"),
+    delFile: db.prepare("DELETE FROM file WHERE app = @app AND path = @path"),
 
     // Undo/retention reads. lastEventFor is served by the PK index on seq (DESC scan, LIMIT 1).
     lastEventFor: db.prepare("SELECT seq, aggregate_id, event_type, payload FROM change_event WHERE aggregate_id = ? ORDER BY seq DESC LIMIT 1"),
     // Data-pane ledger window (newest first) — the internal read that keeps `via`.
     recentEventsAll: db.prepare("SELECT seq, event_type, aggregate_id, actor, principal, host, ts, payload FROM change_event ORDER BY seq DESC LIMIT @n"),
     recentEventsColl: db.prepare("SELECT seq, event_type, aggregate_id, actor, principal, host, ts, payload FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @n"),
-    compHistory: db.prepare("SELECT version, html FROM component_history WHERE name = ? ORDER BY version DESC"),
+    compHistory: db.prepare("SELECT version, html FROM app_history WHERE name = ? ORDER BY version DESC"),
     settingByKey: db.prepare("SELECT fields FROM item WHERE collection = 'settings' AND json_extract(fields,'$.key') = ?"),
     // Keep the newest @keep events of a collection; delete what is older. Written as a NOT IN over
     // the kept window rather than an OFFSET delete so it is one statement and one plan.
@@ -690,15 +774,15 @@ export function openStore(path) {
     fields: JSON.parse(r.fields), version: r.version,
   });
 
-  // collection → { components, spec } from declared manifests. Cached, but the cache key is a
+  // collection → { apps, spec } from declared manifests. Cached, but the cache key is a
   // per-call aggregate query so N processes sharing this db never validate against stale rules.
   //
-  // Collections are SHARED substrate: N components may steward the same one (a parent embedding a
+  // Collections are SHARED substrate: N apps may steward the same one (a parent embedding a
   // child that reads it, an app exposing a function another app calls, several views of one dataset).
   // So declarations UNION rather than overwrite: the field set is the union, a key declared twice
   // resolves to the LAST declaration in updated_at order (deterministic) and is reported in
-  // `conflicts`, and `strict` holds only if EVERY declarer asked for it — one component tightening
-  // its own view must not start rejecting a sibling's writes. `components` lists every declarer, so
+  // `conflicts`, and `strict` holds only if EVERY declarer asked for it — one app tightening
+  // its own view must not start rejecting a sibling's writes. `apps` lists every declarer, so
   // a violation names the whole contract, not whichever row happened to be saved last.
   let mCacheKey = null, mMap = null;
   function manifestFor(collection) {
@@ -713,10 +797,10 @@ export function openStore(path) {
           if (!spec || typeof spec !== "object") continue;
           const prev = mMap.get(coll);
           if (!prev) {
-            mMap.set(coll, { components: [r.name], spec: { ...spec }, conflicts: [] });
+            mMap.set(coll, { apps: [r.name], spec: { ...spec }, conflicts: [] });
             continue;
           }
-          prev.components.push(r.name);
+          prev.apps.push(r.name);
           if (spec.fields) {
             const merged = prev.spec.fields ? { ...prev.spec.fields } : {};
             for (const [fname, f] of Object.entries(spec.fields)) {
@@ -815,16 +899,16 @@ export function openStore(path) {
     return { collection: coll, ...(grp != null ? { group: grp } : {}), scanned, matched, groups: rows };
   }
 
-  // Validate a command's `via` stamp into the frozen object form, or drop it. Component names
+  // Validate a command's `via` stamp into the frozen object form, or drop it. App names
   // follow the registry rule; `function` (write-set F's second key) is carried when present so
   // the shape never has to change again once function writes start stamping it.
-  const VIA_COMPONENT_RE = /^[a-z][a-z0-9-]{0,31}$/;
+  const VIA_APP_RE = /^[a-z][a-z0-9-]{0,31}$/;
   const viaOf = (v) => {
     if (!v || typeof v !== "object" || Array.isArray(v)) return undefined;
-    const component = String(v.component ?? "");
-    if (!VIA_COMPONENT_RE.test(component)) return undefined;
+    const app = String(v.app ?? "");
+    if (!VIA_APP_RE.test(app)) return undefined;
     const fn = v.function != null ? String(v.function).slice(0, 64) : null;
-    return fn ? { component, function: fn } : { component };
+    return fn ? { app, function: fn } : { app };
   };
 
   function core(command, privileged) {
@@ -832,9 +916,9 @@ export function openStore(path) {
     // `actor` means two different things, and only one of them is a closed set.
     //   · on a DATA write it is the class that wrote (E13b) — closed, so an anonymous write can
     //     never land labelled "human" and become permanently unattributable in the ledger;
-    //   · on save_component it becomes the component's `author`, which tierOf() reads as
-    //     PROVENANCE — an unrecognised author is precisely how a third-party component earns the
-    //     'unreviewed' tier. Closing that set would make every component local-tier by
+    //   · on save_app it becomes the app's `author`, which tierOf() reads as
+    //     PROVENANCE — an unrecognised author is precisely how a third-party app earns the
+    //     'unreviewed' tier. Closing that set would make every app local-tier by
     //     construction and quietly delete the trust model.
     // Fail loudly on the first, stay open on the second.
     if (!AUTHORSHIP_COMMANDS.has(type) && !ACTORS.has(actor)) return { ok: false, error: "unknown_actor" };
@@ -847,11 +931,11 @@ export function openStore(path) {
       // command's type and — when the command names a target — its aggregate. A recycled
       // command_id on a DIFFERENT command must not false-succeed ("already deleted" while
       // doing nothing); it errs instead (UNIQUE(command_id) makes proceeding impossible).
-      const COMPONENT_CMDS = type === "save_component" || type === "delete_component" || type === "archive_component";
-      const target = COMPONENT_CMDS
+      const APP_CMDS = type === "save_app" || type === "delete_app" || type === "archive_app";
+      const target = APP_CMDS
         ? String(command.name || "").trim()
         : type === "write_file" || type === "delete_file"
-        ? String(command.component || "") + "/" + String(command.path || "")
+        ? String(command.app || "") + "/" + String(command.path || "")
         : command.id; // add_item without an explicit id has no verifiable target → type-only
       if (seen.event_type === EVENT_TYPES[type] && (target == null || seen.aggregate_id === target)) {
         // The replay's receipt is the ORIGINAL receipt, recovered from the ledger row that made the
@@ -862,20 +946,20 @@ export function openStore(path) {
         let payload = {};
         try { payload = JSON.parse(seen.payload) || {}; } catch {}
         const out = { ok: true, idempotent: true, event_type: seen.event_type, seq: seen.seq };
-        if (COMPONENT_CMDS) {
+        if (APP_CMDS) {
           out.name = seen.aggregate_id;
-          if (type !== "delete_component") out.version = seen.seq;
-          // WHICH delete this was. `delete_component` has two dispositions and only one of them is
+          if (type !== "delete_app") out.version = seen.seq;
+          // WHICH delete this was. `delete_app` has two dispositions and only one of them is
           // irreversible, so "yes, that command ran" is not a sufficient answer to a retry: a
           // command_id previously used for a KEEP delete answered yes to a cascade retry, and the
           // caller was told its irreversible act had completed while every row was still on disk.
           // The original payload already records it — a cascade stamps `cascaded`, a keep does not.
-          if (type === "delete_component" && payload.cascaded) out.cascaded = payload.cascaded;
+          if (type === "delete_app" && payload.cascaded) out.cascaded = payload.cascaded;
           // The ORIGINAL flip's outcome, not the current column — an archive replayed after a later
           // unarchive must describe what the archive did, or the retry reads current state as its own.
-          if (type === "archive_component" && payload.to) out.visibility = payload.to;
+          if (type === "archive_app" && payload.to) out.visibility = payload.to;
         } else if (type === "write_file" || type === "delete_file") {
-          out.component = String(command.component || "");
+          out.app = String(command.app || "");
           out.path = String(command.path || "");
         } else {
           out.id = seen.aggregate_id;
@@ -891,7 +975,7 @@ export function openStore(path) {
 
     const ts = new Date().toISOString();
     // The shadow `via` edge (write-set D, row #8 — object form frozen with this first stamp):
-    // advisory provenance the runtime/runner stamps on WIDGET writes, {component[, function]}.
+    // advisory provenance the runtime/runner stamps on WIDGET writes, {app[, function]}.
     // Same trust class as `actor` (caller-chosen, forgeable); consumed ONLY by the Data pane's
     // internal read (recentEvents) — changesSince strips it from every AI-facing event, and it
     // never enters export/publish closures. Invalid shapes are DROPPED, never refused: a write
@@ -936,7 +1020,7 @@ export function openStore(path) {
       const man = manifestFor(coll);
       if (man) {
         const violations = fieldViolations(man.spec, fields);
-        if (violations.length) return { ok: false, error: "schema_violation", violations, collection: coll, manifest_component: man.components.join(", ") };
+        if (violations.length) return { ok: false, error: "schema_violation", violations, collection: coll, manifest_app: man.apps.join(", ") };
       }
       const id = command.id || randomUUID();
       const position = command.position ?? q.maxPos.get(coll, grp).p + 1;
@@ -974,7 +1058,7 @@ export function openStore(path) {
         // legacy rows — they stay editable, they just can never get WORSE against the contract.
         const before = new Set(fieldViolations(man.spec, JSON.parse(row.fields)));
         const violations = fieldViolations(man.spec, merged).filter((v) => !before.has(v));
-        if (violations.length) return { ok: false, error: "schema_violation", violations, id: row.id, collection: row.collection, item: rowToItem(row), manifest_component: man.components.join(", ") };
+        if (violations.length) return { ok: false, error: "schema_violation", violations, id: row.id, collection: row.collection, item: rowToItem(row), manifest_app: man.apps.join(", ") };
       }
       // PRE-IMAGE: the previous value of exactly the keys this write touches. It is what makes undo
       // possible at all — without it the ledger records that something changed and not what it was,
@@ -1022,19 +1106,19 @@ export function openStore(path) {
       return { ok: true, id: row.id, collection: row.collection, ...m, deleted: true };
     }
 
-    if (type === "save_component") {
+    if (type === "save_app") {
       const name = String(command.name || "").trim();
-      if (!COMPONENT_NAME_RE.test(name)) return { ok: false, error: "bad_name" };
+      if (!APP_NAME_RE.test(name)) return { ok: false, error: "bad_name" };
       const html = String(command.html || "");
       // Every atom has a face. `empty_html` is a VALIDITY rule, not a size floor: an app is
-      // something a person opens, so a component with nothing to render is malformed — while a
-      // 1-char component is merely small, and small is reversible. The old 50-char floor caught
+      // something a person opens, so an app with nothing to render is malformed — while a
+      // 1-char app is merely small, and small is reversible. The old 50-char floor caught
       // neither case honestly (a 74-char stub sailed through it); the real defence against a stub
-      // overwriting a live component is that every save is recoverable (history + undo) and the
+      // overwriting a live app is that every save is recoverable (history + undo) and the
       // ack reports its size delta out loud. There is no exemption and no flag: "code with no UI"
       // is what a plain sandbox already does, and a plain sandbox is not this product.
       if (!html.trim()) return { ok: false, error: "empty_html" };
-      if (html.length > MAX_COMPONENT_HTML) return { ok: false, error: "html_too_large" };
+      if (html.length > MAX_APP_HTML) return { ok: false, error: "html_too_large" };
       // OCC before any declaration work: the conflict answer carries the version it actually found,
       // which is everything a retry needs. Same contract as an item write — one vocabulary.
       const existing = q.compByName.get(name);
@@ -1046,30 +1130,30 @@ export function openStore(path) {
       if (command.expected_version != null && existing && existing.version !== command.expected_version)
         return { ok: false, conflict: true, expected: existing.version, name, size: existing.html.length };
       // PROVENANCE IS NOT OVERWRITABLE. The row's `author` column is what tierOf() reads to decide
-      // whether a component runs DIRECT with the AI's own trust or behind the sandboxed runner, and
+      // whether an app runs DIRECT with the AI's own trust or behind the sandboxed runner, and
       // the insert below stamps it from this command's actor. Without this line a save on top of an
-      // existing row silently RE-STAMPS provenance — measured: a component stored by "guest"
+      // existing row silently RE-STAMPS provenance — measured: an app stored by "guest"
       // (tier unreviewed, call_tools []) became author "agent" (tier local, call_tools ["*"]) after
-      // one save_component carrying the right expected_version. Full escalation, one call.
+      // one save_app carrying the right expected_version. Full escalation, one call.
       //
-      // It sits HERE, in the store, because six paths write component html and every one of them
-      // would need its own copy of the check otherwise: save_component, edit_component,
-      // restore_component, the render-health auto-revert, install_from_library, and undo — the last
+      // It sits HERE, in the store, because six paths write app html and every one of them
+      // would need its own copy of the check otherwise: save_app, edit_app,
+      // restore_app, the render-health auto-revert, install_from_library, and undo — the last
       // one from inside this file. install_from_library already carries the tool-level twin of this
       // rule ("already exists as a %s-authored app"); this is the wall the other five were missing.
       //
       // The rule is SYMMETRIC (tier must not change), not just anti-escalation: a demotion cannot
       // grant capability, but it is still one actor rewriting another's provenance, and one sentence
       // is cheaper to hold than a direction. Consequence to know when a third-party ingress lands:
-      // a non-local component is managed by the path that installed it — the AI cannot edit it, and
+      // a non-local app is managed by the path that installed it — the AI cannot edit it, and
       // undo/restore/auto-revert (all local actors) will not touch it either. Renaming or deleting
       // it stays available, and a same-tier ingress can overwrite it normally.
       if (existing && tierOf(existing.author) !== tierOf(actor))
         return { ok: false, error: "provenance_locked", name, author: existing.author, tier: tierOf(existing.author) };
       // ── the declaration face ───────────────────────────────────────────────────────────────────
       // Read from the DOCUMENT, here, in the command handler — not in the tool. Four paths write
-      // html without ever touching the save_component tool (restore_component, the render-health
-      // auto-revert, install_from_library, and later edit_component); extracting anywhere else
+      // html without ever touching the save_app tool (restore_app, the render-health
+      // auto-revert, install_from_library, and later edit_app); extracting anywhere else
       // would let those paths leave the materialised column describing a source that no longer
       // exists, which is exactly the decoupling this design removes.
       const decl = readDeclaration(html);
@@ -1079,7 +1163,7 @@ export function openStore(path) {
         // Tiered ON PURPOSE. An author who wrote a broken declaration must hear about it loudly —
         // silence here means "I declared something and nothing happened", the worst outcome. But a
         // REPLAY (rollback, auto-revert, library install) is a rescue path: the render-health revert
-        // is the only thing standing between a user and a permanently broken component, so it must
+        // is the only thing standing between a user and a permanently broken app, so it must
         // not be blockable by the content of the html it is trying to restore. Salvage there:
         // clear the declaration, keep the rescue, and say so.
         if ((command.declaration_policy || "strict") === "strict")
@@ -1098,7 +1182,7 @@ export function openStore(path) {
           manifestSet = 1;
           manifestJson = JSON.stringify(decl.value);
           // `scene` and `kind` live in the declaration but keep their own columns: the Library reads
-          // scene, list_components filters on kind, and neither should have to parse JSON to do it.
+          // scene, list_apps filters on kind, and neither should have to parse JSON to do it.
           // The column is a projection of the declaration, never a second source for it.
           if (decl.value.scene !== undefined) { sceneSet = 1; scene = decl.value.scene && typeof decl.value.scene === "object" ? JSON.stringify(decl.value.scene) : null; }
           if (decl.value.kind !== undefined) kind = String(decl.value.kind);
@@ -1116,7 +1200,7 @@ export function openStore(path) {
       }
       const existed = existing;
       const visibility = command.visibility === undefined ? null : String(command.visibility);
-      if (kind !== null && !COMPONENT_KINDS.has(kind)) return { ok: false, error: "unknown_kind" };
+      if (kind !== null && !APP_KINDS.has(kind)) return { ok: false, error: "unknown_kind" };
       if (visibility !== null && !VISIBILITIES.has(visibility)) return { ok: false, error: "unknown_visibility" };
       // Append first, then stamp the row with this event's seq — same rule as an item write. It also
       // retires the old "continue from the tombstoned history's MAX(version)" dance: version
@@ -1137,8 +1221,8 @@ export function openStore(path) {
           if (spec.label_field && spec.fields && !(spec.label_field in spec.fields))
             notes.push(`Collection "${coll}": label_field "${spec.label_field}" is not among its declared fields — summaries will fall back to the built-in heuristic.`);
           const man = manifestFor(coll);
-          if (man && man.components.length > 1 && man.conflicts.length)
-            notes.push(`Collection "${coll}" is declared by ${man.components.join(" and ")} — conflicting key(s): ${man.conflicts.join(", ")}; the most recently saved declaration wins.`);
+          if (man && man.apps.length > 1 && man.conflicts.length)
+            notes.push(`Collection "${coll}" is declared by ${man.apps.join(" and ")} — conflicting key(s): ${man.conflicts.join(", ")}; the most recently saved declaration wins.`);
         }
       }
       // The size pair travels on EVERY save, unconditionally — that is what makes a suspicious
@@ -1149,14 +1233,14 @@ export function openStore(path) {
         declaration: decl.state, ...(notes.length ? { note: notes.join(" ") } : {}) };
     }
 
-    if (type === "delete_component") {
+    if (type === "delete_app") {
       const name = String(command.name || "").trim();
       const existed = q.compByName.get(name);
       if (!existed) return { ok: false, error: "not_found" };
       // Two dispositions, and the caller has to have said which (the tool defaults to "keep", i.e.
       // exactly the behaviour that shipped before this existed).
       //
-      //   keep    — tombstone semantics: only the registry row goes. component_history rows are
+      //   keep    — tombstone semantics: only the registry row goes. app_history rows are
       //             RETAINED (the delete stays auditable, the html recoverable) and so are the
       //             settings items; the settings app's Orphaned section is the janitor.
       //   cascade — "delete means delete" (Leo 2026-07-28). Takes the rows this app is provably
@@ -1183,19 +1267,19 @@ export function openStore(path) {
           // data_changes call scoped to this collection was told "nothing changed" while every
           // row in it had just been destroyed. One event per cleared collection keeps the cascade
           // one decision while making each collection's own history tell the truth.
-          if (n) emit(coll, "rows_cleared", { collection: coll, rows: n, component: name }, true);
+          if (n) emit(coll, "rows_cleared", { collection: coll, rows: n, app: name }, true);
         }
         settingsRemoved = q.countSettingsGroup.get(name).n;
         if (settingsRemoved) {
           q.delSettingsGroup.run({ grp: name });
           // Same for the settings collection — and this one also has to land, because
           // settings_version is derived from events carrying collection:"settings".
-          emit(SETTINGS_COLLECTION, "rows_cleared", { collection: SETTINGS_COLLECTION, group: name, rows: settingsRemoved, component: name }, true);
+          emit(SETTINGS_COLLECTION, "rows_cleared", { collection: SETTINGS_COLLECTION, group: name, rows: settingsRemoved, app: name }, true);
         }
       }
       q.delComp.run(name);
       // ONE event for the whole act — the ledger's aggregate_id has always been documented as
-      // "item id | component name | collection name", and a cascade is one decision, not N.
+      // "item id | app name | collection name", and a cascade is one decision, not N.
       // What it took is IN the payload, so the audit trail can answer "where did those rows go".
       emit(name, "component_deleted", { name, version: existed.version,
         ...(cascade ? { cascaded: { collections: removed, settings_keys: settingsRemoved } } : {}) });
@@ -1203,7 +1287,7 @@ export function openStore(path) {
         ...(cascade ? { cascaded: removed, settings_keys: settingsRemoved } : {}) };
     }
 
-    if (type === "archive_component") {
+    if (type === "archive_app") {
       // A lifecycle FLIP, not a save: no new html, no history row — but it is still a mutation, so
       // it is still an event, and the row's version still becomes that event's seq (one axis, no
       // exceptions). The public verb is archived:true|false; `visibility` is the internal override
@@ -1225,9 +1309,9 @@ export function openStore(path) {
     // ---- File plane: bytes are handled by the channel/backend BEFORE this tx; here we only
     // manage the ref index (idempotency + OCC + authoritative in-tx quota + versioning + ledger).
     if (type === "write_file") {
-      const component = String(command.component || ""); // NO trim — keep it raw so the stored key, the emitted aggregate_id, the idempotency replay-target, and statFile/listFiles all agree; COMPONENT_NAME_RE rejects whitespace anyway
+      const app = String(command.app || ""); // NO trim — keep it raw so the stored key, the emitted aggregate_id, the idempotency replay-target, and statFile/listFiles all agree; APP_NAME_RE rejects whitespace anyway
       const path = String(command.path || "");
-      if (!COMPONENT_NAME_RE.test(component)) return { ok: false, error: "bad_component" };
+      if (!APP_NAME_RE.test(app)) return { ok: false, error: "bad_app" };
       if (path.includes("..") || !FILE_PATH_RE.test(path)) return { ok: false, error: "bad_path" };
       const sha256 = String(command.sha256 || "");
       if (!/^[0-9a-f]{64}$/.test(sha256)) return { ok: false, error: "bad_sha256" };
@@ -1236,36 +1320,36 @@ export function openStore(path) {
       if (size > MAX_FILE_BYTES) return { ok: false, error: "file_too_large" };
       const mime = String(command.mime || "application/octet-stream").slice(0, 255);
       const backend = String(command.backend || "local");
-      const existing = q.fileByKey.get(component, path);
+      const existing = q.fileByKey.get(app, path);
       // OCC must fail closed against a MISSING row too — else a guarded write silently RESURRECTS a file
       // another actor deleted between the caller's read and this write (a lost-delete). expected:0 = "no such version".
       if (command.expected_version != null && (!existing || command.expected_version !== existing.version))
         return { ok: false, conflict: true, expected: existing ? existing.version : 0 };
       // Authoritative in-tx quota, fail-closed, on LOGICAL bytes (dedup cannot bypass).
-      const appU = q.fileUsageStmt.get(component);
+      const appU = q.fileUsageStmt.get(app);
       const oldSize = existing ? existing.size : 0;
       if (appU.bytes - oldSize + size > MAX_APP_FILE_BYTES) return { ok: false, error: "quota_exceeded" };
       if (appU.count + (existing ? 0 : 1) > MAX_APP_FILE_COUNT) return { ok: false, error: "too_many_files" };
       const totalU = q.fileUsageTotalStmt.get();
       if (totalU.bytes - oldSize + size > MAX_TOTAL_FILE_BYTES) return { ok: false, error: "total_quota_exceeded" };
       if (totalU.count + (existing ? 0 : 1) > MAX_TOTAL_FILE_COUNT) return { ok: false, error: "total_too_many_files" };
-      // Same rule as items and components: append first, stamp the row with this event's seq.
-      const m = emit(component + "/" + path, "file_written", { component, path, sha256, size, mime });
-      q.insFile.run({ component, path, sha256, size, mime, version: m.seq, backend, ts });
-      const row = q.fileByKey.get(component, path);
-      const meta = { component, path, sha256, size, mime, version: row.version, backend, created_at: row.created_at, updated_at: row.updated_at };
+      // Same rule as items and apps: append first, stamp the row with this event's seq.
+      const m = emit(app + "/" + path, "file_written", { app, path, sha256, size, mime });
+      q.insFile.run({ app, path, sha256, size, mime, version: m.seq, backend, ts });
+      const row = q.fileByKey.get(app, path);
+      const meta = { app, path, sha256, size, mime, version: row.version, backend, created_at: row.created_at, updated_at: row.updated_at };
       return { ok: true, meta, created: !existing, freed_sha: existing && existing.sha256 !== sha256 ? existing.sha256 : null };
     }
 
     if (type === "delete_file") {
-      const component = String(command.component || ""); // NO trim (mirror write_file — keys + replay-target agree)
+      const app = String(command.app || ""); // NO trim (mirror write_file — keys + replay-target agree)
       const path = String(command.path || "");
-      const row = q.fileByKey.get(component, path);
+      const row = q.fileByKey.get(app, path);
       if (!row) return { ok: false, error: "not_found" };
       if (command.expected_version != null && command.expected_version !== row.version)
         return { ok: false, conflict: true, expected: row.version };
-      q.delFile.run({ component, path });
-      emit(component + "/" + path, "file_deleted", { component, path, sha256: row.sha256, version: row.version });
+      q.delFile.run({ app, path });
+      emit(app + "/" + path, "file_deleted", { app, path, sha256: row.sha256, version: row.version });
       return { ok: true, deleted: true, freed_sha: row.sha256 };
     }
 
@@ -1391,7 +1475,7 @@ export function openStore(path) {
   });
   // The batch VOCABULARY is the four item commands and nothing else, enforced HERE so every
   // transport hits the same wall. Without this list a batch is a second door to every command
-  // core() understands — save_component, write_file, delete_file, … — a parallel command grammar
+  // core() understands — save_app, write_file, delete_file, … — a parallel command grammar
   // carrying none of the per-tool guards, which is the exact disease test/tool-surface.mjs names.
   // Same wall for arguments: a command carries what the single-write tools publish plus the
   // envelope keys the tool layer derives, never whatever core() happens to read — an unpublished
@@ -1431,7 +1515,7 @@ export function openStore(path) {
   function computeDisposition(name) {
         const comp = String(name || "").trim();
         // Who ELSE claims a collection by declaring it? (Parsed defensively: a manifest is data.)
-        const claimants = new Map();   // collection -> Set(component)
+        const claimants = new Map();   // collection -> Set(app)
         const claim = (coll, by) => {
           if (!coll) return;
           if (!claimants.has(coll)) claimants.set(coll, new Set());
@@ -1452,10 +1536,10 @@ export function openStore(path) {
         // been filling for months, who then installs an app called "notes", must not lose those rows
         // because the two are spelled alike — and since the AI writes most rows with no `via`,
         // "nobody else wrote here" is not evidence either. The ledger answers what actually
-        // matters: a collection whose first event predates the component's first save was not
+        // matters: a collection whose first event predates the app's first save was not
         // created for it, whatever it is called.
         //
-        // …and "the component's first save" has to mean THIS component's. A name can be reused, and
+        // …and "the app's first save" has to mean THIS app's. A name can be reused, and
         // the tombstone keeps the previous holder's events, so an unscoped MIN reached back into a
         // life this app never had: delete the app, let the user write rows into the same-named
         // collection while nothing owned it, recreate an app under that name, and those rows were
@@ -1530,24 +1614,24 @@ export function openStore(path) {
     aggregate,
     // One cheap read answering "did anything change?" — the adaptive-poll / SSE-fallback probe.
     dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION }),
-    getComponent: (name) => q.compByName.get(name) || null,
+    getApp: (name) => q.compByName.get(name) || null,
     // No arguments = every row, exactly as before: the registry's own consumers (the settings
     // library pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's
     // choice, and the model-facing tool is the caller that has a default.
-    listComponents: ({ kinds, visibilities, name } = {}) => {
+    listApps: ({ kinds, visibilities, name } = {}) => {
       let rows = q.allComps.all();
       if (name) rows = rows.filter((c) => c.name === name);
       if (kinds) rows = rows.filter((c) => kinds.includes(c.kind));
       if (visibilities) rows = rows.filter((c) => visibilities.includes(c.visibility));
       return rows;
     },
-    /** Any component whose name is not in `names`. The engine passes its own seeded set and reads
+    /** Any app whose name is not in `names`. The engine passes its own seeded set and reads
      *  this as "the user has something of their own" — see buildInstructions in engine.mjs. */
-    hasComponentOutside: (names) => q.hasCompOutside.get(JSON.stringify([...names])).v === 1,
+    hasAppOutside: (names) => q.hasCompOutside.get(JSON.stringify([...names])).v === 1,
     /** [{version, ts, html_size, checkpoint}] — never raw html.
      *
-     *  `checkpoint` is this component's OWN 1..N counter, derived here and stored nowhere. It
-     *  exists because `version` IS the ledger seq (save_component stamps the row with the event's
+     *  `checkpoint` is this app's OWN 1..N counter, derived here and stored nowhere. It
+     *  exists because `version` IS the ledger seq (save_app stamps the row with the event's
      *  seq — one ordinal axis, deliberately), and that axis is global: it advances for every write
      *  in the store. A user who edited one app twice sees v5 then v43 and reasonably asks what
      *  happened to the other 38. Nothing did — those were their groceries.
@@ -1555,7 +1639,7 @@ export function openStore(path) {
      *  So the number a PERSON reads is the checkpoint; `version` stays exactly as it was for the
      *  machine (it is the OCC token, the restore target, and the history key). Presentation change,
      *  not a renumbering — the axis is load-bearing and stays. */
-    componentHistory: (name) => {
+    appHistory: (name) => {
       // …and only THIS app's checkpoints. A name can be reused, and a delete keeps everything the
       // previous holder saved, so an unscoped read let "restore checkpoint 1" of a budget tracker
       // hand back a deleted recipe app's source — a silent whole-app swap with nothing on screen to
@@ -1566,7 +1650,7 @@ export function openStore(path) {
       const n = rows.length;
       return rows.map((r, i) => ({ ...r, checkpoint: n - i }));
     },
-    getComponentVersion: (name, version) => q.compVersion.get(name, version) || null, // {name, version, html, ts} | null — the ONE path that reads OLD html (for restore/diff)
+    getAppVersion: (name, version) => q.compVersion.get(name, version) || null, // {name, version, html, ts} | null — the ONE path that reads OLD html (for restore/diff)
 
     listCollections: () => q.collections.all(),
 
@@ -1608,12 +1692,12 @@ export function openStore(path) {
      *  than guess. The three signals, with their measured strength (2026-07-28, docs/wo/
      *  delete-cascade-design.md):
      *    · the manifest's `collections` key — the GUIDE calls this THE lifecycle claim, and its
-     *      real-world adoption is ZERO: 19 of our own components declare settings and uses_shared,
+     *      real-world adoption is ZERO: 19 of our own apps declare settings and uses_shared,
      *      none declares a collection. Used here to find OTHER claimants, never to grant one.
-     *    · the ledger's `via.component` — stamped only on writes that came through a widget. The
+     *    · the ledger's `via.app` — stamped only on writes that came through a widget. The
      *      model's own writes (the dominant path) carry none, so its ABSENCE proves nothing. Used
      *      here in one direction only: someone else's via is evidence of sharing.
-     *    · the name — a collection called exactly like the component. Weak on its own, which is
+     *    · the name — a collection called exactly like the app. Weak on its own, which is
      *      why it only produces `exclusive` when BOTH of the above find no other claimant.
      *
      *  The asymmetry is the whole design: deleting too little leaves rows a user can delete again;
@@ -1630,27 +1714,27 @@ export function openStore(path) {
 
     // File plane — ref index + quota accounting the channel (src/files.mjs) builds on. Bytes NEVER
     // pass through here; the store stays fs-free beyond the existing mkdirSync. `dataDir` is where the
-    // backend puts files/<component>/<sha256>.blob — derived from the ACTUAL db path so it honors
+    // backend puts files/<app>/<sha256>.blob — derived from the ACTUAL db path so it honors
     // OMA_DB / an explicit path (test isolation) and sits beside whatever db is open.
-    statFile: (component, path) => {
-      const r = q.fileByKey.get(component, path);
-      return r ? { component, path, sha256: r.sha256, size: r.size, mime: r.mime, version: r.version, backend: r.backend, created_at: r.created_at, updated_at: r.updated_at } : null;
+    statFile: (app, path) => {
+      const r = q.fileByKey.get(app, path);
+      return r ? { app, path, sha256: r.sha256, size: r.size, mime: r.mime, version: r.version, backend: r.backend, created_at: r.created_at, updated_at: r.updated_at } : null;
     },
-    listFiles: (component, prefix) => {
-      const rows = q.filesByComponent.all(component);
+    listFiles: (app, prefix) => {
+      const rows = q.filesByApp.all(app);
       return prefix ? rows.filter((r) => r.path.startsWith(prefix)) : rows;
     },
-    fileUsage: (component) => q.fileUsageStmt.get(component),
+    fileUsage: (app) => q.fileUsageStmt.get(app),
     fileUsageTotal: () => q.fileUsageTotalStmt.get(),
     filesVersion: () => q.filesSeq.get().v, // the monotonic file-activity gate (rides tool results, like settings_version)
-    blobRefcount: (component, sha256) => q.blobRefcountStmt.get(component, sha256).n,
+    blobRefcount: (app, sha256) => q.blobRefcountStmt.get(app, sha256).n,
     dataDir: dirname(dbPath),
 
     /** UNDO — one verb, and it is deliberately not a tool.
      *
      *  "Put it back" is the same action on every plane, so it is one function: read the last event
-     *  for a target, and apply its pre-image. Items carry `was` (§ the write path above), components
-     *  carry their previous html in component_history, files carry a content address that is still
+     *  for a target, and apply its pre-image. Items carry `was` (§ the write path above), apps
+     *  carry their previous html in app_history, files carry a content address that is still
      *  on disk until the sweep reclaims it — so each plane answers the same question with what it
      *  already keeps, and none of them needed a new table.
      *
@@ -1703,7 +1787,7 @@ export function openStore(path) {
         if (ev.event_type === "component_archived") {
           // The flip's pre-image is `was`, and it may be a value the public verb cannot spell
           // (featured, unlisted) — the privileged visibility override exists for exactly this line.
-          return { type: "archive_component", result: core({ type: "archive_component", command_id: cid, name: ev.aggregate_id,
+          return { type: "archive_app", result: core({ type: "archive_app", command_id: cid, name: ev.aggregate_id,
             visibility: payload.was, actor: "human" }, true) };
         }
         if (ev.event_type === "component_saved") {
@@ -1714,7 +1798,7 @@ export function openStore(path) {
           const hist = q.compHistory.all(ev.aggregate_id);
           const prev = hist.find((h) => h.version < ev.seq);
           if (!prev) return { done: { ok: false, error: "no_previous_version" } };
-          return { type: "save_component", result: core({ type: "save_component", declaration_policy: "salvage", command_id: cid, name: ev.aggregate_id, html: prev.html, actor: "human" }, true) };
+          return { type: "save_app", result: core({ type: "save_app", declaration_policy: "salvage", command_id: cid, name: ev.aggregate_id, html: prev.html, actor: "human" }, true) };
         }
         return { done: { ok: false, error: "not_undoable", event_type: ev.event_type } };
       });

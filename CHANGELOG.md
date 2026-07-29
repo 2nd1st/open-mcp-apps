@@ -7,6 +7,81 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.4.0 — 2026-07-29
+
+**Breaking.** The engine calls its unit of work an **app**, everywhere. It was called a
+*component* — a word borrowed from front-end frameworks, where it means a piece of a page. What
+this engine builds is not a piece of anything: it is a thing a person opens, keeps, and comes back
+to. `app` is also the word the MCP specification uses (MCP Apps), so the engine now speaks one
+vocabulary with the protocol it implements instead of two.
+
+### Four things you will notice
+
+- **Twelve tool names changed.** `open_component` → `open_app`, `component_html` → `app_html`,
+  `get_component_guide` → `get_app_guide`, `list_components` → `list_apps`, `get_component` →
+  `get_app`, `save_component` → `save_app`, `edit_component` → `edit_app`, `archive_component` →
+  `archive_app`, `component_history` → `app_history`, `restore_component` → `restore_app`,
+  `delete_component` → `delete_app`, `component_permissions` → `app_permissions`. No aliases are
+  kept: an alias costs bytes in `tools/list`, which every conversation pays for on every turn.
+  Tool **count**, order and membership are unchanged — 36 seats, as before.
+- **Claude Desktop will ask you to approve the tools again.** Permission grants are keyed by tool
+  name, so renamed tools are new tools as far as the host is concerned. Approve once.
+- **One prompt-cache miss, once.** The tool surface is part of the cached prefix; changing it
+  invalidates that cache a single time, for everyone. It refills on the next turn.
+- **The store schema moves to v4 and does not move back.** A store opened once by v0.4 cannot be
+  opened by v0.3.x — that build refuses a schema newer than it understands, by design, rather than
+  writing old-shaped events into it. Downgrading means restoring a copy taken beforehand.
+
+### Migration
+
+`MIGRATIONS[4]` runs on first open. It renames the `component` / `component_history` tables and the
+`file` table's owner column, and it moves any app of yours that is *named* `app`, `component` or
+`loader` to the first free name beside it (`app` → `app-1`, and so on). Those became reserved words
+only in v0.3.2, and a reserved word is refused when an app is created — it was never enforced
+against apps that already existed. Under v0.4 an app called `app` would claim the universal
+loader's own resource. **Every such rename is written to the ledger** (`component_renamed`, with
+the old and new names and the reason): a name changing under you without a record is
+indistinguishable from the app having been deleted.
+
+### Three things that deliberately did NOT change
+
+Recorded here because an undocumented deliberate choice gets "fixed" by whoever finds it next.
+
+- **On-disk file storage keeps its `files/<app-name>/` layout.** Renaming it would turn one SQL
+  transaction into a two-phase migration across the filesystem, where a partial failure leaves
+  orphaned blobs — and nothing outside the engine ever sees that path.
+- **The `components/` directory keeps its name.** It is the boundary named verbatim by
+  `components/LICENSE` and `LICENSING.md`: the engine is AGPL-3.0-only and the apps shipped in that
+  directory are MIT. Moving the directory would leave the licence pointing at a path that no longer
+  exists, which is the one file where a stale path is not a cosmetic problem.
+- **The ledger's event vocabulary stays `component_saved` / `component_deleted` /
+  `component_archived`** — for new events too, not only historical ones. The ledger is an
+  append-only record, and a record with two vocabularies makes every reader carry both forever;
+  worse, someone who later filters on `app_saved` by intuition would get rows on their own machine
+  and silently miss all pre-v0.4 history on a user's. One word makes that mistake fail immediately
+  instead of quietly. The settings UI renders these as plain English, so the retired word is not
+  shown to anyone.
+
+### Also changed
+
+- **Undocumented change, listed for anyone who relied on it:** the snapshot object handed to a
+  widget renamed its `component` key to `app`. It was never part of the published `oma.state`
+  contract in `RUNTIME.md`, so no alias is kept. The injected globals `__OMA_COMPONENT__` /
+  `__OMA_COMPONENT_VERSION__` became `__OMA_APP__` / `__OMA_APP_VERSION__` for the same reason.
+- npm consumers: `wrapComponent` → `wrapApp`, `seedSystemComponents` → `seedSystemApps`,
+  `COMPONENT_NAME_RE` → `APP_NAME_RE`, and `MAX_COMPONENT_HTML` → `MAX_APP_HTML`.
+  `composePreviewDoc` and `stubOmaScript` take `apps` where they took `components`.
+- The tool surface shrank from 48,589 B to 47,890 B, and the budget cap came **down** with it
+  (48,600 → 47,935) rather than being left as unaudited headroom.
+
+### ⚠️ Not verifiable from this repository
+
+The hosted control plane calls the engine over HTTP with **literal** tool names and has no
+compile-time dependency on it. Renaming the tools cannot break its build: a hosted deployment that
+has not been updated in step will show **zero apps**, with typechecks and this repository's test
+suite entirely green. That surface must be exercised by hand — open the app shell and one app-store
+page and see a non-zero list — before a release is considered done. No test here can stand in for it.
+
 ## 0.3.2 — 2026-07-29
 
 ### Added

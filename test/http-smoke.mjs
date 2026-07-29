@@ -12,7 +12,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join, basename } from "node:path";
 import Database from "better-sqlite3";
 import { openStore } from "../src/store.mjs";
-import { wrapComponent } from "../src/shell.mjs";
+import { wrapApp } from "../src/shell.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "http-smoke.db");
@@ -24,11 +24,11 @@ for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f)
 { // seed
   const store = openStore(DB);
   for (const file of readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html"))) {
-    store.execute({ type: "save_component", command_id: "seed-" + file, name: basename(file, ".html"),
+    store.execute({ type: "save_app", command_id: "seed-" + file, name: basename(file, ".html"),
       html: readFileSync(join(ROOT, "components", file), "utf-8"), actor: "seed" });
   }
   // a NON-local fixture (author not in {agent,human,seed}) — proves /view fails closed for it
-  store.execute({ type: "save_component", command_id: "seed-nonlocal", name: "nonlocal-fixture",
+  store.execute({ type: "save_app", command_id: "seed-nonlocal", name: "nonlocal-fixture",
     html: "<!DOCTYPE html><html><body><div id='x'>nonlocal</div></body></html>", actor: "library-test" });
   store.close();
 }
@@ -53,8 +53,8 @@ try {
   const client = new Client({ name: "http-smoke-host", version: "1.0.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`)));
   const { tools } = await client.listTools();
-  ok("tools served over HTTP", tools.some((t) => t.name === "open_component") && tools.some((t) => t.name === "data_add_item"));
-  ok("per-component tools OFF by default (fewer permission prompts)", !tools.some((t) => t.name === "open_habit_streaks"));
+  ok("tools served over HTTP", tools.some((t) => t.name === "open_app") && tools.some((t) => t.name === "data_add_item"));
+  ok("per-app tools OFF by default (fewer permission prompts)", !tools.some((t) => t.name === "open_habit_streaks"));
   const res = await client.readResource({ uri: "ui://open-mcp-apps/habit-streaks.html" });
   ok("ui:// resource served over HTTP", res.contents[0].mimeType === "text/html;profile=mcp-app");
   const add = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", group: "To Do", fields: { title: "from http" } } });
@@ -67,14 +67,14 @@ try {
   ok("host label is request-scoped (UA fallback, no cross-client globals) — attributed on the event",
     typeof evHost === "string" && (evHost.startsWith("http:") || evHost === "remote-http"));
 
-  console.log("2. just-saved component opens immediately via the universal opener");
+  console.log("2. just-saved app opens immediately via the universal opener");
   const mkHtml = `<!DOCTYPE html><html><body><div id="x"></div><script type="module">oma.ready(s=>{document.getElementById("x").textContent=s.items.length});</script></body></html>`;
-  await client.callTool({ name: "save_component", arguments: { name: "counter", html: mkHtml } });
+  await client.callTool({ name: "save_app", arguments: { name: "counter", html: mkHtml } });
   const client2 = new Client({ name: "second-host", version: "1.0.0" });
   await client2.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`)));
-  const openCounter = await client2.callTool({ name: "open_component", arguments: { component: "counter" } });
-  ok("fresh connection opens the new component with zero waiting", openCounter.structuredContent?.component === "counter");
-  ok("no per-component tool appeared (default off)", !(await client2.listTools()).tools.some((t) => t.name === "open_counter"));
+  const openCounter = await client2.callTool({ name: "open_app", arguments: { app: "counter" } });
+  ok("fresh connection opens the new app with zero waiting", openCounter.structuredContent?.app === "counter");
+  ok("no per-app tool appeared (default off)", !(await client2.listTools()).tools.some((t) => t.name === "open_counter"));
 
   console.log("3. /rpc — the standalone shell backend");
   const rpc = await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
@@ -97,48 +97,48 @@ try {
   ok("/view carries the CSP header (default/frame 'none', connect-src 'self')",
     viewCsp.includes("default-src 'none'") && viewCsp.includes("connect-src 'self'") && viewCsp.includes("frame-src 'none'"));
   ok("standalone config injected before runtime", page.indexOf('data-oma="standalone"') < page.indexOf('data-oma="runtime"') && page.includes("__OMA_STANDALONE__"));
-  ok("component + shell both present", page.includes('id="grid"') && page.includes("window.oma"));
+  ok("app + shell both present", page.includes('id="grid"') && page.includes("window.oma"));
   const idx = await (await fetch(`${BASE}/`)).text();
-  ok("index lists components", idx.includes("/view/dashboard") && idx.includes("/view/counter"));
+  ok("index lists apps", idx.includes("/view/dashboard") && idx.includes("/view/counter"));
   const missing = await fetch(`${BASE}/view/nope`);
-  ok("unknown component 404s", missing.status === 404);
-  // security-model §2.3: a non-local component must NOT render with full trust on /view. It used to
+  ok("unknown app 404s", missing.status === 404);
+  // security-model §2.3: a non-local app must NOT render with full trust on /view. It used to
   // fail closed to a placeholder because this route had no runner; now it serves the UNIVERSAL
-  // LOADER, which reads component_html over /rpc, sees the tier, and hands the source to the runner
+  // LOADER, which reads app_html over /rpc, sees the tier, and hands the source to the runner
   // (verified live in Chrome: the child mounts in an about:srcdoc frame with sandbox="allow-scripts",
   // its typed writes land through the bridge, and oma.callTool comes back "not allowed").
   //
   // The property under test is unchanged and is the one that matters: THE SOURCE IS NOT IN THIS
-  // DOCUMENT. Direct mode inlines a component's markup beside the real window.oma; the loader
+  // DOCUMENT. Direct mode inlines an app's markup beside the real window.oma; the loader
   // delivers neither — the html arrives later, over /rpc, into a sandboxed child. So the assertion
   // is not "no window.oma anywhere" (the loader legitimately ships the runtime that owns embed) but
-  // "this component's markup never reached a full-trust document".
+  // "this app's markup never reached a full-trust document".
   const nonlocalResp = await fetch(`${BASE}/view/nonlocal-fixture`);
   const nonlocalPage = await nonlocalResp.text();
-  ok("/view serves the loader for a non-local component, never its source",
+  ok("/view serves the loader for a non-local app, never its source",
     nonlocalResp.status === 200 && !nonlocalPage.includes("id='x'") && !nonlocalPage.includes("nonlocal</div>")
-    && nonlocalPage.includes('data-oma="loader"') && nonlocalPage.includes("Loading component"));
+    && nonlocalPage.includes('data-oma="loader"') && nonlocalPage.includes("Loading app"));
   ok("...with the standalone config, before the runtime, so the loader can reach /rpc",
-    nonlocalPage.includes("__OMA_STANDALONE__") && nonlocalPage.includes('"component":"nonlocal-fixture"')
+    nonlocalPage.includes("__OMA_STANDALONE__") && nonlocalPage.includes('"app":"nonlocal-fixture"')
     && nonlocalPage.indexOf('data-oma="standalone"') < nonlocalPage.indexOf('data-oma="runtime"'));
   ok("...under the same CSP as direct mode (srcdoc children are exempt from frame-src)",
     (nonlocalResp.headers.get("content-security-policy") || "").includes("default-src 'none'"));
-  // A LOCAL component must still take the direct path — the loader is the exception, not the rule,
+  // A LOCAL app must still take the direct path — the loader is the exception, not the rule,
   // and a regression that routed everything through it would cost every app an extra round trip.
-  ok("...while a local component still mounts directly (source inlined, no loader)",
+  ok("...while a local app still mounts directly (source inlined, no loader)",
     page.includes('id="grid"') && !page.includes('data-oma="loader"'));
   // JSON-in-script hardening: ?collection= is caller-controlled and lands inside an inline
-  // <script> via wrapComponent — "</script>" in it must never terminate the tag (XSS class).
+  // <script> via wrapApp — "</script>" in it must never terminate the tag (XSS class).
   const evil = "</script><img src=x onerror=alert(1)>";
   const evilPage = await (await fetch(`${BASE}/view/dashboard?collection=${encodeURIComponent(evil)}`)).text();
   ok("standalone JSON escapes < (no </script> break-out from ?collection=)",
     !evilPage.includes(evil) && evilPage.includes("\\u003c/script>"));
   // Embedder contract (hosted shell): endpoint/events proxy paths + chrome:false ride
   // opts.standalone verbatim, and the runtime consumes them (EventSource path + bare-widget gate).
-  const embedded = wrapComponent("<div id='w'></div>", {
-    standalone: { endpoint: "/app/api/rpc", events: "/app/api/events", collection: "t", component: "t", chrome: false },
+  const embedded = wrapApp("<div id='w'></div>", {
+    standalone: { endpoint: "/app/api/rpc", events: "/app/api/events", collection: "t", app: "t", chrome: false },
   });
-  ok("wrapComponent carries endpoint/events/chrome for an embedding shell",
+  ok("wrapApp carries endpoint/events/chrome for an embedding shell",
     embedded.includes('"endpoint":"/app/api/rpc"') && embedded.includes('"events":"/app/api/events"') && embedded.includes('"chrome":false'));
   const runtimeSrc = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
   ok("runtime honors SA.events and SA.chrome (invariant)",
@@ -200,7 +200,7 @@ try {
   // begun in request 1 was invisible to request 2 (empty uploads Map) and chunked upload was
   // 100% dead on exactly the remote-host transport. Each callTool below is its own HTTP request.
   {
-    const b = await client.callTool({ name: "file_write_begin", arguments: { component: "httpchunk" } });
+    const b = await client.callTool({ name: "file_write_begin", arguments: { app: "httpchunk" } });
     ok("begin over /mcp returns an upload_id", !b.isError && typeof b.structuredContent?.upload_id === "string");
     const uid = b.structuredContent.upload_id;
     const c1 = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: uid, data_base64: Buffer.from("hello ").toString("base64") } });
@@ -208,7 +208,7 @@ try {
     await client.callTool({ name: "file_write_chunk", arguments: { upload_id: uid, data_base64: Buffer.from("remote").toString("base64") } });
     const cm = await client.callTool({ name: "file_write_commit", arguments: { upload_id: uid, path: "over-mcp.txt", mime: "text/plain" } });
     ok("commit in a THIRD request lands the file", !cm.isError && cm.structuredContent?.size === 12);
-    const rd = await client.callTool({ name: "file_read", arguments: { component: "httpchunk", path: "over-mcp.txt" } });
+    const rd = await client.callTool({ name: "file_read", arguments: { app: "httpchunk", path: "over-mcp.txt" } });
     ok("file reads back intact over /mcp", !rd.isError && Buffer.from(rd.structuredContent.data_base64, "base64").toString() === "hello remote");
   }
 
@@ -218,11 +218,11 @@ try {
   {
     const post = async (name, args) => (await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ name, arguments: args }) })).json();
-    const w = await post("data_add_item", { command_id: "via-http-1", collection: "panecoll", fields: { t: "x" }, actor: "human", via: { component: "pane-app" } });
+    const w = await post("data_add_item", { command_id: "via-http-1", collection: "panecoll", fields: { t: "x" }, actor: "human", via: { app: "pane-app" } });
     ok("a via-stamped write transits /rpc (passthrough end to end)", w.structuredContent?.ok === true);
     const led = await post("_ledger_recent", { collection: "panecoll", limit: 10 });
     const ev = led.structuredContent?.events?.[0];
-    ok("_ledger_recent serves the shadow edge + the undoable mark", !!ev && ev.via?.component === "pane-app" && ev.undoable === true);
+    ok("_ledger_recent serves the shadow edge + the undoable mark", !!ev && ev.via?.app === "pane-app" && ev.undoable === true);
     const ch = await post("data_changes", { collection: "panecoll", since: 0 });
     ok("data_changes (the AI face) strips via on the SAME event", ch.structuredContent.events.length > 0 && ch.structuredContent.events.every((e) => !("via" in e)));
     const un = await post("_undo_last", { target: ev.id });

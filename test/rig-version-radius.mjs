@@ -2,7 +2,7 @@
 // Copyright (C) 2026 2nd1st
 // test/rig-version-radius.mjs — enumerate every consumer of a `version` number before the axes merge.
 //
-// Why a script and not a grep in a work order: the merge (item/component/file version -> ledger seq)
+// Why a script and not a grep in a work order: the merge (item/app/file version -> ledger seq)
 // changes what these numbers MEAN, not their type, so nothing fails — a missed consumer keeps
 // working and starts lying. The only defence is a list nobody can claim was complete by memory.
 //
@@ -19,7 +19,7 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const PATTERNS = [
   ["read", /\.version\b/],
   ["occ", /expected_version/],
-  ["inject", /__OMA_COMPONENT_VERSION__/],
+  ["inject", /__OMA_APP_VERSION__/],
   ["history", /maxHistVersion/],
   ["sql-bump", /version\s*=\s*version\s*\+\s*1/],
   ["sql-agg", /SUM\(version\)/],
@@ -56,7 +56,7 @@ const byFile = new Map();
 for (const r of rows) byFile.set(r.file, (byFile.get(r.file) || 0) + 1);
 const onAxis = rows.filter((r) => r.kind !== "engine-own");
 
-console.log(`version consumers: ${rows.length} total, ${onAxis.length} on the row/component/file axis\n`);
+console.log(`version consumers: ${rows.length} total, ${onAxis.length} on the row/app/file axis\n`);
 for (const [f, n] of [...byFile].sort((a, b) => b[1] - a[1])) {
   const own = rows.filter((r) => r.file === f && r.kind === "engine-own").length;
   console.log(`  ${String(n).padStart(3)}  ${f}${own ? `   (${own} are engine-own names, not on the axis)` : ""}`);

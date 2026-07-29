@@ -15,9 +15,9 @@
 // single inequality is the whole 0-RTT mechanism, and it needs no collection-scoped stamp
 // on the read face.
 
-/** The RUNTIME CONTRACT version, readable by any component as `oma.contract`.
+/** The RUNTIME CONTRACT version, readable by any app as `oma.contract`.
  *
- *  It exists for apps written OUTSIDE this repo (install-app.mjs). An AI-authored component is
+ *  It exists for apps written OUTSIDE this repo (install-app.mjs). An AI-authored app is
  *  written against the engine it is running on and pulls the guide in the same breath; a file
  *  built in someone else's editor months earlier has neither, and "which window.oma am I talking
  *  to" is a question it must be able to answer from inside the page. RUNTIME.md is the prose;
@@ -199,14 +199,14 @@ export function decideChanges(changes) {
 // ---------------------------------------------------------------- theme (the token cascade)
 //
 // Six layers, outermost first:
-//   TOKEN_FALLBACK_CSS → host tokens → the kit → GLOBAL theme → PER-APP theme → component <style>
+//   TOKEN_FALLBACK_CSS → host tokens → the kit → GLOBAL theme → PER-APP theme → app <style>
 // The last three are what a user can change. A theme is TOKENS, never a stylesheet: the kit and
-// every well-written component already read var(--color-*), so one token moves both at once, and
+// every well-written app already read var(--color-*), so one token moves both at once, and
 // a token cannot smuggle a selector or a `}` the way a raw CSS blob could (the brandCss hole).
 //
 // It needs NO new tool seat and no new store concept: a theme token is a row in the existing
 // settings collection under the key `theme:--<name>`, and the two theme layers ARE the two pref
-// scopes that already exist — group "" is global, group "<component>" is that one app. Merge
+// scopes that already exist — group "" is global, group "<app>" is that one app. Merge
 // order is oma.pref's merge order, unchanged.
 
 /** Custom-property name/value charsets. ONE definition: shell.mjs's hostTokenStyle validates the
@@ -216,7 +216,7 @@ export const TOKEN_NAME_RE = /^--[a-z][a-z0-9-]*$/;
 export const TOKEN_VALUE_RE = /^[-a-zA-Z0-9 _.,()%#/'"]+$/;
 
 /** Settings keys that carry a theme token. The colon is outside the declared-key charset
- *  (settings-design's a-z0-9_), so a theme row can never collide with a component's own pref. */
+ *  (settings-design's a-z0-9_), so a theme row can never collide with an app's own pref. */
 export const THEME_KEY_PREFIX = "theme:";
 
 /** Merged prefs (object or Map) → [[--name, value], …], sorted, with everything that fails the
@@ -263,7 +263,7 @@ function declaredCollections(declaration) {
  *  Slicing on `row.collection === appName` satisfies the first and fails the second, because an
  *  app's rows are not required to live under its own name. `builder-progress` declares
  *  `build-progress`; `elder-days` reads `elder-meds` / `elder-checks` / `elder-vitals`. Measured
- *  2026-07-29: 6 of the 17 shipped manifests declare a collection that is not the component name,
+ *  2026-07-29: 6 of the 17 shipped manifests declare a collection that is not the app name,
  *  and every one of them previewed empty.
  *
  *  So the share is what the app DECLARES, plus its own name, and the binding follows
@@ -271,10 +271,10 @@ function declaredCollections(declaration) {
  *  there is no "the" and the name stays the default. Kept here rather than at the call sites
  *  because a second copy of "what does this app open on" is a second answer waiting to disagree —
  *  the same reason that rule lives in one place on the server. */
-export function childPreviewSnapshot(rows, { app, declaration, components, tier } = {}) {
+export function childPreviewSnapshot(rows, { app, declaration, apps, tier } = {}) {
   const name = String(app || "");
   // TIER GATE, and it is not decoration — it is the same gate contracts.mjs defaultCollectionFor
-  // puts on the same question, for a sharper reason here. A manifest is written BY THE COMPONENT.
+  // puts on the same question, for a sharper reason here. A manifest is written BY THE APP.
   // For a local (first-party / AI-authored) app that is it telling us where its own rows live. For
   // an UNREVIEWED one — a share-installed third-party app, T19 P-c — honouring it would let the
   // app NAME ITS WAY INTO another app's rows: this snapshot is shared, the parent has already
@@ -289,26 +289,26 @@ export function childPreviewSnapshot(rows, { app, declaration, components, tier 
   return {
     collection,
     items: (rows || []).filter((r) => r && typeof r === "object" && allowed.has(r.collection)),
-    // Never undefined: inert's list_components has no other source, and an app whose collection is
+    // Never undefined: inert's list_apps has no other source, and an app whose collection is
     // empty is invisible to a row-derived answer — it exists only in the roster.
-    components: Array.isArray(components) ? components : [],
+    apps: Array.isArray(apps) ? apps : [],
   };
 }
 
 // ---------------------------------------------------------------- via (shadow provenance)
 
-/** Component names, as the store enforces them (contracts bad_name rule). */
+/** App names, as the store enforces them (contracts bad_name rule). */
 export const VIA_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** The via stamp for a widget write — OBJECT FORM, frozen before the first stamp (row #8):
- *  widget write = {component}; a function write adds {function} (write-set F). Advisory
+ *  widget write = {app}; a function write adds {function} (write-set F). Advisory
  *  provenance only (forgeable, like actor): consumed by the Data pane, stripped from every
  *  AI face, never part of export/publish closure. Returns undefined when the name can't be
  *  stamped — a write must never fail over its shadow edge. */
-export function viaOf(component, fn) {
-  const c = String(component || "");
+export function viaOf(app, fn) {
+  const c = String(app || "");
   if (!VIA_NAME_RE.test(c)) return undefined;
-  if (fn == null) return { component: c };
+  if (fn == null) return { app: c };
   const f = String(fn);
-  return f ? { component: c, function: f } : { component: c };
+  return f ? { app: c, function: f } : { app: c };
 }

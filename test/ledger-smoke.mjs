@@ -126,34 +126,34 @@ console.log("6. the ledger survives a reopen");
 console.log("7. E4/E13 — the shape reservations, which must change nothing today");
 {
   const s2 = openStore(DB);
-  const r = s2.execute({ type: "save_component", command_id: "c1", name: "shaped",
+  const r = s2.execute({ type: "save_app", command_id: "c1", name: "shaped",
     html: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "agent" });
-  ok("component saves", r.ok === true);
-  const row = s2.listComponents().find((c) => c.name === "shaped");
-  ok("kind defaults to 'app' — so nothing vanishes from list_components today",
+  ok("app saves", r.ok === true);
+  const row = s2.listApps().find((c) => c.name === "shaped");
+  ok("kind defaults to 'app' — so nothing vanishes from list_apps today",
     row.kind === "app", JSON.stringify(row.kind));
   ok("visibility defaults to 'listed'", row.visibility === "listed");
   ok("kit_version starts null (L4 fills it)", row.kit_version === null);
 
   // The two columns come from DIFFERENT places, and the split is the design: `kind` is something the
-  // author knows about their own component, so it lives in the declaration; `visibility` is lifecycle
+  // author knows about their own app, so it lives in the declaration; `visibility` is lifecycle
   // state (retired, curated, long-tail) that someone else decides later, so it stays a command.
   const shapedHtml = (decl) => "<!DOCTYPE html><html><head>" +
     (decl ? `<script type="application/json" id="oma-manifest">${JSON.stringify(decl)}</script>` : "") +
     "</head><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>";
 
-  s2.execute({ type: "save_component", command_id: "c2", name: "shaped", actor: "agent",
+  s2.execute({ type: "save_app", command_id: "c2", name: "shaped", actor: "agent",
     html: shapedHtml({ manifest_version: 2, kind: "visual" }), visibility: "unlisted" });
-  const v = s2.listComponents().find((c) => c.name === "shaped");
+  const v = s2.listApps().find((c) => c.name === "shaped");
   ok("kind arrives from the declaration, visibility from the command", v.kind === "visual" && v.visibility === "unlisted");
 
-  s2.execute({ type: "save_component", command_id: "c3", name: "shaped", html: shapedHtml(null), actor: "agent" });
-  const k = s2.listComponents().find((c) => c.name === "shaped");
+  s2.execute({ type: "save_app", command_id: "c3", name: "shaped", html: shapedHtml(null), actor: "agent" });
+  const k = s2.listApps().find((c) => c.name === "shaped");
   ok("a document that says nothing preserves both (three-state, not a reset)",
     k.kind === "visual" && k.visibility === "unlisted", JSON.stringify([k.kind, k.visibility]));
 
   ok("a typo'd kind is refused at the declaration, not stored",
-    s2.execute({ type: "save_component", command_id: "c4", name: "shaped", html: shapedHtml({ kind: "aap" }), actor: "agent" }).error === "bad_manifest");
+    s2.execute({ type: "save_app", command_id: "c4", name: "shaped", html: shapedHtml({ kind: "aap" }), actor: "agent" }).error === "bad_manifest");
 
   // E13b: the closed actor set is what keeps an anonymous write from landing as "human".
   ok("an unknown actor on a DATA write is refused",
@@ -161,9 +161,9 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
   ok("'anon' and 'guest' are reserved and already accepted (no code produces them yet)",
     s2.execute({ type: "add_item", command_id: "c6", collection: "probe", fields: { title: "x" }, actor: "anon" }).ok === true);
   // ...but authorship stays OPEN, because tierOf() reads an unrecognised author as PROVENANCE:
-  // that is exactly how a third-party component earns the 'unreviewed' tier.
+  // that is exactly how a third-party app earns the 'unreviewed' tier.
   ok("an arbitrary AUTHOR is still allowed — closing it would delete the trust model",
-    s2.execute({ type: "save_component", command_id: "c7", name: "thirdparty", html: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "some-community-author" }).ok === true);
+    s2.execute({ type: "save_app", command_id: "c7", name: "thirdparty", html: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "some-community-author" }).ok === true);
 
   const withPrincipal = s2.execute({ type: "add_item", command_id: "c8", collection: "probe", fields: { title: "owned" }, actor: "human", principal: "user_x" });
   ok("principal rides into the ledger when supplied", withPrincipal.ok === true);
@@ -183,20 +183,20 @@ console.log("7b. a database that predates the columns gains them, with its rows 
   for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const { default: Database } = await import("better-sqlite3");
   const raw = new Database(OLD);
-  raw.exec(`CREATE TABLE component (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL,
+  raw.exec(`CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL,
               description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', updated_at TEXT NOT NULL);
             CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '',
               position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1,
               created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
-  raw.prepare("INSERT INTO component (name, html, description, author, updated_at) VALUES (?,?,?,?,?)")
+  raw.prepare("INSERT INTO app (name, html, description, author, updated_at) VALUES (?,?,?,?,?)")
      .run("legacy", "<html>old</html>", "made before the columns existed", "agent", "2026-01-01T00:00:00Z");
   raw.prepare("INSERT INTO item (id, collection, fields, created_at, updated_at) VALUES (?,?,?,?,?)")
      .run("old-1", "legacy-coll", JSON.stringify({ title: "survived" }), "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
   raw.close();
 
   const migrated = openStore(OLD);
-  const comp = migrated.listComponents().find((c) => c.name === "legacy");
-  ok("the pre-existing component is still there", !!comp && comp.description === "made before the columns existed");
+  const comp = migrated.listApps().find((c) => c.name === "legacy");
+  ok("the pre-existing app is still there", !!comp && comp.description === "made before the columns existed");
   ok("and acquired kind='app' / visibility='listed' — no row disappears from any list",
     comp.kind === "app" && comp.visibility === "listed", JSON.stringify([comp?.kind, comp?.visibility]));
   ok("its data survived untouched", migrated.snapshot("legacy-coll").items[0].fields.title === "survived");
@@ -241,13 +241,13 @@ console.log("\n9. undo — pre-image in the ledger, one verb, no tool");
   ok("undo brings the row back, same id, same fields",
     back.ok && st.snapshot("undo-t").items.length === 1 && st.snapshot("undo-t").items[0].id === a.id);
 
-  st.execute({ type: "save_component", command_id: cid(), name: "undo-comp", html: "<p>A</p>", actor: "agent" });
-  st.execute({ type: "save_component", command_id: cid(), name: "undo-comp", html: "<p>B</p>", actor: "agent" });
-  ok("undo on a component rolls FORWARD to the previous html", st.undoLast("undo-comp").ok && st.getComponent("undo-comp").html === "<p>A</p>");
+  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", html: "<p>A</p>", actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", html: "<p>B</p>", actor: "agent" });
+  ok("undo on an app rolls FORWARD to the previous html", st.undoLast("undo-comp").ok && st.getApp("undo-comp").html === "<p>A</p>");
   ok("history grew instead of being rewritten (so the undo is itself undoable)",
-    st.componentHistory("undo-comp").length === 3);
+    st.appHistory("undo-comp").length === 3);
   ok("undoing the undo works — the ledger is append-only in both directions",
-    st.undoLast("undo-comp").ok && st.getComponent("undo-comp").html === "<p>B</p>");
+    st.undoLast("undo-comp").ok && st.getApp("undo-comp").html === "<p>B</p>");
   ok("nothing to undo says so, rather than pretending", st.undoLast("no-such-target").error === "nothing_to_undo");
 
   // Retention is a POLICY VALUE, not a feature: unbounded until a deployment says otherwise.
@@ -326,19 +326,19 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
   const st = openStore(DB);
   const cid = () => randomUUID();
   const block = (json) => `<p>probe</p><script type="application/json" id="oma-manifest">${json}<` + `/script>`;
-  st.execute({ type: "save_component", command_id: cid(), name: "clear-probe",
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
     html: block('{"manifest_version":2,"kind":"visual","scene":{"category_id":"local-tools"}}'), actor: "human" });
-  let cp = st.getComponent("clear-probe");
+  let cp = st.getApp("clear-probe");
   ok("a declared kind and scene materialise", cp.kind === "visual" && JSON.parse(cp.scene).category_id === "local-tools");
-  st.execute({ type: "save_component", command_id: cid(), name: "clear-probe", html: block("{}"), actor: "human" });
-  cp = st.getComponent("clear-probe");
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", html: block("{}"), actor: "human" });
+  cp = st.getApp("clear-probe");
   ok("{} clears ALL projections — manifest and scene to null, kind back to its default",
     cp.manifest === null && cp.scene === null && cp.kind === "app");
-  st.execute({ type: "save_component", command_id: cid(), name: "clear-probe",
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
     html: block('{"manifest_version":2,"kind":"visual","scene":{"category_id":"local-tools"}}'), actor: "human" });
-  const sv = st.execute({ type: "save_component", command_id: cid(), name: "clear-probe",
+  const sv = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
     html: block("{not json}"), declaration_policy: "salvage", actor: "human" });
-  cp = st.getComponent("clear-probe");
+  cp = st.getApp("clear-probe");
   ok("salvage on a bad block clears the SAME set, and the note says so",
     sv.ok === true && /scene and kind reset too/.test(sv.note || "") && cp.manifest === null && cp.scene === null && cp.kind === "app",
     sv.note);
@@ -355,23 +355,23 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
 
   console.log("\n13. declaration-quality notes reach the save receipt");
   const declOn = (extra) => block(JSON.stringify({ manifest_version: 2, collections: { shared_notes: extra } }));
-  const rA = st.execute({ type: "save_component", command_id: cid(), name: "decl-a",
+  const rA = st.execute({ type: "save_app", command_id: cid(), name: "decl-a",
     html: declOn({ fields: { title: { type: "string" } }, label_field: "headline" }), actor: "human" });
   ok("label_field outside the declared fields warns without rejecting",
     rA.ok === true && /label_field "headline" is not among/.test(rA.note || ""), rA.note);
-  const rB = st.execute({ type: "save_component", command_id: cid(), name: "decl-b",
+  const rB = st.execute({ type: "save_app", command_id: cid(), name: "decl-b",
     html: declOn({ fields: { title: { type: "number" } } }), actor: "human" });
   ok("a second declarer of the same key hears about the conflict and who wins",
     rB.ok === true && /declared by decl-a and decl-b/.test(rB.note || "") && /title \(redeclared by decl-b\)/.test(rB.note || ""), rB.note);
 
   console.log("\n14. archive is an event on the one axis — and undo restores the EXACT visibility");
-  st.executePrivileged({ type: "archive_component", command_id: cid(), name: "decl-a", visibility: "featured", actor: "human" });
-  const arch = st.execute({ type: "archive_component", command_id: cid(), name: "decl-a", archived: true, actor: "human" });
+  st.executePrivileged({ type: "archive_app", command_id: cid(), name: "decl-a", visibility: "featured", actor: "human" });
+  const arch = st.execute({ type: "archive_app", command_id: cid(), name: "decl-a", archived: true, actor: "human" });
   ok("archive stamps the row's version with its event seq (one axis, no exceptions)",
-    arch.ok === true && st.getComponent("decl-a").visibility === "archived" && st.getComponent("decl-a").version === arch.seq);
+    arch.ok === true && st.getApp("decl-a").visibility === "archived" && st.getApp("decl-a").version === arch.seq);
   st.undoLast("decl-a");
   ok("undoing the flip restores featured — the pre-image, not merely 'listed'",
-    st.getComponent("decl-a").visibility === "featured");
+    st.getApp("decl-a").visibility === "featured");
   st.close();
 }
 
@@ -381,13 +381,13 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const st = openStore(P);
   const cid = () => randomUUID();
-  const w1 = st.execute({ type: "add_item", command_id: cid(), collection: "vp", fields: { t: "a" }, actor: "human", via: { component: "my-app" } });
+  const w1 = st.execute({ type: "add_item", command_id: cid(), collection: "vp", fields: { t: "a" }, actor: "human", via: { app: "my-app" } });
   ok("a valid via lands in the ledger payload (object form, frozen)",
-    w1.ok === true && st.recentEvents({ collection: "vp" })[0].via.component === "my-app");
-  const w2 = st.execute({ type: "update_item", command_id: cid(), id: w1.id, fields: { t: "b" }, actor: "human", via: { component: "my-app", function: "tick" } });
+    w1.ok === true && st.recentEvents({ collection: "vp" })[0].via.app === "my-app");
+  const w2 = st.execute({ type: "update_item", command_id: cid(), id: w1.id, fields: { t: "b" }, actor: "human", via: { app: "my-app", function: "tick" } });
   ok("the function key rides when present — write-set F never changes the shape",
     w2.ok === true && st.recentEvents({ collection: "vp" })[0].via.function === "tick");
-  const w3 = st.execute({ type: "move_item", command_id: cid(), id: w1.id, group: "g2", actor: "human", via: { component: "BAD NAME!" } });
+  const w3 = st.execute({ type: "move_item", command_id: cid(), id: w1.id, group: "g2", actor: "human", via: { app: "BAD NAME!" } });
   ok("an invalid via is DROPPED, never refused — a write must not fail over its shadow",
     w3.ok === true && st.recentEvents({ collection: "vp" })[0].via === undefined);
   const ch = st.changesSince("vp", 0, 50);
@@ -395,7 +395,7 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
     ch.events.length === 3 && ch.events.every((e) => !("via" in e)));
   ok("recentEvents keeps via AND marks the aggregate's latest event undoable",
     st.recentEvents({ collection: "vp" }).every((e) => e.undoable === (e.seq === w3.seq)));
-  const b = st.executeBatch([{ type: "add_item", command_id: cid(), collection: "vp", fields: { t: "c" }, actor: "agent", via: { component: "my-app" } }]);
+  const b = st.executeBatch([{ type: "add_item", command_id: cid(), collection: "vp", fields: { t: "c" }, actor: "agent", via: { app: "my-app" } }]);
   ok("the batch key filter excludes via — the model's bulk verb cannot stamp a shadow",
     b.ok === true && st.recentEvents({ collection: "vp", limit: 1 })[0].via === undefined);
 
@@ -430,7 +430,7 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
   const u5 = st.undoLast(dx.id);          // … last event now the delete; id is FREE → restore works
   ok("the chain converges without ever throwing", u4.ok === true && u5.ok === true);
   ok("a save with no earlier version refuses by name", (() => {
-    st.execute({ type: "save_component", command_id: cid(), name: "one-save", html: "<p>v1</p>", actor: "human" });
+    st.execute({ type: "save_app", command_id: cid(), name: "one-save", html: "<p>v1</p>", actor: "human" });
     return st.undoLast("one-save").error === "no_previous_version";
   })());
   // stale-undo guard: a target that advanced since the pane looked must refuse, not revert the
@@ -452,17 +452,17 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
 }
 
 console.log("\n17. a NAME is not an identity — a second life is a different app");
-// A delete is a tombstone, so the ledger and component_history keep every trace of the app that
+// A delete is a tombstone, so the ledger and app_history keep every trace of the app that
 // used to bear a name. Two separate destructive decisions were reading those traces as if they
 // belonged to whatever app bears the name NOW:
 //
 //   · cascade's ownership test asked "was this collection born after the app?" against the FIRST
 //     component_saved ever recorded under that name — so rows a user created while NO app existed
 //     were judged to belong to the app that appeared afterwards, and deleted;
-//   · component_history listed every checkpoint ever saved under that name, so restoring
+//   · app_history listed every checkpoint ever saved under that name, so restoring
 //     "checkpoint 1" of a budget tracker could hand back a deleted recipe app's source.
 //
-// Same root, one primitive: a component's CURRENT LIFE starts at the most recent delete that was
+// Same root, one primitive: an app's CURRENT LIFE starts at the most recent delete that was
 // followed by a save (0 if it was never deleted). Everything before that belongs to someone else.
 {
   const P = join(ROOT, "test", "lives.db");
@@ -472,28 +472,28 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
   let n = 0; const cid = () => "life" + (++n);
 
   // Life 1: a recipe app, saved twice, then deleted (data kept — the default).
-  st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("RECIPES v1"), actor: "agent" });
-  const life1v2 = st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("RECIPES v2"), actor: "agent" }).version;
-  st.execute({ type: "delete_component", command_id: cid(), name: "notes", actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("RECIPES v1"), actor: "agent" });
+  const life1v2 = st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("RECIPES v2"), actor: "agent" }).version;
+  st.execute({ type: "delete_app", command_id: cid(), name: "notes", actor: "agent" });
 
   // Between the lives the USER puts rows into a collection that happens to share the name.
   for (let i = 0; i < 3; i++)
     st.execute({ type: "add_item", command_id: cid(), collection: "notes", fields: { t: "mine " + i }, actor: "human" });
 
   // Life 2: a completely unrelated app, same name.
-  st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("BUDGET TRACKER"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("BUDGET TRACKER"), actor: "agent" });
 
   // ---- N10: history is this app's history
-  const hist = st.componentHistory("notes");
+  const hist = st.appHistory("notes");
   ok("history lists only the CURRENT life's checkpoints",
     hist.length === 1 && hist[0].checkpoint === 1, JSON.stringify(hist));
   const cp1 = hist.find((h) => h.checkpoint === 1);
   ok("…so restoring 'checkpoint 1' cannot hand back a deleted, unrelated app",
-    !!cp1 && st.getComponentVersion("notes", cp1.version).html.includes("BUDGET TRACKER"),
-    cp1 ? st.getComponentVersion("notes", cp1.version).html : "no checkpoint 1");
+    !!cp1 && st.getAppVersion("notes", cp1.version).html.includes("BUDGET TRACKER"),
+    cp1 ? st.getAppVersion("notes", cp1.version).html : "no checkpoint 1");
   // The tombstone promise, and §21's real property: the earlier rows were never overwritten.
   ok("the previous life's source is still IN the table — retained, not clobbered (no REPLACE over a tombstone)",
-    st.getComponentVersion("notes", life1v2).html.includes("RECIPES v2"));
+    st.getAppVersion("notes", life1v2).html.includes("RECIPES v2"));
 
   // ---- N3: rows that predate this life are not this app's to delete
   const d = st.deleteDisposition("notes");
@@ -503,18 +503,18 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
     /nothing proves/.test(d.collections[0].why), d.collections[0].why);
 
   // ---- the ordinary case still works: an app that made its own rows still owns them
-  st.execute({ type: "save_component", command_id: cid(), name: "fresh", html: HTML("FRESH"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "fresh", html: HTML("FRESH"), actor: "agent" });
   st.execute({ type: "add_item", command_id: cid(), collection: "fresh", fields: { t: "made by the app" }, actor: "agent" });
   const df = st.deleteDisposition("fresh");
   ok("an app that was created BEFORE its collection still owns it (the gate did not just say no to everything)",
     df.exclusive.join() === "fresh", JSON.stringify(df.collections));
 
   // ---- a deleted app that was NOT recreated keeps its history reachable (the documented tombstone)
-  st.execute({ type: "save_component", command_id: cid(), name: "gone", html: HTML("GONE v1"), actor: "agent" });
-  st.execute({ type: "save_component", command_id: cid(), name: "gone", html: HTML("GONE v2"), actor: "agent" });
-  st.execute({ type: "delete_component", command_id: cid(), name: "gone", actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "gone", html: HTML("GONE v1"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "gone", html: HTML("GONE v2"), actor: "agent" });
+  st.execute({ type: "delete_app", command_id: cid(), name: "gone", actor: "agent" });
   ok("a tombstoned app still lists its OWN checkpoints — 'history survives delete' is unchanged",
-    st.componentHistory("gone").length === 2, JSON.stringify(st.componentHistory("gone")));
+    st.appHistory("gone").length === 2, JSON.stringify(st.appHistory("gone")));
 
   st.close();
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
@@ -535,47 +535,47 @@ console.log("\n18. a cascade's own receipts must not live in the caller's id nam
   const HTML = "<!doctype html><html><body>fixture body long enough to clear the size floor</body></html>";
   let n = 0; const cid = () => "c" + (++n);
 
-  st.execute({ type: "save_component", command_id: cid(), name: "app", html: HTML, actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "app", html: HTML, actor: "agent" });
   st.execute({ type: "add_item", command_id: cid(), collection: "app", fields: { t: "row" }, actor: "agent" });
   // A perfectly ordinary earlier write that happens to have used the derived shape as its own id.
   st.execute({ type: "add_item", command_id: "X#rows:app", collection: "elsewhere", fields: { t: "y" }, actor: "human" });
 
   let threw = null, res = null;
-  try { res = st.execute({ type: "delete_component", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" }); }
+  try { res = st.execute({ type: "delete_app", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" }); }
   catch (e) { threw = e; }
   ok("a destructive command cannot be killed by a caller's earlier choice of id",
     threw === null, threw && `${threw.constructor.name}: ${threw.message}`);
-  ok("…and it actually did the delete", res && res.ok === true && !st.getComponent("app"));
+  ok("…and it actually did the delete", res && res.ok === true && !st.getApp("app"));
   ok("…and the cleared collection still got its receipt",
     st.changesSince("app", 0).events.some((e) => e.type === "rows_cleared"),
     JSON.stringify(st.changesSince("app", 0).events.map((e) => e.type)));
 
   console.log("18b. …because idempotence lives at the COMMAND level, not in the receipts' ids");
-  const again = st.execute({ type: "delete_component", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" });
+  const again = st.execute({ type: "delete_app", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" });
   ok("a replay of the same command short-circuits and emits nothing new",
     again.ok === true && again.idempotent === true, JSON.stringify(again));
   ok("…so exactly one rows_cleared receipt exists, however many times it is retried",
     st.changesSince("app", 0).events.filter((e) => e.type === "rows_cleared").length === 1);
 
   console.log("18c. a replay says WHICH act it is replaying (N5)");
-  // The registry's retry path reports "already applied" when a component is gone but the caller
+  // The registry's retry path reports "already applied" when an app is gone but the caller
   // holds a plan token. It asked the store "did this command_id run?" and the store answered only
   // yes/no — so a command_id previously used for a KEEP delete answered yes, and the caller was
   // told its irreversible cascade had happened while every row was still on disk.
-  st.execute({ type: "save_component", command_id: cid(), name: "kept", html: HTML, actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "kept", html: HTML, actor: "agent" });
   st.execute({ type: "add_item", command_id: cid(), collection: "kept", fields: { t: "still here" }, actor: "agent" });
   const KEEP = "reused-id";
-  st.execute({ type: "delete_component", command_id: KEEP, name: "kept", actor: "agent" });
-  const replay = st.execute({ type: "delete_component", command_id: KEEP, name: "kept", cascade: true, cascade_collections: [], actor: "agent" });
+  st.execute({ type: "delete_app", command_id: KEEP, name: "kept", actor: "agent" });
+  const replay = st.execute({ type: "delete_app", command_id: KEEP, name: "kept", cascade: true, cascade_collections: [], actor: "agent" });
   ok("replaying a KEEP delete does not claim to have cascaded",
     replay.ok === true && replay.cascaded === undefined, JSON.stringify(replay));
   ok("…and the rows it never took are still there", st.snapshot("kept").items.length === 1);
 
-  st.execute({ type: "save_component", command_id: cid(), name: "casc", html: HTML, actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "casc", html: HTML, actor: "agent" });
   st.execute({ type: "add_item", command_id: cid(), collection: "casc", fields: { t: "doomed" }, actor: "agent" });
   const CASC = "cascade-id";
-  st.execute({ type: "delete_component", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
-  const replay2 = st.execute({ type: "delete_component", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
+  st.execute({ type: "delete_app", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
+  const replay2 = st.execute({ type: "delete_app", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
   ok("replaying a real CASCADE says so, so the caller can tell the two apart",
     replay2.ok === true && !!replay2.cascaded, JSON.stringify(replay2));
 
@@ -604,7 +604,7 @@ console.log("\n19. N9 — a pruned history must make ownership UNKNOWABLE, never
   const seedOlderThanItsApp = (st) => {
     for (let i = 0; i < 5; i++)
       st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "mine " + i }, actor: "human" });
-    st.execute({ type: "save_component", command_id: cid(), name: "diary", html: HTML, actor: "agent" });
+    st.execute({ type: "save_app", command_id: cid(), name: "diary", html: HTML, actor: "agent" });
     st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "the app wrote this" }, actor: "agent" });
   };
   const enableRetention = (st, keep) => st.executePrivileged({ type: "add_item", command_id: cid(),
@@ -637,7 +637,7 @@ console.log("\n19. N9 — a pruned history must make ownership UNKNOWABLE, never
     // The mark must not become a blanket amnesty: an app that genuinely made its own collection,
     // in a store where some OTHER collection was pruned, still owns its rows.
     const st = fresh();
-    st.execute({ type: "save_component", command_id: cid(), name: "fresh-app", html: HTML, actor: "agent" });
+    st.execute({ type: "save_app", command_id: cid(), name: "fresh-app", html: HTML, actor: "agent" });
     st.execute({ type: "add_item", command_id: cid(), collection: "fresh-app", fields: { t: "made by the app" }, actor: "agent" });
     for (let i = 0; i < 4; i++)
       st.execute({ type: "add_item", command_id: cid(), collection: "unrelated", fields: { t: "x" + i }, actor: "human" });
@@ -652,7 +652,7 @@ console.log("\n19. N9 — a pruned history must make ownership UNKNOWABLE, never
   {
     // A prune that removed nothing truncated nothing, so it must leave no mark and change no verdict.
     const st = fresh();
-    st.execute({ type: "save_component", command_id: cid(), name: "tidy", html: HTML, actor: "agent" });
+    st.execute({ type: "save_app", command_id: cid(), name: "tidy", html: HTML, actor: "agent" });
     st.execute({ type: "add_item", command_id: cid(), collection: "tidy", fields: { t: "one row" }, actor: "agent" });
     enableRetention(st, 500);
     const noop = st.pruneLedger("tidy");
