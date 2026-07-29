@@ -108,9 +108,9 @@ export const BRIDGE: string;
 export function composeChildDoc(html: string, opts?: { tokenCss?: string; kitCss?: string; bridge?: string }): string;
 /** A complete, self-contained INERT preview document (stub oma seeded with fixture items) —
  *  what a hosted /library preview server serves instead of keeping hand-synced copies. */
-export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; tokenCss?: string; kitCss?: string }): string;
+export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; components?: unknown[]; tokenCss?: string; kitCss?: string }): string;
 /** The inert stub window.oma script for a standalone preview document. */
-export function stubOmaScript(name: string, items?: unknown[]): string;
+export function stubOmaScript(name: string, items?: unknown[], components?: unknown[]): string;
 /** Build the parent-side caps chokepoint every sandboxed child call funnels through. */
 export function makeGuard(cfg: {
   name: string;

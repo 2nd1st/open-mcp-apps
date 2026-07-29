@@ -177,9 +177,11 @@ render the truth? Every "N days left", every recurring item, every "overdue" fla
 
 ## Replying to the AI from the UI
 
-  oma.sendMessage(text)   // sends text into the chat AS THE USER — the AI will respond.
-                            // Use ONLY on an explicit user click (e.g. a "Send to AI" /
-                            // "Done, continue" button). NEVER call it automatically.
+  oma.sendMessage(text)   // PROPOSES text into the chat — a suggestion, NOT an authorization: the
+                            // host may run it, confirm it with the user, or refuse it (an app
+                            // cannot speak with the user's authority). Word it as a proposal and
+                            // never render "sent!" as if it happened. Can your app just DO the
+                            // thing? Do that — oma.openLink(url) opens a URL without the AI.
   oma.updateContext(text) // silently updates the AI's context (no chat message; the AI
                             // sees it next turn; each call REPLACES the previous context).
 
@@ -270,9 +272,8 @@ Rules, because the engine enforces them:
 
 Short notes — this guide is your contract, not a sandbox:
 
-- oma.sendMessage is an IDENTITY capability (it speaks to the chat as the user) and
-  oma.updateContext is a MODEL-CONTROL capability (it steers the AI silently). Call BOTH
-  only on an explicit user click — never from load, a timer, an observer, or a data change.
+- oma.sendMessage proposes and oma.updateContext steers the AI silently. Call BOTH only on an
+  explicit user click — never from load, a timer, an observer, or a data change.
 - Reserved settings keys are off-limits: oma.setPref rejects keys starting with
   "security_" or "_", and the store rejects security:* / policy:* on the data_* path.
   oma.callTool is an unscoped escape hatch that is not yet capability-gated (the v0.2

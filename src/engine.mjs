@@ -17,8 +17,9 @@ import { EXTENSION_ID } from "@modelcontextprotocol/ext-apps/server";
 import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE } from "./store.mjs";
 import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_COMPONENTS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
+import { isControlPlaneTool } from "./tool-policy.mjs";
 import { ENGINE_VERSION } from "./version.mjs";
-import { installListHints } from "./list-hints.mjs";
+import { installCacheHints } from "./cache-hints.mjs";
 import { register as registerComponentTools } from "./tools/components.mjs";
 import { register as registerDataTools } from "./tools/data.mjs";
 import { register as registerFileTools } from "./tools/files.mjs";
@@ -131,11 +132,16 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  *                        cannot be removed by an override: a manual that carries the placeholders
  *                        positions them; one that omits them gets them appended. See
  *                        composeInstructions for why that is structural, not advisory.
+ * @param opts.widgetDomain  dedicated origin a host should give this deployment's widget sandbox
+ *                        (`_meta.ui.domain`). REQUIRED by ChatGPT to submit an app with UI, where
+ *                        it "must be unique per plugin" — which makes it a property of a
+ *                        DEPLOYMENT's registration, not of the engine, so it is a knob and never a
+ *                        default. Omitted ⇒ the field is not declared and the host uses its own.
  * @param opts.viewBase  base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787").
  *                        When present, list_components prints a real /view/<name> link per app;
  *                        when absent (bare stdio — no viewer exists) it prints none.
  */
-export function createEngine(store, { hostLabel, instructions, viewBase } = {}) {
+export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain } = {}) {
   const server = new McpServer(
     // Reported to the host at initialize. Real version, not a literal — see version.mjs for why
     // being unable to tell which build a deployment runs is a correctness problem, not a nicety.
@@ -162,13 +168,29 @@ export function createEngine(store, { hostLabel, instructions, viewBase } = {}) 
     "library_list", "library_preview", "install_from_library", "list_components", "data_collections",
     "ui_prefs_schema", "security_set",
   ]);
+  // ONE line per control-plane tool call that REACHES US. Deliberately not a call log: only the
+  // handful of names tool-policy already treats as privileged, and only the name — never arguments,
+  // never a row, never anything the user typed.
+  //
+  // It exists because a question we could not answer came up and will come up again: when a host
+  // refuses an app-originated call, was it us or was it them? Today the answer is undecidable from
+  // our side, and the reason is structural rather than an oversight — our denylist
+  // (isControlPlaneTool) lives ONLY in the runner guard, which runs in the browser. A component's
+  // refused call therefore never reaches a server at all, so no server log could ever record it.
+  // What a server CAN state is the complement, and it is the half that settles the question:
+  // "this privileged call arrived and we ran it" ⇒ any refusal the user saw came from upstream;
+  // silence ⇒ it never got here. (48h of prod logs held 22 lines and zero tool calls — this is
+  // the missing instrument, not a missing search.)
   const sdkRegisterTool = server.registerTool.bind(server);
+  const logged = (name, handler) => (isControlPlaneTool(name)
+    ? (...a) => { try { console.error(`[oma] control-plane tool called: ${name} host=${hostName()}`); } catch {} return handler(...a); }
+    : handler);
   server.registerTool = (name, config, handler) => sdkRegisterTool(
     name,
     WIDGET_CALLABLE.has(name)
       ? { ...config, _meta: { ...(config._meta || {}), "openai/widgetAccessible": true } }
       : config,
-    handler,
+    logged(name, handler),
   );
 
   // The per-app file channel: opaque user-file storage (bytes on a swappable backend; the store
@@ -344,7 +366,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase } = {}) 
   };
 
   // The shared context every tool module gets.
-  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase };
+  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
   // components goes first because it hands back registerComponent, which library and registry
@@ -356,8 +378,8 @@ export function createEngine(store, { hostLabel, instructions, viewBase } = {}) 
   registerLibraryTools(ctx);
   registerSettingsTools(ctx);
 
-  // Must run AFTER every registration: it wraps the handler the SDK built around the finished set.
-  installListHints(server, { dynamicTools: process.env.OMA_DYNAMIC_TOOLS === "1" });
+  // Must run AFTER every registration: it wraps the handlers the SDK built around the finished set.
+  installCacheHints(server, { dynamicTools: process.env.OMA_DYNAMIC_TOOLS === "1" });
 
   return server;
 }

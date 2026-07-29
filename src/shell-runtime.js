@@ -20,14 +20,24 @@
 
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
 import { isControlPlaneTool as _isControlPlaneTool } from "./tool-policy.mjs";
-import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
 const SA = typeof window !== "undefined" ? window.__OMA_STANDALONE__ : undefined;
 
-const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, { tools: {} });
+// DECLARE NOTHING WE DO NOT IMPLEMENT (SPEC-26).
+//
+// This second argument is the widget's capability declaration, sent on every `ui/initialize`.
+// It said `{ tools: {} }` — "this view serves tools" — while `oncalltool`, `onlisttools` and any
+// view-side registerTool are ZERO hits across src/. ext-apps draft apps.mdx makes that two MUST
+// violations (:1281, :1324): a declared capability has to be backed.
+//
+// Changed to `{}` — an honest empty declaration. We have NO reading on what a host does when a
+// capability it saw yesterday is absent today, which is exactly why this rides alone in its own
+// commit: if a host reacts badly it reverts as one line, tangled with nothing.
+const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, {});
 
 // `version` is the GLOBAL ledger seq of the last adopted read (stamped in the read's own
 // transaction server-side); `total`/`truncated` are the walk's honesty marks — a component
@@ -37,8 +47,18 @@ const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, { tools: {} });
 // Desktop 1.24012.9 dynamic-tools mode), the widget otherwise reaches interactivity unbound and
 // every write bounces off the server as collection:null.
 const BOUND_HINT = (typeof window !== "undefined" && window.__OMA_COLLECTION_HINT__) || null;
-let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, component: null, host: null };
+// The SAME stamp, for the same reason, and it was missing. wrapComponent injects both globals
+// before the runtime evaluates, so a per-app document knows its own name at t=0 — but `component`
+// started at null anyway, which left the first-wins rule in ontoolresult to be won by whoever
+// spoke first. On a host that hands a widget another call's envelope (measured, ChatGPT web) or in
+// a turn that opens two apps at once, that first speaker can be a DIFFERENT app, and this document
+// would then answer with a name that is not its own. A document that was stamped with its identity
+// should never have to be told what it is.
+// Null on the universal loader, correctly: it is stamped only after it resolves and mounts.
+const BAKED_NAME = (typeof window !== "undefined" && window.__OMA_COMPONENT__) || null;
+let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, component: BAKED_NAME, host: null };
 let toolInput = {};
+let readyDeadline = null;
 let ready = false;
 const readyCbs = [];
 const changeCbs = [];
@@ -297,9 +317,17 @@ async function call(name, args) {
 // merged lazily per read — identity may not be known yet when the data arrives.
 // Resolver evaluated at EVERY use, never cached into data structures: the loader path
 // learns the name only via ontoolinput/ontoolresult (guaranteed by ready()-flush time).
+// WHO WE ARE, most trustworthy first.
+//
+// `__OMA_COMPONENT__` is OURS: a per-app document is stamped with it at serve time by
+// wrapComponent, and on the loader path the loader writes it only after it has resolved and
+// mounted the app. Either way it is a fact about the document we are running in. The other two
+// come from the host, and the host can hand a widget another call's envelope — measured on
+// ChatGPT web, both modes. It ranked LAST, so the one channel that cannot be misdelivered was
+// the one we consulted only when the misdeliverable ones were empty.
 const compName = () =>
-  state.component || (toolInput && toolInput.component) ||
-  (typeof window !== "undefined" && window.__OMA_COMPONENT__) || null;
+  (typeof window !== "undefined" && window.__OMA_COMPONENT__) ||
+  state.component || (toolInput && toolInput.component) || null;
 
 // Exact coercion, shared verbatim with the mini-bridge (docs/settings-design.md §2.1):
 // the FALLBACK's type drives it, so junk stored values degrade to the fallback safely.
@@ -399,8 +427,94 @@ function schedulePrefSync() {                      // debounced (250 ms)
 // ---- theming: adopt the host's design tokens (Claude light/dark, fonts, radii) ----
 let hostVars = null;              // the host's own variable map, kept so a removed theme token
                                   // can be RESTORED to it rather than merely dropped
+// The host context is not only paint. `McpUiHostContext.toolInfo` carries the JSON-RPC id and the
+// tool definition of THE CALL THAT INSTANTIATED THIS WIDGET (ext-apps spec.types.d.ts
+// McpUiHostContext), and the type ends in `[key: string]: unknown`, so a host may put more there.
+// We read this object for colours and dropped everything else on the floor — the same shape of
+// mistake as taking identity from the tool-result channel alone (see ontoolresult below): the host
+// may already be saying who we are through a door nobody opened. It is kept WHOLE and MERGED,
+// because host-context-changed delivers PARTIAL updates, and exposed read-only so the loader's
+// failure surface can report what it was actually handed instead of guessing.
+// REMEMBERING WHO WE ARE, ACROSS A RE-RENDER THE HOST GETS WRONG.
+//
+// Measured on ChatGPT web, 2026-07-29, with the loader's own diagnostic dump. When an assistant
+// turn contains more than one tool call, the FIRST mount is bound correctly — and a later
+// re-render replays the FIRST call of that turn instead of the one that opened the app:
+//
+//   turn: get_component{name:"dev-probe"} → open_component{component:"dev-probe"}
+//   after refresh the widget was handed  toolInput = {name:"dev-probe"}
+//                                        toolInfo.tool = get_component's definition
+//   turn: data_collections{} → open_component{...}
+//   after refresh                        toolInput = {}   toolInfo.tool = data_collections
+//
+// Both are verbatim the OTHER call's arguments, so this is not "the host sent nothing" — it is the
+// host confidently sending the wrong envelope. No amount of waiting fixes that, and no guard can
+// tell a wrong envelope from a right one. The MCP Apps spec has no clause on which call a view
+// belongs to when a turn has several (lane D checked the draft in full), so this is host
+// discretion, not a violation — Codex gets it right on the same build.
+//
+// The way out is not to be told twice: the FIRST mount does know, so write it down somewhere the
+// host itself carries across renders. ChatGPT exposes exactly that as `window.openai` —
+// `setWidgetState` / `widgetState`, per-widget-instance and replayed on re-render. It is vendor
+// API, so it is feature-detected and namespaced under one key; a host without it loses nothing it
+// had. This also covers the case a binding fix never could: a re-render that replays NOTHING.
+const STATE_KEY = "__oma";
+function rememberIdentity() {
+  try {
+    const oai = window.openai;
+    if (!oai || typeof oai.setWidgetState !== "function") return;
+    const name = toolInput.component || state.component;
+    if (!name) return;
+    const prev = oai.widgetState || {};
+    const mine = prev[STATE_KEY] || {};
+    if (mine.component === name && mine.collection === state.collection && mine.host === state.host) return;
+    // Preserve whatever the app itself keeps here — we are a guest in this object. `host` rides
+    // along because it has the same shape of problem: it can only arrive on a channel a mis-bound
+    // re-render never delivers, which is why a refreshed widget reported host:null all week. This
+    // is not a second derivation of it — it is the one we were told, written down.
+    oai.setWidgetState({ ...prev, [STATE_KEY]: {
+      component: name, collection: state.collection || null, host: state.host || null } });
+  } catch (_) { /* a host that rejects the write leaves us exactly where we were */ }
+}
+/** What the host replayed to us about ourselves, if it kept anything. Read-only. */
+function recallIdentity() {
+  try { return (window.openai?.widgetState || {})[STATE_KEY] || null; } catch (_) { return null; }
+}
+
+// Internal, for the same reason as the host context below: the ONE caller is the loader document,
+// and an app that had to ask which app it is would be a bug in the app, not a missing API.
+//
+// This was a SUBSCRIPTION until 2026-07-29 — hand it a callback and it would fire when identity
+// eventually arrived. It never could, in the one case it was written for: a re-render bound to
+// another call is handed that call's envelope, which carries no name, so the announcement below
+// returned early and the subscriber waited out its whole window for a message that was never
+// coming. It is a plain question now, answered from what we know and what the host kept for us.
+try {
+  window.__OMA_IDENTITY__ = () => {
+    const name = toolInput.component || state.component;
+    if (name) return name;
+    // Nothing live — but the host may be carrying the note we wrote on a previous mount. This is
+    // what survives a re-render the host binds to the wrong call.
+    const kept = recallIdentity();
+    if (!kept || !kept.component) return null;
+    if (!state.component) state.component = kept.component;
+    if (!state.collection && kept.collection) state.collection = kept.collection;
+    if (!state.host && kept.host) state.host = kept.host;
+    return kept.component;
+  };
+} catch (_) { /* no window (test rig): the loader is the only caller and it has one */ }
+
+// Deliberately NOT on window.oma: RUNTIME.md is a promise to app authors, and `toolInfo` — a
+// JSON-RPC id plus a tool definition — is engine plumbing, not something an app should be built
+// on. Whether authors should get the useful half (platform, displayMode, locale, timeZone) is a
+// separate API decision that deserves its own thinking, not a passenger on this one. So it rides
+// the same internal __OMA_* channel the loader already uses for component identity.
 function applyTheme(ctx) {
   if (!ctx) return;
+  try {
+    const prev = window.__OMA_HOST_CONTEXT__;
+    window.__OMA_HOST_CONTEXT__ = prev ? { ...prev, ...ctx } : { ...ctx };
+  } catch (_) { /* a frozen window is not worth failing paint over */ }
   try {
     if (ctx.theme) applyDocumentTheme(ctx.theme);
     if (ctx.styles && ctx.styles.variables) { hostVars = ctx.styles.variables; applyHostStyleVariables(ctx.styles.variables); }
@@ -510,8 +624,39 @@ window.oma = {
   /** Current snapshot: { collection, items: [{id, group, position, fields, version}], version,
    *  total, truncated } — total/truncated let a component say "N of M" honestly. */
   get state() { return state; },
-  /** cb(state) once the bridge is connected and initial data has arrived. */
-  ready(cb) { if (ready) cb(state); else readyCbs.push(cb); },
+  /** cb(state) once the bridge is connected and initial data has arrived — or, if that never
+   *  happens, AFTER A DEADLINE with whatever state we have.
+   *
+   *  It used to wait forever. That is the shape of every silent failure: the caller has no way to
+   *  tell "still coming" from "never coming", so an app whose first paint hangs on ready() shows a
+   *  spinner for the rest of the session. Measured on a page refresh (prod and stg): the bridge
+   *  never delivered, so the loader's entire retry ladder — which lives inside this callback —
+   *  never started, and not one request reached the server.
+   *
+   *  Releasing late with empty state is not a great answer, but it is an ANSWER: the caller runs,
+   *  discovers there is nothing, and can say so. onChange still fires if data arrives afterwards.
+   *  8s is deliberately under the runtime's own 10s per-call bridge deadline, so a callback
+   *  released here still gets a full window for its first call, and above every measured healthy
+   *  handshake (sub-second on all hosts we have readings for). */
+  ready(cb) {
+    if (ready) return cb(state);
+    readyCbs.push(cb);
+    // ONE timer at a time, and a new one after each firing. The first version only ever armed one:
+    // it checked `readyDeadline == null`, and the handle was never cleared, so once the deadline had
+    // fired with `ready` still false, every LATER ready(cb) queued behind a spent timer and waited
+    // forever — the exact silent hang this deadline exists to end, reintroduced for anyone
+    // registering after the first 8 seconds. Clearing the handle inside the callback restores the
+    // guarantee to every caller: if the host is still silent, the next registration gets its own
+    // window rather than inheriting an expired one.
+    if (readyDeadline == null) readyDeadline = setTimeout(() => {
+      readyDeadline = null;
+      if (ready) return;
+      const waiting = readyCbs.splice(0);
+      console.warn("[oma] ready deadline: the host never delivered initial state; releasing " +
+        waiting.length + " callback(s) with an empty snapshot");
+      for (const fn of waiting) { try { fn(state); } catch (e) { console.error("[oma] ready callback failed", e); } }
+    }, 8000);
+  },
   /** cb(state) after every data change (including your own mutations). */
   onChange(cb) { changeCbs.push(cb); },
   // actor:"human" in the writes below is enum-constrained AUDIT metadata, never authorization:
@@ -678,9 +823,17 @@ window.oma = {
     }
     if (caps == null) caps = {};
     if (tier == null) tier = "local";
-    const coll = String(opts.collection || (opts.snapshot && opts.snapshot.collection) || n);
-    let childSnap = opts.snapshot
-      ? { collection: coll, items: opts.snapshot.items || [], version: opts.snapshot.version || 0, component: n, host: state.host }
+    // A caller-supplied snapshot is a SHARED one: the embedder fetched every collection once and
+    // hands each child its share. childPreviewSnapshot cuts that share and picks the binding by the
+    // engine's own rule — kept there so the embedder does not have to know either, and so the two
+    // preview machines (this one and composePreviewDoc's) cannot drift apart again. An explicit
+    // opts.collection still wins: a caller that names a binding means it.
+    const share = opts.snapshot
+      ? childPreviewSnapshot(opts.snapshot.items, { app: n, declaration: opts.declaration, components: opts.snapshot.components, tier })
+      : null;
+    const coll = String(opts.collection || (share && share.collection) || (opts.snapshot && opts.snapshot.collection) || n);
+    let childSnap = share
+      ? { collection: coll, items: share.items, components: share.components, version: opts.snapshot.version || 0, component: n, host: state.host }
       : { collection: coll, items: [], version: 0, component: n, host: state.host };
 
     let prefMap = null, compKeys = {}, settingsIds = new Set();
@@ -923,8 +1076,41 @@ window.oma = {
    */
   isControlPlaneTool(name) { return _isControlPlaneTool(name); },
   /**
-   * Send a message into the chat AS THE USER (ui/message). Call ONLY from an explicit
-   * user click (e.g. a "Send to AI" button) — never automatically.
+   * Bind this runtime to a collection, once, from an answer the SERVER computed.
+   *
+   * DIRECT MODE ONLY, and it exists for exactly one caller: the universal loader. A per-app
+   * document is baked with its binding at serve time (`__OMA_COLLECTION_HINT__`), but the loader is
+   * ONE document serving every app, so it cannot be — leaving `state.collection` with a single
+   * source, a host push, and `open_component`'s `collection` input optional and usually omitted.
+   * The result of the `component_html` call the loader already makes carries the binding, so the
+   * loader hands it over here instead of the runtime waiting to be told.
+   *
+   * It does NOT recompute anything, and callers must not either: "what does this app open on" has
+   * one owner (contracts.mjs defaultCollectionFor, which /view mounts by too), and a second copy is
+   * a second answer waiting to disagree.
+   *
+   * FIRST WINS, like every other writer of this field — a late call cannot rebind a widget that is
+   * already bound and reading. Sandboxed children never see this method (the guard's surface is an
+   * allowlist), which is deliberate: a child that could rebind itself could read another app's rows.
+   */
+  bind(collection) {
+    if (typeof collection === "string" && collection && !state.collection) state.collection = collection;
+    return state.collection;
+  },
+  /**
+   * PROPOSE a message into the chat (ui/message). Call ONLY from an explicit user click
+   * (e.g. a "Send to AI" button) — never automatically.
+   *
+   * ⚠️ The resolved value means THE HOST ACCEPTED THE REQUEST. It does NOT mean the user sent
+   * anything, and a component must never render "done" on the strength of it. Both hosts we have
+   * first-hand readings for MEDIATE it (Leo, live, 2026-07-28):
+   *   · Claude  — the text is placed in the composer, UNSENT. The user still presses send, and
+   *               may never do so; this promise resolved long before that.
+   *   · ChatGPT — a system modal appears ("An app wants to send this prompt", editable, with
+   *               Cancel/Send); pressing Send delivers it with no further confirmation.
+   * Either way the outcome happens after we are done, and nothing on the wire reports it (see
+   * docs/wo/proposal-trusted-user-action.md), so the honest thing a component can do is point the
+   * user at the chat — which this does, once, on the caller's behalf.
    */
   sendMessage(text) {
     const t = String(text);
@@ -942,9 +1128,55 @@ window.oma = {
         () => { console.warn("[oma] sendMessage degraded (" + why + "); text:", t); omaNotify("Couldn't reach the chat (" + why + ") — the text is in the console."); return { isError: true, degraded: "console" }; });
     };
     if (SA) return degrade("no chat attached");
+    // NOTHING IS SAID ON THE SUCCESS PATH, and that is a decision, not an omission.
+    //
+    // A notice used to fire here on every accepted call: "Check the chat — you may need to confirm
+    // or send it." It was defended as true on every host, on the reasoning that it "still reads
+    // correctly if some host does deliver it straight away". That was an inference, and live testing
+    // (Leo, 2026-07-29) falsified it in both directions at once:
+    //   · desktop — the message had ALREADY been delivered and the banner fired anyway, so the
+    //     healthy path cried wolf;
+    //   · mobile — the banner fired and what arrived in the chat was an EMPTY message, so the one
+    //     sentence the user got was the only part that worked.
+    // A notice that appears when nothing needs doing teaches people to ignore it, which costs more
+    // than the silence it replaced.
+    //
+    // The honest position is that the protocol gives us no completion signal at all — `ui/message`
+    // resolves when the HOST accepts the request, and what the user does next never comes back on
+    // any wire (docs/wo/proposal-trusted-user-action.md). A runtime-level guess cannot be right on
+    // every host, so it is the CALLER's to decide what, if anything, to show; the JSDoc above says
+    // what the resolved value does and does not mean. Known consequence, recorded in KNOWN-ISSUES:
+    // call sites are fire-and-forget again, so on a host that only stages the text a click can look
+    // like nothing happened.
     return app.sendMessage({ role: "user", content: [{ type: "text", text: t }] })
       .then((r) => (r && r.isError ? degrade("host declined") : r))
       .catch((e) => degrade((e && e.message) || "send failed"));
+  },
+  /**
+   * Open a URL through the host (ui/open-link). The direct counterpart to sendMessage: where
+   * sendMessage PROPOSES something for the AI to maybe do, this DOES the thing — no model, no
+   * authority question, no host trust decision about app-authored text.
+   *
+   * It exists because the alternative kept failing in both directions. A widget cannot navigate
+   * (the sandbox has no allow-top-navigation and no allow-popups — measured, KNOWN-ISSUES), so
+   * anything link-shaped got routed through "ask the AI to do it", and on ChatGPT the AI then
+   * declines because app-authored text is untrusted tool content (measured 2026-07-28). Both ends
+   * were weak for the same reason, and neither was going to be fixed by trying harder.
+   *
+   * Resolves { ok } rather than throwing: a caller decides what to show, and "the host will not
+   * open links" is a normal answer on some surfaces, not an error the user should read about.
+   */
+  openLink(url) {
+    const u = String(url || "");
+    if (!u) return Promise.resolve({ ok: false });
+    // Standalone (browser viewer): no host to ask, and no sandbox in the way either.
+    // Standalone: check what window.open RETURNED. A blocked popup does not throw — it hands back
+    // null — so reporting {ok:true} on "did not throw" told the caller a tab had opened when none
+    // had, and the caller then suppressed its own fallback. `ok` has to mean the thing happened.
+    if (SA) { try { return Promise.resolve({ ok: !!window.open(u, "_blank", "noopener") }); } catch (e) { return Promise.resolve({ ok: false }); } }
+    return app.openLink({ url: u })
+      .then((r) => ({ ok: !(r && r.isError) }))
+      .catch(() => ({ ok: false }));
   },
   /**
    * Silently update the AI's context (ui/update-model-context) — no chat message is
@@ -1115,12 +1347,50 @@ if (SA) {
   app.ontoolinput = (params) => {
     const a = (params && (params.arguments || params)) || {};
     toolInput = a;
+    // Unconditional, and deliberately so. A guard requiring the envelope to name its app was tried
+    // and REVERTED on 2026-07-29: the reading it was built on turned out to be the model doing
+    // exactly what it was asked ("bind dev-probe to habit-streaks and open it" — its own words),
+    // not a host mis-delivering one. And the guard broke a documented feature on the way, because
+    // the premise was wrong in both directions: the per-app tool `open_<name>` carries ONLY a
+    // collection — its app is in the TOOL name, not the arguments — and its document is already
+    // bound at serve time, so BOTH halves of that guard rejected a binding the AI had explicitly
+    // asked for, silently. That path is live wherever install.mjs turns per-app tools on, i.e.
+    // every Anthropic host.
+    //
+    // The hazard the guard aimed at is real in shape and UNDEMONSTRATED in fact: the host does
+    // hand a widget another call's envelope (measured, verbatim), but every envelope observed
+    // doing so carried no `collection` at all. If a foreign envelope carrying one is ever
+    // measured, the discriminator must be "is this envelope from the tool that opened me"
+    // (hostContext.toolInfo.tool.name) — asking the question directly — not "does it name an app",
+    // which is a proxy that answers wrong for our own per-app opener.
     if (typeof a.collection === "string" && a.collection) state.collection = a.collection;
+    rememberIdentity();          // this is THE channel a re-render replays — write it down
     startWalk();
   };
   app.ontoolresult = (result) => {
     const sc = result && result.structuredContent;
+    // IDENTITY IS NOT DATA — take the labels BEFORE the freshness gate gets a vote.
+    //
+    // state.component / state.host / state.collection used to be assigned only INSIDE adopt(),
+    // past `canAdopt`. But canAdopt exists to stop STALE ROWS from overwriting painted rows
+    // (out-of-order replays, truncation, rewinds), and one of its rules is
+    // `items.length !== total ⇒ refuse`. open_component answers with ZERO rows and the
+    // collection's REAL total — deliberately, the widget fetches its own data — so the moment an
+    // app has a single row, its own opening result is refused and the widget can never learn
+    // which app it is or which host it is on. Measured: `host: null` on ChatGPT web, DIRECT mode,
+    // first open (Leo, 2026-07-29), and it is one half of the "No component specified." a refresh
+    // produces. The host had delivered; we threw it away.
+    //
+    // A label has no "stale enough to be harmful" state: a widget's app identity does not change
+    // for its whole life, and neither does the host it runs in. Binding them to `items` put the
+    // freshness of the DATA in charge of whether the identity could be KNOWN.
+    //
+    // First-wins, like the collection rule this copies: a later result must never rebind a widget
+    // that already knows what it is.
     if (sc && typeof sc.collection === "string" && !state.collection) state.collection = sc.collection;
+    if (sc && typeof sc.component === "string" && !state.component) state.component = sc.component;
+    if (sc && typeof sc.host === "string" && !state.host) state.host = sc.host;
+    rememberIdentity();          // N11 may have just learned the name from this very result
     if (sc && Array.isArray(sc.items)) { if (!adopt(sc)) startWalk(); }
     else startWalk();
   };

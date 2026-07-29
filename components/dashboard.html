@@ -1040,7 +1040,13 @@ STRUCTURE RULES
     const items = snap && snap !== false ? snap.items : null;
     const count = items ? items.length : meta?.items || 0;
     const url = comp && oma.standalone ? `${oma.viewBase}${comp.name}` : "";
-    const openable = !oma.standalone || Boolean(url); // data-only apps have no /view page
+    // DATA THAT OUTLIVED ITS APP. Deleting a component has always kept its collection (that is the
+    // point — the data is yours, the app is just one view of it), so a collection can still be here
+    // when its component is not. This card used to look exactly like a working app and offer to
+    // open it; the open then failed with "no app named X", which is the worst of both worlds —
+    // Leo hit it on a real tenant, twice across two stores. Say what it is instead.
+    const orphan = !comp && Boolean(meta);
+    const openable = (!oma.standalone || Boolean(url)) && !orphan;
     const node = document.createElement("article");
     node.className = `app-card k-card${openable ? " is-click" : ""}`;
     node.dataset.name = name;
@@ -1086,9 +1092,35 @@ STRUCTURE RULES
       badge.textContent = "New";
       top.append(badge);
     }
+    if (orphan) {
+      const badge = document.createElement("span");
+      badge.className = "k-badge";
+      badge.textContent = "No app";
+      top.append(badge);
+    }
 
     node.append(top, cardBody(entry));
-    if (DASH.cards.showFooter && openable) node.append(cardFooter(open, url));
+    if (orphan) {
+      // ONE action, and it is the constructive one. No delete button here: removing data is
+      // destructive and already has a home in settings — a dashboard card is not where that
+      // belongs. Phrased as a proposal, because sendMessage proposes (the host may confirm it,
+      // or refuse it) and must never be rendered as though it already happened.
+      const foot = document.createElement("div");
+      foot.className = "card-foot";
+      const note = document.createElement("span");
+      note.className = "k-mut";
+      note.textContent = "This data is still here, but the app that showed it is gone.";
+      const make = document.createElement("button");
+      make.type = "button";
+      make.className = "card-open";
+      make.textContent = "Make an app for this";
+      make.onclick = (event) => {
+        event.stopPropagation();
+        oma.sendMessage(`Could you build an app for my "${name}" data? It's still here, but the app that used to show it is gone.`);
+      };
+      foot.append(note, make);
+      node.append(foot);
+    } else if (DASH.cards.showFooter && openable) node.append(cardFooter(open, url));
     return node;
   }
 
@@ -1311,8 +1343,36 @@ STRUCTURE RULES
   emptyAsk.onclick = doorAsk.onclick = () => {
     oma.sendMessage("Help me create a useful app for something I want to track or organize. Ask me one quick question if you need to, then build and open it.");
   };
-  emptyBrowse.onclick = doorBrowse.onclick = () => {
-    oma.sendMessage("Show me the ready-made apps I can add.");
+  // Browse PREFERS a direct link, because it never needed the AI. ⚠️ Today that preference only
+  // takes effect in the browser viewer: inside a host, oma.viewBase is the relative "/view/" and the
+  // absolute one the engine knows never reaches the runtime, so hosted still falls back to the
+  // proposal below. Fixing that means threading the absolute viewBase into the hosted runtime —
+  // tracked as finding #8 in docs/wo/lane-c-audit-findings.md, and it belongs with the decision
+  // about WHERE Browse should point (local /library vs the public app store).
+  //
+  // It used to send "Show me the ready-made
+  // apps I can add." into the chat; the message arrived fine, and then the assistant's call to
+  // library_list was REFUSED because the call originated from a component (measured on ChatGPT,
+  // 2026-07-28). That approval layer is the host's, and it is right to have it.
+  //
+  // The structure is worth naming, because it repeats: the component asked the AI precisely
+  // BECAUSE the component may not browse the library itself (library_* is control-plane, refused
+  // to any sandboxed child). So the request was app-originated at both ends — and an
+  // app-originated privileged call is exactly what a careful host stops. Opening the library as a
+  // LINK asks for no privilege at all, and works wherever links open.
+  emptyBrowse.onclick = doorBrowse.onclick = async () => {
+    // oma.viewBase falls back to the RELATIVE "/view/", which is meaningful in the browser viewer
+    // (same origin) and meaningless inside a host's sandboxed iframe (an opaque origin — the link
+    // would resolve to nowhere). So: relative is fine standalone, absolute is required elsewhere.
+    const base = oma.viewBase || "";
+    const url = (oma.standalone || /^https?:\/\//.test(base)) ? base + "library" : null;
+    if (url && oma.openLink) {
+      const r = await oma.openLink(url);
+      if (r && r.ok) return;
+    }
+    // No viewer to point at, or a host that will not open links: fall back to asking — phrased as
+    // a proposal, because a host is free to make the user confirm it or to refuse it entirely.
+    oma.sendMessage("Could you show me the ready-made apps I can add?");
   };
   makeYours.onclick = () => {
     oma.sendMessage("I'd like to change my home screen — ask me what I want different, then update it for me, then show me the updated dashboard.");

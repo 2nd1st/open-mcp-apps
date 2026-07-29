@@ -10,3 +10,6 @@ dist/
 test/filestore-tmp/
 test/files/
 .DS_Store
+
+# ad-hoc reproduction scripts (review evidence, not tests) — never shipped, never published
+test/repro/

@@ -63,6 +63,120 @@ ok("design tokens injected", doc.text.includes('data-oma="tokens"'));
 ok("component version injected (render-health identity)", doc.text.includes("__OMA_COMPONENT_VERSION__"));
 ok("early-error buffer injected before component code", doc.text.includes("__OMA_EARLY_ERRORS__"));
 
+console.log("2b-lib. every shipped library entry can actually be previewed");
+// One entry shipped with fixtures in the DOCUMENTED shape ({collection, group, fields}) and its
+// preview failed output validation on every host, because the tool declared the full store-item
+// shape instead. The card said "preview unavailable" and the component swallowed the reason.
+// Sweeping all of them is the only assertion that catches the next one.
+{
+  const entries = (await client.callTool({ name: "library_list", arguments: {} })).structuredContent.entries;
+  const broken = [];
+  for (const e of entries) {
+    const r = await client.callTool({ name: "library_preview", arguments: { name: e.name } }).catch((err) => ({ isError: true, content: [{ text: String(err.message) }] }));
+    if (r.isError || !r.structuredContent?.html) broken.push(e.name);
+  }
+  ok(`all ${entries.length} library entries preview cleanly`, broken.length === 0, `broken: ${broken.join(", ")}`);
+}
+
+console.log("2b-ui. widget security declaration (ChatGPT submission gate)");
+// ChatGPT's connector page flags a template with no widget CSP and no widget domain, and its
+// reference calls the domain "required when submitting a plugin with UI". Ours is the easiest
+// possible declaration to make honestly: every shipped component is self-contained (verified —
+// zero absolute URLs), so the truthful answer is also the strictest one, and it stops being a
+// claim in a README the moment it is on the wire.
+{
+  const meta = (await client.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0]._meta;
+  ok("the loader declares an EMPTY CSP allowlist — self-contained, and it says so",
+    meta?.ui?.csp?.connectDomains?.length === 0 && meta?.ui?.csp?.resourceDomains?.length === 0, JSON.stringify(meta?.ui?.csp));
+  // Declaring frameDomains buys a stricter review for a capability we do not want; omitting it
+  // means frame-src 'none', which measurably does NOT affect our srcdoc previews.
+  ok("…and does NOT declare frameDomains", meta?.ui?.csp?.frameDomains === undefined);
+  ok("ChatGPT's legacy snake_case twin is sent and agrees",
+    meta?.["openai/widgetCSP"]?.connect_domains?.length === 0 && meta?.["openai/widgetCSP"]?.resource_domains?.length === 0);
+  // The domain is per-SUBMISSION ("must be unique per plugin"), so the engine must never invent one.
+  ok("no widget domain is invented when the deployment did not set one",
+    meta?.ui?.domain === undefined && meta?.["openai/widgetDomain"] === undefined);
+  const listed = (await client.listResources()).resources.find((r) => r.uri.endsWith("app.html"));
+  // Asserted by VALUE, not by presence. `!== undefined` passed on `csp: {}` — an empty object is
+  // exactly what a half-built declaration looks like, and the listing is the copy a reviewer reads
+  // at connection time, so "something is there" is the wrong question. The listing must carry the
+  // SAME empty allowlists the read does.
+  ok("the listing carries the same declaration the read does (what a reviewer sees at connection time)",
+    listed?._meta?.ui?.csp?.connectDomains?.length === 0
+    && listed?._meta?.ui?.csp?.resourceDomains?.length === 0
+    && JSON.stringify(listed?._meta?.ui?.csp) === JSON.stringify(meta?.ui?.csp),
+    JSON.stringify(listed?._meta?.ui?.csp));
+}
+
+console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hints.mjs)");
+{
+  // The RC requires ttlMs + cacheScope on tools/list, resources/list, resources/read and
+  // resources/templates/list. What matters here is not that the fields EXIST but that the scope
+  // tells the truth: "public" invites a shared gateway to serve one tenant's bytes to another, so
+  // every store-derived answer has to be private. This test is the guard on that distinction.
+  const listed = await client.listResources();
+  ok("resources/list carries hints", typeof listed.ttlMs === "number" && listed.ttlMs >= 0);
+  ok('resources/list is private — it enumerates THIS tenant\'s component names',
+    listed.cacheScope === "private", listed.cacheScope);
+  ok("per-component read is private", res.cacheScope === "private", res.cacheScope);
+  ok("per-component read promises no freshness — the AI can rewrite the app mid-sentence",
+    res.ttlMs === 0, String(res.ttlMs));
+
+  const loaderRead = await client.readResource({ uri: "ui://open-mcp-apps/app.html" });
+  ok("the loader is public — wrapLoader() is engine-constant, identical for every tenant",
+    loaderRead.cacheScope === "public", loaderRead.cacheScope);
+  // 🔴 This used to assert ttlMs > 0 — "cacheable for real, a shared gateway fetches the hot path
+  // once" — which is the bug written down as a specification. The loader's URI is one constant
+  // string for the life of the project, so a freshness promise made by one build outlives it and
+  // cannot be withdrawn. Measured on stg 2026-07-29: eight minutes of serving the PREVIOUS build's
+  // document after a deploy, with no way for anyone testing to know which side of the line they
+  // were on. A promise we cannot keep is not an optimisation.
+  ok("🔴 the loader promises NO freshness — its URI never changes, so a window can never be closed",
+    loaderRead.ttlMs === 0, String(loaderRead.ttlMs));
+
+  // 🔴 THE OTHER BRANCH — the one SaaS prod actually takes, and it had ZERO coverage while the
+  // comment above deploymentSpecific() said, verbatim, "the test pins the two cases". Only the
+  // no-domain side was pinned; that sentence was false. Both sides are pinned now.
+  //
+  // Why it matters: `public` invites a shared gateway to serve one deployment's bytes to another,
+  // and the widget security declaration attaches DEPLOYMENT-derived fields (`ui.domain`, and
+  // redirect_domains derived from viewBase). Two deployments then answer the same URI with
+  // different metadata while both say "public".
+  {
+    const { openStore: openS } = await import("../src/store.mjs");
+    const { createEngine: mkEngine } = await import("../src/engine.mjs");
+    const { Client: Cl } = await import("@modelcontextprotocol/sdk/client/index.js");
+    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const probe = join(ROOT, "test", "scope-probe.db");
+    const scopeOf = async (opts) => {
+      for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
+      const st2 = openS(probe);
+      const eng = mkEngine(st2, opts);
+      const [a, b] = InMemoryTransport.createLinkedPair();
+      const cl = new Cl({ name: "scope-probe", version: "1" }, { capabilities: {} });
+      await Promise.all([eng.connect(a), cl.connect(b)]);
+      const r = await cl.readResource({ uri: "ui://open-mcp-apps/app.html" });
+      await cl.close(); st2.close();
+      return { scope: r.cacheScope, ttl: r.ttlMs };
+    };
+    const plain = await scopeOf({});
+    ok("baseline: with no deployment-derived metadata the loader stays public", plain.scope === "public", JSON.stringify(plain));
+    const domained = await scopeOf({ widgetDomain: "https://widgets.example.test" });
+    ok("🔴 a deployment that sets widgetDomain drops the loader to PRIVATE",
+      domained.scope === "private", JSON.stringify(domained));
+    const viewed = await scopeOf({ viewBase: "https://viewer.example.test" });
+    ok("🔴 …and so does one whose viewBase makes redirect_domains deployment-specific",
+      viewed.scope === "private", JSON.stringify(viewed));
+    for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  }
+
+  // Pins the premise of calling the template list public. If a store-derived template ever gets
+  // registered, this fails and the scope decision comes back up for review.
+  const templates = await client.listResourceTemplates();
+  ok("resource templates: none registered, so the list is engine-constant",
+    (templates.resourceTemplates ?? []).length === 0 && templates.cacheScope === "public",
+    `${(templates.resourceTemplates ?? []).length} template(s), scope ${templates.cacheScope}`);
+}
 
 // A component now declares itself INSIDE its document, so a test that wants a declaration builds
 // the document that makes it. That is the contract under test, not a detail of the harness.
@@ -307,17 +421,31 @@ const pLww = await client.callTool({ name: "data_update_item", arguments: { comm
 const pAfter = pLww.structuredContent.item;
 ok("update without expected_version succeeds after a concurrent bump", !pLww.isError && pAfter.fields.value === "17" && pAfter.version === pV + 2);
 
-console.log("12. save_component rejects reserved namespace names (settings groups)");
-for (const rn of ["security", "engine", "host", "system", "shell", "oma"]) {
-  const rr = await client.callTool({ name: "save_component", arguments: { name: rn, html: noteHtml } });
-  ok(`reserved name "${rn}" rejected`, rr.isError === true && /reserved namespace/.test(rr.content[0].text));
+console.log("12. save_component rejects EVERY reserved name, and says which list it is on");
+// This used to iterate a hand-typed copy of the six original names. The set grew to nine
+// (`component`, `app`, `loader`) and neither the test nor the refusal text noticed — so the test
+// passed while a user naming an app `app` was told it clashed with a settings group, which is not
+// the rule that refused it. Both now read the SET, so the next addition is covered by construction.
+{
+  const { RESERVED_COMPONENT_NAMES } = await import("../src/contracts.mjs");
+  const reserved = [...RESERVED_COMPONENT_NAMES];
+  ok(`the reserved set is non-empty and read from source (${reserved.length} names)`, reserved.length >= 6);
+  for (const rn of reserved) {
+    const rr = await client.callTool({ name: "save_component", arguments: { name: rn, html: noteHtml } });
+    ok(`reserved name "${rn}" rejected`, rr.isError === true, rr.content?.[0]?.text);
+    // The message must name the whole rule, not a subset of it — that is the whole defect here.
+    ok(`…and the refusal lists "${rn}" among the reserved names it is enforcing`,
+      rr.isError === true && rr.content[0].text.includes(`"${rn}" is a reserved name`)
+      && reserved.every((n) => rr.content[0].text.includes(n)),
+      rr.content?.[0]?.text);
+  }
 }
 
 console.log("12b. locked system components — settings/library refuse tool-side save, restore & delete (seed/privileged exempt)");
 for (const ln of ["settings", "library"]) {
   const lr = await client.callTool({ name: "save_component", arguments: { name: ln, html: noteHtml } });
   ok(`locked "${ln}" refuses save_component`, lr.isError === true && /locked system component/.test(lr.content[0].text));
-  const lrr = await client.callTool({ name: "restore_component", arguments: { name: ln, version: 1 } });
+  const lrr = await client.callTool({ name: "restore_component", arguments: { name: ln, checkpoint: 1 } });
   ok(`locked "${ln}" refuses restore_component`, lrr.isError === true && /locked system component/.test(lrr.content[0].text));
   const lrd = await client.callTool({ name: "delete_component", arguments: { name: ln, command_id: randomUUID() } });
   ok(`locked "${ln}" refuses delete_component`, lrd.isError === true && /locked system component/.test(lrd.content[0].text));
@@ -325,6 +453,51 @@ for (const ln of ["settings", "library"]) {
 // dashboard is intentionally editable (the personal launcher) — a tool-side save must SUCCEED.
 const dashSave = await client.callTool({ name: "save_component", arguments: { name: "dashboard", html: noteHtml, description: "editable launcher", expected_version: await verOf("dashboard") } });
 ok("dashboard is NOT locked — save_component succeeds", !dashSave.isError && /Saved "dashboard"/.test(dashSave.content[0].text));
+
+console.log("12c. 🔴 A STORE THAT PREDATES A RESERVED NAME MUST STILL BOOT (anti-brick)");
+// `app` became a reserved component name on 2026-07-29. Reserving it stops NEW ones; it does
+// nothing about a store written before that, and the engine has been public with users in it.
+//
+// The failure was total, not cosmetic: the per-app resource for a component called `app` claims
+// `ui://open-mcp-apps/app.html`, which is the universal loader's own URI, so the loader's
+// registration hit "already registered", createEngine threw, and the server did not come up.
+// A server that will not start cannot be asked to delete anything — the only way out was editing
+// SQLite by hand. Boot must survive its own data.
+{
+  const { openStore } = await import("../src/store.mjs");
+  const { createEngine } = await import("../src/engine.mjs");
+  const probe = join(ROOT, "test", "reserved-name-probe.db");
+  const HTML = "<!doctype html><html><body>saved before the name was reserved, and still theirs</body></html>";
+  const boot = (name) => {
+    for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
+    const st = openStore(probe);
+    // The privileged path is how such a row got there: it predates today's reserved-name check.
+    st.execute({ type: "save_component", command_id: randomUUID(), name, html: HTML, actor: "seed" });
+    let err = null, eng = null;
+    try { eng = createEngine(st); } catch (e) { err = e; }
+    return { st, err, eng };
+  };
+
+  // The one that actually collides — measured, not assumed: only `app` shares the loader's URI.
+  const a = boot("app");
+  ok("🔴 a store holding a component named `app` still boots", a.err === null,
+    a.err && `${a.err.constructor.name}: ${a.err.message}`);
+  ok("…and the universal loader keeps its own URI (the app yields, the engine does not)",
+    a.err === null && !!a.eng);
+  ok("…and the app is still THERE — degraded, never deleted behind the user's back",
+    a.st.listComponents().some((c) => c.name === "app"));
+  a.st.close();
+
+  // The other two reserved names do NOT collide (their URIs are component.html / loader.html).
+  // Asserted so nobody "fixes" them by widening the guard into something that skips real apps.
+  for (const n of ["component", "loader"]) {
+    const b = boot(n);
+    ok(`a component named \`${n}\` was never a collision and still is not`, b.err === null,
+      b.err && b.err.message);
+    b.st.close();
+  }
+  for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
+}
 
 console.log("13. THE TOOL-SURFACE INVARIANT (docs/security-model.md §1.5 — lane A item A8)");
 // The exact set of tool names the server registers TODAY (hardcoded on purpose: this list is a
@@ -423,31 +596,29 @@ await client.callTool({ name: "save_component", arguments: { name: "hist-probe",
 const hist = await client.callTool({ name: "component_history", arguments: { name: "hist-probe" } });
 const hEntries = hist.structuredContent?.history || [];
 ok("two saves → two history entries", !hist.isError && hEntries.length === 2);
-ok("newest-first ordering", hEntries[0]?.version > hEntries[1]?.version);
+ok("newest-first ordering", hEntries[0]?.checkpoint > hEntries[1]?.checkpoint);
 ok("entries carry numeric html_size matching the saved bytes", hEntries[0]?.html_size === histHtml2.length && hEntries[1]?.html_size === histHtml1.length);
 ok("entries carry a ts string", hEntries.every((h) => typeof h.ts === "string" && h.ts.length > 0));
 ok("history NEVER carries the html itself", hEntries.every((h) => !("html" in h)) && !JSON.stringify(hist.structuredContent).includes("data-hist-v2"));
 const histMissing = await client.callTool({ name: "component_history", arguments: { name: "no-such-comp" } });
 ok("unknown component → clean error", histMissing.isError === true && /No history/.test(histMissing.content[0].text));
 
-console.log("14b. version rollback — get_component_version is RETIRED; restore_component rolls forward a copy");
-// hist-probe's two saves sit at their ledger positions, so the numbers come from the history
-// listing rather than from counting. hEntries is newest-first: [1] is the first save, [0] the second.
-const hv1 = hEntries[1].version, hv2 = hEntries[0].version;
-// The tool is gone (signed v0.3 break), not merely refusing: history is listed by
-// component_history, and its html is reachable only through restore_component's store path.
-const gvGone = await client.callTool({ name: "get_component_version", arguments: { name: "hist-probe", version: hv1 } });
+console.log("14b. checkpoint rollback — get_component_version is RETIRED; restore_component rolls forward a copy");
+// hEntries is newest-first, and the vocabulary is now the app's own counter: checkpoint 1 is the
+// first save. The ledger seq still exists underneath — it just no longer reaches this surface.
+const gvGone = await client.callTool({ name: "get_component_version", arguments: { name: "hist-probe", checkpoint: 1 } });
 ok("get_component_version is retired — the seat is gone", gvGone.isError === true && /not found/.test(gvGone.content[0].text));
-// restore v1 → re-saved as a NEW current version (v3), history preserved, current html reverts.
-const restore = await client.callTool({ name: "restore_component", arguments: { name: "hist-probe", version: hv1 } });
-ok("restore rolls FORWARD to a new version (history preserved, never rewritten)",
-  !restore.isError && /from v\d+/.test(restore.content[0].text) && /new v\d+/.test(restore.content[0].text));
+// restore checkpoint 1 → re-saved as a NEW current one, history preserved, current html reverts.
+const restore = await client.callTool({ name: "restore_component", arguments: { name: "hist-probe", checkpoint: 1 } });
+ok("restore rolls FORWARD to a new checkpoint (history preserved, never rewritten)",
+  !restore.isError && /from checkpoint 1/.test(restore.content[0].text));
 const curAfter = await client.callTool({ name: "get_component", arguments: { name: "hist-probe" } });
-ok("current source now matches the restored version (marker gone)", /hist-probe v\d+/.test(curAfter.content[0].text) && !curAfter.content[0].text.includes("data-hist-v2"));
+ok("current source now matches the restored checkpoint (marker gone)", !curAfter.content[0].text.includes("data-hist-v2"));
 const histAfter = await client.callTool({ name: "component_history", arguments: { name: "hist-probe" } });
-ok("history grew to 3 versions (nothing lost)", !histAfter.isError && histAfter.structuredContent.history.length === 3 && histAfter.structuredContent.history[0].version > hv2);
-const restoreMissing = await client.callTool({ name: "restore_component", arguments: { name: "hist-probe", version: 99 } });
-ok("restore of an unknown version → clean error", restoreMissing.isError === true && /No version 99/.test(restoreMissing.content[0].text));
+ok("history grew to 3 checkpoints (nothing lost)", !histAfter.isError && histAfter.structuredContent.history.length === 3
+  && histAfter.structuredContent.history.map((h) => h.checkpoint).join() === "3,2,1");
+const restoreMissing = await client.callTool({ name: "restore_component", arguments: { name: "hist-probe", checkpoint: 99 } });
+ok("restore of an unknown checkpoint → clean error", restoreMissing.isError === true && /No checkpoint 99/.test(restoreMissing.content[0].text));
 
 console.log("15. delete_component — tombstone delete, idempotent replay");
 await client.callTool({ name: "save_component", arguments: { name: "doomed", html: noteHtml, description: "delete fixture" } });
@@ -470,6 +641,136 @@ const del2 = await client.callTool({ name: "delete_component", arguments: { name
 ok("same command_id replay is a no-op success (idempotent)", !del2.isError && del2.content[0].text.includes("already deleted"));
 const delMissing = await client.callTool({ name: "delete_component", arguments: { name: "never-existed", command_id: randomUUID() } });
 ok("deleting an unknown component fails cleanly", delMissing.isError === true && /No component "never-existed" in the registry/.test(delMissing.content[0].text));
+
+console.log("15b. delete data:\"cascade\" — the plan is the confirmation, and sharing wins ties");
+// "Delete means delete" (Leo 2026-07-28), with the one thing it must never do: break a SECOND app.
+// Ownership evidence is weak by measurement (the manifest's collections key has zero real-world
+// adoption; the ledger's via is stamped only on widget writes), so the rule is deliberately
+// lopsided — an unproven collection is KEPT. Deleting too little leaves rows a user can delete
+// again; deleting too much is silent breakage with the data gone.
+{
+  const mk = async (n) => client.callTool({ name: "save_component", arguments: { name: n, html: noteHtml, description: n } });
+  await mk("cascade-app"); await mk("cascade-neighbour");
+  const row = (collection, via) => client.callTool({ name: "data_add_item",
+    arguments: { command_id: randomUUID(), collection, fields: { t: collection }, ...(via ? { via: { component: via } } : {}) } });
+  await row("cascade-app", "cascade-app");            // the app's own, name-matched
+  await row("shared-trips", "cascade-app");           // both apps have written here…
+  await row("shared-trips", "cascade-neighbour");     // …so it is shared
+  await row("orphan-notes", null);                    // AI-written only: nothing links it to anyone
+
+  const planCall = await client.callTool({ name: "delete_component", arguments: { name: "cascade-app", data: "cascade", command_id: randomUUID() } });
+  const plan = planCall.structuredContent;
+  ok("step 1 returns a plan and deletes NOTHING", plan.ok === false && typeof plan.plan_token === "string"
+    && !(await client.callTool({ name: "list_components", arguments: {} })).structuredContent.components.every((c) => c.name !== "cascade-app"));
+  ok("the plan names the shared collection as kept, with a reason",
+    plan.collections.some((c) => c.collection === "shared-trips" && c.verdict === "shared" && /also used by cascade-neighbour/.test(c.why)));
+  ok("…and the app's own collection as the only thing it would remove",
+    plan.collections.filter((c) => c.verdict === "exclusive").map((c) => c.collection).join() === "cascade-app");
+  ok("the plan text says out loud that this cannot be undone", /CANNOT be undone/.test(planCall.content[0].text));
+
+  const wrong = await client.callTool({ name: "delete_component", arguments: { name: "cascade-app", data: "cascade", plan_token: "0".repeat(16), command_id: randomUUID() } });
+  ok("a token that does not match the CURRENT world is refused", wrong.structuredContent.ok === false && wrong.structuredContent.reason === "plan_changed");
+  ok("…and nothing was deleted by the refused attempt",
+    (await client.callTool({ name: "component_history", arguments: { name: "cascade-app" } })).structuredContent?.history?.length === 1
+    && (await client.callTool({ name: "data_list", arguments: { collection: "cascade-app" } })).structuredContent.items.length === 1);
+
+  // A collection that was ALREADY THERE when a same-named app arrived is not the app's to delete.
+  // Sharing a name proves nothing, and "no other app wrote here" proves nothing either, because the
+  // AI writes most rows with no via stamp. (Found by adversarial review; reproduced before fixing:
+  // 50 rows of pre-existing user data classified exclusive purely on the name.)
+  await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "older-than-its-app", fields: { t: "was here first" } } });
+  await client.callTool({ name: "save_component", arguments: { name: "older-than-its-app", html: noteHtml, description: "same name, arrived later" } });
+  const squat = (await client.callTool({ name: "delete_component", arguments: { name: "older-than-its-app", data: "cascade", command_id: randomUUID() } })).structuredContent;
+  ok("a collection that predates its same-named app is NOT deletable data",
+    squat.collections.find((c) => c.collection === "older-than-its-app")?.verdict !== "exclusive",
+    JSON.stringify(squat.collections));
+
+  const done = await client.callTool({ name: "delete_component", arguments: { name: "cascade-app", data: "cascade", plan_token: plan.plan_token, command_id: randomUUID() } });
+  ok("the matching token executes", done.structuredContent.ok === true && done.structuredContent.removed[0].collection === "cascade-app");
+  ok("the app's own rows are GONE", (await client.callTool({ name: "data_list", arguments: { collection: "cascade-app" } })).structuredContent.items.length === 0);
+  ok("🔴 the SHARED collection survives — deleting one app never breaks another",
+    (await client.callTool({ name: "data_list", arguments: { collection: "shared-trips" } })).structuredContent.items.length === 2);
+  ok("a collection nobody can be proven to own survives too",
+    (await client.callTool({ name: "data_list", arguments: { collection: "orphan-notes" } })).structuredContent.items.length === 1);
+  ok("the neighbour app is untouched",
+    (await client.callTool({ name: "list_components", arguments: {} })).structuredContent.components.some((c) => c.name === "cascade-neighbour"));
+  // The collection's OWN stream has to say what happened to it. component_deleted alone did not:
+  // per-collection ledger reads filter on payload.collection, so a widget bound to this collection
+  // was told "nothing changed" while every row in it had just been destroyed (adversarial review).
+  const evs = await client.callTool({ name: "data_changes", arguments: { collection: "cascade-app", since: 0 } });
+  ok("the cleared collection's own stream reports it", !evs.isError && /rows_cleared/.test(evs.content[0].text), evs.content[0].text.slice(0, 160));
+}
+
+console.log("15b2. the plan token pins the ROWS, not just how many there were");
+// "Confirming means the world still looks like what the user was shown" was the whole claim behind
+// hashing the plan. It was only true at the granularity of a row COUNT: the hash covered
+// {name, per-collection verdict/rows/why, settings_keys}, so replacing every row while keeping the
+// count left a stale token valid — and the rows then destroyed had never appeared in any plan the
+// user saw. Between showing a plan and confirming it there is a whole conversational turn, and a
+// widget can write in it.
+{
+  await client.callTool({ name: "save_component", arguments: { name: "token-app", html: noteHtml, description: "token fixture" } });
+  const mk = (t) => client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "token-app", fields: { t } } });
+  const r1 = await mk("A1");
+  const r2 = await mk("A2");
+
+  const planA = (await client.callTool({ name: "delete_component", arguments: { name: "token-app", data: "cascade", command_id: randomUUID() } })).structuredContent;
+  ok("a plan is offered for the two rows the user can see", planA.collections.find((c) => c.collection === "token-app")?.rows === 2);
+
+  // The user reads the plan. Before they answer, the widget swaps the contents — same count.
+  for (const r of [r1, r2])
+    await client.callTool({ name: "data_delete_item", arguments: { command_id: randomUUID(), collection: "token-app", id: r.structuredContent.id } });
+  await mk("B1-never-shown");
+  await mk("B2-never-shown");
+
+  const stale = await client.callTool({ name: "delete_component", arguments: { name: "token-app", data: "cascade", plan_token: planA.plan_token, command_id: randomUUID() } });
+  ok("🔴 the old token is REFUSED once the rows themselves changed",
+    stale.structuredContent.ok === false && stale.structuredContent.reason === "plan_changed",
+    JSON.stringify(stale.structuredContent).slice(0, 200));
+  ok("…and nothing was deleted on the way to saying no",
+    (await client.callTool({ name: "data_list", arguments: { collection: "token-app" } })).structuredContent.items.length === 2);
+  ok("…and a fresh plan comes back with it, so the user can be re-asked rather than stranded",
+    typeof stale.structuredContent.plan_token === "string" && stale.structuredContent.plan_token !== planA.plan_token);
+
+  const good = await client.callTool({ name: "delete_component", arguments: { name: "token-app", data: "cascade", plan_token: stale.structuredContent.plan_token, command_id: randomUUID() } });
+  ok("the CURRENT plan's token still executes — the pin did not make cascade unusable",
+    good.structuredContent.ok === true && good.structuredContent.removed[0].rows === 2,
+    JSON.stringify(good.structuredContent).slice(0, 200));
+}
+
+console.log("15c. checkpoints — the number a person reads is not the ledger's");
+// `version` IS the global ledger seq (save_component stamps the row with its event's seq — one
+// ordinal axis, on purpose). That axis advances for every write in the store, so an app edited
+// twice can show v5 then v43 and the user reasonably asks where 38 went. Nothing went anywhere;
+// those were their groceries. The fix is presentation-only: the axis stays, the person gets a
+// per-app counter. HARD CRITERION (D lane, 2026-07-28): what the user reads must not equal the seq.
+{
+  // Advance the global axis FIRST, so a coincidental match at 1 cannot make this pass by luck.
+  for (let i = 0; i < 5; i++) await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "axis-noise", fields: { i } } });
+  await client.callTool({ name: "save_component", arguments: { name: "cp-app", html: noteHtml, description: "checkpoint fixture" } });
+  for (let i = 0; i < 7; i++) await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "axis-noise", fields: { j: i } } });
+  const cur = (await client.callTool({ name: "get_component", arguments: { name: "cp-app" } })).structuredContent;
+  await client.callTool({ name: "save_component", arguments: { name: "cp-app", html: noteHtml.replace("</body>", "<i>v2</i></body>"), expected_version: cur.version } });
+
+  const h = await client.callTool({ name: "component_history", arguments: { name: "cp-app" } });
+  const hist = h.structuredContent.history;
+  const seq = (await client.callTool({ name: "get_component", arguments: { name: "cp-app" } })).structuredContent.version;
+  ok("history counts this app's own saves: 2 checkpoints", hist.map((x) => x.checkpoint).join() === "2,1", JSON.stringify(hist.map((x) => x.checkpoint)));
+  ok("…while the ledger seq underneath has jumped well past them", seq > hist.length + 5, `seq ${seq} vs ${hist.length} checkpoints`);
+  // Compare the IDENTIFIERS the user reads, not every digit in the string: timestamps are full of
+  // numbers, and matching those made this assertion pass or fail on whether the clock happened to
+  // contain the current seq. What must never equal the ledger seq is the checkpoint the user is
+  // told to name — so that is what is checked.
+  const shown = [...h.content[0].text.matchAll(/checkpoint (\d+)/g)].map((m) => Number(m[1]));
+  ok("🔴 no checkpoint the user reads equals the ledger seq",
+    shown.length > 0 && !shown.includes(seq), `seq ${seq}, shown ${JSON.stringify(shown)}`);
+  ok("…and the seq does not even travel in the payload any more", hist.every((x) => x.version === undefined));
+  // The verb has to speak the same vocabulary, or the seq comes back through the only remaining door.
+  const restored = await client.callTool({ name: "restore_component", arguments: { name: "cp-app", checkpoint: 1, command_id: randomUUID() } });
+  ok("restore_component takes a checkpoint, not a version", !restored.isError && /from checkpoint 1/.test(restored.content[0].text));
+  const bad = await client.callTool({ name: "restore_component", arguments: { name: "cp-app", checkpoint: 99, command_id: randomUUID() } });
+  ok("…and an out-of-range checkpoint fails by saying how many there are", bad.isError === true && /it has \d+/.test(bad.content[0].text));
+}
 
 console.log("16. scene now travels in the declaration — valid slug filed, unknown slug warned");
 // scene moved out of the tool's parameters and into the document, like everything else a component
@@ -526,7 +827,9 @@ const loaderDoc = (await client.readResource({ uri: "ui://open-mcp-apps/app.html
 const { readFileSync: readSrc } = await import("node:fs");
 const runnerSrc = readSrc(join(ROOT, "src", "runner.mjs"), "utf8");
 const policySrc = readSrc(join(ROOT, "src", "tool-policy.mjs"), "utf8");
-ok("runner CSP policy present (default/connect/frame all 'none')", loaderDoc.includes("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'"));
+// form-action is pinned with the rest because it is the one directive that does NOT inherit
+// default-src: drop it and a form post walks out while every other directive still reads 'none'.
+ok("runner CSP policy present (default/connect/frame/form-action all 'none')", loaderDoc.includes("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'"));
 ok("child iframe sandboxed with allow-scripts", /setAttribute\(\s*"sandbox"\s*,\s*"allow-scripts"\)/.test(loaderDoc));
 // a prose comment mentions allow-same-origin — what matters is that no sandbox VALUE
 // (setAttribute arg or sandbox= attribute) ever grants it
@@ -560,11 +863,25 @@ await client.callTool({ name: "save_component", arguments: { name: "ver-probe", 
 await client.callTool({ name: "delete_component", arguments: { name: "ver-probe", command_id: randomUUID() } });
 await client.callTool({ name: "save_component", arguments: { name: "ver-probe", html: noteHtml, description: "v3", expected_version: await verOf("ver-probe") } });
 const verHist = (await client.callTool({ name: "component_history", arguments: { name: "ver-probe" } })).structuredContent.history;
-// Continuity across delete/recreate is now FREE: the ledger never goes backwards, so a recreated
-// component cannot collide with a tombstoned history row. Three saves, three strictly descending
-// versions — the property the old maxHistVersion+1 dance existed to hand-maintain.
-ok("recreate keeps history monotonic and collision-free (no REPLACE over a tombstone)",
-  verHist.length === 3 && verHist[0].version > verHist[1].version && verHist[1].version > verHist[2].version);
+// Continuity across delete/recreate is FREE: the ledger never goes backwards, so a recreated
+// component cannot collide with a tombstoned history row — the property the old maxHistVersion+1
+// dance existed to hand-maintain.
+//
+// ⚠️ This assertion was rewritten 2026-07-29, and the rewrite is the interesting part. It used to
+// read `verHist.length === 3 && checkpoints "3,2,1"` — three saves across a delete/recreate listed
+// as one continuous history. That expression was ALSO the shape of a real defect: a name can be
+// reused by an unrelated app, so "restore checkpoint 1" could hand a budget tracker the source of a
+// deleted recipe app. History is now scoped to the component's current life, which changes the
+// COUNT here without touching the property this test is named for.
+//
+// So the property is asserted directly instead of through a row count: the recreated app's version
+// sits ABOVE the tombstoned ones (no collision, nothing overwritten), and its one checkpoint is its
+// own. That the earlier rows survive in the table is pinned store-side, where it is observable —
+// test/ledger-smoke.mjs §17 ("the previous life's source is still IN the table").
+const verNow = await verOf("ver-probe");
+ok("recreate keeps versions monotonic and collision-free (no REPLACE over a tombstone)",
+  verNow >= 3 && verHist.length === 1 && verHist[0].checkpoint === 1,
+  `version ${verNow}, ${verHist.length} checkpoint(s): ${JSON.stringify(verHist.map((h) => h.checkpoint))}`);
 
 console.log("22. idempotency is bound to the command (type + target)");
 const reuseId = randomUUID();
@@ -918,7 +1235,15 @@ ok("default chapter carries the API contract AND a working template", /window\.o
 // it — the +45-day audit found ~1 in 5 shipped apps lying about time, the single largest defect
 // class. Same probation as every L0 addition: the t+45 quality-round gate is its number, and if
 // new apps keep lying anyway the prose comes back out.
-ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < 25000,
+// 25,400 (was 25,000): sendMessage's documented semantics were WRONG — the guide said it "sends
+// text into the chat AS THE USER", and ChatGPT declines to act on it precisely because an app
+// cannot speak with the user's authority (measured 2026-07-28, and the vendor confirms the
+// boundary is deliberate). Correcting a false statement about a shipped API is not the kind of
+// addition this cap exists to ration; the L0 probation rule is about new guidance competing for
+// the author's attention. The correction was still squeezed to ~115 B over by collapsing the
+// duplicate "only on an explicit click" rule, and the tool-surface cap it sits next to was NOT
+// raised in the same batch — that one was avoidable and got shrunk instead.
+ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < 25400,
   `basics is ${gBasics.length} chars`);
 ok("…and it carries the three slimming rules, since basics is the chapter authors actually pull",
   /\.k-btn/.test(gBasics) && /data_batch/.test(gBasics) && /skeleton/i.test(gBasics),
@@ -967,6 +1292,25 @@ console.log("27f. open_component binding — the declaration finally participate
     await openedOn("bind-two") === "bind-two");
   const plain = await client.callTool({ name: "save_component", arguments: { name: "bind-none", html: `<!DOCTYPE html><html><body>${body}</body></html>` } });
   ok("no declaration at all ⇒ unchanged behaviour", !plain.isError && await openedOn("bind-none") === "bind-none");
+
+  // ONE TRUTH, THREE DOORS. The loader now paints from component_html's `collection`, so that
+  // answer has to be the SAME answer open_component gives and the same one the per-app resource
+  // bakes into its document. Three copies of "what does this app open on" is how a widget ends up
+  // reading one collection while its writes land in another; asserting they agree is what keeps
+  // the rule in contracts.mjs from being advisory.
+  const htmlOf = async (n) => (await client.callTool({ name: "component_html", arguments: { name: n } })).structuredContent;
+  for (const [name, expected] of [["bind-one", "trips"], ["bind-two", "bind-two"], ["bind-none", "bind-none"]]) {
+    const sc = await htmlOf(name);
+    ok(`component_html tells the loader "${name}" opens on "${expected}" — the binding travels with the html`,
+      sc.collection === expected, `got ${sc.collection}`);
+    ok(`…the same string open_component answers with (one truth, not two)`,
+      sc.collection === await openedOn(name));
+    const baked = (await client.readResource({ uri: `ui://open-mcp-apps/${name}.html` })).contents[0].text;
+    ok(`…and the same one baked into the per-app document`,
+      new RegExp(`__OMA_COLLECTION_HINT__\\s*=\\s*"${expected}"`).test(baked)
+      || baked.includes(`__OMA_COLLECTION_HINT__=${JSON.stringify(expected)}`),
+      baked.slice(baked.indexOf("__OMA_COLLECTION_HINT__"), baked.indexOf("__OMA_COLLECTION_HINT__") + 90));
+  }
 
   // The binding is derived from a COMPONENT-AUTHORED manifest, so it is only trustworthy for a
   // component we trust. For an unreviewed one it would let the component pick what it is bound to —
@@ -1081,12 +1425,14 @@ await client.callTool({ name: "file_write_abort", arguments: { upload_id: cBeg3.
 console.log("30. render_health — auto-revert on a failed mount; stale/healthy/locked/non-local/budget guards");
 const rhA = noteHtml.replace('id="l"', 'id="l" data-rh="A-marker"');
 const rhB = noteHtml.replace('id="l"', 'id="l" data-rh="B-marker"');
+// A widget reports the VERSION it actually mounted (its __OMA_COMPONENT_VERSION__), which is a
+// ledger position — render_health is machinery, not a surface a person reads, so it keeps that
+// vocabulary. component_history stopped handing the seq out, so both numbers are read from the
+// registry at the moment each save lands.
 await client.callTool({ name: "save_component", arguments: { name: "rh-probe", html: rhA, description: "render-health probe" } });
-await client.callTool({ name: "save_component", arguments: { name: "rh-probe", html: rhB, description: "", expected_version: await verOf("rh-probe") } });
-// A widget reports the version it actually mounted, and that number is now a ledger position — so
-// the test asks the registry which two versions exist instead of assuming 1 and 2.
-const rhHist = (await client.callTool({ name: "component_history", arguments: { name: "rh-probe" } })).structuredContent.history;
-const rhV1 = rhHist[1].version, rhV2 = rhHist[0].version;
+const rhV1 = await verOf("rh-probe");
+await client.callTool({ name: "save_component", arguments: { name: "rh-probe", html: rhB, description: "", expected_version: rhV1 } });
+const rhV2 = await verOf("rh-probe");
 const rh1 = await client.callTool({ name: "render_health", arguments: { component: "rh-probe", version: rhV2, ok: false, error: "boom" } });
 ok("failure on the current version → reverted to the previous one, rolled forward as a new version",
   !rh1.isError && rh1.structuredContent.reverted === true && rh1.structuredContent.restored_version === rhV1 && rh1.structuredContent.new_version > rhV2);
@@ -1171,8 +1517,25 @@ console.log("33. data_changes — the reopen story, end to end");
   ok("explicit since=0 replays everything regardless of the mark", replay.structuredContent.total === 3);
 
   const other = await client.callTool({ name: "data_changes", arguments: { collection: "kanban", since: 0 } });
-  ok("scoped to one collection", other.structuredContent.events.every((e) => e.type !== undefined) &&
-    replay.structuredContent.events.every((e) => e.id !== other.structuredContent.events[0]?.id));
+  // 🔴 REWRITTEN 2026-07-29. This asserted `other.events.every(e => e.type !== undefined)` plus a
+  // disjointness check against `other.events[0]?.id` — and BOTH halves are vacuously true on an
+  // empty array: `every` passes, and `events[0]?.id` is undefined so nothing can equal it. A
+  // data_changes that returned NOTHING for kanban passed a test named "scoped to one collection".
+  // It asserted "nothing wrong came back", never "the right thing came back" — the bug's shape
+  // written down as the specification.
+  //
+  // The property is two-sided, so both sides are now asserted: this collection's own rows are
+  // PRESENT, and the other collection's rows are ABSENT. Verified to fail by hand in both
+  // directions (scope ignored ⇒ foreign ids appear; scope over-applied ⇒ own rows vanish).
+  const otherEvents = other.structuredContent.events;
+  const kanbanIds = new Set(otherEvents.map((e) => e.id));
+  const replayIds = new Set(replay.structuredContent.events.map((e) => e.id));
+  ok("scoped to one collection — kanban's OWN rows come back",
+    otherEvents.length > 0 && otherEvents.every((e) => e.type),
+    `${otherEvents.length} event(s): ${JSON.stringify(otherEvents.map((e) => e.type))}`);
+  ok("…and NONE of the other collection's rows leak into it (disjoint, both ways)",
+    [...kanbanIds].every((id) => !replayIds.has(id)) && [...replayIds].every((id) => !kanbanIds.has(id)),
+    `kanban=${[...kanbanIds]} other=${[...replayIds]}`);
 }
 
 console.log("34. write-set C — windows, the edit loop, archive, and the seats");

@@ -31,7 +31,14 @@ import { viaOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 // script/img/font sources) — closes exfiltration on every host, incl. the browser viewer.
 // The bare POLICY string is exported separately so a server that serves preview documents
 // can send the same policy as an HTTP header (the authoritative copy; the meta is self-defence).
-export const RUNNER_CSP_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'";
+//
+// `form-action` is listed EXPLICITLY because it is the one outbound shape that does NOT fall
+// back to `default-src`: a form posting to an attacker's URL is a navigation, not a fetch, so
+// every other directive here misses it. It was closed anyway — by the sandbox lacking
+// `allow-forms` (measured 2026-07-28, docs/spec-conformance.md §8) — but that made a whole
+// exfiltration channel depend on ONE attribute staying absent. Depth costs nothing here, and
+// third-party apps arriving by share link (T19 P-c) is exactly when single points stop being fine.
+export const RUNNER_CSP_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'";
 export const RUNNER_CSP = '<meta http-equiv="Content-Security-Policy" content="' + RUNNER_CSP_POLICY + '">';
 
 // The child is a separate document, so host-injected design tokens don't reach it. Read the
@@ -204,13 +211,44 @@ export function makeGuard(cfg) {
   // point: an id another component holds is not in this set and cannot be appended to.
   const myUploads = new Set();
 
+  // The other half of the control-plane instrument (the server half is in engine.mjs). A refusal
+  // here never reaches a server — this guard runs in the embedder's document — so the only place
+  // it can be recorded is the widget console. Name, tier and preset only: enough to answer "was it
+  // us?", nothing that could carry a user's data.
+  const refuseControlPlane = (tn) => {
+    try { console.warn(`[oma] control-plane refused: ${tn} (component=${name} tier=${tier || "?"} preset=${preset})`); } catch {}
+    throw new Error('tool "' + tn + '" is not available to components');
+  };
+
   const stamps = { writes: [], refresh: [], messages: [] };
+  // One notice per saturation EPISODE, not per refused call. Cleared as soon as a call gets
+  // through again, so a second genuine episode is still reported.
+  const saturated = { writes: false, refresh: false, messages: false };
   function rate(kind) {
     const [limit, win] = RATES[kind];
     const now = Date.now(), arr = stamps[kind];
     while (arr.length && now - arr[0] > win) arr.shift();
-    if (arr.length >= limit) { notify('Component "' + name + '" hit its ' + kind + " rate limit."); throw new Error(kind + " rate limit exceeded"); }
+    if (arr.length >= limit) {
+      // WHOSE budget this was, said correctly. These stamps are PER-GUARD, i.e. per mounted
+      // child, so a preview is starving its own allowance and not the app's — but the notice
+      // named the component alone, which made settings' Installed grid report
+      // 'Component "dashboard" hit its refresh rate limit' while the real dashboard was
+      // untouched (measured 2026-07-28: a thumbnail fans out one data_list per collection on
+      // mount and runs out at six). The user cannot tell a starved thumbnail from a throttled
+      // app unless the sentence says which one it is.
+      //
+      // And it said it FOUR times for that one episode — every refused call notified. Ten
+      // installed apps would have made that a toast storm, so the notice is now deduped.
+      if (!saturated[kind]) {
+        saturated[kind] = true;
+        notify(preset === "live"
+          ? 'Component "' + name + '" hit its ' + kind + " rate limit."
+          : 'Preview of "' + name + '" hit its ' + kind + " rate limit — the app itself is unaffected.");
+      }
+      throw new Error(kind + " rate limit exceeded");
+    }
     arr.push(now);
+    saturated[kind] = false;
   }
 
   const inScope = (id) => (snap().items || []).some((i) => i.id === id);
@@ -268,7 +306,7 @@ export function makeGuard(cfg) {
     const tl = tn.toLowerCase();
     // Control-plane tools and internal `_` RPC names are NEVER forwarded from a child —
     // checked BEFORE the allowlist/wildcard so no cap combination can reach them.
-    if (isControlPlaneTool(tl)) throw new Error('tool "' + tn + '" is not available to components');
+    if (isControlPlaneTool(tl)) refuseControlPlane(tn);
     if (!wildcard && callAllow.indexOf(tn) === -1) throw new Error('tool "' + tn + '" not allowed');
     if ((tn === "component_html" || tn === "get_component") && caps.read_source !== true) throw new Error("component source read denied");
     if (FILE_READ_TOOLS.has(tn)) {
@@ -402,7 +440,7 @@ export function makeGuard(cfg) {
       case "callTool": {
         const tn = String((a && a.name) || "").trim();
         const tl = tn.toLowerCase();
-        if (isControlPlaneTool(tl)) throw new Error('tool "' + tn + '" is not available to components');
+        if (isControlPlaneTool(tl)) refuseControlPlane(tn);
         if (tier === "local" && READONLY_LOCAL_TOOLS.has(tn)) { rate("refresh"); return io.callTool(tn, Object.assign({}, a.args || {})); }
         if (tn === "data_list") { rate("refresh"); const ta = Object.assign({}, a.args || {}); ta.collection = coll; return io.callTool(tn, ta); }
         throw new Error('tool "' + tn + '" not available in a read-only preview');
@@ -444,6 +482,25 @@ export function makeGuard(cfg) {
         const ta = (a && a.args) || {};
         if (tn === "data_list") return { content: [], structuredContent: fxRows(ta.collection) };
         if (tn === "data_version") return { content: [], structuredContent: { seq: snap().version || 1 } };
+        // Meta components ask WHICH collections exist before they ask for rows (dashboard draws a
+        // card per collection). Answering that with an empty envelope makes the preview of an app
+        // whose whole job is "show me everything" render as though the user owns nothing — the same
+        // failure the multi-collection fxRows work already fixed one call earlier. Derive it from
+        // the snapshot the preview was handed: same rows, same truth, still zero host IO.
+        // #10: an installed app with an EMPTY collection is invisible to a row-derived answer, so a
+        // preview of a meta component lost it entirely when thumbnails moved from readonly (which
+        // could read the registry) to inert (which cannot). The snapshot carries the roster when the
+        // embedder has one; absent, the honest answer is still an empty list.
+        if (tn === "list_components") return { content: [], structuredContent: { components: snap().components || [] } };
+        if (tn === "data_collections") {
+          const bound = snap().collection;
+          const counts = new Map();
+          for (const it of snap().items || []) {
+            const c = (it && it.collection) || bound;
+            counts.set(c, (counts.get(c) || 0) + 1);
+          }
+          return { content: [], structuredContent: { collections: [...counts].map(([collection, items]) => ({ collection, items })) } };
+        }
         return { content: [], structuredContent: {} };
       }
       case "sendMessage": case "updateContext":
@@ -464,14 +521,47 @@ export function makeGuard(cfg) {
  *  (its predecessors lived in library.html and the hosted data plane, hand-synced).
  *  The close tag is split so this source never contains a literal one; JSON's "</" become
  *  "<\/" (an identity escape in JS strings) so fixture data can't break out of the tag. */
-export function stubOmaScript(name, items) {
-  const snap = { collection: name, items: items || [], version: 1, component: name, host: "library-preview" };
+export function stubOmaScript(name, items, components) {
+  const snap = { collection: name, items: items || [], version: 1, component: name, host: "library-preview",
+    ...(components && components.length ? { components } : {}) };
   return "<script>window.oma=(function(){var S=" +
     JSON.stringify(snap).replace(/<\//g, "<\\/") +
-    ";var ok=Promise.resolve({ok:true});return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){}," +
+    ";var ok=Promise.resolve({ok:true});" +
+    // Serve the fetch paths from the SAME fixture rows the snapshot carries — the parentless
+    // twin of the guard's fxRows, and for the identical reason. It used to answer every
+    // readCollection with {items:[]} and every callTool with {}, on the theory that a component
+    // reads its data from oma.state. Half of them don't: self-fetching per collection is the
+    // GUIDE's canonical pattern, and the guard's inert preset had already learned that an empty
+    // envelope reads as CORRUPT data rather than as "no rows". Measured 2026-07-28 on this
+    // machine: training-log rendered "0/0 · No entries yet" plus "Refresh failed: training-plan
+    // returned invalid data", elder-days "Could not refresh all three data sets" — both with
+    // fixtures sitting right there in the document. That is the PUBLIC preview path (hosted
+    // /library today, share pages later), i.e. the copy a stranger sees first.
+    "function R(c){var b=S.collection,w=(c==null?b:String(c)),o=[];" +
+    "for(var i=0;i<S.items.length;i++){var it=S.items[i]||{};if(((it.collection||b))!==w)continue;" +
+    "o.push({id:'fx-'+o.length,group:it.group||'',position:o.length+1,fields:it.fields||{},version:1});}" +
+    "return {collection:w,items:o,version:S.version||1,returned:o.length,total:o.length};}" +
+    // Object.create(null), not {} — a collection name is USER DATA, and `__proto__` / `constructor`
+    // are legal names the store accepts. In a bare object literal `m["__proto__"]=1` writes the
+    // prototype instead of a key (the collection disappears from the answer) and
+    // `m["constructor"]||0` reads the inherited function, so the count came back as
+    // "function Object() { [native code] }1". The guard's twin uses a Map and was always right;
+    // this is the copy that had to be told.
+    "function C(){var b=S.collection,m=Object.create(null),o=[];" +
+    "for(var i=0;i<S.items.length;i++){var c=(S.items[i]&&S.items[i].collection)||b;m[c]=(m[c]||0)+1;}" +
+    "for(var k in m)o.push({collection:k,items:m[k]});return o;}" +
+    "return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){}," +
     "pref:function(k,f){return f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok}," +
-    "deleteItem:function(){return ok},refresh:function(){return ok},callTool:function(){return Promise.resolve({content:[],structuredContent:{}})}," +
-    "readCollection:function(){return Promise.resolve({items:[],version:1,total:0})},callFunction:function(){return ok}," +
+    "deleteItem:function(){return ok},refresh:function(){return Promise.resolve(R())}," +
+    // The same two answers the parented inert guard gives. This is the machine that composes
+    // PUBLIC preview pages (hosted /library today, share pages next), and a meta component asks
+    // "which collections exist" before it asks for rows — answering that with an empty envelope
+    // renders an app whose whole job is "show me everything" as though the user owned nothing.
+    "callTool:function(n,a){return Promise.resolve(n==='data_list'?{content:[],structuredContent:R(a&&a.collection)}" +
+    ":n==='data_collections'?{content:[],structuredContent:{collections:C()}}" +
+    ":n==='list_components'?{content:[],structuredContent:{components:S.components||[]}}" +
+    ":{content:[],structuredContent:{}})}," +
+    "readCollection:function(c){return Promise.resolve(R(c))},callFunction:function(){return ok}," +
     "files:{list:function(){return Promise.resolve({files:[]})},read:function(){return Promise.reject(new Error(\"not available in this preview\"))},url:function(){return Promise.reject(new Error(\"not available in this preview\"))}}," +
     "sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{component:S.component,collection:S.collection},host:S.host,standalone:true};})();</scr" +
     "ipt>";
@@ -481,10 +571,24 @@ export function stubOmaScript(name, items) {
  *  the stub above, and the component markup wholesale in OUR body (same anchoring doctrine
  *  as composeChildDoc). Consumed by the hosted /library preview server — which used to keep
  *  a hand-synced copy of every piece of this. */
-export function composePreviewDoc(html, { name, items = [], tokenCss = "", kitCss = "" } = {}) {
+// A preview iframe is `sandbox="allow-scripts"` with no `allow-same-origin` — deliberately, so the
+// embedder cannot read `contentDocument.scrollHeight` and must be TOLD the height. The live runner
+// has said so since it existed (HEIGHT_BROADCAST below), and this document, which is the one every
+// gallery and store page actually embeds, did not — so an embedder had no choice but to guess a
+// fixed window, and a taller app got cut off with no way to know it had been. Same message, same
+// shape, one source: an embedder that handles `omaRunHeight` handles both documents.
+const HEIGHT_BROADCAST =
+  "<scr" + "ipt>(function(){var s=function(){try{parent.postMessage({omaRunHeight:true," +
+  'h:document.documentElement.scrollHeight},"*")}catch(e){}};' +
+  "if(typeof ResizeObserver==='function'){var ro=new ResizeObserver(s);" +
+  'window.addEventListener("load",function(){ro.observe(document.body);s()})}' +
+  'else window.addEventListener("load",s);})();</scr' + "ipt>";
+
+export function composePreviewDoc(html, { name, items = [], components = [], tokenCss = "", kitCss = "" } = {}) {
   return "<!doctype html><html><head>" + RUNNER_CSP +
     '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items) + "</head><body>" + html + "</body></html>";
+    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, components) + "</head><body>" + html +
+    HEIGHT_BROADCAST + "</body></html>";
 }
 
 /** Walk file_read's byte windows and hand back the whole file as base64 parts + metadata.

@@ -9,7 +9,7 @@
 // browser bundle where no test could reach them — runtime-core.mjs exists so this file can.
 //
 // Run: node test/runtime-core.mjs
-import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, THEME_KEY_PREFIX, MAX_PAGES } from "../src/runtime-core.mjs";
+import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, childPreviewSnapshot, THEME_KEY_PREFIX, MAX_PAGES } from "../src/runtime-core.mjs";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note) => (cond
@@ -202,6 +202,77 @@ console.log("7. themeVars — the user theme layer (tokens, never a stylesheet)"
     themeVars(null).length === 0 && themeVars("nope").length === 0 && themeVars(undefined).length === 0);
   ok("the prefix is outside the declared-key charset, so it cannot collide with a component pref",
     !/^[a-z][a-z0-9_]*$/.test(THEME_KEY_PREFIX + "--color-text-info"));
+}
+
+console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app");
+{
+  // The embedder (settings' Installed grid, the hosted /library composer) fetches ONE snapshot
+  // covering every collection and hands each preview only its own share. That slice is a security
+  // boundary — a preview of the shopping list must not contain the medication log — and it is also
+  // the thing that decides whether a preview has any data at all. Both halves are pinned here
+  // because the first version got the security right and the data wrong: it sliced on
+  // `row.collection === appName`, which is not what an app is bound to.
+  const rows = [
+    { collection: "build-progress", group: "", fields: { t: "bp" } },
+    { collection: "elder-meds", group: "", fields: { t: "meds" } },
+    { collection: "elder-checks", group: "", fields: { t: "checks" } },
+    { collection: "notes", group: "", fields: { t: "note" } },
+    { collection: "medication-log", group: "", fields: { t: "SECRET" } },
+  ];
+  const decl = (...names) => ({ collections: Object.fromEntries(names.map((n) => [n, {}])) });
+
+  // A SINGLE declared collection is what the app opens on, even when it is not the app's name.
+  // This is the case the name-equality slice starved: builder-progress lives in build-progress.
+  const bp = childPreviewSnapshot(rows, { app: "builder-progress", declaration: decl("build-progress"), tier: "local" });
+  ok("a single declared collection binds the child, exactly as defaultCollectionFor would",
+    bp.collection === "build-progress", bp.collection);
+  ok("…and its rows are the ones it gets", bp.items.length === 1 && bp.items[0].fields.t === "bp");
+
+  // MANY declared collections: no "the" collection, so the name stays the binding — again matching
+  // defaultCollectionFor — but the app self-fetches each one, so all of them must be present.
+  const ed = childPreviewSnapshot(rows, { app: "elder-days", declaration: decl("elder-meds", "elder-checks", "elder-vitals"), tier: "local" });
+  ok("several declared collections leave the binding on the app's own name",
+    ed.collection === "elder-days", ed.collection);
+  ok("…and the child receives every collection it declares (a multi-collection app is not one row short)",
+    ed.items.length === 2 && ed.items.some((r) => r.collection === "elder-meds") && ed.items.some((r) => r.collection === "elder-checks"),
+    JSON.stringify(ed.items.map((r) => r.collection)));
+
+  // The security half, unchanged: nothing it did not ask for.
+  ok("a declared app gets NOTHING it did not declare", !ed.items.some((r) => r.collection === "medication-log"));
+  const plain = childPreviewSnapshot(rows, { app: "notes", declaration: null, tier: "local" });
+  ok("an app with no manifest still binds to its own name and sees only that",
+    plain.collection === "notes" && plain.items.length === 1 && plain.items[0].fields.t === "note");
+  ok("…and one app's rows never reach another app's document",
+    !plain.items.some((r) => r.collection === "medication-log"));
+
+  // The roster travels: inert has no host to ask, so an app with an EMPTY collection is invisible
+  // unless the embedder supplies the registry listing it already holds.
+  const roster = [{ name: "notes" }, { name: "empty-app" }];
+  ok("the components roster survives the slice (inert list_components has no other source)",
+    childPreviewSnapshot(rows, { app: "notes", declaration: null, components: roster, tier: "local" }).components.length === 2);
+  ok("…and is an empty list, never undefined, when the embedder has none",
+    Array.isArray(childPreviewSnapshot(rows, { app: "notes", declaration: null, tier: "local" }).components));
+
+  // Grammar defence: a manifest is data, and the store REJECTS the array form — a reader that
+  // accepted it would silently bind to nothing.
+  ok("a malformed collections key claims nothing rather than throwing",
+    childPreviewSnapshot(rows, { app: "notes", declaration: { collections: ["notes"] }, tier: "local" }).collection === "notes"
+    && childPreviewSnapshot(rows, { app: "notes", declaration: "nope", tier: "local" }).collection === "notes");
+  ok("junk rows are dropped, not carried into a sandbox",
+    childPreviewSnapshot([null, { collection: "notes" }, "x"], { app: "notes", declaration: null, tier: "local" }).items.length === 1);
+
+  // 🔴 THE TIER GATE. A manifest is written BY the component, so honouring it for an UNREVIEWED
+  // app (share-install, T19 P-c) would let that app name its way into rows the parent has already
+  // fetched — the shared snapshot is right there, and the slice is the only thing separating them.
+  // Same gate contracts.mjs puts on the same question, and it FAILS CLOSED.
+  const hostile = { collections: { "medication-log": {}, "notes": {} } };
+  const unrev = childPreviewSnapshot(rows, { app: "free-app", declaration: hostile, tier: "unreviewed" });
+  ok("an UNREVIEWED app cannot declare its way into another app's rows",
+    unrev.items.length === 0 && unrev.collection === "free-app", JSON.stringify(unrev));
+  ok("…and a missing tier is treated as untrusted, not as local (fail closed)",
+    childPreviewSnapshot(rows, { app: "free-app", declaration: hostile }).items.length === 0);
+  ok("…while the SAME manifest on a local app is honoured, so the gate is the tier and not the shape",
+    childPreviewSnapshot(rows, { app: "free-app", declaration: hostile, tier: "local" }).items.length === 2);
 }
 
 console.log(`\nruntime-core: ${pass} passed, ${fail} failed`);

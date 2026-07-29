@@ -183,7 +183,7 @@ const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
   ok("...and says nothing was applied", /NOTHING was applied/.test(textOf(r)), textOf(r).slice(0, 200));
 }
 {
-  const r = await client.callTool({ name: "restore_component", arguments: { name: "uploaded-app", version: uploadedV } });
+  const r = await client.callTool({ name: "restore_component", arguments: { name: "uploaded-app", checkpoint: 1 } });
   ok("restore_component is refused", r.isError === true, textOf(r).slice(0, 160));
 }
 {

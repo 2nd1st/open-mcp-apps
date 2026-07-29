@@ -126,6 +126,24 @@ CREATE INDEX IF NOT EXISTS idx_event_file ON change_event(seq)
 CREATE INDEX IF NOT EXISTS idx_event_collection
   ON change_event(json_extract(payload, '$.collection'), seq);
 
+-- WHERE THE LEDGER STOPS BEING A COMPLETE ACCOUNT OF A COLLECTION.
+--
+-- Retention deletes a collection's OLDEST events, and one question in this store reads exactly
+-- those: "was this collection created FOR this app, or was it already here?" is answered by
+-- comparing earliest events, and pruning moves that answer forward. The judge cannot see the gap
+-- from the inside — the rows it needs are the rows that are gone — so pruning writes down that it
+-- happened, and the judge reads the note instead of guessing.
+--
+-- Deliberately NOT a change_event: the mark has to outlive the very operation that removes events.
+-- Additive and idempotent (CREATE IF NOT EXISTS), so an existing database gains it on next open
+-- with nothing to migrate — a database that has never pruned simply has no rows here, which is the
+-- correct reading of "nothing was truncated".
+CREATE TABLE IF NOT EXISTS ledger_truncation (
+  collection TEXT PRIMARY KEY,
+  before_seq INTEGER NOT NULL,     -- events strictly below this are no longer accounted for
+  ts         TEXT NOT NULL
+);
+
 `;
 
 // The CLASS that performed a write. Closed on purpose (E13b): `actor` used to be free text, so an
@@ -560,6 +578,52 @@ export function openStore(path) {
       "SELECT collection, COUNT(*) AS items, MAX(updated_at) AS last_activity FROM item GROUP BY collection ORDER BY last_activity DESC"
     ),
     compByName: db.prepare("SELECT * FROM component WHERE name = ?"),
+    // Ownership evidence for deleteDisposition. Manifests are read whole (the registry is small and
+    // a manifest is one JSON blob); via is dug out of the event payload because change_event has no
+    // via column — it rides inside the payload, by design (the shadow edge is not a schema field).
+    allCompManifests: db.prepare("SELECT name, manifest FROM component WHERE manifest IS NOT NULL"),
+    viaByCollection: db.prepare(
+      `SELECT DISTINCT json_extract(payload, '$.collection') AS collection,
+                       json_extract(payload, '$.via.component') AS via
+         FROM change_event
+        WHERE event_type LIKE 'item_%'
+          AND json_extract(payload, '$.via.component') IS NOT NULL
+          AND json_extract(payload, '$.collection') IS NOT NULL`),
+    countSettingsGroup: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = 'settings' AND grp = ?"),
+    // "Did this collection exist before this app did?" — the cheap question that separates the
+    // app's own rows from rows that were already there when an app of the same name showed up.
+    // Both answers come off the ledger, which never goes backwards.
+    // ⚠️ THIS ONE ASSUMES THE LEDGER IS COMPLETE, and pruneLedger() can make that false. It drops a
+    // collection's OLDEST events, so a collection that predates its app can come out looking newer
+    // than it — and cascade would then judge the user's older rows "created for this app". Harmless
+    // today and verified so: retention defaults to unbounded, pruneLedger is never automatic, and
+    // the only callers in the tree are tests. It stops being harmless the day retention ships, so
+    // whoever wires that has to bring an ownership answer that survives a pruned tail (a claim
+    // recorded on the ROW, not re-derived from history). Tracked as N9.
+    firstCollEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
+    // WHERE THIS COMPONENT'S CURRENT LIFE BEGINS — 0 if it has only ever had one.
+    //
+    // A delete is a tombstone, so the ledger and component_history keep everything the PREVIOUS
+    // holder of a name left behind, and a name can be reused. Two destructive decisions were
+    // reading those leftovers as if they described the app that bears the name now (see
+    // deleteDisposition and componentHistory). Both need the same question answered, so it is
+    // asked once, here.
+    //
+    // "The most recent delete that was FOLLOWED BY a save." The `EXISTS` is what makes the
+    // tombstone case come out right: an app that was deleted and never recreated has no save after
+    // its final delete, so that delete does not start a new life and the app still owns the life it
+    // had — which is exactly the promise `component_history` makes ("history survives delete").
+    lifeStart: db.prepare(
+      `SELECT COALESCE(MAX(d.seq), 0) AS v
+         FROM change_event d
+        WHERE d.aggregate_id = ? AND d.event_type = 'component_deleted'
+          AND EXISTS (SELECT 1 FROM change_event s
+                       WHERE s.aggregate_id = d.aggregate_id
+                         AND s.event_type = 'component_saved' AND s.seq > d.seq)`),
+    firstCompEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE aggregate_id = ? AND event_type = 'component_saved' AND seq > ?"),
+    histSince: db.prepare("SELECT version, ts, length(html) AS html_size FROM component_history WHERE name = ? AND version > ? ORDER BY version DESC"),
+    delSettingsGroup: db.prepare("DELETE FROM item WHERE collection = 'settings' AND grp = @grp"),
+    delCollectionRows: db.prepare("DELETE FROM item WHERE collection = @collection"),
     // "Is there a component outside this set?" — EXISTS stops at the first row instead of scanning
     // the registry, and json_each keeps ONE prepared statement for any set, so the store never has
     // to know WHICH components are the engine's own. That stays an engine-level concept.
@@ -612,6 +676,13 @@ export function openStore(path) {
     // the kept window rather than an OFFSET delete so it is one statement and one plan.
     pruneColl: db.prepare(`DELETE FROM change_event WHERE json_extract(payload,'$.collection') = @c
       AND seq NOT IN (SELECT seq FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @keep)`),
+    // The mark pruning leaves behind, and the one read that consumes it. MAX() so a second prune
+    // can only ever move the boundary FORWARD — a truncation is not undone by a later, smaller one.
+    markTruncated: db.prepare(`INSERT INTO ledger_truncation (collection, before_seq, ts)
+      VALUES (@c, @seq, @ts)
+      ON CONFLICT(collection) DO UPDATE SET before_seq = MAX(before_seq, @seq), ts = @ts`),
+    truncatedAt: db.prepare("SELECT before_seq AS v FROM ledger_truncation WHERE collection = ?"),
+    oldestCollEvent: db.prepare("SELECT COALESCE(MIN(seq),0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
   };
 
   const rowToItem = (r) => ({
@@ -794,6 +865,12 @@ export function openStore(path) {
         if (COMPONENT_CMDS) {
           out.name = seen.aggregate_id;
           if (type !== "delete_component") out.version = seen.seq;
+          // WHICH delete this was. `delete_component` has two dispositions and only one of them is
+          // irreversible, so "yes, that command ran" is not a sufficient answer to a retry: a
+          // command_id previously used for a KEEP delete answered yes to a cascade retry, and the
+          // caller was told its irreversible act had completed while every row was still on disk.
+          // The original payload already records it — a cascade stamps `cascaded`, a keep does not.
+          if (type === "delete_component" && payload.cascaded) out.cascaded = payload.cascaded;
           // The ORIGINAL flip's outcome, not the current column — an archive replayed after a later
           // unarchive must describe what the archive did, or the retry reads current state as its own.
           if (type === "archive_component" && payload.to) out.visibility = payload.to;
@@ -826,9 +903,23 @@ export function openStore(path) {
     // event and the seq OF it. A holder of `prev` had the state this write was applied to, and can
     // apply the row locally; anyone else has to re-read. Captured here, inside the command's single
     // transaction, because asking afterwards would race the next writer.
-    const emit = (aggregate_id, event_type, payload) => {
+    //
+    // `extraId` exists for the one command that legitimately produces MORE THAN ONE event: a
+    // cascading delete has to leave a receipt in each collection it cleared, and
+    // change_event.command_id is UNIQUE, so the extra rows need ids of their own.
+    //
+    // They used to be DERIVED from the command's — `${command_id}#rows:${coll}` — on the reasoning
+    // that a derived id is as idempotent as the command it came from. True, and beside the point:
+    // command_id is a CALLER-SUPPLIED string, so the derived space is one the caller may already
+    // occupy. A prior write whose id happened to have that exact shape made the whole cascade die
+    // on a UNIQUE violation — a destructive tool taken out by a stranger's earlier choice of name.
+    //
+    // The idempotence was never load-bearing here: a replay short-circuits at the command level and
+    // never reaches this function, so these receipts are emitted exactly once per real execution.
+    // An opaque id therefore costs nothing and removes the shared namespace entirely.
+    const emit = (aggregate_id, event_type, payload, extraReceipt) => {
       const prev = payload.collection != null ? q.collSeq.get(payload.collection).v : q.seq.get().v;
-      const info = q.appendEvent.run({ aggregate_id, command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, principal, host, ts });
+      const info = q.appendEvent.run({ aggregate_id, command_id: extraReceipt ? randomUUID() : command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, principal, host, ts });
       return { seq: Number(info.lastInsertRowid), prev_collection_seq: prev };
     };
 
@@ -1062,13 +1153,54 @@ export function openStore(path) {
       const name = String(command.name || "").trim();
       const existed = q.compByName.get(name);
       if (!existed) return { ok: false, error: "not_found" };
-      // Tombstone semantics: only the registry row goes. component_history rows are RETAINED
-      // (the delete stays auditable, the html recoverable) and settings items under the
-      // component's group are RETAINED — no cascade; the settings app's Orphaned section is
-      // the janitor (docs/settings-design.md §7).
+      // Two dispositions, and the caller has to have said which (the tool defaults to "keep", i.e.
+      // exactly the behaviour that shipped before this existed).
+      //
+      //   keep    — tombstone semantics: only the registry row goes. component_history rows are
+      //             RETAINED (the delete stays auditable, the html recoverable) and so are the
+      //             settings items; the settings app's Orphaned section is the janitor.
+      //   cascade — "delete means delete" (Leo 2026-07-28). Takes the rows this app is provably
+      //             the only user of, plus its own settings group. NOT undoable, and that is not a
+      //             gap: component_deleted has no undo branch today either (it falls through to
+      //             not_undoable), so this widens what a permanent act removes, it does not make a
+      //             reversible act irreversible. Archive is the "keep everything" verb.
+      //
+      // 🔴 The eligible set is RECOMPUTED here and the caller's list is only used to INTERSECT it.
+      // A list that arrives naming a shared collection cannot widen the blast radius — the worst a
+      // stale or hostile plan can do is delete less than it claimed.
+      const cascade = command.cascade === true;
+      const removed = [];
+      let settingsRemoved = 0;
+      if (cascade) {
+        const asked = Array.isArray(command.cascade_collections) ? new Set(command.cascade_collections.map(String)) : null;
+        for (const coll of computeDisposition(name).exclusive) {
+          if (asked && !asked.has(coll)) continue;
+          const n = q.countColl.get(coll).n;
+          q.delCollectionRows.run({ collection: coll });
+          removed.push({ collection: coll, rows: n });
+          // A receipt IN THAT COLLECTION'S STREAM. component_deleted alone was not enough: the
+          // per-collection ledger reads filter on payload.collection, so a widget or a
+          // data_changes call scoped to this collection was told "nothing changed" while every
+          // row in it had just been destroyed. One event per cleared collection keeps the cascade
+          // one decision while making each collection's own history tell the truth.
+          if (n) emit(coll, "rows_cleared", { collection: coll, rows: n, component: name }, true);
+        }
+        settingsRemoved = q.countSettingsGroup.get(name).n;
+        if (settingsRemoved) {
+          q.delSettingsGroup.run({ grp: name });
+          // Same for the settings collection — and this one also has to land, because
+          // settings_version is derived from events carrying collection:"settings".
+          emit(SETTINGS_COLLECTION, "rows_cleared", { collection: SETTINGS_COLLECTION, group: name, rows: settingsRemoved, component: name }, true);
+        }
+      }
       q.delComp.run(name);
-      emit(name, "component_deleted", { name, version: existed.version });
-      return { ok: true, name, version: existed.version };
+      // ONE event for the whole act — the ledger's aggregate_id has always been documented as
+      // "item id | component name | collection name", and a cascade is one decision, not N.
+      // What it took is IN the payload, so the audit trail can answer "where did those rows go".
+      emit(name, "component_deleted", { name, version: existed.version,
+        ...(cascade ? { cascaded: { collections: removed, settings_keys: settingsRemoved } } : {}) });
+      return { ok: true, name, version: existed.version,
+        ...(cascade ? { cascaded: removed, settings_keys: settingsRemoved } : {}) };
     }
 
     if (type === "archive_component") {
@@ -1296,6 +1428,97 @@ export function openStore(path) {
     return { ok: true, count: results.length, results };
   };
 
+  function computeDisposition(name) {
+        const comp = String(name || "").trim();
+        // Who ELSE claims a collection by declaring it? (Parsed defensively: a manifest is data.)
+        const claimants = new Map();   // collection -> Set(component)
+        const claim = (coll, by) => {
+          if (!coll) return;
+          if (!claimants.has(coll)) claimants.set(coll, new Set());
+          claimants.get(coll).add(by);
+        };
+        for (const row of q.allCompManifests.all()) {
+          if (!row.manifest) continue;
+          try {
+            const cols = JSON.parse(row.manifest).collections;
+            if (cols && typeof cols === "object") for (const c of Object.keys(cols)) claim(c, row.name);
+          } catch { /* an unparseable manifest claims nothing */ }
+        }
+        // Who has WRITTEN through a widget? via lives inside the event payload (no column), which is
+        // fine at registry scale and is exactly why this is a read and not an index.
+        for (const row of q.viaByCollection.all()) claim(row.collection, row.via);
+
+        // Sharing a NAME is not evidence of owning the ROWS. A user whose "notes" collection has
+        // been filling for months, who then installs an app called "notes", must not lose those rows
+        // because the two are spelled alike — and since the AI writes most rows with no `via`,
+        // "nobody else wrote here" is not evidence either. The ledger answers what actually
+        // matters: a collection whose first event predates the component's first save was not
+        // created for it, whatever it is called.
+        //
+        // …and "the component's first save" has to mean THIS component's. A name can be reused, and
+        // the tombstone keeps the previous holder's events, so an unscoped MIN reached back into a
+        // life this app never had: delete the app, let the user write rows into the same-named
+        // collection while nothing owned it, recreate an app under that name, and those rows were
+        // judged "created after the app" and deleted. Scoping to the current life makes the sentence
+        // the user is shown true again — it claims the collection was created FOR THIS APP.
+        const life = q.lifeStart.get(comp).v;
+        const compBorn = q.firstCompEvent.get(comp, life).v;
+        const bornAfterTheApp = (c) => {
+          // A TRUNCATED HISTORY CANNOT ANSWER THIS QUESTION, and must say so rather than answer it
+          // wrongly. Retention deletes a collection's oldest events — exactly the ones proving it
+          // predates the app that shares its name — so after pruning the earliest SURVIVING event
+          // can sit after the app's first save while the collection itself is far older. The reading
+          // would be "created for this app": provably wrong, and the direction that deletes data.
+          // The asymmetry decides it (docs/wo/delete-cascade-design.md): deleting too little leaves
+          // rows a user can remove again; deleting too much breaks a second app and the data is gone.
+          // So an unaccounted-for gap makes this UNKNOWABLE, and unknowable means kept.
+          if (q.truncatedAt.get(c)) return false;
+          const collBorn = q.firstCollEvent.get(c).v;
+          return compBorn > 0 && collBorn > 0 && collBorn > compBorn;
+        };
+
+        const candidates = new Set();
+        if (q.countColl.get(comp).n > 0 || q.collections.all().some((c) => c.collection === comp)) candidates.add(comp);
+        for (const [coll, who] of claimants) if (who.has(comp)) candidates.add(coll);
+
+        const collections = [];
+        for (const coll of [...candidates].sort()) {
+          const others = [...(claimants.get(coll) || new Set())].filter((w) => w !== comp).sort();
+          const rows = q.countColl.get(coll).n;
+          // `seq` is the collection's position on the ledger, and it is here so that CONFIRMING a
+          // plan can mean what the two-step promised: "the world still looks like what you were
+          // shown". The plan's token is a hash of this list, and a list carrying only a row COUNT
+          // pins the wrong thing — delete two rows and add two others between the plan and the
+          // confirmation and the token still matched, so cascade destroyed rows that had never
+          // appeared in any plan a human read. Between those two calls there is a whole
+          // conversational turn, and a widget can write in it. One number closes it, because the
+          // ledger never goes backwards: any write to this collection moves it.
+          const seq = q.collSeq.get(coll).v;
+          if (others.length) {
+            collections.push({ collection: coll, verdict: "shared", rows, seq,
+              why: `also used by ${others.join(", ")} — kept, so deleting this app cannot break another one` });
+          } else if (coll === comp && bornAfterTheApp(coll)) {
+            collections.push({ collection: coll, verdict: "exclusive", rows, seq,
+              why: "named after this app, created after it, and no other app declares it or has written to it" });
+          } else if (coll === comp && q.truncatedAt.get(coll)) {
+            // Say WHICH unknowable this is. "Nothing proves it is the only one" would be a wrong
+            // explanation here: the evidence existed and was discarded by a retention policy.
+            collections.push({ collection: coll, verdict: "unknown", rows, seq,
+              why: "named after this app, but this collection's early history has been pruned — whether it predates the app can no longer be established, so it is kept" });
+          } else {
+            collections.push({ collection: coll, verdict: "unknown", rows, seq,
+              why: "this app uses it, but nothing proves it is the only one — kept" });
+          }
+        }
+        return {
+          collections,
+          settings_keys: q.countSettingsGroup.get(comp).n,
+          // The settings collection gets the same treatment: settings_keys is a count too.
+          settings_seq: q.collSeq.get(SETTINGS_COLLECTION).v,
+          exclusive: collections.filter((c) => c.verdict === "exclusive").map((c) => c.collection),
+        };
+  }
+
   return {
     db,
     execute,
@@ -1321,7 +1544,28 @@ export function openStore(path) {
     /** Any component whose name is not in `names`. The engine passes its own seeded set and reads
      *  this as "the user has something of their own" — see buildInstructions in engine.mjs. */
     hasComponentOutside: (names) => q.hasCompOutside.get(JSON.stringify([...names])).v === 1,
-    componentHistory: (name) => q.compHist.all(name), // [{version, ts, html_size}] — never raw html
+    /** [{version, ts, html_size, checkpoint}] — never raw html.
+     *
+     *  `checkpoint` is this component's OWN 1..N counter, derived here and stored nowhere. It
+     *  exists because `version` IS the ledger seq (save_component stamps the row with the event's
+     *  seq — one ordinal axis, deliberately), and that axis is global: it advances for every write
+     *  in the store. A user who edited one app twice sees v5 then v43 and reasonably asks what
+     *  happened to the other 38. Nothing did — those were their groceries.
+     *
+     *  So the number a PERSON reads is the checkpoint; `version` stays exactly as it was for the
+     *  machine (it is the OCC token, the restore target, and the history key). Presentation change,
+     *  not a renumbering — the axis is load-bearing and stays. */
+    componentHistory: (name) => {
+      // …and only THIS app's checkpoints. A name can be reused, and a delete keeps everything the
+      // previous holder saved, so an unscoped read let "restore checkpoint 1" of a budget tracker
+      // hand back a deleted recipe app's source — a silent whole-app swap with nothing on screen to
+      // mark the boundary. Rows before this life still sit in the table (the tombstone is intact and
+      // was never overwritten); they simply are not this app's to roll back to.
+      const rows = q.histSince.all(name, q.lifeStart.get(name).v);
+      // newest-first; checkpoint 1 is the oldest save OF THIS LIFE.
+      const n = rows.length;
+      return rows.map((r, i) => ({ ...r, checkpoint: n - i }));
+    },
     getComponentVersion: (name, version) => q.compVersion.get(name, version) || null, // {name, version, html, ts} | null — the ONE path that reads OLD html (for restore/diff)
 
     listCollections: () => q.collections.all(),
@@ -1356,6 +1600,29 @@ export function openStore(path) {
     /** How many items a collection holds — the zero-row open's honest companion: the model learns
      *  the size without a single row travelling. */
     countItems: (collection) => q.countColl.get(String(collection)).n,
+
+    /** What deleting `name` would take with it, and — just as important — what it would LEAVE.
+     *
+     *  This exists because the honest answer to "which collections belong to this app" is
+     *  "we cannot always tell", and the shape of a destructive tool has to say so out loud rather
+     *  than guess. The three signals, with their measured strength (2026-07-28, docs/wo/
+     *  delete-cascade-design.md):
+     *    · the manifest's `collections` key — the GUIDE calls this THE lifecycle claim, and its
+     *      real-world adoption is ZERO: 19 of our own components declare settings and uses_shared,
+     *      none declares a collection. Used here to find OTHER claimants, never to grant one.
+     *    · the ledger's `via.component` — stamped only on writes that came through a widget. The
+     *      model's own writes (the dominant path) carry none, so its ABSENCE proves nothing. Used
+     *      here in one direction only: someone else's via is evidence of sharing.
+     *    · the name — a collection called exactly like the component. Weak on its own, which is
+     *      why it only produces `exclusive` when BOTH of the above find no other claimant.
+     *
+     *  The asymmetry is the whole design: deleting too little leaves rows a user can delete again;
+     *  deleting too much silently breaks a SECOND app and the data is gone. So `shared` and
+     *  `unknown` are kept, always, and the caller is told what was kept and why.
+     *
+     *  Returns { collections: [{collection, verdict, rows, why}], settings_keys, exclusive: [names] }
+     *  where verdict is "exclusive" | "shared" | "unknown". Read-only. */
+    deleteDisposition: computeDisposition,
 
     /** The keyset cursor that continues AFTER this item — exposed so a caller that shrinks a page
      *  to fit a budget can hand out a cursor that matches the rows it actually kept. */
@@ -1499,7 +1766,19 @@ export function openStore(path) {
     pruneLedger(collection) {
       const keep = this.retentionEvents();
       if (!keep) return { ok: true, pruned: 0, policy: "unbounded" };
-      const info = q.pruneColl.run({ c: String(collection), keep });
+      const c = String(collection);
+      const info = q.pruneColl.run({ c, keep });
+      // WRITE DOWN THAT HISTORY WAS LOST, in the same breath as losing it.
+      //
+      // deleteDisposition decides whether a collection was created FOR an app by comparing earliest
+      // events, and the events this just deleted are the ones that prove a collection is OLDER than
+      // the app sharing its name. Without a note, the judge reads a truncated history as a complete
+      // one and concludes the user's own older rows belong to the app — then cascade deletes them.
+      // The gap is invisible from the inside, so it has to be recorded from here, where it is made.
+      // Only when something was actually removed: a no-op prune truncates nothing.
+      if (info.changes > 0) {
+        q.markTruncated.run({ c, seq: q.oldestCollEvent.get(c).v, ts: new Date().toISOString() });
+      }
       return { ok: true, pruned: info.changes, policy: `keep ${keep}` };
     },
 

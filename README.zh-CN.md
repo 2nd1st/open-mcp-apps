@@ -5,8 +5,9 @@
 > 给你的 AI 一个持久、可复用的 UI。它把组件搭一次——你永久拥有。
 
 **open-mcp-apps** 是一个基于 [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
-标准(`ui://`, SEP-1865)构建的开放引擎。它给任何支持 MCP Apps 的 host(Claude Desktop、claude.ai
-……)提供标准本身不提供的三样东西:
+(`ui://`, SEP-1865)构建的开放引擎——MCP Apps 是 Model Context Protocol 的**两个官方 extension**
+之一,走协议新设的 Extensions Track。它给任何支持 MCP Apps 的 host(Claude Desktop、claude.ai、
+Codex、ChatGPT……)提供 extension 本身不提供的三样东西:
 
 1. **一个 AI 可写入的组件 registry。** 想要一个还不存在的 UI——AI 读一份 authoring guide,针对一个
    极小的 `window.oma` API 写出单文件 HTML 组件并保存。从那一刻起 `open_<name>` 就是一个 tool,在
@@ -15,8 +16,8 @@
    加一条 append-only 的 `change_event` ledger。每次修改都是幂等的 domain command(`command_id`),带
    乐观并发(`expected_version`)。AI 和人编辑同一份 store——widget 只是一个视图。
 3. **一个让 AI 写的组件真正能跑的 shell runtime。** 在提供 `ui://` 时,引擎用官方 MCP App bridge、
-   host 主题(Claude 的 design tokens,明/暗)、和 `window.oma` 数据 API 把组件包起来。一个组件约
-   50 行视图代码;协议、持久化、幂等、主题都是引擎的事。
+   host 主题(Claude 的 design tokens,明/暗)、和 `window.oma` 数据 API 把组件包起来。你写的是
+   视图;协议、持久化、幂等、主题都是引擎的事。
 
 ## The loop(循环)
 
@@ -38,14 +39,22 @@ open_kanban  →  内联渲染、带主题、持久——以后每个对话都�
 
 ## 长什么样
 
-内置 library 自带 16 个现成 app——真实可交互的活预览,一键安装:
+app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它写出来:
 
-![组件库——现成 app 的活预览](.github/screenshots/library.png)
+![Codex——要一个读书追踪器,AI 写完当场渲染,三本书已经在里面](.github/screenshots/host-codex.webp)
+
+换一场对话——甚至换一个 host——它还在,数据也还在:
+
+![Claude——新对话里打开同一个 reading list,已经攒到八本](.github/screenshots/host-claude.webp)
+
+内置 library 自带 17 个现成 app——真实可交互的活预览,一键安装:
+
+![组件库——现成 app 的活预览](.github/screenshots/library.webp)
 
 | | |
 |---|---|
-| ![Companion——有共同记忆的 AI 角色](.github/screenshots/companion.png) | ![Family Week——全家的一周:晚餐、家务轮值、购物与周末](.github/screenshots/family-week.png) |
-| ![Study Cards——间隔重复+复习热力图+卡组书架](.github/screenshots/study-cards.png) | ![Knowledge Cards——可视化的答案收藏库](.github/screenshots/knowledge-cards.png) |
+| ![Companion——有共同记忆的 AI 角色](.github/screenshots/companion.webp) | ![Family Week——全家的一周:晚餐、家务轮值、购物与周末](.github/screenshots/family-week.webp) |
+| ![Study Cards——间隔重复+复习热力图+卡组书架](.github/screenshots/study-cards.webp) | ![Knowledge Cards——可视化的答案收藏库](.github/screenshots/knowledge-cards.webp) |
 
 上面每个 app 都是绑定在普通数据集合上的单文件 HTML——用的是你的 AI 将来给你造 app 时
 同一套 `window.oma` API 与写作指南。
@@ -65,6 +74,9 @@ curl -fsSL https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.s
 它会弹一个简短选择器,让你勾选注册到哪些 host —— **Claude Desktop、Claude Code、Codex** —— 以及权限偏好。
 加 `-s -- --yes` 跳过选择器,或 `-s -- --host codex` 只装某个 host。(或自己 clone 后跑:
 `git clone https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps && node install.mjs`。)
+
+> **关于 npm**:npm registry 上的 `open-mcp-apps` 包**不是本项目** —— 那个名字属于一个无关的包。
+> 请用上面的命令从本仓库安装。
 
 **用编码 agent**(Claude Code、Codex CLI——它们有 shell),粘:
 
@@ -117,11 +129,11 @@ widget 并存没问题(habit-streaks + meal-planner 并排)。
 | `src/shell.mjs` | 在提供时用 runtime + design-token 兜底包裹存储的 HTML |
 | `src/guide.mjs` | AI 生成组件前读的 authoring 契约 |
 | `install-app.mjs` | 安装你自己写的 app(从文件)——唯一一扇不经过 AI 的注册表入口 |
-| `components/` | seed 时装 3 个 system 组件(settings、dashboard、library)+ 16 个 library app——不自动安装;在 library app 里浏览、带示例数据实时预览、一键安装 |
+| `components/` | seed 时装 3 个 system 组件(settings、dashboard、library)+ 17 个 library app——不自动安装;在 library app 里浏览、带示例数据实时预览、一键安装 |
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 351 条断言,走真实 stdio——含运行时组件创建
+node test/server-smoke.mjs   # 419 条断言,走真实 stdio——含运行时组件创建
 node test/http-smoke.mjs     #  44 条断言,走 HTTP transport(含 SSE /events)
 node test/provenance.mjs     #  39 条断言,验组件 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  14 条断言,验 seed / design-kit 流水线
@@ -152,8 +164,8 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 - **UI 和数据分开持久,都带版本。** 组件是视图;collections 是真相;ledger 是历史。换掉任一个不丢另一个。
 - **AI 只说 domain command,从不碰 SQL、从不碰裸 state。** 这是人 + AI 并发编辑安全的原因(command 层
   的幂等 + 乐观并发)。
-- **标准优先。** 一切走 MCP Apps 标准 bridge——没有 host 私有 API。一套代码应服务每个能渲染 `ui://`
-  的 host。
+- **Extension 优先。** 一切走 MCP Apps 的 bridge——没有 host 私有 API。一套代码应服务每个能渲染
+  `ui://` 的 host。
 - **单一用途,不做复合。** 每个 app 只占一个场景、绑自己的 collection;引擎宁可新铸一个,也不往旧 app
   里塞功能。system app(settings、dashboard)是刻意的例外——引擎自有、privileged、允许跨 collection 观察。
 
@@ -168,18 +180,22 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 它是将来共享/发布组件的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
 [`SECURITY.md`](SECURITY.md)。
 
-## Host 支持(2026-07-22 实测)
+## Host 支持(2026-07-22 实测;ChatGPT web 行 2026-07-28 更新)
 
 | Host | 渲染 widget | 人点击 widget | AI 操作数据 | 同一 store |
 |---|---|---|---|---|
 | **Claude Desktop**(本地 stdio) | ✅ | ✅ 完整循环,含 `sendMessage` 回复 | ✅ | ✅ |
 | **浏览器 viewer**(`/view/<name>`) | ✅ | ✅(无 chat 连接——`sendMessage` 降级为提示) | 经 CLI AI | ✅ |
-| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag) | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增仍被 host 侧拦([openai/codex#28912](https://github.com/openai/codex/issues/28912),见 KNOWN-ISSUES) | ✅ | ✅ |
+| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag)—— 对**本地**引擎实测;远程未确立 | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增仍被 host 侧拦([openai/codex#28912](https://github.com/openai/codex/issues/28912),见 KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code**(CLI,`claude mcp`) | —(设计上走文本 fallback) | — | ✅ | ✅ |
 | **codex CLI / IDE** | —(设计上走文本 fallback) | — | ✅ | ✅ |
-| **ChatGPT web**(Work mode) | 标准支持——需远程 HTTPS(`/mcp` + tunnel),此处未测 | | | |
+| **ChatGPT web**(Work mode) | ✅ 2026-07-28 实测(远程 HTTPS)——满高渲染,未被截断 | ✅ widget 按钮新增一条,落盘成功 | ✅ | ✅ |
 
-一切走标准 bridge,所以上游 host 的修复(如 #28912)不改一行也能让本项目受益。
+一切走 MCP Apps 的 bridge,所以上游 host 的修复(如 #28912)不改一行也能让本项目受益。
+
+**关于 Codex:** plugin 是从 web 侧注册的,所以**本地安装的引擎以 MCP server 的形式接入**,
+而不是作为 plugin —— 对自托管来说这本来也是对的那条路。ChatGPT 桌面 app 里的 widget 渲染
+似乎还与登录方式有关(我们见过账号登录下可用;API key 下尚未确立)。
 
 ## 状态 / 路线图
 
@@ -187,7 +203,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 验证。
 
 - [x] 引擎:registry + shell + 通用 data command + ledger
-- [x] 只装 system 组件(settings、dashboard、library);16 个 library app 可在 library 里浏览预览、一键安装
+- [x] 只装 system 组件(settings、dashboard、library);17 个 library app 可在 library 里浏览预览、一键安装
 - [x] AI 组件创建循环(guide → save → 动态 tool)
 - [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key

@@ -40,7 +40,7 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //   41,000  E1Δ added data_changes — the delta capability, in the batch that cut the per-call cost
 //           of a write 52x (1,711 tk -> 33 tk). Paying ~300 resident tokens to save thousands per
 //           call is the trade the ratchet exists to make visible, not to forbid.
-//   38,000  E11 landed: src/list-hints.mjs drops the redundant $schema declaration, -3,172 B
+//   38,000  E11 landed: src/cache-hints.mjs drops the redundant $schema declaration, -3,172 B
 //           (~793 tk). A ratchet that only ever loosens is a budget; this one tightens.
 //   39,200  Write-set A, the discovery face: list_components gained name/kind/visibility/limit
 //           (answering "open my X" in ONE call instead of listing a whole registry), and
@@ -77,6 +77,18 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //           data_query references data_list's grammar instead of restating it; data_list stopped
 //           describing the refusal behaviour C deleted). One grammar for windows, one for pages,
 //           one filter table — zero new dialects.
+//   48,600  fix (c): +93 B — component_html declares `collection`, the binding the loader needs to
+//           paint. It is ONE key on ONE internal tool, and the alternative was to smuggle it through
+//           structuredContent undeclared (which the SDK does allow — validateToolOutput returns
+//           early with no outputSchema). Rejected: component_html ALREADY declares html/caps/tier,
+//           so a fourth silent key makes the schema lie, and this one is read on every first paint.
+//           The rule, so the next person does not re-litigate it per tool: a tool declares its whole
+//           answer or none of it — delete_component declares nothing and is legible for it; partial
+//           is the only forbidden shape.
+//           The price is one prompt-cache invalidation for every user, and it is NOT the reason to
+//           hesitate: v0.3.2 already rewrites four tools' text and schemas (golden 80,911 → 81,624),
+//           so that cost is spent whatever this key does. Byte COUNT looking unchanged is a
+//           coincidence; the cache keys on content.
 //   (cap unchanged) write-set D: +104 B — the four item-write inputSchemas became PASSTHROUGH
 //           objects, and the JSON face now spells "additionalProperties": true on them (strip-mode
 //           objects emitted nothing). That is the ENTIRE visible cost of the shadow `via` edge:
@@ -104,7 +116,7 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 // lands inside the 9,800–11,000 tk per-round overhead measured independently against the real
 // tokenizer. Re-calibrate with count_tokens if the ratio is ever in doubt; gate on bytes.
 // (Compact, not the pretty golden: indentation inflates the golden ~1.7× and is not sent anywhere.)
-const SURFACE_BYTES_CAP = 48_500;
+const SURFACE_BYTES_CAP = 48_600;
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
@@ -143,13 +155,13 @@ ok(`surface is ${wireBytes} B ≈ ${Math.round(wireBytes / 4)} tk (cap ${SURFACE
   wireBytes <= SURFACE_BYTES_CAP,
   "the resident per-conversation cost grew — shrink it, or raise the cap WITH a reason in the commit message");
 
-console.log("2. dialect + caching hints (src/list-hints.mjs)");
+console.log("2. dialect + caching hints (src/cache-hints.mjs)");
 {
   const raw = JSON.stringify(await client.request({ method: "tools/list", params: {} },
     (await import("@modelcontextprotocol/sdk/types.js")).ListToolsResultSchema));
   ok("no $schema survives — every tool schema reads identically under either dialect",
     !raw.includes("$schema"),
-    "if a schema gained definitions/$ref/tuple-items, its declaration is KEPT on purpose — see list-hints.mjs");
+    "if a schema gained definitions/$ref/tuple-items, its declaration is KEPT on purpose — see cache-hints.mjs");
   const hints = JSON.parse(raw);
   ok(`ttlMs present (${hints.ttlMs})`, typeof hints.ttlMs === "number" && hints.ttlMs >= 0);
   // The default configuration registers no per-component tools, so this list is identical for every

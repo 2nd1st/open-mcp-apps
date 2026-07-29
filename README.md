@@ -4,9 +4,10 @@
 
 > Give your AI a persistent, reusable UI. It builds the component once — you keep it forever.
 
-**open-mcp-apps** is an open engine built on the [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
-standard (`ui://`, SEP-1865). It gives any MCP-Apps-capable host (Claude Desktop, claude.ai, …)
-three things the standard itself doesn't provide:
+**open-mcp-apps** is an open engine built on [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
+(`ui://`, SEP-1865) — one of the two official extensions to the Model Context Protocol, adopted
+into the protocol's new Extensions Track. It gives any MCP-Apps-capable host (Claude Desktop,
+claude.ai, Codex, ChatGPT, …) three things the extension itself doesn't provide:
 
 1. **A component registry the AI can write to.** Ask for a UI that doesn't exist — the AI reads
    the authoring guide, writes a single-file HTML component against a tiny `window.oma` API,
@@ -17,8 +18,8 @@ three things the standard itself doesn't provide:
    (`expected_version`). The AI and the human edit the same store — the widget is just a view.
 3. **A shell runtime so AI-written components actually work.** Serving `ui://`, the engine wraps
    the component with the official MCP App bridge, host theming (Claude's design tokens,
-   light/dark), and the `window.oma` data API. A component is ~50 lines of view code; the
-   protocol, persistence, idempotency and theming are the engine's problem.
+   light/dark), and the `window.oma` data API. What you write is a view; the protocol,
+   persistence, idempotency and theming are the engine's problem.
 
 ## The loop
 
@@ -40,14 +41,22 @@ splitter — minted for the task in front of you and kept for the next time you 
 
 ## What it looks like
 
-The built-in library ships 16 ready-made apps — real, working previews, installed in a click:
+Apps render inline, in the chat you were already having. Ask for one and the AI writes it:
 
-![The component library — live previews of ready-made apps](.github/screenshots/library.png)
+![Codex — asking for a reading tracker; the AI writes it and it renders inline, already holding the three books](.github/screenshots/host-codex.webp)
+
+Come back in another chat — or another host — and it's still there, with your data in it:
+
+![Claude — a new chat opens the same reading list, now eight books long](.github/screenshots/host-claude.webp)
+
+The built-in library ships 17 ready-made apps — real, working previews, installed in a click:
+
+![The component library — live previews of ready-made apps](.github/screenshots/library.webp)
 
 | | |
 |---|---|
-| ![Companion — an AI character with shared memory](.github/screenshots/companion.png) | ![Family Week — dinners, chores rotation, shopping and weekend plans](.github/screenshots/family-week.png) |
-| ![Study Cards — spaced repetition with review heatmap and deck shelf](.github/screenshots/study-cards.png) | ![Knowledge Cards — a visual library of saved answers](.github/screenshots/knowledge-cards.png) |
+| ![Companion — an AI character with shared memory](.github/screenshots/companion.webp) | ![Family Week — dinners, chores rotation, shopping and weekend plans](.github/screenshots/family-week.webp) |
+| ![Study Cards — spaced repetition with review heatmap and deck shelf](.github/screenshots/study-cards.webp) | ![Knowledge Cards — a visual library of saved answers](.github/screenshots/knowledge-cards.webp) |
 
 Every app above is a single HTML file bound to plain data collections — written with the same
 `window.oma` API and authoring guide your AI will use for the apps it builds you.
@@ -69,6 +78,9 @@ It opens a short picker to choose which hosts to register into — **Claude Desk
 Codex** — plus your permission preference. Skip it with `-s -- --yes`, or target one host with
 `-s -- --host codex`. (Or clone and run it yourself: `git clone
 https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps && node install.mjs`.)
+
+> **A note on npm:** the `open-mcp-apps` package on the npm registry is **not this project** —
+> that name is held by an unrelated package. Install from this repository, using the command above.
 
 **With a coding agent** (Claude Code, Codex CLI — they have a shell), paste:
 
@@ -129,14 +141,14 @@ Multiple widgets in one conversation work fine (habit-streaks + meal-planner sid
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
 | `src/guide.mjs` | the authoring contract the AI reads before generating a component |
 | `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
-| `components/` | 3 system components installed on seed (settings, dashboard, library) + 16 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
+| `components/` | 3 system components installed on seed (settings, dashboard, library) + 17 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 351 assertions over real stdio — incl. runtime component creation
-node test/http-smoke.mjs     #  35 assertions over the HTTP transport (incl. SSE /events)
+node test/server-smoke.mjs   # 419 assertions over real stdio — incl. runtime component creation
+node test/http-smoke.mjs     #  44 assertions over the HTTP transport (incl. SSE /events)
 node test/provenance.mjs     #  39 assertions that a component's author — its trust tier — is not overwritable
-node test/seed-smoke.mjs     #  12 assertions on the seed / design-kit pipeline
+node test/seed-smoke.mjs     #  14 assertions on the seed / design-kit pipeline
 node test/files-smoke.mjs    #  45 assertions on the per-app file store (chunked uploads, GC races)
 ```
 
@@ -168,7 +180,7 @@ surfaces, so it can't drift from them silently.
   truth; the ledger is history. Swap either without losing the other.
 - **The AI talks domain commands, never SQL, never raw state.** That's what makes human+AI
   concurrent editing safe (idempotency + optimistic concurrency at the command layer).
-- **Standard-first.** Everything rides the MCP Apps standard bridge — no host-private APIs.
+- **Extension-first.** Everything rides the MCP Apps bridge — no host-private APIs.
   One codebase should serve every host that renders `ui://`.
 - **Single-purpose, not composite.** Each app owns one scenario and its own collection; the
   engine mints a new one rather than cramming features into an old one. System apps (settings,
@@ -189,19 +201,24 @@ third-party to sandbox yet. The runner is *built and tested but dormant*: it is 
 for shared/published components later, where review + sandboxing arrive together. See
 [`SECURITY.md`](SECURITY.md) for the full threat model and trust tiers.
 
-## Host support (live-tested 2026-07-22)
+## Host support (live-tested 2026-07-22; ChatGPT web row updated 2026-07-28)
 
 | Host | Renders widgets | Human clicks widget | AI operates data | Same store |
 |---|---|---|---|---|
 | **Claude Desktop** (local stdio) | ✅ | ✅ full loop incl. `sendMessage` reply | ✅ | ✅ |
 | **Browser viewer** (`/view/<name>`) | ✅ | ✅ (no chat attached — `sendMessage` degrades to a notice) | via CLI AI | ✅ |
-| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
+| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) — tested against a **local** engine; remote not established | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code** (CLI, `claude mcp`) | — (text fallback by design) | — | ✅ | ✅ |
 | **codex CLI / IDE** | — (text fallback by design) | — | ✅ | ✅ |
-| **ChatGPT web** (Work mode) | supported by the standard — needs remote HTTPS (`/mcp` + tunnel), untested here | | | |
+| **ChatGPT web** (Work mode) | ✅ live-tested 2026-07-28 (remote HTTPS) — renders at full height, no clamping | ✅ a widget button added a row and it stuck | ✅ | ✅ |
 
-Everything rides the standard bridge, so host fixes upstream (e.g. #28912) benefit this
+Everything rides the MCP Apps bridge, so host fixes upstream (e.g. #28912) benefit this
 project with zero changes.
+
+**On Codex specifically:** plugins are registered on the web side, so a locally-installed engine
+is reached as an **MCP server**, not as a plugin — which is the right path for a self-hosted
+install anyway. Widget rendering in the ChatGPT desktop app also appears to depend on how you are
+signed in (we have seen it work under an account sign-in; not yet established under an API key).
 
 ## Status / roadmap
 
@@ -209,7 +226,7 @@ Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared s
 on Codex desktop and the browser viewer.
 
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system components installed (settings, dashboard, library); 16 library apps with live previews, one-click install
+- [x] system components installed (settings, dashboard, library); 17 library apps with live previews, one-click install
 - [x] AI component creation loop (guide → save → dynamic tool)
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys

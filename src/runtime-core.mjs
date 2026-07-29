@@ -234,6 +234,67 @@ export function themeVars(prefs) {
   return out.sort((a, b) => (a[0] < b[0] ? -1 : a[0] > b[0] ? 1 : 0));
 }
 
+// ---------------------------------------------------------------- shared preview snapshots
+
+/** The collections a manifest DECLARES, defensively — a manifest is data.
+ *
+ *  The grammar keys collections by name (`{"collections":{"trips":{…}}}`) and the store rejects
+ *  the array form outright, so the array form is treated as declaring nothing rather than being
+ *  index-walked. That is deliberately one notch stricter than contracts.mjs defaultCollectionFor,
+ *  which would read `["trips"]` as the single key "0"; a shape the store refuses to persist should
+ *  not be able to bind a preview to a collection named after an array index. */
+function declaredCollections(declaration) {
+  const c = declaration && declaration.collections;
+  if (!c || typeof c !== "object" || Array.isArray(c)) return [];
+  return Object.keys(c).map((k) => String(k).trim()).filter(Boolean);
+}
+
+/** One shared preview snapshot, cut down to what ONE app may see — and bound the way the engine
+ *  would bind it.
+ *
+ *  An embedder that previews many apps at once (settings' Installed grid; the hosted /library
+ *  composer) fetches every collection ONCE and hands each child its share. Two things have to be
+ *  right at the same time, and the first version got one of them:
+ *
+ *    · a preview of the shopping list must not CONTAIN the medication log — the child is a real
+ *      sandboxed document, so whatever is handed to it is inside it whether it reads it or not;
+ *    · a preview that is starved of its own rows is just as broken, only quietly.
+ *
+ *  Slicing on `row.collection === appName` satisfies the first and fails the second, because an
+ *  app's rows are not required to live under its own name. `builder-progress` declares
+ *  `build-progress`; `elder-days` reads `elder-meds` / `elder-checks` / `elder-vitals`. Measured
+ *  2026-07-29: 6 of the 17 shipped manifests declare a collection that is not the component name,
+ *  and every one of them previewed empty.
+ *
+ *  So the share is what the app DECLARES, plus its own name, and the binding follows
+ *  contracts.mjs defaultCollectionFor exactly: one declared collection is "the" one, several means
+ *  there is no "the" and the name stays the default. Kept here rather than at the call sites
+ *  because a second copy of "what does this app open on" is a second answer waiting to disagree —
+ *  the same reason that rule lives in one place on the server. */
+export function childPreviewSnapshot(rows, { app, declaration, components, tier } = {}) {
+  const name = String(app || "");
+  // TIER GATE, and it is not decoration — it is the same gate contracts.mjs defaultCollectionFor
+  // puts on the same question, for a sharper reason here. A manifest is written BY THE COMPONENT.
+  // For a local (first-party / AI-authored) app that is it telling us where its own rows live. For
+  // an UNREVIEWED one — a share-installed third-party app, T19 P-c — honouring it would let the
+  // app NAME ITS WAY INTO another app's rows: this snapshot is shared, the parent has already
+  // fetched every collection, and the slice is the only thing keeping them apart. An unreviewed
+  // app declaring `{"collections":{"private-ledger":{}}}` would be handed that collection by the
+  // act of being previewed. Untrusted apps see their own name and nothing else.
+  //
+  // Fail closed: an absent tier is not a local tier.
+  const declared = tier === "local" ? declaredCollections(declaration) : [];
+  const collection = declared.length === 1 ? declared[0] : name;
+  const allowed = new Set([collection, name, ...declared]);
+  return {
+    collection,
+    items: (rows || []).filter((r) => r && typeof r === "object" && allowed.has(r.collection)),
+    // Never undefined: inert's list_components has no other source, and an app whose collection is
+    // empty is invisible to a row-derived answer — it exists only in the roster.
+    components: Array.isArray(components) ? components : [],
+  };
+}
+
 // ---------------------------------------------------------------- via (shadow provenance)
 
 /** Component names, as the store enforces them (contracts bad_name rule). */

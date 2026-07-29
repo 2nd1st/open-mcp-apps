@@ -89,8 +89,24 @@ oma.files.list()                    // → [{path, size, mime, …}]
 oma.files.read(path)                // → Uint8Array
 oma.files.url(path)                 // → object URL (cached), for <img src>
 
-oma.sendMessage(text)               // into the chat AS THE USER — only on an explicit click
+oma.sendMessage(text)               // PROPOSES text into the chat — only on an explicit click.
+                                    // The host may run it, ask the user to confirm it, or refuse
+                                    // it (ChatGPT declines app-authored text as untrusted tool
+                                    // content). It does NOT carry the user's authority.
+oma.openLink(url) -> {ok}           // DIRECT MODE ONLY. Ask the host to open a URL
+                                    // (ui/open-link) — the direct counterpart to sendMessage:
+                                    // no model, no trust decision. Standalone opens a tab; a
+                                    // host that will not open links resolves {ok:false} rather
+                                    // than throwing. Sandboxed (embedded/previewed) components
+                                    // do NOT get this: a URL carries data, so a link opener is
+                                    // an outbound channel, and the sandbox closes those.
 oma.updateContext(text)             // silently updates the AI's context for its next turn
+
+oma.bind(collection)                // DIRECT MODE ONLY. Bind this runtime to a collection, once,
+                                    // from a value the SERVER computed. One caller: the universal
+                                    // loader, which is a single document serving every app and so
+                                    // cannot be baked with a binding the way a per-app document is.
+                                    // First call wins; never recompute the binding yourself.
 
 oma.host                            // "claude-ai" | "chatgpt" | "browser-viewer" | …
 oma.standalone                      // true in a plain browser page (no chat attached)

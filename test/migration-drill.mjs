@@ -177,7 +177,20 @@ rm(V1);
   const save = store.execute({ type: "save_component", command_id: randomUUID(), name: "recreated", html: "<p>fourth</p>", actor: "agent" });
   ok("a component re-save rolls forward past the migrated version", save.ok && save.version > cv);
   const hist2 = store.componentHistory("recreated").map((h) => h.version);
-  ok("history still monotonic after the re-save, nothing overwritten", hist2.length === 4 && hist2[0] === save.version, `history=[${hist2}]`);
+  const rawHist = store.db.prepare("SELECT version FROM component_history WHERE name='recreated' ORDER BY version DESC").all().map((r) => r.version);
+  // ⚠️ Rewritten 2026-07-29 along with the fix that scoped history to a component's CURRENT life.
+  // This fixture is precisely the delete-then-recreate case (see its comment at the top of the
+  // file), so the two halves of "nothing overwritten" are now asserted where each is observable:
+  //   · the TABLE still holds every row of both lives — that is the tombstone, and the property
+  //     the old `hist2.length === 4` was really about;
+  //   · the READ hands back only this life's, because the previous life belonged to a different
+  //     app that merely shared the name, and "restore checkpoint 1" must not reach into it.
+  // The row count moved; nothing was overwritten then and nothing is now.
+  ok("history still monotonic after the re-save, nothing overwritten",
+    rawHist.length === 4 && rawHist[0] === save.version
+    && hist2.length === 2 && hist2[0] === save.version && hist2[1] === rawHist[1]
+    && hist2[1] > rawHist[2],   // the life boundary sits between rawHist[1] and rawHist[2]
+    `table=[${rawHist}] read=[${hist2}]`);
 
   const fw = store.execute({ type: "write_file", command_id: randomUUID(), component: "recreated", path: "logo.png", sha256: "c".repeat(64), size: 11, mime: "image/png", actor: "agent" });
   ok("a file overwrite rolls forward past the migrated version", fw.ok && fw.meta.version > fv);

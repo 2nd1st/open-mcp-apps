@@ -750,13 +750,94 @@ function coercePref(v, fallback) {
       }
     }, { rootMargin: "120px" });
 
-    // Mount = oma.embed with the readonly preset: reads answer from one first page, every
-    // write path refuses, chat methods are silent — the old thumbnail rules, now owned by
-    // the runner machine. heights:false leaves sizing to .lib-thumb's scaled-picture CSS.
+    // ONE snapshot for ALL thumbnails, fetched by the parent, shared by every child.
+    //
+    // The thumbnails used to mount with the "readonly" preset — a real child that really calls the
+    // host. That looked cheap until a meta component was in the grid: dashboard renders a card per
+    // collection, so it fans out one data_list per collection ON MOUNT and runs out of its own
+    // per-mount refresh budget at six (measured 2026-07-28 — 10 collections, 4 cards drawn, and a
+    // toast that named the APP rather than the preview). A thumbnail has no business doing a full
+    // app's data fetching, and that stays true however generous the budget is.
+    //
+    // So the parent pays once. Rows carry their `collection`, which is exactly the shape the inert
+    // machine filters on, so ONE snapshot serves a multi-collection app and a single-collection one
+    // alike. Deliberately the same shape composePreviewDoc() takes server-side: the public library
+    // page, the share page and this grid are then three consumers of one preview machine rather
+    // than three lookalikes that drift (the last drift cost us "Refresh failed" on the public page
+    // while the in-app preview was fine).
+    const PREVIEW_ROWS_PER_COLLECTION = 24;   // a thumbnail is ~130px: past this nothing is visible
+    const PREVIEW_COLLECTION_CAP = 24;        // …and no thumbnail has any business pulling the whole store
+    // THE INPUTS GATE — wait for the data, do not answer without it.
+    //
+    // A thumb mounts from an IntersectionObserver the moment its card nears the viewport. The grid
+    // is rendered by loadComponents(), and boot only asks data_collections AFTERWARDS — a whole
+    // host round trip later. So on first paint the observer normally fires FIRST, and answering it
+    // with an empty snapshot is not a rare race, it is the ordinary path.
+    //
+    // It was permanent, too. An earlier fix stopped MEMOISING the empty answer, which was the right
+    // diagnosis of the wrong half: the empty answer was still SERVED, the thumb mounted with zero
+    // rows, went into `thumbs`, lost its skeleton, and nothing ever mounted it again. Not caching a
+    // wrong answer does not help if you hand it out.
+    //
+    // Waiting is the whole fix: a thumb that paints 200 ms later is invisible to a person; a thumb
+    // that paints empty is wrong for the life of the pane. boot() releases this unconditionally
+    // (including on failure), so an empty store answers [] rather than never.
+    let previewInputsReady;
+    const previewInputsP = new Promise((r) => { previewInputsReady = r; });
+    // SINGLE-FLIGHT, and the cached thing is the PROMISE, not its result. Thumbs mount from an
+    // IntersectionObserver, so the first screenful starts together: caching the result let five
+    // mounts each find `null` and each fetch the whole store — measured 55 data_list calls where
+    // 11 were needed. "Fetch once" is a property of the in-flight call, not of the finished one.
+    let previewRowsP = null;
+    async function previewSnapshot() {
+      await previewInputsP;
+      if (previewRowsP) return previewRowsP;
+      previewRowsP = (async () => {
+        const rows = [];
+        const eligible = collsCache.filter((c) => c.collection && c.collection !== "settings");
+        const colls = eligible.slice(0, PREVIEW_COLLECTION_CAP);
+        // SAY WHEN YOU TRUNCATE. A thumbnail has no business pulling the whole store, so the cap
+        // stays — but silence about it is the third version of tonight's recurring mistake (the
+        // control-plane refusal left no trace; the library preview swallowed its own error). An app
+        // whose collection falls past the cap renders an empty preview while its data sits right
+        // there, and nobody could tell that from a genuinely empty app.
+        if (eligible.length > colls.length) {
+          console.warn(`[oma] preview snapshot covers ${colls.length} of ${eligible.length} collections; ` +
+            `apps bound to the rest will preview empty (thumbnail cap, not missing data)`);
+        }
+        for (const c of colls) {
+          try {
+            const r = await oma.callTool("data_list", { collection: c.collection, limit: PREVIEW_ROWS_PER_COLLECTION });
+            for (const it of r?.structuredContent?.items || []) rows.push({ collection: c.collection, group: it.group || "", fields: it.fields || {} });
+          } catch { /* one unreadable collection must not cost the whole grid its data */ }
+        }
+        return rows;
+      })();
+      return previewRowsP;
+    }
+
+    // Mount = oma.embed with the INERT preset: zero host IO from the child, reads answered from the
+    // shared snapshot, writes pretend to succeed so demo interactions animate. heights:false leaves
+    // sizing to .lib-thumb's scaled-picture CSS.
     async function mountThumb(th) {
       const name = th.dataset.name;
       try {
-        const h = await oma.embed(name, { into: th, preset: "readonly", heights: false });
+        const all = await previewSnapshot();
+        if (!th.isConnected) return;                    // grid re-rendered while the snapshot loaded
+        // 🔴 THE FETCH IS SHARED; THE DATA IS NOT. Handing the whole snapshot to every child put one
+        // app's rows inside another app's sandboxed document. The cut itself lives in the runtime
+        // (childPreviewSnapshot) rather than here: it is both a security boundary AND the answer to
+        // "what does this app open on", and the second question already has an owner on the server.
+        // An earlier version of this line cut on `row.collection === name`, which is not what an app
+        // is bound to — builder-progress lives in build-progress — so 6 of 17 shipped apps previewed
+        // empty. We hand over the declaration and let one rule decide.
+        //
+        // The roster travels too: a meta component asks list_components, and inert has no host to
+        // ask. Names only — the same registry listing this pane already holds.
+        const roster = compsCache.map((c) => ({ name: c.name, description: c.description || "" }));
+        const h = await oma.embed(name, { into: th, preset: "inert", heights: false,
+          declaration: declsRaw.get(name),
+          snapshot: { items: all, version: 1, components: roster } });
         if (!th.isConnected) { h.unmount(); return; }   // grid re-rendered while mounting
         th.querySelector(".k-skel")?.remove();
         thumbs.set(name, h);
@@ -805,7 +886,10 @@ function coercePref(v, fallback) {
       th.append(el("div", "k-skel"));
       card.append(th);
       const tr = el("div", "k-row"); tr.style.marginTop = "8px";
-      tr.append(el("b", "k-ellip k-grow", c.name), el("span", "k-badge", "v" + c.version));
+      // No version badge: `version` IS the global ledger seq, so a card that says "v43" for an
+      // app edited twice invites "what happened to the other 41?". The card already carries the
+      // honest pair — size and when it last changed. The count lives in the drawer.
+      tr.append(el("b", "k-ellip k-grow", c.name));
       card.append(tr);
       card.append(el("div", "k-mut k-ellip2 lib-desc", c.description || ""));
       const meta = el("div", "k-row"); meta.style.marginTop = "6px";
@@ -817,14 +901,35 @@ function coercePref(v, fallback) {
       thumbIO.observe(th);
       return card;
     }
-    // Every component in the registry gets a LIVE thumb — settings/dashboard included
-    // (settings recurses at most one level: thumbs are inert, so a nested Installed tab
-    // can never activate; its default Preferences pane renders from allowlisted RO calls —
-    // the declaration comes back with component_html, which IS thumb-allowlisted, so a nested
-    // Preferences pane renders declared entries too — no source read is involved any more).
+    // Every component in the registry gets a thumb — settings/dashboard included.
+    //
+    // ⚠️ This comment has now been wrong TWICE, in opposite directions, within one day. Both the
+    // error and the correction are kept, because the pattern is the lesson (2026-07-29):
+    //   · It first said "thumbs are inert" while they were mounted READONLY. Corrected.
+    //   · The correction then said "a thumb is an oma.embed with the READONLY preset" — and was
+    //     falsified 80 minutes later by the change directly below, which moved thumbs to INERT.
+    //     A comment that describes the line under it is not safe from the commit that edits
+    //     that line; only a test is.
+    //
+    // What is true NOW (read mountThumb below, not this paragraph, if they ever disagree again):
+    // a thumb is an `oma.embed(..., { preset: "inert" })` — zero host IO from the child, every
+    // read answered from the snapshot the pane hands it. Recursion is bounded by inertness
+    // itself: a nested Installed tab has no host to mount anything against.
+    //
+    // Still true, and deliberate: component_html is NOT reachable from a preview
+    // (READONLY_LOCAL_TOOLS is {data_list, data_collections, list_components}), so a nested
+    // Preferences pane renders WITHOUT declared entries. Widening a preview's reach to "read any
+    // component's source" is the wrong trade for a 130px thumbnail, and READONLY_LOCAL_TOOLS is
+    // the boundary third-party apps will arrive at (T19 P-c share-install).
+    //
+    // Why inert at all: under the old readonly preset each thumb was a real child that really
+    // called the host, so a meta component (dashboard fans out one data_list per collection)
+    // exhausted its own per-mount refresh budget on mount — measured 2026-07-28.
     function renderLibrary() {
       for (const h of thumbs.values()) h.unmount();   // embed handles hold listeners — release them
       thumbs.clear();
+      previewRowsP = null;                            // a re-render means the data may have moved
+
       renderCats();
       libGrid.innerHTML = "";
       compsCache.forEach((c, i) => libGrid.append(libCard(c, i)));
@@ -858,7 +963,7 @@ function coercePref(v, fallback) {
       disarmDelete();
       document.getElementById("d-err").hidden = true;
       document.getElementById("d-name").textContent = c.name;
-      document.getElementById("d-ver").textContent = "v" + c.version;
+      document.getElementById("d-ver").textContent = "";   // filled by loadHistory: a checkpoint count, not the ledger seq
       document.getElementById("d-desc").textContent = c.description || "";
       const cat = document.getElementById("d-cat");
       cat.hidden = !c.category_id;
@@ -920,22 +1025,27 @@ function coercePref(v, fallback) {
         hist = r?.structuredContent?.history || null;
       } catch { hist = null; }
       if (drawerComp !== c) return;   // drawer switched while the history was in flight
-      if (!hist || !hist.length) hist = [{ version: c.version, ts: c.updated_at, html_size: c.html_size }];   // degrade: current version only
+      if (!hist || !hist.length) hist = [{ checkpoint: 1, ts: c.updated_at, html_size: c.html_size }];   // degrade: the current one only
       // Restore = version rollback of a REGISTERED component only (restore_component); locked
       // apps never show it (the engine refuses), and no permissions truth means no button.
       const perm = permsCache && permsCache.find((p) => p.name === c.name);
       const restorable = perm && !perm.locked;
+      // "Checkpoint 3 · 2m ago" reads as a history of THIS app. "v43 · 2m ago" reads as a mystery,
+      // because 43 counts every write in the store. The engine derives the checkpoint; the version
+      // survives as what Restore actually targets.
+      document.getElementById("d-ver").textContent = hist.length === 1 ? "1 checkpoint" : hist.length + " checkpoints";
       for (const h of hist.slice(0, 12)) {
-        const li = el("li", "k-num", ["v" + h.version, ago(h.ts), kb(h.html_size)].filter(Boolean).join(" · "));
-        if (restorable && h.version !== c.version) li.append(restoreBtn(c, h.version));
+        const label = h.checkpoint ? "Checkpoint " + h.checkpoint : "Checkpoint";
+        const li = el("li", "k-num", [label, ago(h.ts), kb(h.html_size)].filter(Boolean).join(" · "));
+        if (restorable && h.checkpoint !== hist[0].checkpoint) li.append(restoreBtn(c, h.checkpoint));   // hist is newest-first
         ol.append(li);
       }
-      if (hist.length > 12) ol.append(el("li", null, "+ " + (hist.length - 12) + " earlier versions"));
+      if (hist.length > 12) ol.append(el("li", null, "+ " + (hist.length - 12) + " earlier checkpoints"));
     }
     // Arm-to-confirm Restore (button → "Really?" → act, ~4s disarm — same pattern as Delete;
     // window.confirm is unreliable in sandboxed iframes). Nothing is lost: the engine re-saves
     // the old html as a NEW version, so you can roll forward again.
-    function restoreBtn(c, version) {
+    function restoreBtn(c, checkpoint) {
       const b = el("button", "k-btn ghost", "Restore");
       b.onclick = async () => {
         if (b.dataset.armed !== "1") {
@@ -947,7 +1057,7 @@ function coercePref(v, fallback) {
         const errEl = document.getElementById("d-err");
         errEl.hidden = true;
         try {
-          const r = await oma.callTool("restore_component", { command_id: crypto.randomUUID(), name: c.name, version });
+          const r = await oma.callTool("restore_component", { command_id: crypto.randomUUID(), name: c.name, checkpoint });
           if (r && r.isError) throw new Error((r.content && r.content[0] && r.content[0].text) || "Restore failed.");
           await loadManifest(c.name);   // the restored html may declare different settings
           await loadComponents();       // grid, prefs and version badges refresh
@@ -1195,6 +1305,11 @@ function coercePref(v, fallback) {
         countUp(document.getElementById("a-items"), user.reduce((n, c) => n + c.items, 0));
         await Promise.all(compsCache.map((c) => loadManifest(c.name).then(() => renderPrefs())));   // sections appear as each manifest lands
       } catch {}
+      // Release the thumbnails, whatever happened above. They have been waiting since the grid was
+      // rendered — collsCache says WHICH collections to fetch and declsRaw says which of them each
+      // app may see, and neither existed when the first cards scrolled into view. Unconditional on
+      // purpose: a failed load must let the grid render honestly empty, never leave it waiting.
+      previewInputsReady();
       bootingManifests = false;
       renderPrefs();
     })();

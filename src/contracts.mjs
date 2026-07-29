@@ -109,7 +109,19 @@ const capsShape = z.object({
 
 // Reserved settings groups (docs/settings-design.md §8): a group is a component name, so
 // these may never BE component names. Blocks naming only — not writes into those groups.
-const RESERVED_COMPONENT_NAMES = new Set(["security", "engine", "host", "system", "shell", "oma"]);
+// The last three are not vocabulary hygiene, they are a brick-the-server guard, and the mine is
+// live: install.mjs turns OMA_DYNAMIC_TOOLS on for every Anthropic host, and a per-app tool is
+// named `open_${name.replaceAll("-","_")}`. So an app called `component` registers `open_component`
+// — the static opener's own name — the SDK throws on the duplicate, createEngine throws, and the
+// server no longer starts. At that point `delete_component` cannot be reached either: the only way
+// out is editing SQLite by hand. `app` collides with the loader URI the same way.
+// `component` and `app` are this product's own house vocabulary, so "make me a component tracker"
+// is a plausible thing for a user to say — which is exactly why a name cannot be allowed to reach
+// into the tool namespace.
+const RESERVED_COMPONENT_NAMES = new Set([
+  "security", "engine", "host", "system", "shell", "oma",
+  "component", "app", "loader",
+]);
 
 // The components the engine SHIPS and seeds into every fresh store. One definition, because two
 // places need it for unrelated reasons and a drifting copy would be silent: seed.mjs decides what

@@ -5,8 +5,8 @@
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, RESERVED_COMPONENT_NAMES, LOCKED_COMPONENTS, tierOf, cmdArgs } from "../contracts.mjs";
+import { createHash, randomUUID } from "node:crypto";
+import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, RESERVED_COMPONENT_NAMES, LOCKED_COMPONENTS, tierOf, cmdArgs, answer, toMcp } from "../contracts.mjs";
 
 export function register(ctx) {
   const { server, store, hostName, run, failNote, fail, registerComponent } = ctx;
@@ -15,21 +15,30 @@ export function register(ctx) {
   server.registerTool(
     "component_history",
     {
-      title: "Component version history",
+      title: "App history (checkpoints)",
       annotations: RO,
-      description: "List a component's saved versions as {version, ts, html_size} — metadata only, NEVER the html (keeps context small; use get_component for the current source). History survives delete_component (tombstone).",
+      description: "List an app's checkpoints as {checkpoint, ts, html_size} — metadata only, NEVER the html (keeps context small; use get_component for the current source). Checkpoint 1 is the oldest; restore_component takes that number. History survives delete_component (tombstone).",
       inputSchema: { name: z.string() },
       outputSchema: {
         name: z.string(),
-        history: z.array(z.object({ version: z.number(), ts: z.string(), html_size: z.number() })),
+        history: z.array(z.object({ checkpoint: z.number(), ts: z.string(), html_size: z.number() })),
       },
     },
     async (a) => {
       const history = store.componentHistory(a.name);
       if (!history.length) return fail(`No history for component "${a.name}".`);
-      const text = `"${a.name}" — ${history.length} version(s):\n` +
-        history.map((h) => `  v${h.version} · ${h.ts} · ${h.html_size} chars`).join("\n");
-      return { content: [{ type: "text", text }], structuredContent: { name: a.name, history } };
+      // Checkpoints, not raw versions: `version` is the global ledger seq, so reciting it makes a
+      // user who edited twice wonder why their app jumped from 5 to 43 (nothing happened to it —
+      // those 38 were their groceries). The seq is not merely demoted here, it is GONE from this
+      // sentence, because restore_component now speaks checkpoints too and nothing downstream
+      // needs the number read aloud. structuredContent still carries `version` for machinery.
+      const text = `"${a.name}" — ${history.length} checkpoint(s), newest first:\n` +
+        history.map((h) => `  checkpoint ${h.checkpoint} · ${h.ts} · ${h.html_size} chars`).join("\n");
+      // The seq does not travel on this read at all. It was only ever here so the UI could pick a
+      // restore target, and the verb takes a checkpoint now — leaving it in would mean the number
+      // we just took off the screen still arrives in the model's context, ready to be recited.
+      return { content: [{ type: "text", text }],
+        structuredContent: { name: a.name, history: history.map((h) => ({ checkpoint: h.checkpoint, ts: h.ts, html_size: h.html_size })) } };
     },
   );
 
@@ -44,25 +53,31 @@ export function register(ctx) {
     {
       title: "Restore a component version",
       annotations: WRITE,
-      description: "Roll a component back to one of its earlier versions: re-saves that version's HTML as a NEW current version (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Find the version number with component_history; after restoring, open_component to view it.",
+      description: "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from component_history; after restoring, open_component to view it.",
       inputSchema: {
         name: z.string(),
-        version: z.number().describe("the historical version to restore (see component_history)"),
+        // Checkpoints, not versions, because `version` is the global ledger seq and this is the one
+        // verb a PERSON drives ("go back to before you broke it"). Speaking versions here would put
+        // the seq back on screen through the only door the narrative had left open.
+        checkpoint: z.number().describe("which checkpoint to restore, 1 = the oldest (see component_history)"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
     },
     async (a) => {
       if (LOCKED_COMPONENTS.has(a.name)) return fail(`"${a.name}" is a locked system component — it can't be restored or overwritten here.`);
       if (RESERVED_COMPONENT_NAMES.has(a.name)) return fail(`"${a.name}" is a reserved namespace — nothing restorable lives there.`);
-      const old = store.getComponentVersion(a.name, a.version);
-      if (!old) return fail(`No version ${a.version} for component "${a.name}". Use component_history to see which versions exist.`);
+      const hist = store.componentHistory(a.name);
+      const target = hist.find((h) => h.checkpoint === a.checkpoint);
+      if (!target) return fail(`No checkpoint ${a.checkpoint} for "${a.name}" — it has ${hist.length}. component_history lists them.`);
+      const old = store.getComponentVersion(a.name, target.version);
+      if (!old) return fail(`Checkpoint ${a.checkpoint} of "${a.name}" has no stored source.`);
       const r = store.execute({
         type: "save_component", declaration_policy: "salvage", command_id: a.command_id || randomUUID(),
         name: a.name, html: old.html, description: "", actor: "agent", host: hostName(),
       });
       if (!r.ok) return fail(failNote(r));
       registerComponent(a.name);
-      return { content: [{ type: "text", text: `Restored "${a.name}" from v${a.version} → saved as new v${r.version} (history preserved). Show it now with open_component {component: "${a.name}"}.` }] };
+      return { content: [{ type: "text", text: `Restored "${a.name}" from checkpoint ${a.checkpoint} → saved as a new checkpoint (history preserved). Show it now with open_component {component: "${a.name}"}.` }] };
     },
   );
 
@@ -135,14 +150,79 @@ export function register(ctx) {
     {
       title: "Delete component",
       annotations: DESTRUCTIVE,
-      description: "Remove a component from the registry permanently (confirm with the user first). Version history is RETAINED as a tombstone and its data collection / settings items are untouched. The component's ui:// registration may linger until server restart; open_component itself fails cleanly right away.",
-      inputSchema: { ...cmdArgs, name: z.string() },
+      description: "Delete an app. data:\"keep\" (default) removes only the app; data:\"cascade\" ALSO deletes the data only this app was using — permanently, with no undo. Cascade is two steps: call it once to get a plan (what would be deleted, what would be kept and why), show the user, then call again with that plan_token. Collections another app also uses are NEVER deleted. To keep everything and just clear the shelf, use archive_component instead.",
+      // No outputSchema on purpose. The answer is a PLAN — a list of collections with a verdict and
+      // a sentence of evidence each — and declaring that shape costs ~1.9 KB resident in every
+      // conversation for a tool most conversations never call. The facts the model must act on
+      // still travel in structuredContent (D-4), and the plan_token is quoted in the text too, so
+      // a host that forwards only one channel can still complete the two-step.
+      inputSchema: { ...cmdArgs, name: z.string(),
+        data: z.enum(["keep", "cascade"]).optional().describe("cascade also deletes the data only this app used (permanent)"),
+        plan_token: z.string().optional().describe("from the plan you showed the user — required to cascade"),
+      },
     },
     async (a) => {
       if (LOCKED_COMPONENTS.has(a.name)) return fail(`"${a.name}" is a locked system component — its UI ships with the engine and can't be deleted here.`);
-      const r = run(a, "delete_component");
-      if (!r.ok) return fail(r.error === "not_found" ? `No component "${a.name}" in the registry. list_components shows what exists.` : failNote(r));
-      return { content: [{ type: "text", text: `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}. Version history retained; its data collection and settings items are untouched.` }] };
+      if (a.data !== "cascade") {
+        const r = run(a, "delete_component");
+        if (!r.ok) return fail(r.error === "not_found" ? `No component "${a.name}" in the registry. list_components shows what exists.` : failNote(r));
+        return toMcp(answer.ack({ ok: true, name: a.name, deleted: true },
+          `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}. Its data and settings were KEPT — the app is gone, so removing that data now means deleting the collection's rows directly (data_list to see them). Deleting WITH the data is a choice made at delete time: data:"cascade".`));
+      }
+      if (!store.getComponent(a.name)) {
+        // Gone, but the caller is holding a plan token — that is what a RETRY looks like after a
+        // response was lost, and this precheck used to answer "No component" to it, so a caller
+        // could not tell a completed irreversible delete from a failed one. The store already
+        // knows: command_id is its idempotency key. Ask it instead of pre-empting it.
+        if (a.plan_token) {
+          const replay = run({ ...a, cascade: true, cascade_collections: [] }, "delete_component");
+          // …and it has to be THIS act it is confirming. `ok` alone only says the command_id ran;
+          // delete has two dispositions and one of them keeps every row, so a command_id first used
+          // for a KEEP delete answered yes here and the caller was told its cascade had completed
+          // while the data sat untouched. A false "your irreversible thing is done" is worse than
+          // the error it replaced, so the receipt now has to name the cascade.
+          if (replay.ok && replay.cascaded) return toMcp(answer.ack(
+            { ok: true, name: a.name, deleted: true, note: "already applied", removed: replay.cascaded.collections || [] },
+            `"${a.name}" was already deleted by this same request — nothing further to do.`));
+          if (replay.ok) return fail(
+            `"${a.name}" was already deleted by this command_id, but as a KEEP delete — its data was not touched. ` +
+            `The app is gone, so cascade is no longer possible: remove the rows directly with the data_* tools if that is what you want.`);
+        }
+        return fail(`No component "${a.name}" in the registry. list_components shows what exists.`);
+      }
+
+      // The plan IS the token: hashing it makes confirmation mean "the world still looks like what
+      // the user was shown". No server-side token table — hosted runs an engine per request, so any
+      // remembered token would be forgotten between the two calls of a two-step confirm.
+      const plan = store.deleteDisposition(a.name);
+      // `plan.collections` now carries each collection's ledger seq, so hashing the plan whole pins
+      // the ROWS and not merely how many there were — swapping every row while keeping the count
+      // used to leave this token valid. settings_seq does the same for the settings half. Nothing
+      // here is declared in a schema: the plan travels in structuredContent (this tool has no
+      // outputSchema, deliberately), so pinning it costs zero bytes on the resident tool surface.
+      const token = createHash("sha256")
+        .update(JSON.stringify([a.name, plan.collections, plan.settings_keys, plan.settings_seq]))
+        .digest("hex").slice(0, 16);
+      const kept = plan.collections.filter((c) => c.verdict !== "exclusive").map((c) => c.collection);
+      const doomed = plan.collections.filter((c) => c.verdict === "exclusive");
+      const rows = doomed.reduce((n, c) => n + c.rows, 0);
+      const summary = [
+        doomed.length ? `Deletes ${rows} row(s) in ${doomed.map((c) => `"${c.collection}"`).join(", ")}` : "Deletes no data rows",
+        plan.settings_keys ? `${plan.settings_keys} of its settings` : null,
+        kept.length ? `KEEPS ${kept.map((c) => `"${c}"`).join(", ")} (used by other apps, or ownership unproven)` : null,
+      ].filter(Boolean).join("; ");
+
+      if (a.plan_token !== token) {
+        return toMcp(answer.ack(
+          { ok: false, name: a.name, deleted: false, plan_token: token, collections: plan.collections, settings_keys: plan.settings_keys, kept,
+            reason: a.plan_token ? "plan_changed" : "plan_required" },
+          `${a.plan_token ? "The data changed since that plan, so it is void. Here is the current one" : "Nothing deleted yet"} — show the user, then call again with plan_token "${token}". ${summary}. This CANNOT be undone; archive_component keeps everything instead.`));
+      }
+      const r = run({ ...a, cascade: true, cascade_collections: plan.exclusive }, "delete_component");
+      if (!r.ok) return fail(failNote(r));
+      return toMcp(answer.ack(
+        { ok: true, name: a.name, deleted: true, removed: r.cascaded || [], settings_keys: r.settings_keys || 0, kept },
+        `Deleted "${a.name}" and its data: ${rows} row(s)${r.settings_keys ? ` plus ${r.settings_keys} settings` : ""}. ${kept.length ? `Kept ${kept.map((c) => `"${c}"`).join(", ")} — other apps use those.` : "Nothing else was using its collections."} This is permanent.`));
     },
   );
 

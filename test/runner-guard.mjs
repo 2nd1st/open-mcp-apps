@@ -8,7 +8,7 @@
 // goes through io, so the whole policy runs in node.
 //
 // Run: node test/runner-guard.mjs
-import { makeGuard, composeChildDoc, BRIDGE, RUNNER_CSP, readFileParts, RATES } from "../src/runner.mjs";
+import { makeGuard, composeChildDoc, BRIDGE, RUNNER_CSP, readFileParts, RATES, stubOmaScript, composePreviewDoc } from "../src/runner.mjs";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note) => (cond
@@ -142,6 +142,160 @@ console.log("5. rates — one table, enforced");
     try { await g("addItem", { fields: {} }); } catch (e) { tripped = /rate limit/.test(String(e.message)); break; }
   }
   ok("the writes rate trips at the table's limit", tripped);
+}
+
+console.log("5b. …and the notice says WHOSE budget ran out, once");
+// Both halves are measured defects (2026-07-28), not hypotheticals. The stamps are per-guard, so
+// a preview starves its OWN allowance — yet the notice named the component, and settings' Installed
+// grid reported 'Component "dashboard" hit its refresh rate limit' while the real dashboard was
+// fine. It said it four times, too: every refused call notified, so ten installed apps meant a
+// toast storm. A notice that misattributes is worse than none — the user goes looking at an app
+// that has nothing wrong with it.
+{
+  const saturate = async (preset) => {
+    const notes = [];
+    const g = guard(FULL, makeIo({ notify: (m) => notes.push(m) }), preset, "local");
+    for (let i = 0; i <= RATES.refresh[0] + 4; i++) {
+      try { await g("callTool", { name: "data_list", args: { collection: "c" + i } }); } catch { /* refused past the limit */ }
+    }
+    return notes;
+  };
+  const preview = await saturate("readonly");
+  const live = await saturate("live");
+  ok("one notice per saturation episode, not one per refused call", preview.length === 1, `${preview.length} notices`);
+  ok("a starved PREVIEW does not read as the app being throttled",
+    /^Preview of "child-app"/.test(preview[0] || "") && /app itself is unaffected/.test(preview[0] || ""), preview[0]);
+  ok("a live widget still reports as the component itself",
+    /^Component "child-app"/.test(live[0] || "") && live.length === 1, live[0]);
+}
+
+console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's inert preset does");
+// The public preview path (composePreviewDoc → stubOmaScript) is a second inert machine, and it
+// had not learned what the first one did: answering every fetch empty reads as CORRUPT data, not
+// as "no rows". Measured 2026-07-28 — training-log rendered "0/0 · No entries yet" plus "Refresh
+// failed: training-plan returned invalid data" with its fixtures sitting in the same document.
+// A stranger's first look at a shared app runs through here (hosted /library today, T19 P-a next),
+// so it is pinned rather than left to the next person to re-measure.
+{
+  const items = [
+    { collection: "a", group: "g1", fields: { title: "a1" } },
+    { collection: "a", fields: { title: "a2" } },
+    { collection: "b", fields: { title: "b1" } },
+  ];
+  const script = stubOmaScript("a", items);
+  const body = script.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, "");
+  const win = {};
+  new Function("window", body)(win);   // the stub is plain ES5 by design — no bundler in the path
+  const oma = win.oma;
+  const bound = await oma.readCollection();
+  ok("readCollection defaults to the bound collection and returns its rows", bound.items.length === 2, `${bound.items.length}`);
+  ok("…in real item shape (id/fields), not raw fixture rows",
+    typeof bound.items[0].id === "string" && bound.items[0].fields.title === "a1");
+  const other = await oma.readCollection("b");
+  ok("a second collection is served its OWN rows", other.items.length === 1 && other.collection === "b");
+  const listed = await oma.callTool("data_list", { collection: "b" });
+  ok("callTool data_list answers from fixtures too (the canonical self-fetch pattern)",
+    listed.structuredContent?.items?.length === 1, JSON.stringify(listed.structuredContent));
+  const unknown = await oma.callTool("something_else", {});
+  ok("an unrelated tool still answers empty, not wrong", JSON.stringify(unknown.structuredContent) === "{}");
+  // A meta component asks WHICH collections exist, and WHICH apps exist, before it asks for rows.
+  // Answering either with an empty envelope renders an app whose whole job is "show me everything"
+  // as though the user owned nothing — on the machine that composes PUBLIC preview pages.
+  const cols = await oma.callTool("data_collections", {});
+  ok("the stub derives data_collections from the same fixtures",
+    cols.structuredContent.collections.map((c) => c.collection).sort().join() === "a,b", JSON.stringify(cols.structuredContent));
+  const bare = await oma.callTool("list_components", {});
+  ok("with no roster supplied it answers an EMPTY list — honest, and never undefined",
+    Array.isArray(bare.structuredContent.components) && bare.structuredContent.components.length === 0);
+
+  // ⚠️ This pair replaces a single `Array.isArray(...)` assertion that passed on `[]` — i.e. it
+  // passed whether or not the roster was ever wired, and it was covering a half-finished fix.
+  // The roster is the ONLY way an installed app with an EMPTY collection stays visible in a
+  // preview: inert derives data_collections from rows, and zero rows reads as "does not exist".
+  const withRoster = stubOmaScript("a", items, [{ name: "a" }, { name: "empty-app" }]);
+  const w2 = {};
+  new Function("window", withRoster.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, ""))(w2);
+  const named = await w2.oma.callTool("list_components", {});
+  ok("…and hands back the composer's roster VERBATIM when there is one",
+    named.structuredContent.components.map((c) => c.name).sort().join() === "a,empty-app",
+    JSON.stringify(named.structuredContent.components));
+  ok("…including the app that has no rows at all (the whole point of carrying a roster)",
+    named.structuredContent.components.some((c) => c.name === "empty-app"));
+}
+
+console.log("5c2. …and it counts collections in a container that has no inherited keys (N7)");
+// `__proto__` and `constructor` are LEGAL collection names — the store accepts both (verified
+// against a real store, ok:true). The stub tallied collections in a bare object literal, so
+// `m["__proto__"] = 1` mutated the prototype instead of creating a key (the collection vanished
+// from the answer entirely) and `m["constructor"] || 0` read the inherited FUNCTION, making the
+// count `"function Object() { [native code] }1"` — a string where a number belongs. The guard's
+// twin uses a Map and was always right, so this was also a place the two machines disagreed.
+{
+  const items = [
+    { collection: "__proto__", fields: { t: "p" } },
+    { collection: "constructor", fields: { t: "c" } },
+    { collection: "ordinary", fields: { t: "o" } },
+  ];
+  const script = stubOmaScript("ordinary", items);
+  const win = {};
+  new Function("window", script.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, ""))(win);
+  const cols = (await win.oma.callTool("data_collections", {})).structuredContent.collections;
+  const names = cols.map((c) => c.collection).sort();
+  ok("a collection named __proto__ still appears (a bare object swallowed it)",
+    names.join() === "__proto__,constructor,ordinary", names.join());
+  ok("…and every count is a NUMBER, not something inherited from Object.prototype",
+    cols.every((c) => typeof c.items === "number" && c.items === 1),
+    JSON.stringify(cols));
+  // Same question of the guard's twin, so the two machines are pinned to the same answer.
+  const g = guard(FULL, makeIo({ snapshot: () => ({ collection: "ordinary", items, version: 1 }) }), "inert", "local");
+  const viaGuard = (await g("callTool", { name: "data_collections", args: {} })).structuredContent.collections;
+  ok("…and the parented guard agrees, name for name and count for count",
+    JSON.stringify(viaGuard.map((c) => [c.collection, c.items]).sort()) === JSON.stringify(cols.map((c) => [c.collection, c.items]).sort()),
+    JSON.stringify(viaGuard));
+}
+
+console.log("5c3. the preview document TELLS its embedder how tall it is");
+// A preview iframe is sandbox="allow-scripts" with NO allow-same-origin — on purpose, so the
+// embedder cannot read contentDocument.scrollHeight and must be told. The live runner has
+// broadcast omaRunHeight since it existed; composePreviewDoc — the document every gallery and
+// store page actually embeds — did not, so an embedder had to guess a fixed window and a taller
+// app was silently cut off (measured on /app-store/<name>: the render stopped mid-card under a
+// fade, with nothing to distinguish "this app is short" from "we truncated it").
+{
+  const doc = composePreviewDoc("<div>hi</div>", { name: "spending-journal" });
+  ok("the preview document broadcasts omaRunHeight", /omaRunHeight/.test(doc));
+  ok("…the same message shape the runner child sends, so one embedder handles both",
+    /postMessage\(\{omaRunHeight:true,\s*h:document\.documentElement\.scrollHeight\}/.test(doc.replace(/\s+/g, " ")),
+    "shape drifted from src/runner.mjs's own broadcast");
+  ok("…after the body, so the height it reports includes the app", doc.indexOf("omaRunHeight") > doc.indexOf("<div>hi</div>"));
+  ok("…and it re-reports on resize rather than measuring once", /ResizeObserver/.test(doc));
+  ok("…degrading to a single load-time report where ResizeObserver is missing",
+    /typeof ResizeObserver==='function'/.test(doc) && /else window\.addEventListener\("load"/.test(doc));
+  ok("a host that rejects postMessage cannot break the preview", /catch\(e\)\{\}/.test(doc));
+  ok("the CSP still comes first — the broadcast did not become an injection anchor",
+    doc.indexOf("Content-Security-Policy") < doc.indexOf("<div>hi</div>"));
+}
+
+console.log("5d. the PARENTED inert preset answers the same two questions from its snapshot");
+// The other inert machine. Its roster arrives through oma.embed's childSnap, which used to
+// rebuild the snapshot from an explicit key list and dropped `components` on the floor — so this
+// half of "both preview machines now agree" was never true. Pinned on the guard directly.
+{
+  const snap = {
+    collection: "a",
+    items: [{ id: "i1", group: "", position: 1, fields: { t: "x" }, version: 1, collection: "a" }],
+    components: [{ name: "a" }, { name: "empty-app" }],
+    version: 3,
+  };
+  const g = guard(FULL, makeIo({ snapshot: () => snap }), "inert", "local");
+  const roster = await g("callTool", { name: "list_components", args: {} });
+  ok("inert answers list_components from the snapshot's roster",
+    roster.structuredContent.components.map((c) => c.name).sort().join() === "a,empty-app",
+    JSON.stringify(roster.structuredContent.components));
+  const noRoster = await guard(FULL, makeIo({ snapshot: () => ({ collection: "a", items: [], version: 1 }) }), "inert", "local")(
+    "callTool", { name: "list_components", args: {} });
+  ok("…and an empty list when the embedder had none, never undefined",
+    Array.isArray(noRoster.structuredContent.components) && noRoster.structuredContent.components.length === 0);
 }
 
 console.log("6. presets — readonly refuses writes; inert touches nothing");

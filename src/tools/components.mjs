@@ -22,6 +22,11 @@ import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SE
 // Exported so the false-positive cases stay pinned in test/server-smoke.
 export const OMA_REFERENCE_RE = /\boma\s*[.[]|window\s*\.\s*oma\b|window\s*\[\s*["']oma["']\s*\]|\{[^{}]*\boma\b[^{}]*\}\s*=/;
 
+// The universal opener's document. Module-level because cache-hints.mjs has to tell it apart from
+// the per-component resources: this one is built from the engine binary alone (same bytes for every
+// tenant, every store), and that is exactly the difference between a shareable cache and a leak.
+export const LOADER_URI = "ui://open-mcp-apps/app.html";
+
 // The component-write receipt, shared by save_component / edit_component / (conflict answers).
 // Terse for the same reason ackSchema is: outputSchema bytes are resident for every conversation.
 const saveAckSchema = {
@@ -40,8 +45,33 @@ const saveAckSchema = {
 };
 
 export function register(ctx) {
-  const { server, store, hostName, run, failNote, fail, computeCaps, viewBase } = ctx;
+  const { server, store, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
 
+
+  // ---------------------------------------------------------------- widget security declaration
+  // What a host should let this widget reach. Ours reaches NOTHING: every shipped component is a
+  // self-contained document (verified 2026-07-28 — zero absolute URLs across all 19 components and
+  // the runtime), so the honest declaration is also the strictest one there is, and it turns "we
+  // are self-contained" from a claim in a README into a machine-readable one on the wire.
+  //
+  //   · frameDomains is DELIBERATELY not declared. Omitted means frame-src 'none', and declaring it
+  //     invites a stricter review for a capability we do not want. Our nested previews are `srcdoc`
+  //     iframes, which are unaffected — measured, not assumed: a srcdoc child with
+  //     sandbox="allow-scripts" loads normally under frame-src 'none' in Chrome.
+  //   · redirect_domains carries the viewer origin when there IS one, because oma.openLink sends
+  //     the user there (the Browse button). It is per-deployment, so it is derived, never a literal.
+  //   · The snake_case `openai/widgetCSP` twin is ChatGPT's documented compatibility key; its own
+  //     reference says the standard fields are superseded by _meta.ui.csp but redirect_domains is
+  //     still read from the legacy key, so both are sent and they agree.
+  const viewerOrigin = (() => {
+    try { return viewBase && /^https?:\/\//.test(viewBase) ? new URL(viewBase).origin : null; } catch { return null; }
+  })();
+  const redirects = viewerOrigin ? [viewerOrigin] : [];
+  const UI_SECURITY = {
+    ui: { csp: { connectDomains: [], resourceDomains: [] }, ...(widgetDomain ? { domain: widgetDomain } : {}) },
+    "openai/widgetCSP": { connect_domains: [], resource_domains: [], ...(redirects.length ? { redirect_domains: redirects } : {}) },
+    ...(widgetDomain ? { "openai/widgetDomain": widgetDomain } : {}),
+  };
   // ---------------------------------------------------------- dynamic component wiring
   // ⚠️ E12 — do not turn this on without re-reading this paragraph. Beyond the per-tool budget,
   // registering a tool per component means the tool list CHANGES whenever save_component runs, and
@@ -58,8 +88,26 @@ export function register(ctx) {
     if (registered.has(name)) return; // callbacks read the registry live; updates need no re-register
     registered.add(name);
     const uri = `ui://open-mcp-apps/${name}.html`;
+    // THE ENGINE MUST BOOT ON DATA IT WOULD NOT ACCEPT TODAY.
+    //
+    // `app` joined RESERVED_COMPONENT_NAMES on 2026-07-29. Reserving a name stops the next one; it
+    // says nothing about the stores that already exist, and this engine is public. A component
+    // called `app` claims exactly the universal loader's URI, so the loader's own registration
+    // below hit "already registered", createEngine threw, and the server never came up — and a
+    // server that will not start cannot be asked to delete the row that stops it. The only way out
+    // was hand-editing SQLite.
+    //
+    // The app yields, not the engine: it loses its per-app DIRECT resource and keeps everything
+    // else — open_component still opens it, its data and history are untouched. Note this cannot be
+    // fixed by wrapping the loop below in try/catch: the throw lands on the LOADER's registration,
+    // which is not in the loop.
+    if (uri === LOADER_URI) {
+      console.warn(`[oma] component "${name}" shares the loader's resource URI, so it gets no per-app ` +
+        `resource; it still opens through open_component. Renaming it restores direct embedding.`);
+      return;
+    }
 
-    registerAppResource(server, `component-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE }, async () => {
+    registerAppResource(server, `component-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: UI_SECURITY }, async () => {
       const comp = store.getComponent(name);
       if (!comp) throw new Error(`component ${name} not found`);
       // Tier gate (docs/security-model.md §2.3): this per-component resource serves DIRECT mode
@@ -67,12 +115,12 @@ export function register(ctx) {
       // loader's runnerMount covers only the open_component path. Non-local tiers fail closed
       // to the placeholder; every component today is local, so nothing changes until one isn't.
       if (tierOf(comp.author) !== "local")
-        return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: RUNNER_REQUIRED_HTML }] };
+        return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: RUNNER_REQUIRED_HTML, _meta: UI_SECURITY }] };
       // The binding rides IN the document: Claude Desktop's dynamic-tools mode delivers neither
       // toolinput nor a collection through its pushes (live-test 2026-07-28, writes bounced as
       // collection:null), and this resource knows its component at serve time — the one place
       // the open_component loader path can't know it.
-      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapComponent(comp.html, { component: name, version: comp.version, collection: defaultCollectionFor(comp) }) }] };
+      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapComponent(comp.html, { component: name, version: comp.version, collection: defaultCollectionFor(comp) }), _meta: UI_SECURITY }] };
     });
 
     if (!DYNAMIC_TOOLS) return;
@@ -92,7 +140,14 @@ export function register(ctx) {
         // …and the SAME binding rule. These opt-in per-component tools are a second door onto the
         // same act, so a different default here would mean open_trip_board and open_component
         // disagreeing about where one app lives — read live, because a save may have changed it.
-        const collection = (a && a.collection) || defaultCollectionFor(store.getComponent(name)) || name;
+        // No `|| name` tail. defaultCollectionFor already falls back to the component's own name
+        // when the app declares nothing, so the only way it answers nothing is a component that is
+        // GONE — deleted between this tool being registered and being called. Falling back to the
+        // name there invents a binding for an app that no longer exists, and a widget bound to an
+        // invented collection writes into it silently. Fail the way the sibling path already does.
+        const comp = store.getComponent(name);
+        if (!comp) return fail(`Component "${name}" no longer exists.`);
+        const collection = (a && a.collection) || defaultCollectionFor(comp);
         const v = store.dataVersion();
         return toMcp(answer.page(
           { component: name, collection, items: [], version: v.seq,
@@ -103,12 +158,16 @@ export function register(ctx) {
       },
     );
   }
-  for (const c of store.listComponents()) registerComponent(c.name);
+  // …and a belt for the unknown collisions: one bad row must never be the reason a whole deployment
+  // cannot start. Anything unexpected costs that app its per-app resource and nothing else.
+  for (const c of store.listComponents()) {
+    try { registerComponent(c.name); }
+    catch (e) { console.warn(`[oma] component "${c.name}" could not be registered (${e && e.message}); it still opens through open_component`); }
+  }
 
   // ------------------------------------------------- the universal opener (static tool)
-  const LOADER_URI = "ui://open-mcp-apps/app.html";
-  registerAppResource(server, "component-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE },
-    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader() }] }));
+  registerAppResource(server, "component-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, _meta: UI_SECURITY },
+    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader(), _meta: UI_SECURITY }] }));
 
   registerAppTool(
     server,
@@ -164,6 +223,18 @@ export function register(ctx) {
         name: z.string(), version: z.number(), html: z.string(),
         author: z.string(),
         tier: z.enum(["local", "library-reviewed", "unreviewed"]),
+        // WHAT THIS APP OPENS ON, computed by the one function that owns that question
+        // (contracts.mjs defaultCollectionFor — /view mounts by the same rule, and a second copy is
+        // a second answer waiting to disagree). It is here because the generic loader document
+        // cannot carry a binding of its own: one document serves every app, so state.collection had
+        // only ever one source, a host push. `open_component`'s collection input is optional and
+        // models routinely omit it, so the ordinary refresh leaves a widget that knows which app it
+        // is and still cannot write.
+        //
+        // DECLARED, not smuggled through structuredContent. A schema that lists three of its four
+        // keys is a schema that lies, and this key is read on every first paint — the opposite of
+        // delete_component, which declares nothing at all and is legible for it.
+        collection: z.string().describe("the collection this app opens on"),
         caps: capsShape,
         // The declaration as the engine MATERIALISED it. The settings app used to re-parse the html
         // in the browser to find it, which meant two parsers over the same untrusted document and
@@ -178,6 +249,7 @@ export function register(ctx) {
       if (!comp) return fail(`No component "${a.name}".`);
       const tier = tierOf(comp.author);
       const meta = { name: comp.name, version: comp.version, author: comp.author, tier,
+        collection: defaultCollectionFor(comp),
         caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null };
       // Windowed ONLY on request. The zero-parameter call is the loader widget's mount source and
       // MUST carry the whole document — the widget cannot assemble windows, and the host↔widget
@@ -345,7 +417,11 @@ export function register(ctx) {
       // published fork whose old calls must hear why rather than lose data.
       if (a.manifest !== undefined || a.scene !== undefined)
         return fail("manifest/scene are no longer parameters — a component declares itself INSIDE its html, in a <script type=\"application/json\" id=\"oma-manifest\"> block, which the engine reads on save. See get_component_guide.");
-      if (RESERVED_COMPONENT_NAMES.has(a.name)) return fail(`"${a.name}" is a reserved namespace (settings groups security/engine/host/system/shell/oma) — pick another name.`);
+      // The list is READ from the set, not retyped beside it. The hand-kept copy listed the
+      // original six and silently went stale when `component`, `app` and `loader` were added — so a
+      // user naming an app `app` was told it clashed with a settings group, which is not why it was
+      // refused. A refusal that explains the wrong rule is worse than a terse one.
+      if (RESERVED_COMPONENT_NAMES.has(a.name)) return fail(`"${a.name}" is a reserved name (${[...RESERVED_COMPONENT_NAMES].join(", ")}) — pick another one.`);
       if (LOCKED_COMPONENTS.has(a.name)) return fail(`"${a.name}" is a locked system component — its UI ships with the engine and can't be overwritten here. (dashboard and your own apps are editable.)`);
       // A RETRY must reach a receipt, not die on the freshness guards below — those protect NEW
       // writes, and a replayed command is by definition not one (found by the C review: a created
@@ -544,7 +620,7 @@ export function register(ctx) {
     {
       title: "Archive / restore a component",
       annotations: WRITE,
-      description: "Flip a component out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_components {visibility: \"archived\"} shows them.",
+      description: "Flip a component out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_components {visibility: \"archived\"} shows them. This is the KEEP-everything half of the pair: to remove an app and the data only it used, delete_component with data:\"cascade\" (permanent).",
       inputSchema: { ...cmdArgs, component: z.string(), archived: z.boolean().describe("true = archive; false = bring it back (listed)") },
       outputSchema: {
         ok: z.boolean(), name: z.string().optional(), visibility: z.string().optional(),

@@ -840,8 +840,13 @@
       h.el.addEventListener("load", () => wrap.querySelector(".pv-skel")?.remove(), { once: true });
       roScale.observe(wrap);
       fitPreview(wrap);
-    } catch {
+    } catch (e) {
       if (stale()) return;
+      // SAY WHY. This catch-all is the right shape — one broken entry must not take the grid down —
+      // but it used to swallow the only evidence there was, so "preview unavailable" was
+      // undiagnosable from a screenshot AND from the code. (It hid a real one: library_preview
+      // failing output validation for an entry whose fixtures followed the documented convention.)
+      console.warn(`[oma] library preview failed for "${name}":`, e);
       wrap.querySelector(".pv-skel")?.remove();
       wrap.insertAdjacentHTML("afterbegin", '<div class="pv-empty">preview unavailable</div>');
     }

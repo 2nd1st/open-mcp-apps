@@ -16,7 +16,7 @@
 //     would swallow precisely the user's edits
 //
 // Run: node test/ledger-smoke.mjs
-import { existsSync, unlinkSync } from "node:fs";
+import { existsSync, unlinkSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -448,6 +448,238 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
       st.snapshot("vp").items.find((i) => i.id === w.id).fields.v === 1);
   }
   st.close();
+  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+}
+
+console.log("\n17. a NAME is not an identity — a second life is a different app");
+// A delete is a tombstone, so the ledger and component_history keep every trace of the app that
+// used to bear a name. Two separate destructive decisions were reading those traces as if they
+// belonged to whatever app bears the name NOW:
+//
+//   · cascade's ownership test asked "was this collection born after the app?" against the FIRST
+//     component_saved ever recorded under that name — so rows a user created while NO app existed
+//     were judged to belong to the app that appeared afterwards, and deleted;
+//   · component_history listed every checkpoint ever saved under that name, so restoring
+//     "checkpoint 1" of a budget tracker could hand back a deleted recipe app's source.
+//
+// Same root, one primitive: a component's CURRENT LIFE starts at the most recent delete that was
+// followed by a save (0 if it was never deleted). Everything before that belongs to someone else.
+{
+  const P = join(ROOT, "test", "lives.db");
+  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  const st = openStore(P);
+  const HTML = (t) => `<!doctype html><html><body>${t}</body></html>`;
+  let n = 0; const cid = () => "life" + (++n);
+
+  // Life 1: a recipe app, saved twice, then deleted (data kept — the default).
+  st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("RECIPES v1"), actor: "agent" });
+  const life1v2 = st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("RECIPES v2"), actor: "agent" }).version;
+  st.execute({ type: "delete_component", command_id: cid(), name: "notes", actor: "agent" });
+
+  // Between the lives the USER puts rows into a collection that happens to share the name.
+  for (let i = 0; i < 3; i++)
+    st.execute({ type: "add_item", command_id: cid(), collection: "notes", fields: { t: "mine " + i }, actor: "human" });
+
+  // Life 2: a completely unrelated app, same name.
+  st.execute({ type: "save_component", command_id: cid(), name: "notes", html: HTML("BUDGET TRACKER"), actor: "agent" });
+
+  // ---- N10: history is this app's history
+  const hist = st.componentHistory("notes");
+  ok("history lists only the CURRENT life's checkpoints",
+    hist.length === 1 && hist[0].checkpoint === 1, JSON.stringify(hist));
+  const cp1 = hist.find((h) => h.checkpoint === 1);
+  ok("…so restoring 'checkpoint 1' cannot hand back a deleted, unrelated app",
+    !!cp1 && st.getComponentVersion("notes", cp1.version).html.includes("BUDGET TRACKER"),
+    cp1 ? st.getComponentVersion("notes", cp1.version).html : "no checkpoint 1");
+  // The tombstone promise, and §21's real property: the earlier rows were never overwritten.
+  ok("the previous life's source is still IN the table — retained, not clobbered (no REPLACE over a tombstone)",
+    st.getComponentVersion("notes", life1v2).html.includes("RECIPES v2"));
+
+  // ---- N3: rows that predate this life are not this app's to delete
+  const d = st.deleteDisposition("notes");
+  ok("rows written before this life began are NOT judged exclusive",
+    d.collections[0].verdict !== "exclusive" && d.exclusive.length === 0, JSON.stringify(d.collections));
+  ok("…and the reason shown to the user says so rather than claiming provable ownership",
+    /nothing proves/.test(d.collections[0].why), d.collections[0].why);
+
+  // ---- the ordinary case still works: an app that made its own rows still owns them
+  st.execute({ type: "save_component", command_id: cid(), name: "fresh", html: HTML("FRESH"), actor: "agent" });
+  st.execute({ type: "add_item", command_id: cid(), collection: "fresh", fields: { t: "made by the app" }, actor: "agent" });
+  const df = st.deleteDisposition("fresh");
+  ok("an app that was created BEFORE its collection still owns it (the gate did not just say no to everything)",
+    df.exclusive.join() === "fresh", JSON.stringify(df.collections));
+
+  // ---- a deleted app that was NOT recreated keeps its history reachable (the documented tombstone)
+  st.execute({ type: "save_component", command_id: cid(), name: "gone", html: HTML("GONE v1"), actor: "agent" });
+  st.execute({ type: "save_component", command_id: cid(), name: "gone", html: HTML("GONE v2"), actor: "agent" });
+  st.execute({ type: "delete_component", command_id: cid(), name: "gone", actor: "agent" });
+  ok("a tombstoned app still lists its OWN checkpoints — 'history survives delete' is unchanged",
+    st.componentHistory("gone").length === 2, JSON.stringify(st.componentHistory("gone")));
+
+  st.close();
+  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+}
+
+console.log("\n18. a cascade's own receipts must not live in the caller's id namespace (N6)");
+// Each cleared collection gets a `rows_cleared` receipt, and change_event.command_id is UNIQUE, so
+// those extra events needed ids. They were DERIVED from the command's — `${command_id}#rows:${coll}`
+// — on the reasoning that derived ids are as idempotent as the command. They are, but command_id is
+// a CALLER-SUPPLIED string, so the derived space is one the caller can already be sitting in: a
+// prior write whose id happened to be that exact shape makes the cascade die on a UNIQUE violation.
+// Idempotence never needed them: a replay short-circuits at the command level and never reaches the
+// emit at all (§18b below pins that).
+{
+  const P = join(ROOT, "test", "cid.db");
+  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  const st = openStore(P);
+  const HTML = "<!doctype html><html><body>fixture body long enough to clear the size floor</body></html>";
+  let n = 0; const cid = () => "c" + (++n);
+
+  st.execute({ type: "save_component", command_id: cid(), name: "app", html: HTML, actor: "agent" });
+  st.execute({ type: "add_item", command_id: cid(), collection: "app", fields: { t: "row" }, actor: "agent" });
+  // A perfectly ordinary earlier write that happens to have used the derived shape as its own id.
+  st.execute({ type: "add_item", command_id: "X#rows:app", collection: "elsewhere", fields: { t: "y" }, actor: "human" });
+
+  let threw = null, res = null;
+  try { res = st.execute({ type: "delete_component", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" }); }
+  catch (e) { threw = e; }
+  ok("a destructive command cannot be killed by a caller's earlier choice of id",
+    threw === null, threw && `${threw.constructor.name}: ${threw.message}`);
+  ok("…and it actually did the delete", res && res.ok === true && !st.getComponent("app"));
+  ok("…and the cleared collection still got its receipt",
+    st.changesSince("app", 0).events.some((e) => e.type === "rows_cleared"),
+    JSON.stringify(st.changesSince("app", 0).events.map((e) => e.type)));
+
+  console.log("18b. …because idempotence lives at the COMMAND level, not in the receipts' ids");
+  const again = st.execute({ type: "delete_component", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" });
+  ok("a replay of the same command short-circuits and emits nothing new",
+    again.ok === true && again.idempotent === true, JSON.stringify(again));
+  ok("…so exactly one rows_cleared receipt exists, however many times it is retried",
+    st.changesSince("app", 0).events.filter((e) => e.type === "rows_cleared").length === 1);
+
+  console.log("18c. a replay says WHICH act it is replaying (N5)");
+  // The registry's retry path reports "already applied" when a component is gone but the caller
+  // holds a plan token. It asked the store "did this command_id run?" and the store answered only
+  // yes/no — so a command_id previously used for a KEEP delete answered yes, and the caller was
+  // told its irreversible cascade had happened while every row was still on disk.
+  st.execute({ type: "save_component", command_id: cid(), name: "kept", html: HTML, actor: "agent" });
+  st.execute({ type: "add_item", command_id: cid(), collection: "kept", fields: { t: "still here" }, actor: "agent" });
+  const KEEP = "reused-id";
+  st.execute({ type: "delete_component", command_id: KEEP, name: "kept", actor: "agent" });
+  const replay = st.execute({ type: "delete_component", command_id: KEEP, name: "kept", cascade: true, cascade_collections: [], actor: "agent" });
+  ok("replaying a KEEP delete does not claim to have cascaded",
+    replay.ok === true && replay.cascaded === undefined, JSON.stringify(replay));
+  ok("…and the rows it never took are still there", st.snapshot("kept").items.length === 1);
+
+  st.execute({ type: "save_component", command_id: cid(), name: "casc", html: HTML, actor: "agent" });
+  st.execute({ type: "add_item", command_id: cid(), collection: "casc", fields: { t: "doomed" }, actor: "agent" });
+  const CASC = "cascade-id";
+  st.execute({ type: "delete_component", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
+  const replay2 = st.execute({ type: "delete_component", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
+  ok("replaying a real CASCADE says so, so the caller can tell the two apart",
+    replay2.ok === true && !!replay2.cascaded, JSON.stringify(replay2));
+
+  st.close();
+  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+}
+
+console.log("\n19. N9 — a pruned history must make ownership UNKNOWABLE, never wrongly certain");
+// deleteDisposition decides "was this collection created FOR this app?" by comparing earliest
+// events. Retention deletes a collection's OLDEST events — precisely the ones proving it predates
+// the app that merely shares its name — so a pruned ledger reads as "created for the app" and
+// cascade would take the user's own older rows.
+//
+// The judge cannot see the gap from the inside: the evidence it needs is the evidence that is gone.
+// So pruning records that it happened, and the judge treats an unaccounted-for gap as unknowable.
+// Unknowable means KEPT — the asymmetry from delete-cascade-design: deleting too little leaves rows
+// a user can remove again, deleting too much breaks a second app and the data is gone.
+{
+  const P = join(ROOT, "test", "n9.db");
+  const fresh = () => {
+    for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
+    return openStore(P);
+  };
+  const HTML = "<!doctype html><html><body>an app that arrived long after the diary did</body></html>";
+  let n = 0; const cid = () => "n9-" + (++n);
+  const seedOlderThanItsApp = (st) => {
+    for (let i = 0; i < 5; i++)
+      st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "mine " + i }, actor: "human" });
+    st.execute({ type: "save_component", command_id: cid(), name: "diary", html: HTML, actor: "agent" });
+    st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "the app wrote this" }, actor: "agent" });
+  };
+  const enableRetention = (st, keep) => st.executePrivileged({ type: "add_item", command_id: cid(),
+    collection: "settings", group: "", fields: { key: "policy:retention.events", value: keep }, actor: "agent" });
+
+  {
+    const st = fresh();
+    seedOlderThanItsApp(st);
+    ok("before pruning: rows older than the app are KEPT, on the evidence",
+      st.deleteDisposition("diary").exclusive.length === 0,
+      JSON.stringify(st.deleteDisposition("diary").collections));
+
+    enableRetention(st, 1);
+    const pruned = st.pruneLedger("diary");
+    ok("retention really does remove the evidence (the rig is doing the dangerous thing)",
+      pruned.pruned > 0, JSON.stringify(pruned));
+
+    const after = st.deleteDisposition("diary");
+    ok("🔴 THE MAIN JUDGE: a pruned collection is never exclusive — cascade cannot take it",
+      after.exclusive.length === 0 && after.collections[0].verdict !== "exclusive",
+      `verdict=${after.collections[0].verdict} exclusive=${JSON.stringify(after.exclusive)}`);
+    ok("…and the reason names THIS unknowable — pruned history, not 'nothing proves it'",
+      /pruned/.test(after.collections[0].why), after.collections[0].why);
+    ok("…while the rows themselves are untouched (pruning trims history, not data)",
+      st.snapshot("diary").items.length === 6);
+    st.close();
+  }
+
+  {
+    // The mark must not become a blanket amnesty: an app that genuinely made its own collection,
+    // in a store where some OTHER collection was pruned, still owns its rows.
+    const st = fresh();
+    st.execute({ type: "save_component", command_id: cid(), name: "fresh-app", html: HTML, actor: "agent" });
+    st.execute({ type: "add_item", command_id: cid(), collection: "fresh-app", fields: { t: "made by the app" }, actor: "agent" });
+    for (let i = 0; i < 4; i++)
+      st.execute({ type: "add_item", command_id: cid(), collection: "unrelated", fields: { t: "x" + i }, actor: "human" });
+    enableRetention(st, 1);
+    st.pruneLedger("unrelated");
+    const d = st.deleteDisposition("fresh-app");
+    ok("pruning ONE collection does not amnesty another — the untouched app still owns its rows",
+      d.exclusive.join() === "fresh-app", JSON.stringify(d.collections));
+    st.close();
+  }
+
+  {
+    // A prune that removed nothing truncated nothing, so it must leave no mark and change no verdict.
+    const st = fresh();
+    st.execute({ type: "save_component", command_id: cid(), name: "tidy", html: HTML, actor: "agent" });
+    st.execute({ type: "add_item", command_id: cid(), collection: "tidy", fields: { t: "one row" }, actor: "agent" });
+    enableRetention(st, 500);
+    const noop = st.pruneLedger("tidy");
+    ok("a prune that deleted nothing records nothing", noop.pruned === 0);
+    ok("…and the verdict is unchanged by having merely ASKED to prune",
+      st.deleteDisposition("tidy").exclusive.join() === "tidy",
+      JSON.stringify(st.deleteDisposition("tidy").collections));
+    st.close();
+  }
+
+  // Depth, not the main judge any more: these two used to BE the guard, back when the plan was to
+  // keep N9 latent. They stay because "nothing prunes by default" is still worth knowing if it
+  // changes — but the assertion above is what actually protects the data now.
+  {
+    const st = fresh();
+    ok("depth: a default deployment still prunes nothing", st.retentionEvents() === null
+      && st.pruneLedger("anything").pruned === 0);
+    const code = readdirSync(join(ROOT, "src"), { recursive: true })
+      .filter((f) => /\.(mjs|js)$/.test(String(f)))
+      .map((f) => readFileSync(join(ROOT, "src", String(f)), "utf-8"))
+      .join("\n")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+      .replace(/^\s*\/\/.*$/gm, "");
+    ok("depth: the engine still never calls pruneLedger itself — retention stays caller-driven",
+      (code.match(/\bpruneLedger\s*\(/g) || []).length === 1);
+    st.close();
+  }
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
 

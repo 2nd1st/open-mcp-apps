@@ -75,8 +75,182 @@ export function KIT_CSS() {
 // mount() rebuilds them as fresh <script> nodes.
 // NOTE this string lives inside a template literal: no backticks, no ${, and never the
 // literal script close tag.
+// THE FAILURE SURFACE THAT DOES NOT DEPEND ON THE RUNTIME.
+//
+// Everything the loader can say — the retry ladder, "the host did not answer", "not found" —
+// lives inside `oma.ready(...)`. That was fine until the premise failed: if the bridge never
+// delivers its first state, or window.oma does not exist at all (the module graph failed, the
+// runtime threw), the callback is never invoked and NOTHING speaks. The user sits on the static
+// "Loading component…" forever — measured on a page refresh in prod and stg, with no retry
+// counter, no error, and no component_html call ever reaching the server.
+//
+// So the last line of defence cannot be built on the thing that might be broken:
+//   · a CLASSIC script, not type="module" — a module is deferred and dies with the module graph
+//   · placed BEFORE the runtime, so it is already armed if the runtime throws on evaluation
+//   · it only asks one question — "did the loader ever start?" — and never touches window.oma
+//
+// 12s, chosen against two measured numbers rather than taste: the runtime's own bridge deadline
+// is 10s per call, and oma.ready now releases at 8s. So by 12s a healthy host has long since
+// answered, a slow one has already been released, and anything still silent is not coming.
+// Once the loader starts it owns the surface: its ladder ends in its own human sentence.
+const LOADER_WATCHDOG = `(function(){
+  window.__OMA_LOADER_STARTED__ = false;
+  setTimeout(function () {
+    if (window.__OMA_LOADER_STARTED__) return;
+    document.body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-family:var(--font-sans)">'
+      + "Couldn't reach the app host. Ask your assistant to open this app again."
+      + "</div>";
+    try { console.warn("[oma] loader never started — window.oma present:", typeof window.oma !== "undefined"); } catch (e) {}
+  }, 12000);
+})();`;
+
 const LOADER_JS = `
 function show(msg) { document.body.innerHTML = '<div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-family:var(--font-sans)">' + msg + "</div>"; }
+
+// WHAT THE HOST ACTUALLY HANDED US — the failure surface for "this document does not know
+// which app it is".
+//
+// This ONE document serves every app, so its identity can only ever arrive from the host. When a
+// host re-renders a cached widget without replaying the call that opened it, the loader genuinely
+// cannot know — and the old sentence, "No component specified.", named none of the channels it had
+// checked, which is precisely what anyone diagnosing it needs. There is no cheaper answer available
+// to us: the MCP Apps spec has no widget-state persistence, and resourceUri exists only on a TOOL
+// or a RESOURCE (McpUiToolMeta / McpUiResourceMeta) — never on a tool RESULT — so one tool cannot
+// hand back a per-app document. The only per-instance handle a host can return is
+// hostContext.toolInfo, and whether a given host replays it is a MEASUREMENT, not a guess.
+// So: check every channel, say which ones were empty, and make the raw record copyable.
+// WHICH CALL DID THE HOST BIND THIS RENDER TO — the one signal that says whether waiting can work.
+//
+// Measured (ChatGPT web, 2026-07-29, from this loader's own dump): a re-render replays the TURN'S
+// FIRST tool call verbatim, arguments and tool definition together. A turn that ran get_component
+// or data_collections before open_component therefore hands us an envelope addressed to that other
+// call — toolInput = {"name":"dev-probe"} with toolInfo.tool = get_component's definition.
+// Returns that tool's name only when it is positively NOT one of ours; anything unknown returns
+// null, because guessing wrong here would blame the host for our own failure to know.
+function boundToolName() {
+  try {
+    var t = (window.__OMA_HOST_CONTEXT__ || {}).toolInfo;
+    var n = t && t.tool && t.tool.name;
+    // Every door that opens an app is open_…: the universal opener, and the per-app tools
+    // OMA_DYNAMIC_TOOLS registers. Anything else cannot be carrying our name.
+    return typeof n === "string" && n && n.indexOf("open_") !== 0 ? n : null;
+  } catch (e) { return null; }
+}
+
+// WHICH APP AM I — three questions, all answerable now, and then we stop.
+//
+//   1. did someone just tell us (live toolInput / N11's state.component)?
+//   2. did the host replay a note we wrote on a previous mount (__OMA_IDENTITY__)?
+//      This is the one that survives a re-render bound to another call.
+//   3. neither — so say so, immediately.
+//
+// There USED to be a fourth step: wait 12s in case the answer was still in flight. It is gone, and
+// it was never justified. The premise was a "race" between the host's delivery and oma.ready's 8s
+// deadline — but the deadline only fires when NOTHING arrived, because identity arriving is itself
+// what triggers the walk that makes ready true. Being released by the deadline therefore already
+// means the answer is not coming, and waiting another 12s only bought the user a spinner in front
+// of the one screen that explains what happened. Measured, too: every re-render that failed was
+// handed another call's envelope verbatim — an envelope that will never name us, no matter how
+// long we hold it.
+function componentName(state) {
+  var live = (oma.toolInput && oma.toolInput.component) || state.component;
+  if (live) return live;
+  try { return window.__OMA_IDENTITY__() || null; } catch (e) { return null; }
+}
+
+function identityChannels() {
+  var ch = [];
+  var ti = null, st = null, hc = null;
+  try { ti = oma.toolInput || null; } catch (e) {}
+  try { st = oma.state || null; } catch (e) {}
+  try { hc = window.__OMA_HOST_CONTEXT__ || null; } catch (e) {}
+  ch.push(["toolInput.component", ti && ti.component ? ti.component : null]);
+  ch.push(["state.component", st && st.component ? st.component : null]);
+  ch.push(["state.collection", st && st.collection ? st.collection : null]);
+  var info = hc && hc.toolInfo;
+  ch.push(["hostContext.toolInfo.id", info && info.id != null ? String(info.id) : null]);
+  ch.push(["hostContext.toolInfo.tool.name", info && info.tool && info.tool.name ? info.tool.name : null]);
+  // The channel that does not depend on the host binding this render to the right call.
+  var kept = null;
+  try { kept = (window.openai && window.openai.widgetState && window.openai.widgetState.__oma) || null; } catch (e) {}
+  ch.push(["openai.widgetState.__oma", kept && kept.component ? kept.component : null]);
+  return ch;
+}
+function lost() {
+  var d = { channels: {} };
+  var ch = identityChannels();
+  for (var i = 0; i < ch.length; i++) d.channels[ch[i][0]] = ch[i][1];
+  try { d.toolInput = oma.toolInput || null; } catch (e) { d.toolInput = "READ FAILED: " + e; }
+  try {
+    var s = oma.state || {};
+    d.state = { component: s.component, collection: s.collection, host: s.host, version: s.version, total: s.total, items: (s.items || []).length };
+  } catch (e) { d.state = "READ FAILED: " + e; }
+  try { d.hostContext = window.__OMA_HOST_CONTEXT__ === undefined ? "undefined (bridge never connected — host sent no context)" : window.__OMA_HOST_CONTEXT__; } catch (e) { d.hostContext = "READ FAILED: " + e; }
+  try { d.url = location.href; d.referrer = document.referrer || null; d.frameName = window.name || null; } catch (e) {}
+  try { d.hostGlobals = Object.keys(window).filter(function (k) { return /openai|oai|widget|mcp|host|anthropic|claude/i.test(k); }); } catch (e) {}
+  // A vendor state channel is the only thing that survives a re-render the host binds to the wrong
+  // call, so when one exists we need to see BOTH what it offers and what we managed to keep in it.
+  try {
+    var oai = window.openai;
+    d.openai = oai
+      ? { keys: Object.keys(oai), canPersist: typeof oai.setWidgetState === "function", widgetState: oai.widgetState || null }
+      : "absent";
+  } catch (e) { d.openai = "READ FAILED: " + e; }
+  try { localStorage.setItem("__oma_probe", "1"); localStorage.removeItem("__oma_probe"); d.localStorage = "available"; }
+  catch (e) { d.localStorage = "blocked: " + (e && e.name); }
+  var json;
+  try { json = JSON.stringify(d, null, 2); } catch (e) { json = "DUMP FAILED: " + e; }
+  try { console.warn("[oma] identity lost — every channel the host could have used:", d); } catch (e) {}
+
+  var found = [];
+  for (var j = 0; j < ch.length; j++) found.push(ch[j][0].replace("hostContext.", "") + (ch[j][1] ? " ✓ " + ch[j][1] : " ✗"));
+
+  document.body.innerHTML = "";
+  var wrap = document.createElement("div");
+  wrap.style.cssText = "padding:20px;font-family:var(--font-sans);color:var(--color-text-secondary);font-size:13px;line-height:1.55";
+  var h = document.createElement("p");
+  h.style.cssText = "margin:0 0 8px;color:var(--color-text-primary);font-weight:600";
+  h.textContent = "This widget lost track of which app it is.";
+  var p = document.createElement("p");
+  p.style.cssText = "margin:0 0 12px";
+  // NAME THE ACTUAL CAUSE WHEN WE KNOW IT. "The host re-rendered without replaying the call" is
+  // true but generic; when toolInfo says which call this render WAS bound to, that is the whole
+  // diagnosis in one sentence — and it is the sentence that turns a mystery into a host bug
+  // someone can report. Measured shape: a turn with several tool calls replays its FIRST one.
+  var other = boundToolName();
+  p.textContent = other
+    ? "The host bound this re-render to a different call — " + other + ", not the one that opened this app — so it never learned which app it is. Ask your assistant to open the app again; your data is untouched."
+    : "The host re-rendered it without replaying the call that opened it. Ask your assistant to open the app again — your data is untouched.";
+  var sig = document.createElement("p");
+  sig.style.cssText = "margin:0 0 12px;font-family:var(--font-mono);font-size:11.5px;color:var(--color-text-tertiary);word-break:break-word";
+  sig.textContent = found.join("  ·  ");
+  var det = document.createElement("details");
+  var sum = document.createElement("summary");
+  sum.style.cssText = "cursor:pointer;color:var(--color-text-tertiary);font-size:12px";
+  sum.textContent = "What the host handed us";
+  var pre = document.createElement("pre");
+  pre.style.cssText = "margin:8px 0 0;padding:10px;overflow:auto;max-height:340px;background:var(--color-background-secondary);border-radius:var(--border-radius-sm);font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;word-break:break-word";
+  pre.textContent = json;
+  var btn = document.createElement("button");
+  btn.className = "k-btn";
+  btn.style.cssText = "margin-top:8px";
+  btn.textContent = "Copy";
+  btn.onclick = function () {
+    var fallback = function () {
+      try {
+        var r = document.createRange(); r.selectNodeContents(pre);
+        var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
+        btn.textContent = "Selected — press Cmd-C";
+      } catch (e) { btn.textContent = "Select the text above"; }
+    };
+    try {
+      navigator.clipboard.writeText(json).then(function () { btn.textContent = "Copied"; }, fallback);
+    } catch (e) { fallback(); }
+  };
+  det.appendChild(sum); det.appendChild(pre); det.appendChild(btn);
+  wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(sig); wrap.appendChild(det);
+  document.body.appendChild(wrap);
+}
 function mount(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
   const scripts = [...doc.querySelectorAll("script")].map((s) => ({ type: s.type, text: s.textContent }));
@@ -125,12 +299,21 @@ function fetchComponentHtml(name) {
 }
 
 oma.ready(async (state) => {
+  // We are alive: from here the ladder below owns the failure surface, so stand the watchdog down.
+  try { window.__OMA_LOADER_STARTED__ = true; } catch (e) {}
   try {
-    const name = (oma.toolInput && oma.toolInput.component) || state.component;
-    if (!name) return show("No component specified.");
+    const name = componentName(state);
+    if (!name) return lost();
     const r = await fetchComponentHtml(name);
     const sc = (r && r.structuredContent) || {};
     if (!sc.html) return show('Component "' + name + '" not found in the registry.');
+    // BIND FROM THE ANSWER WE ALREADY HAVE. This one document serves every app, so it cannot be
+    // baked with a binding the way a per-app document is — which left state.collection waiting on a
+    // host push that a refresh does not always replay, and every write going out as collection:null.
+    // The server computed it and sent it back with the html; do not re-derive it from the name here
+    // (a second copy of "what does this app open on" is a second answer waiting to disagree). An
+    // older engine sends none, and then we bind nothing rather than guess.
+    if (sc.collection) oma.bind(sc.collection);
     // Tier branch (security-model §2.3): "local" — or a result carrying no tier at all, from
     // an engine predating tiers — mounts same-document (direct mode) exactly as before.
     // Anything else is untrusted and runs behind the sandboxed runner with engine-computed
@@ -148,7 +331,7 @@ oma.ready(async (state) => {
       html: sc.html,
       caps: sc.caps || {},
       tier: sc.tier,
-      collection: state.collection || name,
+      collection: sc.collection || state.collection || name,
     });
   } catch (e) { show("Failed to load component: " + (e && e.message ? e.message : e)); }
 });
@@ -200,6 +383,7 @@ export function wrapLoader(opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
 ${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
 ${kitStyle(KIT_CSS())}
+<script data-oma="watchdog">${LOADER_WATCHDOG}</script>
 <script type="module" data-oma="runtime">${runtime()}</script>
 <script type="module" data-oma="loader">${LOADER_JS}</script>
 </head><body><div style="padding:24px;text-align:center;color:var(--color-text-tertiary);font-family:var(--font-sans)">Loading component…</div></body></html>`;

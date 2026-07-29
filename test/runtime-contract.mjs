@@ -42,13 +42,38 @@ const ok = (name, cond, note) => (cond
 const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem", "files", "host",
   "moveItem", "onChange", "onPrefChange", "pref", "readCollection", "ready", "refresh",
   "sendMessage", "setPref", "standalone", "state", "toolInput", "updateContext", "updateItem"];
-const DIRECT_ONLY = ["embed", "isControlPlaneTool", "viewBase"];
+// openLink is DIRECT-ONLY on purpose, and it is a security decision rather than an oversight: a
+// URL is an outbound channel (the data rides in the query string), so handing a host-mediated
+// link opener to a SANDBOXED child would punch a hole through the very property measured in
+// docs/spec-conformance.md §8 — every outbound channel closed, top-navigation and popups
+// included. A first-party document running direct is a different trust position entirely.
+// `bind` is direct-only for the same class of reason, one notch sharper: it names the collection a
+// runtime reads and writes. Its one caller is the universal loader, applying a binding the SERVER
+// computed; a sandboxed child that could call it could point itself at another app's rows, which is
+// precisely the boundary the guard's allowlist exists to hold.
+const DIRECT_ONLY = ["bind", "embed", "isControlPlaneTool", "openLink", "viewBase"];
 
 const doc = readFileSync(join(ROOT, "RUNTIME.md"), "utf-8");
 const runtimeSrc = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
 // The direct surface is one object literal; slicing to it keeps an unrelated internal named `embed`
 // from making this test pass for the wrong reason.
 const directLiteral = runtimeSrc.slice(runtimeSrc.indexOf("window.oma = {"));
+
+// SPEC-26: the widget declares no capability it does not implement. `{ tools: {} }` announced a
+// tool-serving view on every ui/initialize while oncalltool / onlisttools / a view-side
+// registerTool are zero hits in src/ — two MUST violations in ext-apps draft apps.mdx (:1281,
+// :1324). Pinned here rather than left to a reviewer's memory, because the declaration is one
+// token wide and reads like boilerplate.
+{
+  const decl = runtimeSrc.match(/new App\(\{ name: "open-mcp-apps"[^}]*\}, ([^)]*)\)/);
+  ok("the widget's ui/initialize capability declaration was found", !!decl, String(decl));
+  ok("🔴 it declares NO tools capability — nothing in src/ implements one",
+    /^\{\s*\}$/.test(decl[1].trim()), decl[1]);
+  ok("…and that is still true of the implementation (if this fails, DECLARE it again, do not delete the test)",
+    !/\bon(call|list)tools?\b/i.test(runtimeSrc.replace(/\/\/.*$/gm, "")),
+    "a tools handler now exists in the runtime — the declaration must come back");
+}
+
 const bridgeLiteral = BRIDGE.slice(BRIDGE.indexOf("window.oma={"));
 
 /** TOP-LEVEL keys of an object literal. The first version of this file matched member-shaped text
@@ -115,7 +140,11 @@ console.log("\n2. every name the runtimes expose is documented (no undocumented 
   // this file. Both surfaces gained exactly that one name, so the live numbers +1 are what the
   // extractor must produce today. A static extractor that agrees with a running one is the only
   // reason to trust the extractor at all, so the agreement is asserted rather than assumed.
-  ok("direct surface = Chrome's 23 + oma.contract", direct.length === 23 + 1, `got ${direct.length}`);
+  // 23 measured in Chrome, +1 oma.contract, +1 openLink (added 2026-07-28 — the direct channel
+  // that exists because sendMessage is a proposal, not an authorization), +1 bind (added
+  // 2026-07-29 — the loader hands over a binding the server computed, because one generic document
+  // serving every app cannot be baked with one).
+  ok("direct surface = Chrome's 23 + oma.contract + openLink + bind", direct.length === 23 + 3, `got ${direct.length}`);
   ok("bridge surface = Chrome's 20 + oma.contract", bridge.length === 20 + 1, `got ${bridge.length}`);
 }
 

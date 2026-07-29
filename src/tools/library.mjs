@@ -58,7 +58,18 @@ export function register(ctx) {
       outputSchema: {
         name: z.string(), title: z.string(), description: z.string(), category: z.string(),
         html: z.string(),
-        fixtures: z.object({ items: z.array(itemShape) }).nullable().describe("embedded mock snapshot items, or null if the entry ships none"),
+        // FIXTURE rows, not store rows. The documented convention for an embedded mock snapshot is
+        // {collection, group, fields} — the preview machines normalise it into real item shape when
+        // they answer a read (runner.mjs fxRows / stubOmaScript). Declaring the full item shape here
+        // demanded id/position/version that fixtures are not supposed to carry, so an entry that
+        // followed the convention exactly (builder-progress) failed output validation and its
+        // preview died on EVERY host — while entries that happened to include the extra keys passed.
+        // Reproduced 2026-07-28 from a ChatGPT web screenshot: "preview unavailable" on one card.
+        fixtures: z.object({ items: z.array(z.object({
+          collection: z.string().optional(), group: z.string().optional(),
+          fields: z.record(z.string(), z.any()),
+          id: z.string().optional(), position: z.number().optional(), version: z.number().optional(),
+        })) }).nullable().describe("embedded mock snapshot items, or null if the entry ships none"),
       },
     },
     async (a) => {
