@@ -164,5 +164,27 @@ console.log("3. one answer to \"what does this app open on\"");
     disagree.length === 0, disagree.join("\n      "));
 }
 
+// 3. THE LOCKFILE AGREES WITH package.json ABOUT WHAT VERSION THIS IS.
+//
+// `npm version` writes both; a hand-edited bump writes one. v0.4.0 shipped with package.json at
+// 0.4.0 and package-lock.json still saying 0.3.2 — `npm ci` does not care (it validates the
+// dependency tree, not this field, and installs cleanly), so nothing failed. It is a lie in a
+// file that ships, on a release whose notes ask people to read carefully before upgrading, and
+// the first person to look closely found it.
+//
+// Two places carry the version inside the lockfile: the top-level `version` and the root package
+// entry `packages[""].version`. A bump that misses either is the same defect.
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
+  const lock = JSON.parse(readFileSync(join(ROOT, "package-lock.json"), "utf-8"));
+  const rootEntry = lock.packages?.[""]?.version;
+  ok(
+    `package-lock.json says ${pkg.version} in both places, like package.json`,
+    lock.version === pkg.version && rootEntry === pkg.version,
+    `package.json=${pkg.version} lock.version=${lock.version} lock.packages[""].version=${rootEntry}` +
+      ` — run \`npm install --package-lock-only\` after a version bump`,
+  );
+}
+
 console.log(`\ninvariants: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

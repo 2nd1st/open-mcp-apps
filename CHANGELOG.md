@@ -7,6 +7,18 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.4.1 — 2026-07-29
+
+### Fixed
+
+- **The lockfile in 0.4.0 still said `0.3.2`.** The version bump reached `package.json` and not
+  `package-lock.json`. `npm ci` never noticed — it validates the dependency tree, not this field,
+  and installs cleanly — so nothing broke; the release simply shipped a file stating the wrong
+  version of itself. A release whose notes ask people to read carefully before upgrading should not
+  also carry a stale number, and the first person to look closely found it.
+  `test/invariants.mjs` now asserts that both places inside the lockfile agree with `package.json`,
+  so the next bump that misses one fails here instead of on the public repo.
+
 ## 0.4.0 — 2026-07-29
 
 **Breaking.** The engine calls its unit of work an **app**, everywhere. It was called a
