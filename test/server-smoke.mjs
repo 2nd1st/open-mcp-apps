@@ -123,8 +123,15 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
     res.ttlMs === 0, String(res.ttlMs));
 
   const loaderRead = await client.readResource({ uri: "ui://open-mcp-apps/app.html" });
-  ok("the loader is public — wrapLoader() is engine-constant, identical for every tenant",
-    loaderRead.cacheScope === "public", loaderRead.cacheScope);
+  // This asserted `public` until the browser viewer became default-on. The rule did not change and
+  // neither did wrapLoader(): the scope is read off the ANSWER, and a running viewer puts its own
+  // origin into the widget security declaration, which is deployment-derived by definition — two
+  // machines on different PORTs serve this URI with different metadata. So `private` here is the
+  // rule working, not the rule breaking, and it is the honest answer for a client spawned the way
+  // a host spawns one. The public side stays pinned where it is still reachable: §2c's engine
+  // built with no deployment-derived metadata at all.
+  ok("the loader is private once a viewer is running — its declaration names that deployment",
+    loaderRead.cacheScope === "private", loaderRead.cacheScope);
   // 🔴 This used to assert ttlMs > 0 — "cacheable for real, a shared gateway fetches the hot path
   // once" — which is the bug written down as a specification. The loader's URI is one constant
   // string for the life of the project, so a freshness promise made by one build outlives it and
@@ -1421,6 +1428,68 @@ const cBeg3 = await client.callTool({ name: "file_write_begin", arguments: { app
 const cEmpty = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: cBeg3.structuredContent.upload_id, data_base64: "" } });
 ok("empty chunk rejected", cEmpty.isError === true && /Empty chunk/.test(cEmpty.content[0].text));
 await client.callTool({ name: "file_write_abort", arguments: { upload_id: cBeg3.structuredContent.upload_id } });
+
+// ── 29b. receipts that disagree with the facts ────────────────────────────────────────────────
+// Three defects with one shape, all three reproduced on a live server before being fixed: the call
+// reported success and the world said otherwise. None of them miscomputed anything — a write that
+// destroyed a file said "Stored", a write that dropped its payload said ok:true, an abort that
+// aborted nothing said "Upload discarded." A caller has no reason to doubt any of those.
+console.log("\n29b. a receipt must not say something the world disagrees with");
+
+// V-2 — the base64 guard was a try/catch, and Buffer.from(…,"base64") does not throw on illegal
+// characters, it silently drops them. So "!!!not-base64!!!" decoded to 7 bytes of garbage, that
+// garbage overwrote a real file, and the reply said Stored.
+await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "smoke-notes", path: "b64.txt", data_base64: b64("hello") } });
+const b64Bad = await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "smoke-notes", path: "b64.txt", data_base64: "!!!not-base64!!!" } });
+ok("file_write refuses data_base64 that is not base64", b64Bad.isError === true,
+  JSON.stringify(b64Bad.structuredContent || b64Bad.content?.[0]?.text));
+const b64Keep = await client.callTool({ name: "file_read", arguments: { app: "smoke-notes", path: "b64.txt" } });
+ok("…and the file that was already at that path is untouched", b64Keep.structuredContent?.data_base64 === b64("hello"));
+const b64Beg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
+const b64Chunk = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: b64Beg.structuredContent.upload_id, data_base64: "!!!not-base64!!!" } });
+ok("…and so does file_write_chunk, which had no check of any kind", b64Chunk.isError === true);
+await client.callTool({ name: "file_write_abort", arguments: { upload_id: b64Beg.structuredContent.upload_id } });
+// The guard has to reject the malformed WITHOUT rejecting the merely unusual: base64 wrapped
+// across lines is legal and is what many encoders emit. A guard that fails this is a new bug.
+const b64Wrapped = await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "smoke-notes", path: "wrap.txt", data_base64: b64("hello world").replace(/(.{4})/g, "$1\n") } });
+ok("…while line-wrapped base64 is still accepted", !b64Wrapped.isError && b64Wrapped.structuredContent?.size === 11,
+  JSON.stringify(b64Wrapped.content?.[0]?.text));
+
+// V-3 — data_batch's own description promises "exactly what you would send to data_add_item", and
+// the store's batch wall filtered KEY NAMES without ever checking a value's shape. fields:[] put an
+// array in the row and data_list then failed output validation for the whole collection; a string
+// was coerced to {} and vanished while the caller was told ok:true.
+for (const [label, fields] of [["an array", []], ["a string", "SHOULD-NOT-DISAPPEAR"], ["a number", 42]]) {
+  const single = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "batch-shape", fields } });
+  const batch = await client.callTool({ name: "data_batch", arguments: { command_id: randomUUID(), commands: [{ type: "add_item", collection: "batch-shape", fields }] } });
+  ok(`data_batch gives ${label} of fields the same verdict the single tool gives it`,
+    single.isError === true && batch.isError === true,
+    `single.isError=${single.isError} batch.isError=${batch.isError}`);
+}
+const shapeList = await client.callTool({ name: "data_list", arguments: { collection: "batch-shape" } });
+ok("…so the collection is still readable afterwards", !shapeList.isError && Array.isArray(shapeList.structuredContent?.items),
+  JSON.stringify(shapeList.content?.[0]?.text));
+
+// V-4 — abortUpload refuses while a commit holds the upload ({ok:false,error:"upload_busy"}), and
+// the handler threw that answer away and always replied aborted:true. Asserted as a CONTRADICTION
+// rather than as "the race landed": racing is not something a test gets to insist on, but "you
+// discarded it" and "it was stored" cannot both be true. The counter below is the non-vacuity
+// guard — if the window never opened, the assertion above it proved nothing.
+let sawCommitWin = 0;
+for (let attempt = 0; attempt < 5; attempt++) {
+  const beg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
+  const up = beg.structuredContent.upload_id;
+  for (let i = 0; i < 3; i++) await client.callTool({ name: "file_write_chunk", arguments: { upload_id: up, data_base64: Buffer.alloc(700_000, 9).toString("base64"), seq: i } });
+  const commitP = client.callTool({ name: "file_write_commit", arguments: { upload_id: up, path: `race-${attempt}.bin`, command_id: randomUUID() } });
+  const abortR = await client.callTool({ name: "file_write_abort", arguments: { upload_id: up } });
+  const commitR = await commitP.catch((e) => ({ isError: true, thrown: String(e && e.message) }));
+  if (!commitR.isError) sawCommitWin++;
+  ok(`abort does not claim a discard that did not happen (attempt ${attempt + 1})`,
+    !(abortR.structuredContent?.aborted === true && !commitR.isError),
+    `aborted=${abortR.structuredContent?.aborted} committed=${!commitR.isError}`);
+}
+ok(`the busy window actually opened — ${sawCommitWin}/5 attempts had the commit land`, sawCommitWin > 0,
+  "every attempt aborted before the commit started, so the assertions above never met the case they exist for");
 
 console.log("30. render_health — auto-revert on a failed mount; stale/healthy/locked/non-local/budget guards");
 const rhA = noteHtml.replace('id="l"', 'id="l" data-rh="A-marker"');

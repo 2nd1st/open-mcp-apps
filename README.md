@@ -2,22 +2,22 @@
 
 **English** | [简体中文](README.zh-CN.md)
 
-> Give your AI a persistent, reusable UI. It builds the component once — you keep it forever.
+> Give your AI a persistent, reusable UI. It builds the app once — you keep it forever.
 
 **open-mcp-apps** is an open engine built on [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
 (`ui://`, SEP-1865) — one of the two official extensions to the Model Context Protocol, adopted
 into the protocol's new Extensions Track. It gives any MCP-Apps-capable host (Claude Desktop,
 claude.ai, Codex, ChatGPT, …) three things the extension itself doesn't provide:
 
-1. **A component registry the AI can write to.** Ask for a UI that doesn't exist — the AI reads
-   the authoring guide, writes a single-file HTML component against a tiny `window.oma` API,
+1. **An app registry the AI can write to.** Ask for a UI that doesn't exist — the AI reads
+   the authoring guide, writes a single-file HTML app against a tiny `window.oma` API,
    and saves it. From that moment `open_<name>` is a tool, in this chat and every future one.
-2. **Persistent, versioned data — separate from the UI.** Components bind to generic
+2. **Persistent, versioned data — separate from the UI.** Apps bind to generic
    *collections* of items backed by SQLite plus an append-only `change_event` ledger. Every
    mutation is an idempotent domain command (`command_id`) with optimistic concurrency
    (`expected_version`). The AI and the human edit the same store — the widget is just a view.
-3. **A shell runtime so AI-written components actually work.** Serving `ui://`, the engine wraps
-   the component with the official MCP App bridge, host theming (Claude's design tokens,
+3. **A shell runtime so AI-written apps actually work.** Serving `ui://`, the engine wraps
+   the app with the official MCP App bridge, host theming (Claude's design tokens,
    light/dark), and the `window.oma` data API. What you write is a view; the protocol,
    persistence, idempotency and theming are the engine's problem.
 
@@ -27,16 +27,16 @@ claude.ai, Codex, ChatGPT, …) three things the extension itself doesn't provid
 "make me a kanban"
       │
       ▼
-list_components ── exists? ──► open_kanban          (reuse, instant)
+list_apps ── exists? ──► open_kanban          (reuse, instant)
       │ no
       ▼
-get_component_guide ──► AI writes HTML ──► save_component
+get_app_guide ──► AI writes HTML ──► save_app
       │
       ▼
 open_kanban  →  rendered inline, themed, persistent — reusable in every future chat
 ```
 
-Components accumulate. Each one is single-purpose and independent — a board, a tracker, a
+Apps accumulate. Each one is single-purpose and independent — a board, a tracker, a
 splitter — minted for the task in front of you and kept for the next time you need it.
 
 ## What it looks like
@@ -51,7 +51,7 @@ Come back in another chat — or another host — and it's still there, with you
 
 The built-in library ships 17 ready-made apps — real, working previews, installed in a click:
 
-![The component library — live previews of ready-made apps](.github/screenshots/library.webp)
+![The app library — live previews of ready-made apps](.github/screenshots/library.webp)
 
 | | |
 |---|---|
@@ -95,20 +95,20 @@ its old server process on the old data until fully quit. *Remote / one-click ins
 coming later.*
 
 **Uninstall:** `node uninstall.mjs` unregisters the server from every host it finds — but **keeps
-your data**: the shared store stays put, so re-installing later restores every component and all
+your data**: the shared store stays put, so re-installing later restores every app and all
 data. Add `--purge` to also delete the shared store (irreversible), or `--check` to preview what
 would happen without changing anything:
 
 ```bash
 node uninstall.mjs           # unregister from all detected hosts — keeps your data
-node uninstall.mjs --purge   # also delete the shared store (components + data), irreversible
+node uninstall.mjs --purge   # also delete the shared store (apps + data), irreversible
 node uninstall.mjs --check   # read-only: show what's registered and what would change
 ```
 
 **Reset escape hatch:** the whole store is one SQLite file, `open-mcp-apps.db`, in
 `~/Library/Application Support/open-mcp-apps/` (macOS), `%APPDATA%\open-mcp-apps\` (Windows), or
 `$XDG_DATA_HOME` else `~/.local/share/open-mcp-apps/` (Linux). Fully quit your host(s), delete
-that file (plus its `-wal`/`-shm` siblings), and you start clean — all components and data gone,
+that file (plus its `-wal`/`-shm` siblings), and you start clean — all apps and data gone,
 irreversibly, while staying installed.
 
 **Then get started — in your host.** Restart it. New here? Tell the AI something like **"I just
@@ -118,36 +118,62 @@ chats — or it asks a couple of questions), and sets up a first app or two tail
 is separate from install and lives in the host. Or just ask directly:
 
 - *"make me a board for what I'm juggling right now"* → the AI writes it, seeds it, and opens it (persistent)
-- *"make me a habit tracker"* → watch it read the guide, write the component, save it, open it
+- *"make me a habit tracker"* → watch it read the guide, write the app, save it, open it
 - close the app, reopen, ask again → everything is still there
 
 **First-run permissions:** the first few tool calls each show an approval dialog — pick
 **"Always allow"**. The tool set is small and stable on purpose: read-only tools generally
-skip approval, and the single `open_component` tool covers opening *every* component
+skip approval, and the single `open_app` tool covers opening *every* app
 (including ones the AI creates later), so after those first clicks it's zero-prompt forever.
 You can also batch it in **Settings → Connectors → open-mcp-apps → Tool permissions**.
 Note: a Desktop auto-update occasionally resets these decisions (upstream
 [#56954](https://github.com/anthropics/claude-code/issues/56954)) — just re-allow.
 Multiple widgets in one conversation work fine (habit-streaks + meal-planner side by side).
 
+### The browser viewer, and the port it binds
+
+Every install runs a small local web server on **<http://127.0.0.1:8787>**. It is how you *see*
+your apps outside a chat window — one page per app, the same data your AI is reading — and in a
+terminal host it is the only way to see them at all, so the AI hands you the link when it builds
+or opens something.
+
+It starts on its own. Two ways to change that:
+
+```bash
+OMA_VIEWER=0   # don't start it at all
+PORT=9000      # start it somewhere else
+```
+
+Set either in the `env` block of your host's MCP server entry. If the port is already taken by
+another open-mcp-apps process, that one is already serving the same data and this one just shares
+its address; if it is taken by something else, you get no viewer and no links rather than a link
+into a stranger's server.
+
+**There is no password on it, and that is deliberate.** The listener is hard-wired to `127.0.0.1`,
+so there is no setting that makes it answer from another machine. Any program on your computer that
+could reach the port can already open the SQLite file directly — a password would be a lock beside
+an open wall. The one way this reaches the internet is a tunnel you start yourself, which is its own
+deliberate decision; **while a tunnel is up, treat its URL as a secret**, because it is currently the
+only thing standing between the internet and your data.
+
 ## What's in the box
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server; single `open_component` path (per-component `open_<name>` tools opt-in) |
+| `src/server.mjs` | stdio MCP server; single `open_app` path (per-app `open_<name>` tools opt-in) |
 | `src/http.mjs` | `/mcp` (stateless Streamable HTTP) + `/view/<name>` browser viewer, bound to `127.0.0.1` |
-| `src/store.mjs` | SQLite: items + component registry + `change_event` ledger (idempotent, OCC) |
-| `src/shell-runtime.js` | browser runtime injected into every component (`window.oma`) |
+| `src/store.mjs` | SQLite: items + app registry + `change_event` ledger (idempotent, OCC) |
+| `src/shell-runtime.js` | browser runtime injected into every app (`window.oma`) |
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
-| `src/guide.mjs` | the authoring contract the AI reads before generating a component |
+| `src/guide.mjs` | the authoring contract the AI reads before generating an app |
 | `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
-| `components/` | 3 system components installed on seed (settings, dashboard, library) + 17 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
+| `components/` | 3 system apps installed on seed (settings, dashboard, library) + 17 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 419 assertions over real stdio — incl. runtime component creation
-node test/http-smoke.mjs     #  44 assertions over the HTTP transport (incl. SSE /events)
-node test/provenance.mjs     #  39 assertions that a component's author — its trust tier — is not overwritable
+node test/server-smoke.mjs   # 419 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  53 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  14 assertions on the seed / design-kit pipeline
 node test/files-smoke.mjs    #  45 assertions on the per-app file store (chunked uploads, GC races)
 ```
@@ -176,7 +202,7 @@ surfaces, so it can't drift from them silently.
 
 ## Design positions (why it's built this way)
 
-- **UI and data persist separately, both versioned.** Components are views; collections are
+- **UI and data persist separately, both versioned.** Apps are views; collections are
   truth; the ledger is history. Swap either without losing the other.
 - **The AI talks domain commands, never SQL, never raw state.** That's what makes human+AI
   concurrent editing safe (idempotency + optimistic concurrency at the command layer).
@@ -189,16 +215,16 @@ surfaces, so it can't drift from them silently.
 
 ## Security model
 
-Trust is tiered by where a component came from. Locally-authored and system components run in
+Trust is tiered by where an app came from. Locally-authored and system apps run in
 **direct mode**. The engine also ships a **runner** — a sandboxed `srcdoc` iframe with a
 CSP-first document and a minimal read-scoped bridge — as the mandatory execution mode for any
-component that isn't locally trusted, plus reserved `security:*` / `policy:*` config keys that
+app that isn't locally trusted, plus reserved `security:*` / `policy:*` config keys that
 generic data writes can't touch and an out-of-band privileged writer.
 
 **Honest status:** everything in the OSS version — your apps, AI-built apps, and the built-in
 library apps (all first-party) — runs locally in direct mode with full trust; there is nothing
 third-party to sandbox yet. The runner is *built and tested but dormant*: it is the ready seam
-for shared/published components later, where review + sandboxing arrive together. See
+for shared/published apps later, where review + sandboxing arrive together. See
 [`SECURITY.md`](SECURITY.md) for the full threat model and trust tiers.
 
 ## Host support (live-tested 2026-07-22; ChatGPT web row updated 2026-07-28)
@@ -226,14 +252,14 @@ Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared s
 on Codex desktop and the browser viewer.
 
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system components installed (settings, dashboard, library); 17 library apps with live previews, one-click install
-- [x] AI component creation loop (guide → save → dynamic tool)
+- [x] system apps installed (settings, dashboard, library); 17 library apps with live previews, one-click install
+- [x] AI app creation loop (guide → save → dynamic tool)
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
 - [ ] `npx` one-command install
 - [ ] remote (Streamable HTTP) mode → claude.ai / ChatGPT / mobile
-- [ ] component export/import → sharing → community library (review + runner sandbox activate here)
+- [ ] app export/import → sharing → community library (review + runner sandbox activate here)
 
 ## License
 
@@ -243,7 +269,7 @@ Two licenses, split by directory ([`LICENSING.md`](LICENSING.md) has the full ma
   ([`LICENSE`](LICENSE)). Run a modified version as a network service and you
   must offer its source to your users (AGPL §13). Improvements to the engine
   stay open.
-- **The official components** in [`components/`](components/) — the apps you run
+- **The official apps** in [`components/`](components/) — the apps you run
   and edit — are **MIT** ([`components/LICENSE`](components/LICENSE)). Open, copy,
   fork, and redistribute any app freely; changing your own dashboard is never a
   legal question.
@@ -254,7 +280,7 @@ and their logos, are **not** granted by either license — see
 
 Copyright © 2026 2nd1st.
 
-Component contributions need nothing signed — MIT in, MIT out. For engine
+App contributions need nothing signed — MIT in, MIT out. For engine
 contributions, open an issue first: a CLA is intended but is still a draft
 ([`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CLA.md`](CLA.md)).
 

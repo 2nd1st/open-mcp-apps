@@ -198,10 +198,20 @@ const NATURALLY_IDEMPOTENT = {
 }
 
 console.log("3. golden file");
-if (BLESS || !existsSync(GOLDEN)) {
+// A MISSING golden is a failure, not a licence to mint one. `BLESS || !existsSync(GOLDEN)` meant a
+// lost baseline — a bad rebase, a partial checkout, a stray rm — was silently re-created from
+// whatever the surface happened to be at that moment, and the check that guards the byte budget
+// stamped its own approval. Recording a baseline is a deliberate act; only UPDATE_GOLDEN does it.
+if (!BLESS && !existsSync(GOLDEN)) {
+  ok(`the golden exists (${GOLDEN.slice(ROOT.length + 1)})`, false,
+    `no baseline to compare against, so this file is currently guarding nothing.\n` +
+    `      If the surface is genuinely correct right now, record it ON PURPOSE:\n` +
+    `        UPDATE_GOLDEN=1 node test/tool-surface.mjs\n` +
+    `      then READ THE DIFF before committing — that file is the byte budget's only anchor.`);
+} else if (BLESS) {
   mkdirSync(dirname(GOLDEN), { recursive: true });
   writeFileSync(GOLDEN, actual);
-  console.log(`  ⟳ ${existsSync(GOLDEN) && !BLESS ? "created" : "blessed"} ${GOLDEN.slice(ROOT.length + 1)} (${actual.length} bytes, ${tools.length} tools)`);
+  console.log(`  ⟳ blessed ${GOLDEN.slice(ROOT.length + 1)} (${actual.length} bytes, ${tools.length} tools)`);
   pass++;
 } else {
   const golden = readFileSync(GOLDEN, "utf-8");

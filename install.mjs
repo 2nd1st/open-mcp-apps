@@ -120,8 +120,19 @@ const claude = {
       if (JSON.stringify(st.prev.args) !== JSON.stringify([SERVER])) changed.push(["server", st.prev.args?.[0], SERVER]);
       if (st.prev.env?.OMA_DYNAMIC_TOOLS !== "1") changed.push(["env", "—", "OMA_DYNAMIC_TOOLS=1 (chat-surface workaround)"]);
     } else if (st.status === "fresh") changed.push(["added", "—", SERVER]);
+    // `unchanged` has to MEAN unchanged. This used to rewrite the entry on every run regardless of
+    // status, which is how a re-install silently deleted env the user had added to it — while the
+    // summary said `unchanged` and listed nothing under `changed:`. Nothing to do → touch nothing.
+    if (st.status === "current" && !st.legacy) return { changed, configLoc: st.p, note: null };
     if (!existsSync(dirname(st.p))) mkdirSync(dirname(st.p), { recursive: true });
-    st.cfg.mcpServers[NAME] = { command: NODE, args: [SERVER], env: { ...ANTHROPIC_HOST_ENV } };
+    // MERGE, never replace: the entry is the user's too. Their env keys and any sibling fields they
+    // added survive; ours win on the keys we own. (The other two adapters never had this bug —
+    // they only touch the entry when it is `fresh` or `stale`.)
+    const prevEnv = st.prev?.env && typeof st.prev.env === "object" && !Array.isArray(st.prev.env) ? st.prev.env : {};
+    st.cfg.mcpServers[NAME] = {
+      ...(st.prev && typeof st.prev === "object" && !Array.isArray(st.prev) ? st.prev : {}),
+      command: NODE, args: [SERVER], env: { ...prevEnv, ...ANTHROPIC_HOST_ENV },
+    };
     writeFileSync(st.p, JSON.stringify(st.cfg, null, 2) + "\n");
     const back = JSON.parse(readFileSync(st.p, "utf8"));
     if (!back.mcpServers?.[NAME]) { console.error("✗ wrote config but the open-mcp-apps entry is missing on re-read."); process.exit(1); }
@@ -419,16 +430,32 @@ if (mig) console.log(`↪ migrated existing store into the shared location:\n   
 build();
 
 const applied = [];
+const failed = [];
 for (const a of selected) {
   const st = a.state();
-  if (st.error) { console.error(`\n✗ ${a.label}: ${st.error}\n  Fix or remove it, then re-run. (Not touching it — your other servers matter.)`); continue; }
+  if (st.error) {
+    failed.push({ a, error: st.error });
+    console.error(`\n✗ ${a.label}: ${st.error}\n  Fix or remove it, then re-run. (Not touching it — your other servers matter.)`);
+    continue;
+  }
   const res = resultOf(a, st);
   const out = a.apply(st);
   applied.push({ a, res, out });
 }
 
 // ---- summary ----
-console.log(`\n✅ open-mcp-apps — done. store: ${join(dataDir(), DB_NAME)}`);
+// A host we could not register into is a FAILED install, not a footnote. install.md tells a coding
+// agent to relay this summary, and the ✗ detail above goes to STDERR — so an agent that captures
+// only stdout used to see a lone ✅ while nothing had been registered, and told the user to restart
+// their host and look for a connector that was never there. Three things fix that, and they have to
+// travel together: the verdict line names the failures, it repeats them on STDOUT, and the process
+// exits non-zero (install.md §Stage 2 promises exactly that).
+if (failed.length) {
+  console.log(`\n✗ open-mcp-apps — ${applied.length} host(s) registered, ${failed.length} FAILED. store: ${join(dataDir(), DB_NAME)}`);
+  for (const { a, error } of failed) console.log(`\n  ${a.label}: NOT registered — ${error}`);
+} else {
+  console.log(`\n✅ open-mcp-apps — done. store: ${join(dataDir(), DB_NAME)}`);
+}
 for (const { a, res, out } of applied) {
   console.log(`\n  ${a.label}: ${res}`);
   for (const [k, from, to] of out.changed) console.log(`     ${k}: ${from}  →  ${to}`);
@@ -444,4 +471,8 @@ if (restarts.length) {
 }
 console.log(`\nPermissions (${perm === "auto" ? "auto-allow where possible" : "ask each time"}):`);
 for (const { a } of applied) console.log(`  · ${a.label}: ${a.perm}`);
-console.log(`\nNew here? In your host, ask the AI: "I just installed open-mcp-apps — show me how to use it with a couple of examples, and suggest a few apps that fit how I work."`);
+if (applied.length)
+  console.log(`\nNew here? In your host, ask the AI: "I just installed open-mcp-apps — show me how to use it with a couple of examples, and suggest a few apps that fit how I work."`);
+
+// Non-zero when any host was left unregistered. exitCode (not exit()) so nothing above is cut off.
+if (failed.length) process.exitCode = 1;

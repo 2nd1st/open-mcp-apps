@@ -158,7 +158,13 @@ async function rawCall(name, args) {
     if (SA) {
       const res = await fetch(SA.endpoint || "/rpc", {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        // `x-oma-viewer` is NOT a credential — its value carries no secret and the server never
+        // checks it. It exists so this request cannot be a CORS *simple request*: a custom header
+        // obliges the browser to preflight, and a cross-origin page's preflight dies against a
+        // server that answers no Access-Control-Allow-Origin. We are same-origin, so nothing is
+        // preflighted here; the header just has to be present. See src/http.mjs
+        // browserWriteAllowed() for the other half.
+        headers: { "content-type": "application/json", "x-oma-viewer": "1" },
         body: JSON.stringify({ name, arguments: args }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);

@@ -50,6 +50,13 @@ for (const f of FIXTURES) {
 ok("no golden row lost its fixture", golden.fixtures.every((g) => FIXTURES.some((f) => f.name === g.name)),
   `orphaned: ${golden.fixtures.filter((g) => !FIXTURES.some((f) => f.name === g.name)).map((g) => g.name).join(", ")}`);
 
+// Everything above compared a fixture against the recorded golden, and those are the failures
+// UPDATE_GOLDEN exists to forgive — you are re-recording them on purpose. Everything BELOW is the
+// grammar itself, and bless has no business forgiving that. The line was
+// `exit(fail === 0 || BLESS ? 0 : 1)`, under which BLESS made `fail` stop participating at all:
+// a broken §2 assertion exited 0, and the golden got rewritten with the failure still outstanding.
+const goldenFail = fail;
+
 console.log("\n2. the grammar is executable by eye — one spelling, and a near-miss is loud");
 ok("the canonical opening is a single literal a person can grep for",
   DECLARATION_OPEN === '<script type="application/json" id="oma-manifest">');
@@ -99,9 +106,16 @@ const worst = performance.now() - t0;
 ok(`adversarial 200KB input stays linear (${worst.toFixed(1)}ms)`, worst < 250,
   "this runs inside the write transaction — a quadratic blowup here is a write-path stall");
 
-if (BLESS) {
+// Re-record ONLY when nothing outside the golden comparison is broken. Blessing while the grammar
+// itself is failing writes the broken behaviour into the baseline and calls it the new truth.
+const nonGoldenFail = fail - goldenFail;
+if (BLESS && nonGoldenFail === 0) {
   writeFileSync(GOLDEN, JSON.stringify({ note: golden.note, fixtures: actual }, null, 2) + "\n");
   console.log(`\n  ⟳ blessed ${GOLDEN}`);
+} else if (BLESS) {
+  console.log(`\n  ✗ NOT blessed — ${nonGoldenFail} failure(s) outside the golden comparison.`);
+  console.log(`    Fix the grammar first; re-recording now would bake the break into the baseline.`);
 }
-console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);
-process.exit(fail === 0 || BLESS ? 0 : 1);
+console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed` +
+  (BLESS && goldenFail ? `  (${goldenFail} golden mismatch(es) forgiven by UPDATE_GOLDEN)` : ""));
+process.exit(nonGoldenFail === 0 && (BLESS || fail === 0) ? 0 : 1);

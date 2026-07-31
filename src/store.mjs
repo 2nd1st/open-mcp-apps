@@ -16,7 +16,7 @@ import Database from "better-sqlite3";
 import { randomUUID } from "node:crypto";
 import { homedir, platform } from "node:os";
 import { join, dirname } from "node:path";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { readDeclaration } from "./manifest-block.mjs";
 // tierOf only, and deliberately from the module that owns the security model rather than a second
@@ -245,17 +245,50 @@ export const MIGRATIONS = {
   // And it is WRITTEN DOWN. A name that changes under the user without a record is indistinguishable
   // from the app having been deleted — the one reading of it we must not leave available.
   4(db) {
-    const taken = new Set(db.prepare("SELECT name FROM app").all().map((r) => r.name));
+    // WHAT COUNTS AS TAKEN. Deleting an app is TOMBSTONE semantics (see delete_app): the registry
+    // row goes and the app_history rows, the file rows and the entire ledger stay. So a name that
+    // "does not exist" according to the live table can still own a (name, version) primary key in
+    // app_history — and moving a user's app onto it does one of two things, both measured:
+    //
+    //   · the versions clash (near-certain: anything ever saved has a version 1) →
+    //     SQLITE_CONSTRAINT_PRIMARYKEY. The ladder's transaction rolls the rows back, so
+    //     user_version stays 3 — but renameLegacyTables() ran BEFORE it and outside it, so the
+    //     tables are already v4-shaped. Every subsequent open replays the same step and hits the
+    //     same collision. NOT a failed upgrade: a store that never opens again, and retrying
+    //     cannot help because retrying is exactly what is failing.
+    //   · the versions happen not to clash → SILENT MERGE. Two apps' histories and files live
+    //     under one name, and restoring a version hands the user somebody else's app.
+    //
+    // Hence: a name is taken if it exists ANYWHERE a name can exist, not just where it is alive.
+    const live = new Set(db.prepare("SELECT name FROM app").all().map((r) => r.name));
+    const taken = new Set(live);
+    for (const [sql, col] of [
+      ["SELECT DISTINCT name AS n FROM app_history", "n"],
+      ["SELECT DISTINCT app AS n FROM file", "n"],
+      // The ledger keys app events by name and never forgets. An app that inherits a dead one's
+      // events inherits its LIVES: lifeStart is "the most recent deletion followed by a save",
+      // which is what checkpoint numbering and delete disposition are both computed from. This is
+      // the third home, and the only one that fails without a primary key to stop it.
+      [`SELECT DISTINCT aggregate_id AS n FROM change_event
+          WHERE event_type IN ('component_saved','component_deleted','component_archived','component_renamed')`, "n"],
+    ]) for (const r of db.prepare(sql).all()) taken.add(r[col]);
+
     const ins = db.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts)"
       + " VALUES (?, ?, ?, ?, ?, ?)");
     for (const from of RESERVED_RENAMES) {
-      if (!taken.has(from)) continue;
-      let to, i = 1;
-      do { to = `${from}-${i++}`; } while (taken.has(to));
+      if (!live.has(from)) continue;          // a tombstone under this name is not ours to move
+      let to = null;
+      for (let i = 1; i <= 1000; i++) { const c = `${from}-${i}`; if (!taken.has(c)) { to = c; break; } }
+      // FAIL OPEN, never throw. Throwing here is the failure mode described above — the store
+      // stops opening and no retry can fix it. Leaving the app under its reserved name is strictly
+      // better: v0.3.2 already ships the guard that keeps the engine BOOTING in that case (the app
+      // loses its per-app resource and still opens through open_app). A degraded app beats a store
+      // nobody can open.
+      if (!to) { try { console.warn(`[oma] v4: no free name near "${from}" — leaving it; it opens through open_app`); } catch {} continue; }
       db.prepare("UPDATE app SET name = ? WHERE name = ?").run(to, from);
       db.prepare("UPDATE app_history SET name = ? WHERE name = ?").run(to, from);
       db.prepare("UPDATE file SET app = ? WHERE app = ?").run(to, from);
-      taken.delete(from); taken.add(to);
+      live.delete(from); live.add(to); taken.add(to);
       // `component_renamed`, not `app_renamed`: the ledger's event vocabulary is frozen at the
       // pre-rename word on purpose (see EVENT_TYPES). ONE vocabulary means a later reader who
       // filters on the wrong word gets zero rows on their own machine instead of silently missing
@@ -280,24 +313,48 @@ const RESERVED_RENAMES = ["app", "component", "loader"];
 // outright against a v3 `file` table, and addColumn("app", …) has no table to alter. The rename
 // therefore has to precede them.
 //
-// Idempotent by inspection of sqlite_master, and in its own transaction: a crash mid-rename leaves
-// the v3 shape untouched and the next open retries from the top. A crash BETWEEN this and the
-// user_version bump leaves v4 tables stamped v3 — forward that is harmless (this is a no-op on the
-// next open and MIGRATIONS[4] still runs); backward it is the same one-way property v4 has anyway.
+// Idempotent by inspection of sqlite_master. It no longer carries its own transaction: openStore
+// runs it INSIDE the one transaction that also stamps user_version, so the table shape and the
+// version number now live or die together. That closes the window this used to call "forward
+// harmless" — v4 tables stamped v3 was survivable alone, but an OLDER build opening that store
+// re-created the v3 tables beside the v4 ones and left it unopenable by BOTH builds, with the
+// user's rows sitting intact and unreachable inside it.
+//
+// CALL IT INSIDE A TRANSACTION. It has none of its own by design; openStore is the only caller
+// that matters and it supplies one. (The two callers in test/ pass a bare handle ON PURPOSE —
+// producing the half state is the thing they are simulating.)
 export function renameLegacyTables(db) {
   const has = (n) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(n);
+  const empty = (n) => !has(n) || !db.prepare(`SELECT 1 FROM ${n} LIMIT 1`).get();
+  // Both names present is not a store with two lives — it is that wreckage. An older build's
+  // `CREATE TABLE IF NOT EXISTS` re-made the v3 tables next to the v4 ones and then died on an
+  // index it could not build, so one side is EMPTY. Which side that is says which is the residue,
+  // and dropping an empty table is not a guess. Refusing here forever was the harm: it stranded
+  // data that was never lost. Only two POPULATED sides are genuinely ambiguous, and that one still
+  // refuses — with the recovery procedure named, not just the refusal.
+  if (has("component") && has("app")) {
+    if (empty("component") && empty("component_history")) {
+      db.exec("DROP TABLE IF EXISTS component_history");
+      db.exec("DROP TABLE IF EXISTS component");
+      return false;                                    // the v4 side is the live one; nothing to rename
+    }
+    if (empty("app") && empty("app_history")) {
+      db.exec("DROP TABLE IF EXISTS app_history");
+      db.exec("DROP TABLE IF EXISTS app");              // …and fall through: the v3 side is live
+    } else {
+      throw new Error("store has both `component` and `app` tables and BOTH hold rows — refusing to guess " +
+        "which is live. Recovery procedure: KNOWN-ISSUES.md § \"A store that neither build will open\".");
+    }
+  }
   if (!has("component")) return false;                 // already v4-shaped, or a fresh database
-  if (has("app")) throw new Error("store has both `component` and `app` tables — refusing to guess which is live");
-  db.transaction(() => {
-    db.exec("ALTER TABLE component RENAME TO app");
-    db.exec("ALTER TABLE component_history RENAME TO app_history");
-    db.exec("ALTER TABLE file RENAME COLUMN component TO app");
-    // SQLite carries an index's DEFINITION through a column rename but not its NAME, and
-    // idx_file_component is the implementation of a security property (see the `file` DDL) — a
-    // stale name on that one is exactly what a later reader "tidies up" without knowing what it
-    // holds up. Drop it; the DDL below recreates it as idx_file_app.
-    db.exec("DROP INDEX IF EXISTS idx_file_component");
-  })();
+  db.exec("ALTER TABLE component RENAME TO app");
+  db.exec("ALTER TABLE component_history RENAME TO app_history");
+  db.exec("ALTER TABLE file RENAME COLUMN component TO app");
+  // SQLite carries an index's DEFINITION through a column rename but not its NAME, and
+  // idx_file_component is the implementation of a security property (see the `file` DDL) — a
+  // stale name on that one is exactly what a later reader "tidies up" without knowing what it
+  // holds up. Drop it; the DDL below recreates it as idx_file_app.
+  db.exec("DROP INDEX IF EXISTS idx_file_component");
   return true;
 }
 export function migrationsBetween(from, to) {
@@ -355,6 +412,28 @@ export const ITEM_WRITE_KEYS = {
 };
 /** Envelope keys a batch command may carry — the historical set, unchanged. */
 export const BATCH_ENVELOPE_KEYS = ["command_id", "actor", "host"];
+/** The SHAPE each published key must have — the value half of ITEM_WRITE_KEYS.
+ *
+ *  Filtering key NAMES was only ever half a wall. `fields: []` and `fields: "text"` carry published
+ *  names and unpublished shapes, and the single-write tools refuse both (their zod says
+ *  `z.record(...)`) while a batch waved them through: the array landed in the row and made
+ *  data_list fail output validation for the WHOLE collection, and the string was coerced to `{}`
+ *  and vanished while the caller read `ok:true`. The second is the worse one — nothing ever
+ *  reports it.
+ *
+ *  The tool layer publishes these same shapes in zod and cannot import from here (nor this from
+ *  there). So the two are held together by a TEST that hands both doors the same bad values and
+ *  requires the same verdict — behaviour, not a shared definition neither side can reach. */
+const plainObject = (v) => v !== null && typeof v === "object" && !Array.isArray(v);
+const finiteNumber = (v) => typeof v === "number" && Number.isFinite(v);
+export const ITEM_WRITE_SHAPES = {
+  collection: (v) => typeof v === "string",
+  id: (v) => typeof v === "string",
+  group: (v) => typeof v === "string",
+  fields: plainObject,
+  position: finiteNumber,
+  expected_version: finiteNumber,
+};
 /** …and the SINGLE-tool envelope, which adds `via`: the widget's shadow provenance stamp is the
  *  reason those four schemas are passthrough at all, so the wall has to let it through. Kept apart
  *  from the batch's set deliberately — `data_batch` is the model's bulk verb, never a widget's
@@ -553,50 +632,74 @@ export function defaultDbDir() {
 }
 export function defaultDbPath() { return join(defaultDbDir(), "open-mcp-apps.db"); }
 
-export function openStore(path) {
+// `readOnly` opens an EXISTING store to look at, and is the door a caller takes when it has
+// promised to write nothing. It is not a convenience: opening for write runs the migration ladder,
+// and the v3→v4 climb is ONE-WAY, so `install-app --dry-run` and `install-app --list` both used to
+// upgrade the very store they said they would only look at — and on a machine with no store yet,
+// create one. A read-only open therefore creates nothing (returns null when the file is absent)
+// and migrates nothing (throws when the schema is not the one this build speaks, naming the way
+// forward). Any command that claims to be read-only belongs on this door; that is the whole rule.
+export function openStore(path, { readOnly = false } = {}) {
   const dbPath = path || process.env.OMA_DB || defaultDbPath();
-  mkdirSync(dirname(dbPath), { recursive: true });
-  const db = new Database(dbPath);
-  db.pragma("journal_mode = WAL");
+  if (readOnly && !existsSync(dbPath)) return null;
+  if (!readOnly) mkdirSync(dirname(dbPath), { recursive: true });
+  const db = new Database(dbPath, readOnly ? { readonly: true } : {});
+  if (!readOnly) db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");   // N hosts share ONE db → wait out a busy writer instead of throwing SQLITE_BUSY
-  // Before ANY DDL: the v3 tables have to answer to their v4 names first, or the schema below
-  // indexes a column that does not exist yet. See renameLegacyTables().
-  renameLegacyTables(db);
-  db.exec(SCHEMA);
-  // The server-held delta watermark is gone: it was keyed by (collection, host) and hostName turned
-  // out to be unstable (one claude.ai user presents three clientInfo names — measured), on top of
-  // being shared across conversations. The mark lives with the CALLER now (data_changes since /
-  // next_since). The table described itself as rebuildable side state holding no truth, which is
-  // exactly what makes dropping it in place safe — no version bump, nothing to migrate.
-  db.exec("DROP TABLE IF EXISTS report_watermark");
-  // Additive migrations: SQLite has no ADD COLUMN IF NOT EXISTS, so guard by pragma. Every entry is
-  // nullable or defaulted, which is what makes it safe to run against a live database — existing
-  // rows acquire the default and no reader has to change.
-  const addColumn = (table, column, decl) => {
-    if (!db.pragma(`table_info(${table})`).some((c) => c.name === column))
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
-  };
-  addColumn("app", "scene", "TEXT");
-  addColumn("app", "manifest", "TEXT");
-  addColumn("app", "kind", "TEXT NOT NULL DEFAULT 'app'");
-  addColumn("app", "visibility", "TEXT NOT NULL DEFAULT 'listed'");
-  addColumn("app", "kit_version", "TEXT");
-  addColumn("app", "server_script", "TEXT");
-  addColumn("item", "principal", "TEXT");
-  addColumn("change_event", "principal", "TEXT");
-  // Stamp the migration-format version. 0 = pre-versioned db (same layout as v1) → claim it as v1.
-  // A FUTURE-versioned db must not be opened by older code that would write old-shaped events into it.
-  const uv = db.pragma("user_version", { simple: true });
-  if (uv > SCHEMA_VERSION) throw new Error(`store schema is v${uv}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
-  else if (uv < SCHEMA_VERSION) {
-    // 0 = pre-versioned (same layout as v1) → claim it. 0 < uv < current = a real forward
-    // migration. The branch and its registry exist BEFORE the first bump on purpose: the moment a
-    // payload shape changes is the worst possible moment to also be inventing the mechanism.
-    // One transaction for the whole climb: a migration interrupted halfway must leave the rows AND
-    // user_version untouched, or every reopen inherits a half-renumbered store it re-fails on.
+  if (readOnly) {
+    // The read-only door stops here: no rename, no DDL, no climb. A schema this build does not
+    // speak is a refusal with the way forward in it, never a silent one-way upgrade.
+    const uv = db.pragma("user_version", { simple: true });
+    if (uv !== SCHEMA_VERSION) {
+      db.close();
+      throw new Error(`store schema is v${uv}, this build speaks v${SCHEMA_VERSION} — a read-only open ` +
+        `does not migrate it. Install an app (any command that writes) to upgrade the store, once and one-way.`);
+    }
+  } else {
+    // ONE transaction for the whole open: the structural rename, the DDL and the user_version stamp.
+    // They used to be three separate writes, so a failure anywhere in the middle left v4-shaped tables
+    // stamped v3 — a half state that survives, and that an older build turns into a store neither
+    // build will open. Together they are all-or-nothing: a store is either fully v3 or fully v4.
     db.transaction(() => {
-      for (const step of migrationsBetween(uv, SCHEMA_VERSION)) step(db);
-      db.pragma(`user_version = ${SCHEMA_VERSION}`);
+      // Before ANY DDL: the v3 tables have to answer to their v4 names first, or the schema below
+      // indexes a column that does not exist yet. See renameLegacyTables().
+      renameLegacyTables(db);
+      db.exec(SCHEMA);
+      // The server-held delta watermark is gone: it was keyed by (collection, host) and hostName turned
+      // out to be unstable (one claude.ai user presents three clientInfo names — measured), on top of
+      // being shared across conversations. The mark lives with the CALLER now (data_changes since /
+      // next_since). The table described itself as rebuildable side state holding no truth, which is
+      // exactly what makes dropping it in place safe — no version bump, nothing to migrate.
+      db.exec("DROP TABLE IF EXISTS report_watermark");
+      // Additive migrations: SQLite has no ADD COLUMN IF NOT EXISTS, so guard by pragma. Every entry is
+      // nullable or defaulted, which is what makes it safe to run against a live database — existing
+      // rows acquire the default and no reader has to change.
+      const addColumn = (table, column, decl) => {
+        if (!db.pragma(`table_info(${table})`).some((c) => c.name === column))
+          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
+      };
+      addColumn("app", "scene", "TEXT");
+      addColumn("app", "manifest", "TEXT");
+      addColumn("app", "kind", "TEXT NOT NULL DEFAULT 'app'");
+      addColumn("app", "visibility", "TEXT NOT NULL DEFAULT 'listed'");
+      addColumn("app", "kit_version", "TEXT");
+      addColumn("app", "server_script", "TEXT");
+      addColumn("item", "principal", "TEXT");
+      addColumn("change_event", "principal", "TEXT");
+      // Stamp the migration-format version. 0 = pre-versioned db (same layout as v1) → claim it as v1.
+      // A FUTURE-versioned db must not be opened by older code that would write old-shaped events into it.
+      const uv = db.pragma("user_version", { simple: true });
+      if (uv > SCHEMA_VERSION) throw new Error(`store schema is v${uv}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
+      else if (uv < SCHEMA_VERSION) {
+        // 0 = pre-versioned (same layout as v1) → claim it. 0 < uv < current = a real forward
+        // migration. The branch and its registry exist BEFORE the first bump on purpose: the moment a
+        // payload shape changes is the worst possible moment to also be inventing the mechanism.
+        // The climb no longer opens a transaction of its own — the one wrapping this whole block is
+        // what makes an interrupted migration leave the rows, the table shape AND user_version alike
+        // untouched, instead of only the rows.
+        for (const step of migrationsBetween(uv, SCHEMA_VERSION)) step(db);
+        db.pragma(`user_version = ${SCHEMA_VERSION}`);
+      }
     })();
   }
 
@@ -1498,7 +1601,14 @@ export function openStore(path) {
         return { ok: false, error: "batch_failed", index: i, applied: 0,
           failure: { ok: false, error: "unknown_actor" } };
       const cmd = { type: c.type };
-      for (const k of allowed) if (c[k] !== undefined) cmd[k] = c[k];
+      for (const k of allowed) {
+        if (c[k] === undefined) continue;
+        const shape = ITEM_WRITE_SHAPES[k];
+        if (shape && !shape(c[k])) return { ok: false, error: "batch_failed", index: i, applied: 0,
+          failure: { ok: false, error: "bad_batch_argument",
+            detail: `\`${k}\` has the wrong type — a batch command carries exactly what the matching single-write tool takes` } };
+        cmd[k] = c[k];
+      }
       for (const k of BATCH_ENVELOPE) if (c[k] !== undefined) cmd[k] = c[k];
       cleaned.push(cmd);
     }

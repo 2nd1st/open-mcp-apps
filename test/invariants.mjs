@@ -52,6 +52,7 @@ const FLAGS = {
   // host; E6 — the ui-extension predicate held at n=4; §15c — the delivery cut measured on the
   // four-host matrix). The delivery-cut campaign docs hold the numbers.
   PORT:               { kind: "product",  why: "http transport port" },
+  OMA_VIEWER:         { kind: "product",  why: "turns OFF the local browser viewer that the stdio server starts by default (OMA_VIEWER=0). It is a real capability toggle, not a debug flag: default-on means every install binds a loopback port it was not asked for, and port clashes and corporate policy are both real reasons to want it gone. Read ONLY by the embedded path — running `node src/http.mjs` directly IS asking for a viewer, so the flag does not gate it" },
   OMA_VIEW_BASE:      { kind: "product",  why: "public base URL of the browser viewer, for the app links handed to the model. Defaults to loopback, which is right locally and DEAD behind a tunnel or reverse proxy — the setup every hosted chat reaches this server through. The process cannot discover its own external address; the operator can" },
   APPDATA:            { kind: "platform", why: "Windows data dir" },
   XDG_DATA_HOME:      { kind: "platform", why: "XDG data dir" },
@@ -164,26 +165,169 @@ console.log("3. one answer to \"what does this app open on\"");
     disagree.length === 0, disagree.join("\n      "));
 }
 
-// 3. THE LOCKFILE AGREES WITH package.json ABOUT WHAT VERSION THIS IS.
+// 3. THE LOCKFILE AGREES WITH package.json — ABOUT EVERYTHING IT MIRRORS, NOT JUST THE VERSION.
 //
-// `npm version` writes both; a hand-edited bump writes one. v0.4.0 shipped with package.json at
-// 0.4.0 and package-lock.json still saying 0.3.2 — `npm ci` does not care (it validates the
-// dependency tree, not this field, and installs cleanly), so nothing failed. It is a lie in a
-// file that ships, on a release whose notes ask people to read carefully before upgrading, and
-// the first person to look closely found it.
+// This started as a version check, because v0.4.0 shipped with package.json at 0.4.0 and the
+// lockfile still saying 0.3.2. `npm ci` does not care (it validates the dependency tree, not these
+// fields, and installs cleanly), so nothing failed and nothing was reported — it was simply a lie
+// in a file that ships.
 //
-// Two places carry the version inside the lockfile: the top-level `version` and the root package
-// entry `packages[""].version`. A bump that misses either is the same defect.
+// Then v0.4.1 added a `bin` and the lockfile did not follow, and the version check said nothing,
+// because it was a check on ONE VALUE for a defect whose shape is "package.json moved and the
+// lockfile did not". Same shape, second instance, and the guard written for the first was blind to
+// the second. So it now governs the RELATIONSHIP: every key npm mirrors into the root entry has to
+// agree, and the list of what npm mirrors has to stay honest.
+//
+// Three assertions, and the third is the one that keeps this from going stale again:
+//   · shared keys agree           — catches a value drifting
+//   · mirrored keys are PRESENT   — catches package.json growing a key the lockfile never got
+//   · the mirror list is complete — catches npm mirroring something this check has never heard of,
+//                                   which is how a check like this quietly stops covering things
+//
+// The fix for every one of them is the same command: `npm install --package-lock-only`.
 {
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
   const lock = JSON.parse(readFileSync(join(ROOT, "package-lock.json"), "utf-8"));
-  const rootEntry = lock.packages?.[""]?.version;
-  ok(
-    `package-lock.json says ${pkg.version} in both places, like package.json`,
-    lock.version === pkg.version && rootEntry === pkg.version,
-    `package.json=${pkg.version} lock.version=${lock.version} lock.packages[""].version=${rootEntry}` +
-      ` — run \`npm install --package-lock-only\` after a version bump`,
-  );
+  const root = lock.packages?.[""] || {};
+  // What npm copies from package.json into `packages[""]`. Measured against this repo's lockfile
+  // rather than recited: name/version/license/engines/dependencies/devDependencies were already
+  // there, `bin` is what v0.4.1 was missing, and the rest are the sibling fields npm treats the
+  // same way. The completeness assertion below is what keeps this list from being a guess.
+  const MIRRORED = ["name", "version", "license", "bin", "engines", "os", "cpu", "workspaces",
+    "dependencies", "devDependencies", "optionalDependencies", "peerDependencies"];
+
+  // `version` additionally lives at the TOP level of the lockfile. A bump that misses either is
+  // the same defect, so it is checked separately from the root entry.
+  ok(`package-lock.json's top-level version says ${pkg.version}, like package.json`,
+    lock.version === pkg.version,
+    `package.json=${pkg.version} lock.version=${lock.version} — run \`npm install --package-lock-only\``);
+
+  const disagree = MIRRORED.filter((k) => k in pkg && k in root && JSON.stringify(pkg[k]) !== JSON.stringify(root[k]));
+  ok("every key the lockfile mirrors carries the same value as package.json",
+    disagree.length === 0,
+    disagree.map((k) => `${k}: package.json=${JSON.stringify(pkg[k])} lock=${JSON.stringify(root[k])}`).join("\n      ")
+      + ` — run \`npm install --package-lock-only\``);
+
+  const missing = MIRRORED.filter((k) => k in pkg && !(k in root));
+  ok(`the lockfile carries every mirrored key package.json declares (${MIRRORED.filter((k) => k in pkg).length} of them)`,
+    missing.length === 0,
+    `${missing.join(", ")} declared in package.json, absent from the lockfile's root entry`
+      + ` — run \`npm install --package-lock-only\``);
+
+  // If npm starts mirroring a field this list has never heard of, that field would be compared by
+  // nobody. Failing here is the cheap version of finding out; the fix is one word in MIRRORED.
+  const unlisted = Object.keys(root).filter((k) => k in pkg && !MIRRORED.includes(k));
+  ok("…and nothing is mirrored that this check does not know to compare",
+    unlisted.length === 0,
+    `${unlisted.join(", ")} appears in both files but is not in MIRRORED — add it there`);
+}
+
+// ── a `bin` we ship under a name we do not own on npm ─────────────────────────────────────────
+// Declaring `bin: {"open-mcp-apps": …}` makes `npx open-mcp-apps` LOOK like a way to run this
+// project. It is not: that name on the npm registry belongs to an unrelated package, so the npx
+// form fetches and executes somebody else's code. README carries that warning where users read it.
+//
+// This pins the COUPLING rather than blacklisting a string — a blacklist would flag the sentences
+// that say the form does not work, which is the opposite of the harm. The rule is: as long as we
+// ship a bin whose name is not ours, the disclosure has to exist. Whoever gets the name on npm
+// deletes both together, deliberately, instead of one of them by accident.
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
+  const binNames = Object.keys(pkg.bin || {});
+  const readme = readFileSync(join(ROOT, "README.md"), "utf-8");
+  const discloses = /npm registry is \*\*not this project\*\*|not this project/.test(readme)
+    && /A note on npm/i.test(readme);
+  ok("a bin named after the package still comes with README's note that the npm name is not ours",
+    !binNames.includes(pkg.name) || discloses,
+    `bin=${JSON.stringify(binNames)} pkg=${pkg.name} readme discloses=${discloses}`);
+}
+
+// ── the node path the installer writes into every host config ─────────────────────────────────
+// better-sqlite3 is a native addon, so the registered node must BE the binary it was built for —
+// which used to mean pinning process.execPath verbatim. Under Homebrew that is a versioned cellar
+// path (…/Cellar/node/26.5.0/bin/node) which disappears on the next `brew upgrade node`, and all
+// three host entries stop starting at once with nothing on screen to explain why (live-test
+// 2026-07-28). The rule now: prefer a stable launcher, but ONLY when it resolves to the same
+// binary. The criterion is identity — not that the path looks nicer.
+//
+// The logic is RUN here, not described here: importing install.mjs would perform an install, so
+// the resolver is lifted out of the real source and evaluated against a fake realpath. If it ever
+// stops being extractable, the first assertion says so rather than the rest passing vacuously.
+{
+  const src = readFileSync(join(ROOT, "install.mjs"), "utf-8");
+  const m = /const NODE = \(\(\) => \{[\s\S]*?\n\}\)\(\);/.exec(src);
+  ok("the installer's node resolver is extractable from the real source", !!m,
+    "the regex no longer matches install.mjs — the assertions below prove nothing until it does");
+  if (m) {
+    const pick = new Function("realpathSync", "return " + m[0].replace(/^const NODE = /, "").replace(/;$/, ""));
+    const SAME = "/real/node/binary";
+    ok("prefers a stable launcher when it resolves to the SAME binary",
+      pick((q) => (q === "/opt/homebrew/bin/node" || q === process.execPath) ? SAME : "/elsewhere/node")
+        === "/opt/homebrew/bin/node");
+    ok("never pins a launcher that resolves to a DIFFERENT binary — identity, not aesthetics",
+      pick((q) => q === process.execPath ? SAME : "/a/different/node") === process.execPath);
+    ok("falls back to execPath when no stable launcher is on this machine",
+      pick((q) => { if (q === process.execPath) return SAME; throw Object.assign(new Error("ENOENT"), { code: "ENOENT" }); })
+        === process.execPath);
+  }
+}
+
+// ── destructive actions in shipped apps must honour confirm_delete ────────────────────────────
+// `confirm_delete` is a SHARED preference: the user sets it once and every app obeys. Most did.
+// settings.html did not — its "Reset all" deleted an entire section of stored values on ONE click
+// and flashed "Saved", while the delete-app button 600 lines down the SAME FILE asked twice. The
+// button's own title said "Delete every stored value in this section", so it knew what it was.
+//
+// This walks every shipped app, finds the calls that destroy data, and requires each to sit behind
+// the pref — or to be listed below WITH A REASON. Entries are keyed by a snippet of the line, not
+// a line number: when the excused code changes the entry goes stale and this goes red, instead of
+// silently excusing whatever moved into that position.
+{
+  const DESTRUCTIVE = /oma\.deleteItem\s*\(|["']data_delete_item["']|["']delete_app["']|["']archive_app["']|oma\.files\s*\.\s*delete\s*\(/;
+  const GATE = /confirmDeleteOn\s*\(\)|oma\.pref\s*\(\s*["']confirm_delete["']/;
+  const WINDOW = 20;                     // lines above the call the gate may live in
+  const UNGATED_BY_DESIGN = [
+    ["companion.html", 'oma.callTool("data_delete_item"',
+      "the gate is at the SOLE caller — deleteKnowledge() is called once, from a handler that arms first. A line window cannot see across a function boundary; this is the limit of the detector, not a hole in the app"],
+    ["dashboard.html", "one unpin collapses them all",
+      "unpin is a TOGGLE: the inverse is the same button, one click later. A confirm dance here would cost more than the mistake it prevents"],
+    ["settings.html", "await oma.deleteItem(id); flashSaved();",
+      "one preference back to its documented default, with the value on screen and re-settable in a keystroke. Confirming every pref reset trains people to click through the confirmation that matters"],
+    ["settings.html", "dashboard_poll_seconds",
+      "a MIGRATION, not a user action: the value is copied to its new home two lines above. Nothing is lost and nobody asked for it"],
+  ];
+
+  const sites = [];
+  for (const f of readdirSync(join(ROOT, "components")).filter((x) => x.endsWith(".html"))) {
+    const lines = readFileSync(join(ROOT, "components", f), "utf-8").split("\n");
+    lines.forEach((ln, i) => {
+      if (!DESTRUCTIVE.test(ln)) return;
+      // Comments STRIPPED first. Found the hard way: the fix for "Reset all" carries a comment
+      // explaining that it calls confirmDeleteOn(), and that comment alone satisfied the pattern —
+      // deleting the entire gate below it left this green. A rule that a sentence can satisfy is
+      // not a rule.
+      const win = lines.slice(Math.max(0, i - WINDOW), i).join("\n")
+        .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
+      const gated = GATE.test(win);
+      sites.push({ file: f, line: i + 1, text: ln, gated });
+    });
+  }
+  const gated = sites.filter((x) => x.gated);
+  ok(`detector is non-vacuous: ${sites.length} destructive call site(s) across the shipped apps, ${gated.length} of them gated`,
+    sites.length > 10 && gated.length > 5,
+    "the DESTRUCTIVE/GATE patterns stopped matching — everything below is vacuous until they do");
+
+  const excused = (s) => UNGATED_BY_DESIGN.find(([f, snip]) => f === s.file && s.text.includes(snip));
+  const unexplained = sites.filter((s) => !s.gated && !excused(s));
+  ok("every destructive call is behind confirm_delete, or listed with a reason why not",
+    unexplained.length === 0,
+    unexplained.map((s) => `${s.file}:${s.line}  ${s.text.trim().slice(0, 80)}`).join("\n      "));
+
+  const stale = UNGATED_BY_DESIGN.filter(([f, snip]) =>
+    !sites.some((s) => !s.gated && s.file === f && s.text.includes(snip)));
+  ok("no stale exemptions — every entry still excuses a real ungated call",
+    stale.length === 0,
+    stale.map(([f, snip]) => `${f}: "${snip}" no longer matches an ungated call — gated now, or gone`).join("\n      "));
 }
 
 console.log(`\ninvariants: ${pass} passed, ${fail} failed`);

@@ -68,13 +68,26 @@ if (flag("help") || (!argv.length)) {
 }
 
 const dbPath = val("db") || undefined;
-const store = dbPath ? openStore(resolve(dbPath)) : openStore();
+// The two commands that only LOOK take the READ-ONLY door. Opening for write runs the migration
+// ladder, and the v3→v4 climb is one-way: the old shape of this line upgraded the user's store —
+// irreversibly — while printing "nothing written" (--dry-run) or "(no apps installed)" (--list),
+// and on a machine with no store yet it created one to say that about. Same defect, two entrances,
+// one door. A read-only open returns null when there is nothing to read, which is the honest
+// answer for both: no store means no collision and no apps, not a store that now exists.
+const DRY = flag("dry-run");
+const READ_ONLY = DRY || flag("list");
+let store;
+try {
+  store = openStore(dbPath ? resolve(dbPath) : undefined, { readOnly: READ_ONLY });
+} catch (e) {
+  die(e.message);   // a schema this build cannot read is a sentence, not a stack trace
+}
 
 // ── --list ────────────────────────────────────────────────────────────────────────────────────
 // Provenance is invisible everywhere else on the CLI, and it is the one thing that decides how an
 // app runs. That makes "what is installed and whose is it" the natural companion to installing.
 if (flag("list")) {
-  const rows = store.listApps();
+  const rows = store ? store.listApps() : [];   // null store = nothing installed anywhere yet
   if (!rows.length) console.log("(no apps installed)");
   else {
     const w = Math.max(...rows.map((r) => r.name.length));
@@ -85,7 +98,7 @@ if (flag("list")) {
     }
     console.log(`\n${rows.length} app(s). "direct" = holds the real window.oma; anything else runs behind the sandboxed runner.`);
   }
-  store.close();
+  store?.close();
   process.exit(0);
 }
 
@@ -124,7 +137,7 @@ else if (decl.state === "bad")
 const actor = flag("sandboxed") ? "guest" : "human";
 const tier = tierOf(actor);
 const caps = TIER_CAPS[tier];
-const existing = store.getApp(name);
+const existing = store ? store.getApp(name) : null;   // null store = dry run with no store yet
 
 console.log(`  file      ${path}`);
 console.log(`  name      ${name}`);
@@ -140,7 +153,11 @@ if (existing && !flag("update")) {
   store.close();
   process.exit(1);
 }
-if (flag("dry-run")) { console.log("\n(dry run — nothing written)"); store.close(); process.exit(0); }
+if (DRY) {
+  console.log("\n(dry run — nothing written" + (store ? "" : "; no store exists yet, so nothing was read either") + ")");
+  store?.close();
+  process.exit(0);
+}
 
 // ── write ─────────────────────────────────────────────────────────────────────────────────────
 // declaration_policy stays STRICT: this is an authoring path, not a rescue path. Someone who wrote

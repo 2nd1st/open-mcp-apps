@@ -3,7 +3,8 @@
 // named-import resolution and basic signatures, not a full model of the store.
 
 export interface EngineOptions {
-  /** Fixed host label stamped on change events; when absent, derived per-session from the MCP initialize clientInfo. */
+  /** Fixed host label stamped on change events; when absent, derived from the caller's clientInfo —
+   *  per-session from `initialize` up to MCP 2026-06-18, per-request from `_meta` on 2026-07-28+. */
   hostLabel?: string;
   /** Replace the MANUAL layer of the instructions (hosted deployments carry their own behaviour
    *  text). The engine-composed dynamic segments (onboarding vs inventory, proactivity stance,

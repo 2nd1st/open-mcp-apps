@@ -28,6 +28,13 @@
 }
 *{box-sizing:border-box}
 body{margin:0;padding:var(--k-s4);font-family:var(--font-sans);color:var(--color-text-primary);font-size:var(--font-text-md-size,14px)}
+/* The UA gives [hidden] display:none, but ANY class here that sets `display` outranks it —
+   ten of them do, so `el.hidden = true` on a .k-btn / .k-row / .k-li … left the element on
+   screen with no error anywhere. The guide tells authors to "hide" things (e.g. a Send to AI
+   button when oma.standalone) without saying how, and `hidden` is what a person reaches for;
+   a shipped library app had this exact bug. !important rather than ten paired selectors, so a
+   class added later is covered by construction instead of by remembering. */
+[hidden]{display:none !important}
 /* text */
 .k-h1{margin:0;font-size:var(--font-heading-sm-size,18px);font-weight:650;letter-spacing:-.01em}
 .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}

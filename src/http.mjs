@@ -19,27 +19,28 @@ import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve as resolvePath } from "node:path";
 import { openStore } from "./store.mjs";
 import { createEngine, tierOf, defaultCollectionFor } from "./engine.mjs";
 import { wrapApp, wrapLoader } from "./shell.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
-const PORT = Number(process.env.PORT || 8787);
-const store = openStore(); // fixed per-user data dir (see store.mjs) — OMA_DB overrides
 
-// ---- a resident in-process MCP client for /rpc (the browser viewer's backend) ----------
-const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+// ONE viewer per process. These are assigned by startViewer() rather than at import time, because
+// the embedded case (src/server.mjs) MUST hand us ITS store: two openStore() handles in one
+// process would be two file channels, and a chunked upload begun on one would be invisible to the
+// other (see the memoization note above openFileChannel in engine.mjs). Importing this module
+// therefore has to be free of side effects — nothing binds, nothing opens, until asked.
+let store = null;
+let PORT = Number(process.env.PORT || 8787);
 // Every app link handed to the model is built from this. A process cannot discover the address
 // the outside world reaches it by: put this server behind a tunnel or a reverse proxy — which is
 // exactly how it gets connected to a hosted chat — and the loopback URL it prints is dead for the
 // only reader that matters. So it is loopback by DEFAULT (right for the local case) and overridable
 // by the operator who does know. Trailing slashes are trimmed where it is used.
-const VIEW_BASE = process.env.OMA_VIEW_BASE || `http://127.0.0.1:${PORT}`;
-const viewerEngine = createEngine(store, { hostLabel: "browser-viewer", viewBase: VIEW_BASE });
-await viewerEngine.connect(serverTransport);
-const viewerClient = new Client({ name: "browser-viewer", version: "0.1.0" });
-await viewerClient.connect(clientTransport);
+let VIEW_BASE = null;
+let viewerClient = null;
+let started = null;
 
 const json = (res, code, body) => { res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(body)); };
 const html = (res, code, body, headers) => { res.writeHead(code, { "content-type": "text/html; charset=utf-8", ...headers }).end(body); };
@@ -64,22 +65,66 @@ const readBody = (req) => new Promise((resolve, reject) => {
 // Origin validation (MCP transports spec, MUST): a web page that DNS-rebinds its domain to
 // 127.0.0.1 can POST here same-origin — and /rpc is the full unauthenticated tool surface.
 // Such requests carry the attacker page's Origin; everything legitimate carries either none
-// (curl, MCP clients, tunnel ingress), a loopback origin (the standalone shell's own fetches,
-// any port — local pages are not the rebinding threat), or the origin the operator already
-// declared via OMA_VIEW_BASE (the shell served THROUGH a tunnel fetches /rpc with the tunnel's
-// Origin — refusing it would kill the tunneled browser viewer). Anything else → 403.
-// The hosted deployment is out of scope here: its Origin/CSRF story belongs to the BFF
-// (see docs/spec-conformance.md).
+// (curl, MCP clients, tunnel ingress), THIS viewer's own loopback origin, or the origin the
+// operator already declared via OMA_VIEW_BASE (the shell served THROUGH a tunnel fetches /rpc
+// with the tunnel's Origin — refusing it would kill the tunneled browser viewer).
+// Anything else → 403. The hosted deployment is out of scope here: its Origin/CSRF story
+// belongs to the BFF (see docs/spec-conformance.md).
+//
+// 🔴 2026-07-31 — this used to read "a loopback origin, ANY PORT — local pages are not the
+// rebinding threat", and that sentence was wrong in a way that cost us the whole tool surface.
+// Measured, not theorised: a page on http://localhost:3000 POSTing here with
+// `Content-Type: text/plain` (a CORS *simple request*, so no preflight the browser could fail)
+// got 200 and its write landed. The premise behind the old sentence was "anything that can
+// reach this port is a local process, and a local process can just read the SQLite file" —
+// A WEB PAGE IS NOT A LOCAL PROCESS. It cannot read the file, but it can absolutely reach the
+// port, and every dev server, docs site and localhost app the user has open is such a page.
+//
+// Two independent locks now, deliberately (either alone would close today's exploit; the pair
+// survives one of them being wrong):
+//   1. HERE — the loopback allowance is narrowed to OUR OWN PORT, not any port. Every loopback
+//      spelling still passes (localhost / 127.0.0.1 / [::1] are the same server, and pinning the
+//      spelling would break the ordinary `localhost:PORT` visit — see the note at the /view
+//      route), but a different port is a different application and gets no say here.
+//   2. requireBrowserWriteHeader() below — a custom request header on browser-initiated writes,
+//      which no simple request can set. That one does not depend on this function parsing
+//      Origin correctly at all.
+const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
+const portOf = (u) => u.port || (u.protocol === "https:" ? "443" : "80");
 const originAllowed = (origin) => {
   if (!origin) return true;
   let o;
   try { o = new URL(origin); } catch { return false; } // includes Origin: null
-  if (o.hostname === "localhost" || o.hostname === "127.0.0.1" || o.hostname === "[::1]") return true;
+  if (LOOPBACK_HOSTS.has(o.hostname) && portOf(o) === String(PORT)) return true;
   if (process.env.OMA_VIEW_BASE) {
     try { if (o.origin === new URL(process.env.OMA_VIEW_BASE).origin) return true; } catch {}
   }
   return false;
 };
+
+// Lock 2: force a CORS preflight on anything a browser initiates against the tool surface.
+//
+// The exploit that got in was a *simple request* — the browser sends it without asking us first,
+// so no CORS decision of ours is ever consulted; we only see it after it has already arrived, and
+// by then the write has a body. A request carrying a header outside the CORS-safelisted set can
+// no longer be simple: the browser must preflight it, we answer no `Access-Control-Allow-Origin`
+// (we set no CORS headers anywhere — see the note on Mcp-Method/Mcp-Name), and the browser drops
+// it before our handler exists. The header's VALUE is worthless as a secret and is not treated as
+// one; what protects us is that a cross-origin page cannot get the header sent at all.
+//
+// Scope is deliberately narrow, and each exclusion is load-bearing:
+//   · POST only — GET /view and the /events SSE stream stay untouched. EventSource CANNOT set
+//     request headers, so requiring one there would break realtime for good.
+//   · Origin present only — curl, MCP clients and tunnel ingress send none and are unaffected.
+//     That keeps this a browser-shaped lock, which is the only shape the threat has.
+const BROWSER_WRITE_HEADER = "x-oma-viewer";
+const browserWriteAllowed = (req) =>
+  !req.headers.origin || req.method !== "POST" || req.headers[BROWSER_WRITE_HEADER] != null;
+
+// SEP-2575's per-request identity key, namespaced exactly as the 2026-07-28 spec writes it.
+// One named constant because it is the single string the dual-era read below depends on: if the
+// final spec text spells it differently, this is the one line that changes.
+const CLIENT_INFO_META = "io.modelcontextprotocol/clientInfo";
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -87,18 +132,53 @@ const server = http.createServer(async (req, res) => {
     if (!originAllowed(req.headers.origin)) {
       return json(res, 403, { isError: true, content: [{ type: "text", text: "forbidden origin" }] });
     }
+    // Distinct message on purpose: a stripped header and a wrong origin are different failures and
+    // land on different people. If a reverse proxy ever drops `x-oma-viewer`, the viewer breaks —
+    // and this line is what makes that five seconds to diagnose instead of an afternoon.
+    if (!browserWriteAllowed(req)) {
+      return json(res, 403, { isError: true, content: [{ type: "text",
+        text: `browser writes must send the ${BROWSER_WRITE_HEADER} header (forces a CORS preflight)` }] });
+    }
     // ---- MCP over Streamable HTTP (stateless: a fresh engine per request; the tool list
     // is rebuilt from the live registry every time, so new apps appear immediately) ----
     if (url.pathname === "/mcp") {
       const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const body = req.method === "POST" ? JSON.parse((await readBody(req)) || "null") : undefined;
       // Host label is REQUEST-SCOPED (no cross-client globals — stateless requests must not
-      // inherit another client's identity). Priority: this request's own initialize
-      // clientInfo → User-Agent product token → generic "remote-http". Provenance
-      // annotation for the ledger, not a security property.
+      // inherit another client's identity). TWO PROTOCOL ERAS answer "who is calling", and this
+      // reads both, first hit wins:
+      //   · ≤ 2026-06-18 — `initialize` carries clientInfo once, when the connection opens.
+      //   · 2026-07-28 + — `initialize`/`initialized` are DELETED (SEP-2575); every request
+      //     carries `_meta["io.modelcontextprotocol/clientInfo"]` instead. It is a SHOULD, so it
+      //     can still be absent, and the fallbacks below stay load-bearing.
+      // Reading both costs one branch, and means the migration does not have to touch this line.
+      //
+      // The new era is not merely a replacement, it is a REPAIR — and the repair lands before the
+      // migration does: this transport is stateless, so a tool call is its OWN HTTP request with
+      // no initialize in it, which is why nearly every remote call today falls through to the
+      // User-Agent token (test/http-smoke.mjs pins exactly that fallback). A per-request
+      // clientInfo names THE CALL rather than whichever connection happened to open first — also
+      // the shape that answers "one claude.ai user presents three clientInfo names" (measured;
+      // see the note in src/store.mjs where the per-host watermark died of it).
+      //
+      // ⚠️ MEASURED, and it changes how to read the first bullet: the `initialize` branch is
+      // UNREACHABLE on this wire today. A handshake is its own HTTP request and writes nothing, so
+      // its label can only reach the ledger batched with a call — and the transport refuses that
+      // (`-32600 Only one initialization request is allowed`; pinned in test/http-smoke.mjs). It is
+      // kept because it is the old era's sole possible carrier and costs one ternary, NOT because
+      // it is known to fire. Do not read this loop as two working paths: one works, one is a
+      // placeholder honest enough to say so.
+      //
+      // Chain: either era's clientInfo → User-Agent product token → generic "remote-http".
+      // Provenance annotation for the ledger, not a security property.
       let hostLabel = null;
       for (const msg of Array.isArray(body) ? body : body ? [body] : []) {
-        if (msg && msg.method === "initialize" && msg.params?.clientInfo?.name) hostLabel = msg.params.clientInfo.name;
+        if (!msg) continue;
+        // New era first: in a message carrying both, the per-request value is the more specific
+        // claim — it describes this call, not the session that opened the connection.
+        const ci = msg.params?._meta?.[CLIENT_INFO_META]
+          || (msg.method === "initialize" ? msg.params?.clientInfo : null);
+        if (ci && typeof ci.name === "string" && ci.name) { hostLabel = ci.name; break; }
       }
       if (!hostLabel) {
         const ua = String(req.headers["user-agent"] || "").trim();
@@ -198,6 +278,14 @@ const server = http.createServer(async (req, res) => {
       }), { "content-security-policy": VIEW_CSP });
     }
 
+    // A constant answer, no store access: this exists so a SECOND instance of us can ask
+    // "is the process on this port one of us?" before adopting its URL (see startViewer). It
+    // deliberately reports no version — it is reachable through a tunnel, and the adoption check
+    // does not need one, so there is nothing to fingerprint.
+    if (url.pathname === "/healthz" && req.method === "GET") {
+      return json(res, 200, { service: "open-mcp-apps" });
+    }
+
     if (url.pathname === "/" && req.method === "GET") {
       const comps = store.listApps();
       const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
@@ -245,13 +333,90 @@ const server = http.createServer(async (req, res) => {
   }
 });
 
-// Bind to loopback ONLY. Both /rpc and /mcp are unauthenticated; a default (all-interfaces)
-// bind would let anyone on the LAN read and write your data. Remote hosts (ChatGPT/claude.ai)
-// reach /mcp through an OUTBOUND tunnel that connects to 127.0.0.1 locally, so restricting the
-// listener to loopback costs nothing. (Data-layer exposure only — even so, the tool surface
-// caps a caller to SQLite ops; see docs/security-model.md §1.5 Layer C.)
-server.listen(PORT, "127.0.0.1", () => {
-  console.log(`open-mcp-apps http listening on http://localhost:${PORT}`);
-  console.log(`  browser viewer:  http://localhost:${PORT}/`);
-  console.log(`  MCP endpoint:    http://localhost:${PORT}/mcp   (tunnel this for ChatGPT/claude.ai)`);
-});
+/**
+ * Start the local viewer. Returns { url, port, adopted } — or null when there is no viewer to
+ * hand out links for. NEVER throws: the caller is usually an MCP server whose actual job is the
+ * stdio protocol, and a browser convenience must not be able to take that down.
+ *
+ * @param opts.store  the caller's store. Omit ONLY when this process has no other one (the
+ *                    standalone `node src/http.mjs` path) — see the note at the top.
+ * @param opts.port   overrides PORT.
+ */
+export async function startViewer({ store: ownStore, port } = {}) {
+  if (started) return started;
+  try {
+    store = ownStore || openStore();
+    PORT = port ?? Number(process.env.PORT || 8787);
+    VIEW_BASE = process.env.OMA_VIEW_BASE || `http://127.0.0.1:${PORT}`;
+
+    // The resident in-process MCP client for /rpc (the browser viewer's backend).
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    const viewerEngine = createEngine(store, { hostLabel: "browser-viewer", viewBase: VIEW_BASE });
+    await viewerEngine.connect(serverTransport);
+    viewerClient = new Client({ name: "browser-viewer", version: "0.1.0" });
+    await viewerClient.connect(clientTransport);
+
+    // Bind to loopback ONLY. Both /rpc and /mcp are unauthenticated; a default (all-interfaces)
+    // bind would let anyone on the LAN read and write your data. Remote hosts (ChatGPT/claude.ai)
+    // reach /mcp through an OUTBOUND tunnel that connects to 127.0.0.1 locally, so restricting the
+    // listener to loopback costs nothing. (Data-layer exposure only — even so, the tool surface
+    // caps a caller to SQLite ops; see docs/security-model.md §1.5 Layer C.)
+    const bound = await new Promise((resolve) => {
+      const onError = (e) => { server.removeListener("listening", onListening); resolve({ error: e }); };
+      const onListening = () => { server.removeListener("error", onError); resolve({ ok: true }); };
+      server.once("error", onError);
+      server.once("listening", onListening);
+      server.listen(PORT, "127.0.0.1");
+    });
+
+    if (bound.ok) {
+      started = { url: VIEW_BASE, port: PORT, adopted: false };
+      return started;
+    }
+    // Several hosts share ONE store by design (Claude Desktop + Claude Code + Codex, all launched
+    // separately), so losing the race for the port is the NORMAL case, not an error — and the
+    // process that won is serving the very same data. Adopt its URL rather than leaving every host
+    // after the first with no link to hand out, which is exactly the CLI case this feature is for.
+    // But adopt only after ASKING: a port can be held by something that is not us, and handing the
+    // model a link into a stranger's server is worse than handing it none.
+    if (bound.error?.code === "EADDRINUSE") {
+      const mine = await isOurViewer(VIEW_BASE);
+      note(mine
+        ? `viewer: port ${PORT} already served by another open-mcp-apps process — sharing it`
+        : `viewer: port ${PORT} is taken by something else — no viewer, no links (set PORT= to move)`);
+      started = mine ? { url: VIEW_BASE, port: PORT, adopted: true } : null;
+      return started;
+    }
+    note(`viewer: could not start (${bound.error?.message || bound.error}) — continuing without it`);
+    return (started = null);
+  } catch (e) {
+    note(`viewer: could not start (${e && e.message}) — continuing without it`);
+    return (started = null);
+  }
+}
+
+/** Is the thing already on this port one of us? One constant-shaped answer, no store access. */
+async function isOurViewer(base) {
+  try {
+    const r = await fetch(`${base}/healthz`, { signal: AbortSignal.timeout(1500) });
+    return r.ok && (await r.json())?.service === "open-mcp-apps";
+  } catch { return false; }
+}
+
+// stderr, ALWAYS. src/server.mjs speaks the MCP protocol over stdout, so one console.log from the
+// viewer would corrupt the JSON-RPC stream of the process it is a guest in. There is no mode where
+// writing to stdout from here is safe, so this module never does.
+function note(line) { try { console.error(`[oma] ${line}`); } catch {} }
+
+// Standalone: `node src/http.mjs` (npm run serve). OMA_VIEWER is deliberately NOT read here —
+// it means "do not start a viewer I did not ask for", and running this file IS asking.
+if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  const v = await startViewer();
+  if (v) {
+    note(`http listening on ${v.url}`);
+    note(`  browser viewer:  ${v.url}/`);
+    note(`  MCP endpoint:    ${v.url}/mcp   (tunnel this for ChatGPT/claude.ai)`);
+  } else {
+    process.exitCode = 1;
+  }
+}

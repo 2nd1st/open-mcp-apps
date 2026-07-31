@@ -106,6 +106,47 @@ console.log("3. scope, write policy, settings and delete guards");
   const gs = guard({ ...FULL, settings_write: false }, makeIo());
   ok("a foreign id that IS a known settings row hits the settings guard",
     await throws(() => guard({ ...FULL, settings_write: false, cross_collection_write: true }, makeIo())("callTool", { name: "data_update_item", args: { id: "srow1", fields: {} } }), /settings write denied/));
+  // 🔴 U-a (2026-07-29, CONFIRMED): the assertion above is a belt fastened to a DATA SOURCE.
+  // `settingsIds` is not a constant — it starts life as `new Set()` in shell-runtime.js:839 and is
+  // only ever filled by rebuildPrefs(). The boot read at :918 swallows its own failure
+  // (`.catch(() => { if (prefMap === null) prefMap = {}; })` — note it repairs prefMap and leaves
+  // settingsIds alone), and it sits inside Promise.allSettled, so a failed settings read still
+  // mounts a fully functional child. From that moment until the first successful settings read,
+  // `settingsIds()` is empty, `.has(id)` is vacuously false, and `settings_write: false` protects
+  // nothing on the foreign-id path.
+  //
+  // This is the fifth shape of guard failure we have seen this week, and the most quiet:
+  //   1. bless mode swallows failures · 2. golden rebuilt when missing · 3. exemption never matched
+  //   4. target absent ⇒ auto-recreate baseline · 5. **THE PREDICATE'S DATA SOURCE IS EMPTY**
+  // Nothing throws, nothing logs, and every existing assertion stays green — because they all
+  // supply a populated set.
+  //
+  // The assertion below is written to FAIL until the guard stops trusting a possibly-empty set.
+  // It is not a description of current behaviour; it is the line the fix has to make true.
+  {
+    const ioEmpty = makeIo({ settingsIds: () => new Set() });
+    const gEmpty = guard({ ...FULL, settings_write: false, cross_collection_write: true }, ioEmpty);
+    const blocked = await throws(
+      () => gEmpty("callTool", { name: "data_update_item", args: { id: "srow1", fields: { value: "PWNED" } } }),
+      /settings write denied/);
+    ok("settings_write:false holds even when settingsIds is EMPTY (boot read failed)", blocked,
+      "🔴 CONFIRMED U-a: 空集下写抵达 io —— 守卫的判据是可空的数据源。" +
+      "服务端 RESERVED_KEY_RE 仍拦 security:*/policy:*，所以普通全局偏好是暴露面，不是提权到策略。");
+    ok("…and nothing reached io in that case", ioEmpty.calls.length === 0,
+      `io.calls=${ioEmpty.calls.length} — 写真的落到了 callTool`);
+
+    // The fix reads `!known || known.size === 0 || known.has(id)`, which is three conditions, and
+    // a red drill on 2026-07-31 showed only the middle one was pinned: deleting the `!known` half
+    // left this file entirely green. An unpinned half of a security predicate is an invitation to
+    // "simplify" it later, so the absent-source case gets its own line. It is not a hypothetical —
+    // `io` is a plain object assembled by the embedder, and a future embedder that forgets the key
+    // gets exactly this shape, with no type system anywhere to notice.
+    const ioNone = makeIo({ settingsIds: undefined });
+    const gNone = guard({ ...FULL, settings_write: false, cross_collection_write: true }, ioNone);
+    ok("…and when io provides no settingsIds AT ALL (absent evidence is not evidence of absence)",
+      await throws(() => gNone("callTool", { name: "data_update_item", args: { id: "srow1", fields: {} } }),
+        /settings write denied/) && ioNone.calls.length === 0);
+  }
   ok("setPref needs settings_write", await throws(() => gs("setPref", { key: "a", value: 1 }), /denied by policy/));
   ok("setPref validates its key even with the cap", await throws(
     () => guard(FULL, makeIo())("setPref", { key: "_bad", value: 1 }), /invalid or reserved/));

@@ -1,12 +1,12 @@
 {
   "name": "open-mcp-apps",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node test/invariants.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/migration-drill.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs",
+    "test": "node test/invariants.mjs && node test/doc-facts.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/migration-drill.mjs && node test/install-paths.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs && node test/host-matrix-smoke.mjs",
     "build": "node build.mjs",
     "prepare": "node build.mjs --optional",
     "seed": "node seed.mjs",
@@ -28,6 +28,9 @@
   "author": "2nd1st",
   "license": "AGPL-3.0-only",
   "type": "module",
+  "bin": {
+    "open-mcp-apps": "src/server.mjs"
+  },
   "main": "index.mjs",
   "types": "index.d.ts",
   "exports": {

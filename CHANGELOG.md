@@ -7,6 +7,148 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.4.2 — 2026-07-31
+
+A patch release about one thing: **a receipt that does not match what happened.** Every fix below
+is a case where the engine told you it had done something other than what it did — a dry run that
+migrated your store, an abort that let the write land, a "nothing changed" that deleted your
+settings. Two of them could leave data unreachable.
+
+**Upgrade if you are on 0.4.0 or 0.4.1**, particularly before running an install or a dry run.
+
+### Data you could have lost
+
+- **A store could be left permanently unopenable, and the obvious recovery made it worse.** If the
+  v4 upgrade failed between renaming the tables and recording the new schema version, the store was
+  left half-migrated. Going back to 0.3.x — the natural reaction — did not open it either, and
+  created an empty old-shaped table on the way out, after which *both* versions refused it: one
+  because the columns were gone, the other because it now found two shapes and would not guess
+  which was live. The data was intact the whole time and unreachable by any documented path.
+  The rename and the version stamp are now a single transaction, so the half state cannot be
+  produced; a store already in it **heals on open** when one of the two shapes is empty (an empty
+  one is residue, which is a fact rather than a guess), and when both hold rows the refusal now
+  carries the recovery steps instead of just a message. `KNOWN-ISSUES.md` has the manual route.
+- **The v4 upgrade could merge a deleted app's history into one of yours.** Picking a free name only
+  looked at apps that still exist, while `app_history` and the file index keep rows for deleted ones
+  — so an app of yours named `app` could be renamed onto a tombstone. Where their version numbers
+  collided the upgrade aborted and left the store in the half state above; where they did not, the
+  merge was silent and your app's history quietly gained someone else's versions.
+- **`install-app --dry-run` migrated your store and reported "nothing written".** It opened the
+  store for writing, which upgrades the schema — irreversibly — and on a machine with no store yet
+  it created one. `--list` did the same. Both now open read-only: no create, no migrate, and a
+  clear message when the schema does not match.
+- **Re-running the installer deleted custom `env` entries from a Claude Desktop registration and
+  reported `unchanged`.** It now leaves a current entry alone, and when it does write, it merges
+  rather than replaces — your keys and any field we do not own survive.
+- **`file_write` accepted malformed base64 and destroyed the file it was overwriting.** The guard
+  relied on `Buffer.from(value, "base64")` throwing, which Node does not do; it drops invalid
+  characters instead. Writing `!!!not-base64!!!` over a file reported success and left seven bytes
+  of garbage where the content had been. The chunked path had no check at all.
+
+### Told you it worked when it did not
+
+- **`file_write_abort` always said the upload was discarded.** When a commit already held the lock
+  the lower layer refused the abort, and the tool discarded that answer and replied
+  `"Upload discarded."` anyway — while the commit went on to write the file.
+- **`data_batch` accepted items the single-item tools would have rejected.** It validated only that
+  each command was an object, so `fields: "text"` was stored as `{}` — the value silently gone, with
+  `ok: true` returned — and `fields: []` was stored as an array, after which reading that collection
+  failed outright. Batch commands are now validated against the same shapes as the tools they mirror.
+- **A failed host registration still printed `✅` and exited 0.** A host whose config could not be
+  parsed was logged to stderr and skipped; the run then reported success. Since `install.md` is
+  followed by coding agents — which often capture stdout only — the whole install looked clean.
+  Any unregistered host now fails the run: the verdict names it on stdout and the exit code is
+  non-zero. `install.md` said this was already the behaviour; now it is.
+
+### Security
+
+- **The browser viewer accepted writes from any other page on your machine.** Its origin check
+  allowed every loopback origin on the reasoning that local pages are not the DNS-rebinding threat
+  — true, but it left any page served from another local port able to POST to the full tool surface
+  with a simple request, no preflight required. A page on `localhost:3000` could add, change, or
+  delete your data; it could not read the response, which made it silent. Two independent locks
+  now: the allowed origin is the viewer's own, and a header only same-origin script can set is
+  required, which forces a preflight. Tunnel deployments that declare `OMA_VIEW_BASE` are unaffected.
+  Still no token — the reasoning for that is unchanged and written down; what changed is that a
+  browser page is not a local process, and the old check treated it as one.
+- **`settings_write: false` stopped enforcing anything if the runner's startup read failed.** The
+  check asked whether a target id was in the set of settings ids; that set starts empty, the startup
+  read that fills it swallowed its own failure, and the app mounted anyway — so the membership test
+  answered "no" for everything and every write went through. Reserved `security:*` / `policy:*` keys
+  were never exposed (the server checks those by pattern), so this was not privilege escalation.
+
+### Fixed
+
+- **Settings' "Reset all" asks first.** One click used to delete every stored value in a section
+  and flash "Saved" — no confirmation, nothing to undo with — while the delete-app button in the
+  same panel asked twice, and the button's own tooltip already said *"Delete every stored value in
+  this section"*. It now honours the same **Confirm before delete** preference as everything else:
+  click once to arm, again to run, and it disarms itself after four seconds. Turning that
+  preference off restores the single click.
+- **`hidden` now works on elements carrying kit classes.** The system UI kit sets `display` on ten
+  of its classes, and each of them quietly outranked the browser's own `[hidden]` rule — so
+  `el.hidden = true` on, say, a `.k-btn` left the element on screen with nothing reported anywhere.
+  A shipped library app was hiding a button this way and it was never hidden.
+
+### Added
+
+- **The browser viewer starts on its own, and the AI hands you the link.** Seeing an app outside a
+  chat window used to mean knowing to run `npm run serve` and knowing the port. Now every install
+  serves <http://127.0.0.1:8787>, and `save_app` / `open_app` come back with a real URL for the app
+  in question. The case this is really for is a terminal host: there is no widget channel in a CLI,
+  so an app can be built and never drawn, and until now nothing told you where to look.
+  **`OMA_VIEWER=0` turns it off** and `PORT=` moves it — documented in the README rather than left
+  to be discovered, because a port bound without being asked is a thing people notice.
+  There is no token in front of it, deliberately: the listener is hard-wired to `127.0.0.1` so
+  there is no configuration in which it answers off-box, and any local process that could reach the
+  port can read the SQLite file directly. The one route outward is a tunnel the user starts, which
+  is unchanged by this and still carries no authentication of its own.
+- **A named command, `open-mcp-apps`.** The package declares a `bin`, so `npm install -g .` from a
+  clone (or `npm link`) puts the server on your PATH and a host entry can name a command instead of
+  an absolute path into a checkout. It does **not** make `npx open-mcp-apps` work: that name on the
+  npm registry belongs to an unrelated package, so the npx form would fetch and run somebody else's
+  code. Keep installing from this repository.
+
+### Changed
+
+- **The universal loader's cache scope is now `private` on a default install.** Nothing about the
+  rule changed — the scope is read off the answer, and a running viewer puts its own origin into the
+  widget security declaration, which is deployment-specific by definition (two machines on different
+  ports do not serve the same answer). It was already `private` for any hosted deployment, which set
+  a view base anyway; what is new is that a bare local install no longer advertises a shareable
+  document. `OMA_VIEWER=0` restores `public` for anyone running behind a shared gateway who wants it.
+- **Host identification reads both protocol eras.** MCP 2026-07-28 deletes the `initialize`
+  handshake (SEP-2575) and carries `clientInfo` in every request's `_meta` instead, so the HTTP
+  entry now accepts either and takes whichever arrives first. This is written ahead of the
+  migration, which is separately blocked on the SDK, but it is not only future-proofing: the
+  `/mcp` transport is stateless, so a tool call is its own request with no handshake in it, and
+  remote calls have therefore been labelled with a User-Agent token rather than the caller. A
+  per-request `clientInfo` names the call that made the write, the moment a host sends one.
+
+### Tests that were not testing
+
+- **`UPDATE_GOLDEN=1` made unrelated failures pass.** The manifest grammar suite exited 0 whenever
+  blessing was on, regardless of what else had failed — and rewrote the golden file while a real
+  failure was outstanding.
+- **A missing golden file rebuilt itself and passed.** `tool-surface` treated absent as "create a
+  baseline", so a rebase that dropped the file, or a checkout without it, silently re-blessed
+  whatever the surface happened to be — the one guard whose entire job is to notice that it changed.
+- Both are the same shape, and the sweep that followed found five guards with an escape hatch. The
+  survey is in the repo; the two above are the ones that could pass while something was wrong.
+
+### Also
+
+- **Documentation that contradicted the code**, found by having an agent build an app using only
+  the public files: `RUNTIME.md` now carries the CSS kit's class and token lists (it said "do not
+  ship your own CSS" and never said what was provided), points at the full authoring guide on the
+  first screen, and says how to look at what you built. Dead tool names from the 0.4.0 rename are
+  gone from the shipped docs — including an issue title in `KNOWN-ISSUES.md` and a tool name in
+  `install.md`, which agents execute.
+- The installer pins the node binary it ran with, but now writes the most durable path that reaches
+  it: a stable launcher like `/opt/homebrew/bin/node` when it resolves to the same binary, instead
+  of a versioned cellar path that disappears on the next `brew upgrade node` and takes every host
+  registration down with it. The test is binary identity, not a nicer-looking path.
+
 ## 0.4.1 — 2026-07-29
 
 ### Fixed

@@ -125,7 +125,9 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  * Build a fully-wired McpServer.
  * @param store  the shared store (one per process — every transport sees the same data)
  * @param opts.hostLabel  fixed host label (e.g. "browser-viewer"); when absent, the host is
- *                        identified from the MCP initialize clientInfo (Claude/ChatGPT/...).
+ *                        identified from the caller's clientInfo (Claude/ChatGPT/...) — carried by
+ *                        the `initialize` handshake up to MCP 2026-06-18, and by every request's
+ *                        `_meta` from 2026-07-28 on, where `initialize` no longer exists.
  * @param opts.instructions  replace the MANUAL layer of the instructions (hosted deployments
  *                        carry their own behaviour text). The engine-composed DYNAMIC segments
  *                        (onboarding vs inventory, proactivity stance — and, later, the roster)
@@ -199,7 +201,17 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // sweep runs inside openFileChannel exactly once per store.
   const fileChannel = openFileChannel(store);
 
-  // Who is talking to us? clientInfo.name arrives in the initialize handshake.
+  // Who is talking to us? Up to MCP 2026-06-18 the answer arrives once, in the `initialize`
+  // handshake, and the SDK keeps it — which is what getClientVersion() reads. From 2026-07-28
+  // there IS no initialize (SEP-2575): identity rides every request's `_meta`, so on that wire
+  // this call returns nothing and the label falls to OMA_HOST / "unknown".
+  //
+  // The HTTP entry already reads both eras (src/http.mjs) because it holds the raw request body
+  // and can simply look. This path cannot: it is handed a connected server, and reaching a
+  // per-request `_meta` needs an SDK that surfaces one. That is gated on the v2 packages
+  // (@modelcontextprotocol/{core,server,client}), which we cannot adopt yet — ext-apps 1.7.5
+  // still peer-depends on sdk ^1.29.0 and has no v2 line, so upgrading would take MCP Apps out.
+  // Deliberately half-done, and this comment is the record of which half and why.
   const hostName = () => {
     if (hostLabel) return hostLabel;
     const ci = server.server.getClientVersion?.();

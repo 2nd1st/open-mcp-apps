@@ -1,8 +1,8 @@
 # Contributing to open-mcp-apps
 
 Thanks for your interest. **open-mcp-apps** is an open engine built on the
-[MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) standard — a component registry
-the AI can write to, persistent versioned data, and a shell runtime that makes AI-authored components
+[MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview) standard — an app registry
+the AI can write to, persistent versioned data, and a shell runtime that makes AI-authored apps
 actually work.
 
 ## Development setup
@@ -21,17 +21,19 @@ The store lives in a fixed per-user directory. During development, point it at a
 
 Three real smoke suites, no framework — keep them green and add assertions for new behavior:
 
-- `node test/server-smoke.mjs` — the stdio MCP server over a real transport (incl. runtime component creation)
+- `node test/server-smoke.mjs` — the stdio MCP server over a real transport (incl. runtime app creation)
 - `node test/http-smoke.mjs` — the HTTP transport
 - `node test/seed-smoke.mjs` — the seed / design-kit pipeline
 
 `npm test` runs all three.
 
-## Authoring components
+## Authoring apps
 
-Components are single-file HTML against the tiny `window.oma` API. The authoritative contract is what
-the engine serves from the **`get_component_guide`** tool (source: `src/guide.mjs`) — read it before
-writing one. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or
+Apps are single-file HTML against the tiny `window.oma` API. The authoritative contract is what
+the engine serves from the **`get_app_guide`** tool (source: `src/guide.mjs`) — read it before
+writing one. Not in a host? Print it yourself:
+`node -e 'import("./src/guide.mjs").then(m => console.log(m.GUIDE))'` — it is roughly three times
+the size of `RUNTIME.md`, and everything about layout and the CSS kit lives only there. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or
 `window.open()`, no network/fetch. The guide spells out the patterns that work.
 
 ## Pull requests
@@ -45,20 +47,20 @@ writing one. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no
 
 open-mcp-apps is the **engine**: the registry, the shell runtime, the data/command layer, the host
 adapters. It stays standard-first (no host-private APIs) so one codebase serves every host that renders
-`ui://`. Bug fixes, new host adapters, guide improvements, and example components are all welcome.
+`ui://`. Bug fixes, new host adapters, guide improvements, and example apps are all welcome.
 
 ## License and the CLA
 
 This project is dual-licensed by directory: the **engine** (everything outside
-`components/`) is **AGPL-3.0-only**, and the official **components** in
+`components/`) is **AGPL-3.0-only**, and the official **apps** in
 `components/` are **MIT**. See [LICENSING.md](LICENSING.md) for the full map and
 [TRADEMARKS.md](TRADEMARKS.md) for the reserved names.
 
 What that means for you depends on which half you're touching.
 
-**Components (`components/`) — nothing to sign, ever.** They are MIT in, MIT out.
-MIT already grants everything the project could ask for, so a component PR needs
-no agreement now and will not need one later. New example components and fixes to
+**Apps (`components/`) — nothing to sign, ever.** They are MIT in, MIT out.
+MIT already grants everything the project could ask for, so an app PR needs
+no agreement now and will not need one later. New example apps and fixes to
 existing ones are the easiest contribution to land.
 
 **The engine (everything else) — open an issue first.** A Contributor License

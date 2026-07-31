@@ -121,6 +121,28 @@ export function register(ctx) {
     },
   );
 
+  // base64 in, bytes out — or null when the input is not base64.
+  //
+  // This is deliberately NOT a try/catch. `Buffer.from(x, "base64")` does not throw on illegal
+  // characters, it silently drops them, so the guard that used to be here could never fire:
+  // "!!!not-base64!!!" decoded to seven bytes of garbage, the garbage overwrote a real file, and
+  // the reply said "Stored". A tool annotated DESTRUCTIVE has to be sure it was handed what it
+  // thinks it was handed.
+  //
+  // Whitespace is allowed because encoders wrap base64 across lines and rejecting that would trade
+  // one bug for another. Missing padding is allowed for the same reason. Everything else has to
+  // survive a ROUND TRIP, which is the single check that also catches the subtle case a character
+  // class cannot see: trailing bits that are not zero.
+  const decodeBase64 = (input) => {
+    const raw = String(input ?? "").replace(/\s+/g, "");
+    if (!/^[A-Za-z0-9+/]*={0,2}$/.test(raw)) return null;
+    const rem = raw.length % 4;
+    if (rem === 1) return null;                       // no byte count produces this
+    const padded = rem ? raw + "=".repeat(4 - rem) : raw;
+    const bytes = Buffer.from(padded, "base64");
+    return bytes.toString("base64") === padded ? bytes : null;
+  };
+
   server.registerTool(
     "file_write",
     {
@@ -138,8 +160,8 @@ export function register(ctx) {
       outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
     },
     async (a) => {
-      let bytes;
-      try { bytes = Buffer.from(a.data_base64 || "", "base64"); } catch { return fail("data_base64 is not valid base64."); }
+      const bytes = decodeBase64(a.data_base64);
+      if (bytes === null) return fail("data_base64 is not valid base64 — nothing was written.");
       if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Single-call write is limited to ${MAX_FILE_INLINE_BYTES} bytes; this file is ${bytes.length}. Use the chunked path: file_write_begin → file_write_chunk (in order) → file_write_commit.`);
       const r = await fileChannel.put(a.app, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
       if (!r.ok) return fail(fileFailNote(r));
@@ -184,7 +206,8 @@ export function register(ctx) {
       outputSchema: { upload_id: z.string(), bytes: z.number().describe("total bytes staged so far"), chunks: z.number().optional(), duplicate: z.boolean().optional() },
     },
     async (a) => {
-      const bytes = Buffer.from(a.data_base64 || "", "base64");
+      const bytes = decodeBase64(a.data_base64);
+      if (bytes === null) return fail("data_base64 is not valid base64 — this chunk was not staged.");
       if (!bytes.length) return fail("Empty chunk — send actual bytes.");
       if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Chunk too large (${bytes.length} bytes) — keep each chunk at or under ${MAX_FILE_INLINE_BYTES} bytes.`);
       const r = await fileChannel.appendUpload(a.upload_id, bytes, { seq: a.seq });
@@ -231,7 +254,17 @@ export function register(ctx) {
       outputSchema: { upload_id: z.string(), aborted: z.boolean() },
     },
     async (a) => {
-      await fileChannel.abortUpload(a.upload_id);
+      // The answer is READ, not discarded. abortUpload refuses while a commit holds the upload
+      // ({ok:false, error:"upload_busy"}) — and this used to throw that away and reply
+      // aborted:true regardless, while the commit it did not stop went on to store the file.
+      // Telling someone their upload is gone when it is about to land is the worst of the three
+      // ways to be wrong: they stop watching.
+      const r = await fileChannel.abortUpload(a.upload_id);
+      if (r && r.ok === false) {
+        return fail(r.error === "upload_busy"
+          ? "That upload is being committed right now and was NOT aborted — wait for the commit to answer, then delete the file if you did not want it."
+          : fileFailNote(r));
+      }
       return { content: [{ type: "text", text: "Upload discarded." }], structuredContent: { upload_id: a.upload_id, aborted: true } };
     },
   );

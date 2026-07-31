@@ -525,7 +525,31 @@ function coercePref(v, fallback) {
       if (g.size) {
         const ra = el("button", "k-btn ghost", "Reset all");
         ra.title = "Delete every stored value in this section";
-        ra.onclick = async () => { for (const it of g.values()) if (!RESERVED(it.fields.key)) await oma.deleteItem(it.id); flashSaved(); };
+        // Two-click, honoring confirm_delete — the SAME pref the app-delete button reads, through
+        // the same confirmDeleteOn(), because "is confirmation on" must have exactly one owner.
+        // This button used to delete the whole section on a single click and flash "Saved", while
+        // the delete-app button 600 lines down in this very file asked twice. Its own title says
+        // "Delete every stored value in this section": it knew.
+        // window.confirm() is not an option — it is blocked and returns false in a sandboxed
+        // widget iframe (guide: never gate an action on confirm()), so the button is the dialog.
+        //
+        // Not folded into the drawer's identical dance on purpose: the two have different
+        // LIFETIMES. The drawer's button is one persistent node that must be disarmed from
+        // outside when the drawer opens or closes; this one is rebuilt by every renderPrefs(),
+        // so its armed state dies with the node. A re-render between the two clicks therefore
+        // disarms it — which is the safe direction for a destructive action, not a bug.
+        let armed = false, armT = 0;
+        const disarm = () => { armed = false; clearTimeout(armT); ra.textContent = "Reset all"; };
+        ra.onclick = async () => {
+          if (confirmDeleteOn() && !armed) {
+            armed = true; ra.textContent = "Really reset?";
+            armT = setTimeout(disarm, 4000);
+            return;
+          }
+          disarm();
+          for (const it of g.values()) if (!RESERVED(it.fields.key)) await oma.deleteItem(it.id);
+          flashSaved();
+        };
         f.append(el("span", "k-grow"), ra);
       }
       return f.children.length ? f : null;

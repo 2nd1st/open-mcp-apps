@@ -25,10 +25,10 @@ Codex、ChatGPT……)提供 extension 本身不提供的三样东西:
 "给我做个 kanban"
       │
       ▼
-list_components ── 已存在? ──► open_kanban          (复用,秒开)
+list_apps ── 已存在? ──► open_kanban          (复用,秒开)
       │ 否
       ▼
-get_component_guide ──► AI 写 HTML ──► save_component
+get_app_guide ──► AI 写 HTML ──► save_app
       │
       ▼
 open_kanban  →  内联渲染、带主题、持久——以后每个对话都能复用
@@ -112,17 +112,39 @@ node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
 - 关掉 app、重开、再问一次 → 一切都还在
 
 **首次权限:** 头几个 tool call 各弹一次批准框——选 **"Always allow"**。工具集刻意做得小而稳定:只读
-tool 一般免批准,而单个 `open_component` tool 覆盖打开*每一个*组件(包括 AI 之后创建的),所以头几次点完
+tool 一般免批准,而单个 `open_app` tool 覆盖打开*每一个*组件(包括 AI 之后创建的),所以头几次点完
 就永久零弹窗。你也可以在 **Settings → Connectors → open-mcp-apps → Tool permissions** 里批量设。注意:
 Desktop 自动更新偶尔会重置这些决定(上游
 [#56954](https://github.com/anthropics/claude-code/issues/56954))——重新允许即可。一个对话里多个
 widget 并存没问题(habit-streaks + meal-planner 并排)。
 
+### 浏览器 viewer,以及它绑的那个端口
+
+每个装机都会在本机跑一个小 web server:**<http://127.0.0.1:8787>**。它是你在聊天窗口之外
+*看见*自己 app 的方式——一个 app 一页,读的是跟 AI 同一份数据。在终端宿主里它是**唯一**的
+看见方式,所以 AI 建好或打开一个 app 时会把链接给你。
+
+它自己就会起。两种改法:
+
+```bash
+OMA_VIEWER=0   # 干脆不起
+PORT=9000      # 换个地方起
+```
+
+写进你宿主 MCP server 条目的 `env` 块即可。如果端口已经被**另一个 open-mcp-apps 进程**占了,
+那个进程本来就在服务同一份数据,这个进程直接共用它的地址;如果被**别的东西**占了,你会得到
+「没有 viewer、也没有链接」,而不是一条指向陌生服务器的链接。
+
+**它没有密码,这是刻意的。** listener 写死 `127.0.0.1`,没有任何配置能让它对另一台机器应答。
+你电脑上任何能碰到这个端口的程序,本来就能直接打开那个 SQLite 文件——密码是开着的墙旁边加一把锁。
+它通向互联网的唯一路径是**你自己开的隧道**,那是另一个深思熟虑的动作;**隧道开着的时候,
+把它的 URL 当机密**,因为那目前是互联网和你数据之间唯一的东西。
+
 ## 盒子里有什么
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server;单一 `open_component` 打开路径(per-component `open_<name>` tool 需 opt-in) |
+| `src/server.mjs` | stdio MCP server;单一 `open_app` 打开路径(per-app `open_<name>` tool 需 opt-in) |
 | `src/http.mjs` | `/mcp`(无状态 Streamable HTTP)+ `/view/<name>` 浏览器 viewer,绑定 `127.0.0.1` |
 | `src/store.mjs` | SQLite:item + 组件 registry + `change_event` ledger(幂等,乐观并发) |
 | `src/shell-runtime.js` | 注入每个组件的浏览器 runtime(`window.oma`) |
@@ -134,7 +156,7 @@ widget 并存没问题(habit-streaks + meal-planner 并排)。
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
 node test/server-smoke.mjs   # 419 条断言,走真实 stdio——含运行时组件创建
-node test/http-smoke.mjs     #  44 条断言,走 HTTP transport(含 SSE /events)
+node test/http-smoke.mjs     #  53 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验组件 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  14 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  45 条断言,验 per-app 文件存储(分块上传、GC 竞态)

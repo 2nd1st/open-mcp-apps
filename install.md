@@ -80,18 +80,28 @@ node install.mjs --yes
 - To target a subset instead of all detected, use `--host claude,claude-code,codex` (any combination).
 - Add `--fresh` to start a clean shared store instead of migrating an existing clone-local db.
 
-`install.mjs` installs deps, builds the shell runtime, seeds the starter components, then **inspects
+`install.mjs` installs deps, builds the shell runtime, seeds the starter apps, then **inspects
 each host's config and adjusts only what's off** — it never clobbers the user's other MCP servers,
-never blindly re-adds itself, and cleans up a pre-rename entry if one lingers. It pins
-the exact `node` it ran with (the native SQLite module needs a matched ABI — don't "fix" this to a
-bare `node`). Data lives in a **fixed per-user store** (e.g. `~/Library/Application Support/open-mcp-apps/`
+never blindly re-adds itself, and cleans up a pre-rename entry if one lingers. It pins the exact
+`node` **binary** it ran with — but writes the most durable path that reaches it: if a stable
+launcher such as `/opt/homebrew/bin/node` resolves to that same binary, that is what goes in the
+config, because `process.execPath` under Homebrew is a versioned cellar path that disappears on the
+next `brew upgrade node` and takes every host entry down with it. The test is binary identity, not
+a nicer-looking path. (The native SQLite module needs a matched ABI, so don't "fix" this to a bare
+`node` — that would let a host start a different install of node entirely.) Data lives in a **fixed per-user store** (e.g. `~/Library/Application Support/open-mcp-apps/`
 on macOS), *not* inside the clone — so the clone can be moved or re-cloned without losing anything, and
 every host sees the same apps and data. It ends with a per-host `before → after` summary and a final
 `result:` line — `installed` (newly added), `updated` (a stale/legacy entry corrected), or `unchanged`
-(already matched, nothing written).
+(already matched, nothing written) — and then ONE verdict line: `✅ open-mcp-apps — done` when every
+selected host was registered, or `✗ open-mcp-apps — N host(s) registered, M FAILED` when one was not.
 
-**Relay that summary to the user in your own words** — `unchanged` is the good, boring outcome. If the
-installer exits with a config error, surface its message and **stop — do not hand-edit their config.**
+**Relay that summary to the user in your own words** — `unchanged` is the good, boring outcome.
+
+**A host it could not register into fails the whole run.** The verdict line starts with `✗`, names
+each unregistered host **on stdout**, and the process **exits non-zero**. Surface that message and
+**stop — do not hand-edit their config.** Never report the install as done on a non-zero exit, no
+matter how much of the output above it reads like success: the per-host `✗` detail is written to
+stderr, so a run you captured with stdout only will otherwise look clean.
 
 ---
 
@@ -109,7 +119,7 @@ Confirm the outcome, not just that commands exited 0:
   on its next run.)
 - After restart, `open-mcp-apps` appears in the tool list, and the first few tool calls show an
   approval dialog — tell them to pick **"Always allow"** (after that it's near zero-prompt: one
-  `open_component` tool opens every component, including ones built later).
+  `open_app` tool opens every app, including ones built later).
 
 That's the install done.
 

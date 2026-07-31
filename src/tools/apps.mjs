@@ -47,6 +47,15 @@ const saveAckSchema = {
 export function register(ctx) {
   const { server, store, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
 
+  // A real, clickable URL for the HUMAN, produced only when this engine actually has a viewer to
+  // link to. Bare stdio has none and prints none — the same rule list_apps already follows, and for
+  // the same reason: a URL that 404s teaches the user the thing is broken, which is worse than no
+  // URL. Where it matters most is a terminal host, where an app can be built and never drawn: the
+  // widget channel is the only way to SEE it, and a CLI does not have one.
+  const viewUrl = (name) => (viewBase && /^https?:\/\//.test(viewBase)
+    ? `${String(viewBase).replace(/\/+$/, "")}/view/${encodeURIComponent(name)}`
+    : null);
+
 
   // ---------------------------------------------------------------- widget security declaration
   // What a host should let this widget reach. Ours reaches NOTHING: every shipped app is a
@@ -203,7 +212,8 @@ export function register(ctx) {
         { app: a.app, collection, items: [], version: v.seq,
           settings_version: v.settings_version, files_version: v.files_version, host: hostName() },
         { returned: 0, total,
-          text: `Opened "${a.app}" on collection "${collection}" (${total} item(s), seq ${v.seq}). The widget loads its own data; if YOU need rows, read data_list.` },
+          text: `Opened "${a.app}" on collection "${collection}" (${total} item(s), seq ${v.seq}). The widget loads its own data; if YOU need rows, read data_list.`
+            + (viewUrl(a.app) ? ` In a browser: ${viewUrl(a.app)}` : "") },
       ));
     },
   );
@@ -523,6 +533,7 @@ export function register(ctx) {
         `Saved "${a.name}" v${r.version}${r.created ? " (new app)" : " (updated)"} — ${sizeNote}`,
         ...notes,
         `Show it NOW with: open_app {app: "${a.name}"} — works immediately.`,
+        ...(viewUrl(a.name) ? [`Or in a browser: ${viewUrl(a.name)}`] : []),
         `It persists and is reusable in every future chat.`,
         ...warnings.map((w) => `⚠ ${w}`),
       ];

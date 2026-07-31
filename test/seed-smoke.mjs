@@ -32,6 +32,11 @@ const wrapped = () => execFileSync("node", ["-e",
   'import("./src/shell.mjs").then(m=>{const d=m.wrapApp("<p>x</p>");process.stdout.write(JSON.stringify({kit:/<style data-oma="kit">/.test(d),probe:d.includes("SEED_SMOKE_KIT_PROBE"),loader:/<style data-oma="kit">/.test(m.wrapLoader())}))})',
 ], { cwd: ROOT, encoding: "utf-8" });
 
+// The kit as a WIDGET receives it — same fresh-process rule as wrapped(), since KIT_CSS caches.
+const kitDoc = () => execFileSync("node", ["-e",
+  'import("./src/shell.mjs").then(m=>process.stdout.write(m.wrapApp("<p>x</p>")))',
+], { cwd: ROOT, encoding: "utf-8" });
+
 // Capture the ORIGINAL bytes; restore them ONLY if the file still holds our probe write —
 // a concurrent editor's change must never be clobbered by the restore.
 const cssOriginal = readFileSync(CSS, "utf-8");
@@ -69,6 +74,18 @@ try {
   writeFileSync(CSS, cssProbed);            // edit the kit — nothing re-seeded, nothing rebuilt
   const after = JSON.parse(wrapped());
   ok("a kit edit is live in the very next rendered document", after.probe);
+
+  // The kit sets `display` on ten classes, and each of them silently outranks the UA's
+  // [hidden]{display:none} — so `el.hidden = true` on a .k-btn left the button on screen with no
+  // error to see. Read off the CSS that ACTUALLY REACHES a widget, not the file on disk: a rule
+  // that does not ship is not a fix. The first assertion is the detector proving it can find
+  // something, so a regex that stops matching reads as broken instead of as clean.
+  const kit = /<style data-oma="kit">([\s\S]*?)<\/style>/.exec(kitDoc())?.[1] || "";
+  const setsDisplay = [...kit.matchAll(/([^{}]+)\{[^}]*display\s*:/g)]
+    .map((m) => m[1].trim()).filter((sel) => !sel.includes("[hidden]"));
+  ok(`the shipped kit really does set display (${setsDisplay.length} selector(s)) — detector is non-vacuous`,
+    setsDisplay.length > 0);
+  ok("…and `hidden` beats every one of them", /\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(kit));
   seed();
   const v3 = versions();
   ok("…and moves NO app version (the kit is not part of stored source)",

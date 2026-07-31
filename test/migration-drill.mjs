@@ -302,6 +302,121 @@ console.log("\n2c. a user's own 'app' is renamed out of the reserved word, with 
   rm(V3);
 }
 
+// ─────────── 2d. the v4 collision the live table CANNOT see: a TOMBSTONE holds the free name
+// Deleting an app keeps its history, its files and its ledger — only the registry row goes. So a
+// name the live table reports as free can still own a (name, version) primary key. Picking it moves
+// a user's app onto a dead app's records, and there are exactly two outcomes, both reproduced here:
+// the versions clash and the migration throws — leaving the tables renamed, user_version at 3, and
+// every later open replaying the same failure, which is a store that never opens again — or the
+// versions happen not to clash and two apps merge in silence.
+console.log("\n2d. a DELETED app's tombstone still owns its name — the migration must not land on it");
+{
+  const V3T = join(ROOT, "test", "drill-v3t.db");
+  rm(V3T);
+  const db = new Database(V3T);
+  db.pragma("journal_mode = WAL");
+  db.exec(V1_SCHEMA);
+  const ts = "2026-07-01T00:00:00.000Z";
+  const ev = db.prepare(`INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, host, ts)
+                         VALUES (?, ?, ?, ?, 'agent', 'drill', ?)`);
+  // The user's live app, sitting on the reserved word.
+  db.prepare("INSERT INTO component (name, version, html, description, author, updated_at) VALUES ('app', 7, '<p>mine</p>', '', 'agent', ?)").run(ts);
+  db.prepare("INSERT INTO component_history (name, version, html, ts) VALUES ('app', 7, '<p>mine</p>', ?)").run(ts);
+  db.prepare(`INSERT INTO file (component, path, sha256, size, mime, version, created_at, updated_at)
+              VALUES ('app', 'mine.txt', ?, 4, 'text/plain', 1, ?, ?)`).run("a".repeat(64), ts, ts);
+  // A DELETED app called 'app-1': no registry row (that is what delete removes), everything else
+  // still there. Version 7 on purpose — the live app is at 7 too, so the naive rename collides.
+  for (const v of [1, 7])
+    db.prepare("INSERT INTO component_history (name, version, html, ts) VALUES ('app-1', ?, '<p>THEIRS</p>', ?)").run(v, ts);
+  db.prepare(`INSERT INTO file (component, path, sha256, size, mime, version, created_at, updated_at)
+              VALUES ('app-1', 'theirs.bin', ?, 9, 'application/octet-stream', 1, ?, ?)`).run("b".repeat(64), ts, ts);
+  ev.run("app-1", randomUUID(), "component_saved", JSON.stringify({ name: "app-1", version: 7, sv: 3 }), ts);
+  ev.run("app-1", randomUUID(), "component_deleted", JSON.stringify({ name: "app-1", version: 7, sv: 3 }), ts);
+  db.prepare("INSERT INTO component (name, version, html, description, author, updated_at) VALUES ('trip-board', 1, '<p>untouched</p>', '', 'agent', ?)").run(ts);
+  db.pragma("user_version = 3");
+  db.close();
+
+  // ── consequence 1: the store must still OPEN — and keep opening. A migration that throws here
+  // leaves v4 tables stamped v3, so the next open replays it and throws again; being unable to
+  // retry your way out is what turns a failed upgrade into a dead store, and it is the half a
+  // single open would not catch.
+  let firstErr = null, secondErr = null;
+  try { openStore(V3T).close(); } catch (e) { firstErr = e; }
+  try { openStore(V3T).close(); } catch (e) { secondErr = e; }
+  ok("the store opens", !firstErr, String(firstErr && firstErr.message));
+  ok("…and opens AGAIN — the upgrade is re-entrant, not a one-shot that bricks on replay",
+    !secondErr, String(secondErr && secondErr.message));
+  if (firstErr || secondErr) { rm(V3T); }
+  else {
+    const raw = new Database(V3T, { readonly: true });
+    ok("stamped at v4", raw.pragma("user_version", { simple: true }) === SCHEMA_VERSION);
+
+    // ── consequence 2: no silent merge. The tombstone's records must be exactly where they were.
+    const moved = raw.prepare("SELECT name, version FROM app WHERE html='<p>mine</p>'").get();
+    ok("the user's app skipped the name a tombstone still holds", moved && moved.name === "app-2",
+      `landed on ${moved && moved.name}`);
+    ok("the dead app's history is untouched — still 2 rows under 'app-1', still its own bytes",
+      raw.prepare("SELECT COUNT(*) c FROM app_history WHERE name='app-1'").get().c === 2 &&
+      raw.prepare("SELECT COUNT(*) c FROM app_history WHERE name='app-1' AND html='<p>THEIRS</p>'").get().c === 2);
+    ok("the user's history came across whole, and carries none of the dead app's versions",
+      raw.prepare("SELECT COUNT(*) c FROM app_history WHERE name='app-2'").get().c === 1 &&
+      raw.prepare("SELECT html FROM app_history WHERE name='app-2'").get().html === "<p>mine</p>");
+    ok("the two file planes did not merge either",
+      raw.prepare("SELECT COUNT(*) c FROM file WHERE app='app-2' AND path='mine.txt'").get().c === 1 &&
+      raw.prepare("SELECT COUNT(*) c FROM file WHERE app='app-1' AND path='theirs.bin'").get().c === 1);
+    ok("the dead app's ledger stays its own — the live app did not inherit its lives",
+      raw.prepare("SELECT COUNT(*) c FROM change_event WHERE aggregate_id='app-1' AND event_type IN ('component_saved','component_deleted')").get().c === 2 &&
+      raw.prepare("SELECT COUNT(*) c FROM change_event WHERE aggregate_id='app-2' AND event_type='component_renamed'").get().c === 1);
+    ok("an unrelated app is untouched",
+      raw.prepare("SELECT html FROM app WHERE name='trip-board'").get().html === "<p>untouched</p>");
+    raw.close();
+    rm(V3T);
+  }
+}
+
+// ─────────── 2e. the same tombstone, versions that do NOT clash — the silent half
+// 2d's fixture collides on (name, version), which is the loud outcome. This one is the quiet one:
+// the dead app's only version is 1, the live app is at 7, so a naive rename raises nothing at all
+// and simply merges them — one name, two apps' histories and files, and a restore that hands the
+// user somebody else's app. Kept as its OWN case because in 2d the throw happens first and these
+// assertions never run: an assertion that cannot be reached cannot fail, and one that cannot fail
+// is not a test.
+console.log("\n2e. …and when the versions happen not to clash, nothing throws — it just merges");
+{
+  const V3M = join(ROOT, "test", "drill-v3m.db");
+  rm(V3M);
+  const db = new Database(V3M);
+  db.pragma("journal_mode = WAL");
+  db.exec(V1_SCHEMA);
+  const ts = "2026-07-01T00:00:00.000Z";
+  db.prepare("INSERT INTO component (name, version, html, description, author, updated_at) VALUES ('app', 7, '<p>mine</p>', '', 'agent', ?)").run(ts);
+  db.prepare("INSERT INTO component_history (name, version, html, ts) VALUES ('app', 7, '<p>mine</p>', ?)").run(ts);
+  db.prepare(`INSERT INTO file (component, path, sha256, size, mime, version, created_at, updated_at)
+              VALUES ('app', 'mine.txt', ?, 4, 'text/plain', 1, ?, ?)`).run("d".repeat(64), ts, ts);
+  db.prepare("INSERT INTO component_history (name, version, html, ts) VALUES ('app-1', 1, '<p>THEIRS</p>', ?)").run(ts);
+  db.prepare(`INSERT INTO file (component, path, sha256, size, mime, version, created_at, updated_at)
+              VALUES ('app-1', 'theirs.bin', ?, 9, 'application/octet-stream', 1, ?, ?)`).run("c".repeat(64), ts, ts);
+  db.pragma("user_version = 3");
+  db.close();
+
+  openStore(V3M).close();
+  const raw = new Database(V3M, { readonly: true });
+  const moved = raw.prepare("SELECT name FROM app WHERE html='<p>mine</p>'").get();
+  ok("the user's app still skips the tombstone's name when nothing would have complained",
+    moved && moved.name === "app-2", `landed on ${moved && moved.name}`);
+  ok("no history merge: the user's name holds exactly their own version, and only theirs",
+    raw.prepare("SELECT COUNT(*) c FROM app_history WHERE name='app-2'").get().c === 1 &&
+    raw.prepare("SELECT COUNT(*) c FROM app_history WHERE name='app-2' AND html='<p>THEIRS</p>'").get().c === 0);
+  // The user OWNS a file here on purpose: without one, "the planes did not merge" is true no
+  // matter what the migration does, and an assertion that cannot fail proves nothing.
+  ok("no file merge: the user's file went with them, the stranger's stayed put",
+    raw.prepare("SELECT COUNT(*) c FROM file WHERE app='app-2' AND path='mine.txt'").get().c === 1 &&
+    raw.prepare("SELECT COUNT(*) c FROM file WHERE app='app-1' AND path='theirs.bin'").get().c === 1 &&
+    raw.prepare("SELECT COUNT(*) c FROM file WHERE app='app-1'").get().c === 1);
+  raw.close();
+  rm(V3M);
+}
+
 // ─────────────────────────────────────────────────── a real v1 registry (distribution, not branches)
 // The fixture is a REAL database, and real databases never ship: the publish snapshot bans *.db
 // wholesale (scripts/publish.mjs — a genuine store could carry genuine data). In the public tree

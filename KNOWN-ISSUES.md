@@ -1,9 +1,9 @@
 # Known issues
 
-## Claude Desktop 1.24012.9 / Claude Code: `open_component` chat widgets hang at "Loading component…"
+## Claude Desktop 1.24012.9 / Claude Code: `open_app` chat widgets hang at "Loading app…"
 
 **Symptom.** In Claude Desktop's chat surface (and Claude Code), opening an app through the
-universal `open_component` tool sticks on the loader placeholder forever. The cowork surface
+universal `open_app` tool sticks on the loader placeholder forever. The cowork surface
 renders the same widgets fine; Codex renders them fine.
 
 **Cause.** A host regression introduced with Desktop 1.24012.9 (2026-07-25 auto-update):
@@ -15,11 +15,11 @@ engine now retries with fresh reads on growing windows and a hard deadline, but 
 upstream.
 
 **Workaround (shipped).** The installer registers Claude Desktop and Claude Code with
-`OMA_DYNAMIC_TOOLS=1`: every app gets its own `open_<name>` tool whose per-component resource
+`OMA_DYNAMIC_TOOLS=1`: every app gets its own `open_<name>` tool whose per-app resource
 uses the direct-embed path, which these hosts render and operate correctly (the registry
 listing points the model at those tools). The document now also carries its collection binding,
 so widget clicks write normally. Re-run `./install.sh` (or `node install.mjs`) to pick this up
-— `--check` shows `stale` until you do. Freshly saved components gain their `open_<name>` tool
+— `--check` shows `stale` until you do. Freshly saved apps gain their `open_<name>` tool
 after the host refreshes its tool list, which Desktop does lazily; reopening the conversation
 hurries it along.
 
@@ -63,8 +63,8 @@ check — nothing in the store records that B ever looked.
 
 **What protects you meanwhile.** Cascade is never silent: it is a two-step action, and the first
 step returns a plan naming every collection it would delete, with row counts, before anything
-happens. A collection another app *declares* or *has written to* is always kept. `archive_component`
-keeps everything, and plain `delete_component` (no `data:` argument) still keeps all data.
+happens. A collection another app *declares* or *has written to* is always kept. `archive_app`
+keeps everything, and plain `delete_app` (no `data:` argument) still keeps all data.
 
 **Fix direction.** Claim-on-first-write — the first time an app's widget writes to an unclaimed
 collection, record the claim — which grows the missing map going forward without migrating history.
@@ -109,7 +109,9 @@ replays is **not always about this widget**.
 **Measured** — ChatGPT web, 2026-07-29, read out of the widget itself (the diagnostic panel below
 prints it): when one assistant turn makes several tool calls, a later re-render replays the turn's
 **first** call verbatim — its arguments *and* its tool definition — regardless of which call
-actually opened the widget. Two turns, two readings:
+actually opened the widget. Two turns, two readings — quoted exactly as recorded, so the tool
+names below are the **pre-v0.4.0** ones (`get_component` is today's `get_app`, `open_component` is
+`open_app`). The reading is what it is; renaming it here would make it a different reading:
 
 ```
 turn: get_component{name:"dev-probe"} → open_component{…}
@@ -180,19 +182,68 @@ if the source is re-checked when the fact moves.
 The host renders widgets in a sandboxed iframe where these are silently blocked (confirm() returns
 false; `target="_blank"`/`window.open()` don't open). The authoring guide forbids them and shows
 sandbox-safe patterns (inline two-step confirm; render URLs as selectable text). Noted here because
-any component written *before* that guidance may have a non-working delete button or link.
+any app written *before* that guidance may have a non-working delete button or link.
 
 ## Codex: widgets render in a short fixed viewport (internal scroll)
 
-The same component that auto-fits its height in Claude Desktop shows inside a shorter, fixed-height
+The same app that auto-fits its height in Claude Desktop shows inside a shorter, fixed-height
 frame with an internal scrollbar in Codex. The inline widget iframe's height is **host-controlled**
 and the MCP Apps direct-mode API has no "request height" call, so this cannot be fixed from inside
-the component. One component-side case *is* fixable: CSS `height: 100vh` / `min-height: 100vh` /
+the app. One app-side case *is* fixable: CSS `height: 100vh` / `min-height: 100vh` /
 fixed pixel heights make the short viewport worse — size to content instead (the authoring guide's
 first-screen rules). Otherwise: host behavior, tracked as a host limitation, not chased here.
 
 ## `readOnlyHint` tools still prompt for approval (Claude Desktop)
 
-`get_component_guide`, `list_components`, `data_collections` carry `readOnlyHint: true`, which was
+`get_app_guide`, `list_apps`, `data_collections` carry `readOnlyHint: true`, which was
 expected to skip the first-run approval dialog; in the current Claude Desktop they still prompt.
 Pick **"Always allow"** once. Cosmetic; host behavior may change.
+
+## A store that neither build will open
+
+**Symptom.** Every host fails to start the server, with one of two messages:
+
+```
+store has both `component` and `app` tables — refusing to guess which is live
+no such column: component
+```
+
+**Cause.** A migration to v0.4 that did not finish. The v3→v4 upgrade renames `component` →
+`app`; before 0.4.2 the rename and the schema-version stamp were separate writes, so a failure
+between them left a store with v4 tables still stamped v3. That state was survivable on its own —
+the next open with 0.4.x completed it. It stopped being survivable the moment an **older** build
+opened the same store: 0.3.x re-created the v3 tables beside the v4 ones (its `CREATE TABLE IF NOT
+EXISTS` succeeds) and then died on an index naming a column that no longer exists. From then on
+0.4.x refused the two-table store and 0.3.x refused the renamed column — with every row still
+intact and unreachable inside it. Since all hosts share one store and a host keeps its old server
+process alive until it is fully quit, having both builds touch one store needs no unusual setup.
+
+**Fixed in 0.4.2**, in two places: the rename and the version stamp are now one transaction (the
+half state can no longer be created), and a store that already has both tables **repairs itself on
+open** when one side is empty — the empty side is the older build's wreckage, and dropping it is
+not a guess. If you are stuck on this, install 0.4.2 or later and open it: nothing else to do.
+
+**If both tables hold rows** the engine still refuses, because then it genuinely cannot tell which
+side is your data. Recover by hand:
+
+```bash
+# 0. COPY FIRST. Everything below edits the store in place.
+cd ~/Library/Application\ Support/open-mcp-apps      # macOS; see README for other platforms
+cp open-mcp-apps.db open-mcp-apps.backup.db
+
+# 1. Look at both sides. Your data is the side with the apps you recognise.
+sqlite3 open-mcp-apps.db \
+  "SELECT 'component' AS side, name, length(html) AS bytes, updated_at FROM component
+   UNION ALL
+   SELECT 'app', name, length(html), updated_at FROM app;"
+
+# 2. Drop the side that is NOT yours — one of these two, never both.
+sqlite3 open-mcp-apps.db "DROP TABLE component_history; DROP TABLE component;"   # keep the v4 side
+sqlite3 open-mcp-apps.db "DROP TABLE app_history; DROP TABLE app;"               # keep the v3 side
+
+# 3. Open it with 0.4.2 or later. It finishes the migration from wherever you left it.
+```
+
+Your **data** is never the thing at risk here: items live in `item` and are keyed by collection,
+which the rename does not touch. What the two tables hold is the apps — the HTML and its version
+history — so the choice in step 2 is only ever about which set of app documents survives.
