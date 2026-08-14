@@ -35,7 +35,7 @@ export function createEngine(store: Store, opts?: EngineOptions): unknown;
 export function tierOf(author: string | null | undefined): "local" | "unreviewed";
 export const RUNNER_REQUIRED_HTML: string;
 /** Which collection an app opens on when the caller names none: the one collection its
- *  #oma-manifest declares, else its own name. Use it wherever you MOUNT an app, so an
+ *  manifest declares, else its own name. Use it wherever you MOUNT an app, so an
  *  embedding shell binds by the same rule as open_app and the engine's own viewer. */
 export function defaultCollectionFor(
   app: { name?: string; manifest?: string | null } | null | undefined,
@@ -65,10 +65,10 @@ export function openFileChannel(store: Store): unknown;
 
 export const GUIDE: string;
 
-/** Idempotently install the built-in system apps (settings/dashboard/library) into a store — embedders call this after openStore() to provision a fresh registry. */
+/** Idempotently install the built-in system apps (settings/dashboard/app-store) into a store — embedders call this after openStore() to provision a fresh registry. Also retires seed-authored rows left behind by a system-app rename ("retired"/"kept"). */
 export function seedSystemApps(store: Store, opts?: { log?: (line: string) => void }): Array<{
   name: string;
-  action: "seeded" | "unchanged" | "skipped" | "error";
+  action: "seeded" | "unchanged" | "skipped" | "retired" | "kept" | "conflict" | "error";
   version?: number;
   error?: string;
 }>;
@@ -109,9 +109,9 @@ export const BRIDGE: string;
 export function composeChildDoc(html: string, opts?: { tokenCss?: string; kitCss?: string; bridge?: string }): string;
 /** A complete, self-contained INERT preview document (stub oma seeded with fixture items) —
  *  what a hosted /library preview server serves instead of keeping hand-synced copies. */
-export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; apps?: unknown[]; tokenCss?: string; kitCss?: string }): string;
+export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; apps?: unknown[]; prefs?: Record<string, unknown>; tokenCss?: string; kitCss?: string }): string;
 /** The inert stub window.oma script for a standalone preview document. */
-export function stubOmaScript(name: string, items?: unknown[], apps?: unknown[]): string;
+export function stubOmaScript(name: string, items?: unknown[], apps?: unknown[], prefs?: Record<string, unknown>): string;
 /** Build the parent-side caps chokepoint every sandboxed child call funnels through. */
 export function makeGuard(cfg: {
   name: string;

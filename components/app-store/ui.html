@@ -1,0 +1,1315 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>App Store</title>
+<meta name="description" content="Browse the App Store of ready-made apps — real working previews with sample data — and add one to your registry in a click.">
+<style>
+  /* app-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
+  :root {
+    --ground: var(--color-background-secondary);
+    --surface: var(--color-background-primary);
+    --soft: var(--color-background-secondary);
+    --softer: var(--color-background-tertiary);
+    --ink: var(--color-text-primary);
+    --ink-2: var(--color-text-secondary);
+    --ink-3: var(--color-text-tertiary);
+    --line: var(--color-border-primary);
+    --line-2: var(--color-border-secondary);
+    --accent: var(--k-accent);
+    --accent-deep: color-mix(in oklab, var(--k-accent) 76%, var(--color-text-primary));
+    --accent-soft: color-mix(in oklab, var(--k-accent) 11%, var(--color-background-primary));
+    --on-solid: var(--color-text-inverse);
+    --mint: var(--k-ok);
+    --wine: var(--k-hue-4);
+    --warn: var(--k-warn);
+    --bad: var(--k-bad);
+  }
+  body { padding: 0; background: var(--ground); color: var(--ink); }
+  /* In the browser viewer the runtime's stage already frames the page — no second ground there. */
+  body.standalone { background: transparent; }
+  button, input, select { color: inherit; font: inherit; }
+  button { cursor: pointer; }
+  svg { display: block; }
+  mark { background: color-mix(in oklab, var(--accent) 22%, transparent); color: inherit; border-radius: 3px; padding: 0 1px; }
+
+  /* overflow-x: clip is the belt under every width rule below — a shelf one pixel wider than its
+     frame gets a horizontal scrollbar across the whole card (measured: it did). `clip` rather than
+     `hidden` so this never becomes a scroll container and the sticky bar keeps working. */
+  .store { display: grid; grid-template-columns: minmax(0, 1fr); overflow-x: clip; }
+  .rail { display: none; }
+  .main { min-width: 0; padding: 0 0 26px; }
+
+  /* The app bar: the capsule's own chrome (mark · eyebrow · name · status/search). A child of
+     .store, not of .main, so it spans the rail too — it belongs to the CARD, like a title bar. */
+  .mobileBar {
+    position: sticky; top: 0; z-index: 8; display: flex; align-items: center; gap: 12px;
+    grid-column: 1 / -1; min-height: 48px; padding: 8px 14px; border-bottom: 1px solid var(--line-2);
+    background: color-mix(in oklab, var(--surface) 88%, transparent); backdrop-filter: blur(20px);
+  }
+  .mobileBar b { flex: none; font-size: 13.5px; font-weight: 700; letter-spacing: -.01em; }
+  .mobileBar .barCopy { min-width: 0; flex: none; }
+  .mobileBar .eyebrow { margin: 0; color: var(--ink-3); font-size: 9.5px; font-weight: 700; letter-spacing: .08em; }
+  .mobileBar .app-mark {
+    display: grid; width: 28px; height: 28px; flex: none; place-items: center;
+    border-radius: 9px; color: var(--on-solid);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 62%, var(--ink-3)), var(--accent-deep));
+  }
+  .mobileBar .app-mark svg { width: 15px; height: 15px; }
+  /* The status chip is the wide form's tail: narrow gives that room to the search field, and the
+     rail — which only exists when wide — is where the same reading otherwise lives. */
+  .mobileBar #barStatus { display: none; }
+  /* ---- the chat-host capsule ----
+     The bar above was already this app's header; what it sat on was the raw widget ground, edge to
+     edge. Every library app draws a bordered, rounded card under its bar, so one shelf-shaped app
+     in a conversation looked like a different product. The first repair hung this on
+     `(max-width:560px)` — a WIDTH, where the question is a CONTEXT: Leo's desktop claude.ai widget
+     is ~736px wide, so the media query never matched and the store was still bare in the
+     transcript. The split is the context alone — a card in a conversation gets the frame at any
+     width; the browser viewer never does, because the runtime's stage frames the page already.
+
+     THE TOP INSET IS THE CARD'S MARGIN, NOT THE SCROLLER'S PADDING — and that is the whole of a
+     bug, not a preference. A scroll container is asymmetric about its own padding: it CLIPS at the
+     padding box, but it constrains a sticky box to the CONTENT box. So with `padding: 12px` here,
+     whenever BODY was the scroll container, the bar came to rest 12px down from the frame top
+     (measured: barTop 12 at every scroll offset) while the band above it kept painting whatever had
+     scrolled into it — at scrollTop 300 that band held the bottom half of the featured title, and
+     the bar read as floating in the middle of the content instead of capping it. Moving the same
+     12px to the card's own margin makes the two edges agree at y=0 no matter WHO the scroll
+     container is: the bar sticks flush to the frame top, and nothing can paint above it because the
+     scrollport clips there. Measured again 2026-08-14, after the engine stopped capping the
+     document and the iframe viewport became the scrollport (frame 736x500, content taller): barTop
+     13 at rest, then 0 at scrollTop 13 / 40 / 300 / 900. The resting state is unchanged — the gap
+     above the card is still 12px, it just scrolls away with the card now, which is what a margin
+     does and a scroller's padding does not. */
+  body:not(.standalone) { padding: 0 12px 12px; background: transparent; }
+  body:not(.standalone) .store {
+    overflow: clip;   /* clip, not hidden: rounds the corners without becoming a scrollport */
+    margin-top: 12px;
+    border: 1px solid var(--line-2);
+    border-radius: var(--border-radius-lg, 16px);
+    background: var(--ground);   /* the ground the cards were already sitting on, now inside the frame */
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+  /* `flex: 1` here used to be unscoped, and the rail is a COLUMN flex container — so in the wide
+     state the search box grew VERTICALLY to 3,618px and shoved the nav to the bottom of the page. */
+  .searchBox { position: relative; display: flex; min-width: 0; align-items: center; }
+  .mobileBar .searchBox { flex: 1; }
+  .searchBox > svg { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--ink-3); pointer-events: none; }
+  .searchBox input { width: 100%; height: 32px; padding: 0 30px 0 31px; border-radius: 9px; background: var(--surface); font-size: 12.5px; }
+  .searchBox button {
+    position: absolute; right: 4px; display: grid; width: 22px; height: 22px; place-items: center;
+    padding: 0; border: 0; border-radius: 6px; background: transparent; color: var(--ink-3);
+  }
+  .searchBox button:hover { background: var(--accent-soft); color: var(--accent-deep); }
+  .searchBox button svg { width: 12px; height: 12px; }
+
+  .body { padding: 16px 14px 0; }
+  .pageHeader { margin-bottom: 15px; }
+  .eyebrow { display: block; margin-bottom: 5px; color: var(--accent); font-size: 10px; font-weight: 720; letter-spacing: .08em; text-transform: uppercase; }
+  .pageHeader h1 { margin: 0; font-size: clamp(28px, 10vw, 38px); font-weight: 740; letter-spacing: -.042em; line-height: 1; overflow-wrap: anywhere; }
+  .pageHeader p { max-width: 43ch; margin: 9px 0 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  /* The promise is a claim about the preview windows on THIS page, and a card in a conversation
+     no longer draws any of them (see the iframe budget in the script — the one live preview is
+     inside a detail view now). Keeping the line here would advertise something the page does not
+     show; it stays in the browser viewer, where it is still true. Measured: two lines and 46px of
+     a 390px card. */
+  body:not(.standalone) .pageHeader p { display: none; }
+
+  /* Narrow category rail: a horizontally scrolling pill strip (Codex mobileCategoryStrip). */
+  .catStrip { display: flex; gap: 8px; margin: 0 -14px 4px; padding: 4px 14px 10px; overflow-x: auto; scrollbar-width: none; scroll-snap-type: x proximity; }
+  .catStrip::-webkit-scrollbar { display: none; }
+  .catStrip button {
+    display: inline-flex; flex: none; min-height: 36px; align-items: center; padding: 0 15px;
+    border: 1px solid var(--line-2); border-radius: var(--border-radius-full, 999px); background: var(--surface);
+    color: var(--ink); font-size: 12.5px; font-weight: 610; scroll-snap-align: start; box-shadow: var(--shadow-xs);
+  }
+  .catStrip button[data-active="true"] { border-color: transparent; background: var(--accent-soft); color: var(--accent-deep); }
+
+  /* Featured: the one editorial slot. Deliberately a TINTED panel rather than Codex's dark
+     gradient — every colour here is a host token, and a token-built "always dark" surface does
+     not exist (they all flip with the scheme). Size, border and the tilted preview carry the
+     hierarchy instead of a colour that would strobe in dark mode. */
+  .featured {
+    position: relative; display: grid; grid-template-columns: minmax(0, 1fr); overflow: hidden; text-align: left;
+    padding: 0; border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--line-2));
+    border-radius: 18px; color: var(--ink); box-shadow: var(--shadow-lg);
+    background:
+      radial-gradient(circle at 88% 4%, color-mix(in oklab, var(--accent) 22%, transparent), transparent 36%),
+      radial-gradient(circle at 2% 100%, color-mix(in oklab, var(--wine) 17%, transparent), transparent 44%),
+      linear-gradient(135deg, color-mix(in oklab, var(--accent) 13%, var(--surface)), color-mix(in oklab, var(--wine) 10%, var(--surface)) 62%, var(--surface));
+  }
+  .featuredCopy { display: flex; flex-direction: column; justify-content: space-between; padding: 24px 22px 10px; }
+  .featuredCopy small { color: var(--accent-deep); font-size: 10px; font-weight: 720; letter-spacing: .075em; text-transform: uppercase; }
+  .featuredCopy .fTitle { display: block; max-width: 14ch; margin: 12px 0 9px; font-size: clamp(24px, 8vw, 34px); font-weight: 720; letter-spacing: -.04em; line-height: 1.02; }
+  .featuredCopy .fDesc { display: block; max-width: 34ch; color: var(--ink-2); font-size: 13px; line-height: 1.45; }
+  .featuredAction { display: flex; align-items: center; gap: 8px; margin-top: 20px; color: var(--accent-deep); font-size: 12px; font-weight: 660; }
+  .featuredAction i {
+    display: grid; width: 25px; height: 25px; place-items: center; font-style: normal;
+    border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--line-2)); border-radius: 50%;
+    background: color-mix(in oklab, var(--accent) 12%, transparent); transition: transform var(--k-t) var(--k-ease);
+  }
+  .featured:hover .featuredAction i { transform: translateX(3px); }
+  .featuredVisual { position: relative; min-width: 0; padding: 10px 18px 16px 30px; }
+  .featuredPreview { --pv-h: 176px; border: 1px solid color-mix(in oklab, var(--accent) 22%, var(--line)); border-radius: 13px; box-shadow: var(--shadow-lg); }
+  /* The hero's second half in a chat host, where the preview above does not exist. An empty
+     preview window reads as a broken image, so this slot is DRAWN rather than mounted: host
+     tokens only, no document, no budget — a plate carrying the same accent mark the app bar
+     wears, so the hero still has two halves and neither of them is a hole. */
+  .featuredArt {
+    position: relative; display: grid; min-height: 92px; overflow: hidden; place-items: center;
+    margin: 2px 18px 18px; border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--line));
+    border-radius: 13px; box-shadow: var(--shadow-md);
+    background: linear-gradient(152deg, color-mix(in oklab, var(--accent) 9%, var(--surface)), var(--surface) 70%);
+  }
+  .featuredArt::before {
+    position: absolute; inset: 0; content: "";
+    background-image: radial-gradient(circle, color-mix(in oklab, var(--accent) 34%, transparent) 1.1px, transparent 1.2px);
+    background-size: 13px 13px;
+  }
+  .artTile {
+    position: relative; display: grid; width: 48px; height: 48px; place-items: center;
+    border-radius: 14px; color: var(--on-solid); box-shadow: var(--shadow-lg);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 62%, var(--ink-3)), var(--accent-deep));
+  }
+  .artTile svg { width: 23px; height: 23px; }
+  /* Chat-form hero copy: the same block, two lines of blurb instead of four and less air under
+     it. The title keeps its size — it is the one piece of hierarchy the card has left. */
+  body:not(.standalone) .featuredCopy { padding: 19px 18px 8px; }
+  body:not(.standalone) .featuredCopy .fTitle { margin: 10px 0 8px; }
+  body:not(.standalone) .featuredCopy .fDesc { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  body:not(.standalone) .featuredAction { margin-top: 14px; }
+
+  .section { padding-top: 26px; }
+  .sectionHeading { display: flex; align-items: baseline; gap: 9px; margin-bottom: 12px; padding-bottom: 9px; border-bottom: 1px solid var(--line-2); }
+  .sectionHeading h2 { margin: 0; font-size: 17px; font-weight: 690; letter-spacing: -.02em; }
+  .sectionHeading span { color: var(--ink-3); font-size: 11px; }
+  .sectionHeading .seeAll { margin-left: auto; padding: 0; border: 0; background: none; color: var(--accent-deep); font-size: 11.5px; font-weight: 620; }
+  /* Section chrome is paid NINE TIMES on Discover — that is how many categories the shipped
+     registry carries — so in a conversation the padding, the rule's gap and the heading each buy
+     their height back per shelf. The browser viewer keeps the editorial spacing it was drawn with;
+     there is no page-length pressure on a tab of its own. */
+  body:not(.standalone) .section { padding-top: 17px; }
+  body:not(.standalone) .sectionHeading { margin-bottom: 9px; padding-bottom: 7px; }
+  body:not(.standalone) .sectionHeading h2 { font-size: 15px; }
+  /* The one section subtitle that is a SENTENCE rather than a count, and the heading it shares a
+     baseline with wraps around it: measured, the h2 goes from one line to two the moment this is
+     shown — at 390px, and at a 736px widget where its 232px lands beside the heading in a 443px
+     column. It is editorial flavour, not a reading, so the viewer keeps it and the card drops it. */
+  body:not(.standalone) .sectionHeading .lede { display: none; }
+
+  .editorialGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .editorialCard {
+    position: relative; display: flex; min-width: 0; min-height: 128px; align-items: stretch; overflow: hidden;
+    padding: 0; text-align: left; border: 1px solid var(--line-2); border-radius: 14px;
+    background: var(--soft); color: var(--ink); box-shadow: var(--shadow-xs);
+    transition: transform var(--k-t) var(--k-ease), box-shadow var(--k-t) var(--k-ease), border-color var(--k-t) var(--k-ease);
+  }
+  .editorialCard:hover { z-index: 1; transform: translateY(-3px); border-color: color-mix(in oklab, var(--accent) 28%, var(--line)); box-shadow: var(--shadow-md); }
+  .editorialCopy { display: flex; width: 54%; min-width: 0; flex-direction: column; padding: 16px 8px 14px 16px; }
+  .editorialCopy small { color: var(--accent); font-size: 9px; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
+  .editorialCopy b { margin-top: 7px; font-size: 14.5px; line-height: 1.14; overflow-wrap: anywhere; }
+  .editorialCopy span { margin-top: 6px; color: var(--ink-3); font-size: 10.5px; line-height: 1.35; }
+  .editorialPreview { --pv-h: 150px; width: 56%; margin: 14px -24px -20px 4px; align-self: flex-end; border: 1px solid var(--line-2); border-radius: 8px 0 0; box-shadow: var(--shadow-md); }
+  /* Slim: the editorial card with its preview half removed. The 128px minimum existed to give the
+     picture room, so without one the card is a LINE — label, title, category — and the copy takes
+     the whole width instead of 54% of it. (At ≥561px the editorial grid is three columns of about
+     150px, where a line does not fit; the wide block below stacks it back into a mini card.) */
+  .editorialCard.slim { min-height: 0; }
+  .editorialCard.slim .editorialCopy { width: 100%; flex-direction: row; align-items: baseline; gap: 9px; padding: 11px 13px; }
+  .editorialCard.slim .editorialCopy small { flex: none; }
+  .editorialCard.slim .editorialCopy b { min-width: 0; flex: 1; overflow: hidden; margin: 0; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+  .editorialCard.slim .editorialCopy span { flex: none; margin: 0; }
+
+  .appsGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .appCard {
+    position: relative; display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden;
+    padding: 0; text-align: left; border: 1px solid var(--line-2); border-radius: 13px;
+    background: var(--surface); color: var(--ink); box-shadow: var(--shadow-xs);
+    transition: transform var(--k-t) var(--k-ease), box-shadow var(--k-t) var(--k-ease), border-color var(--k-t) var(--k-ease);
+  }
+  .appCard:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--accent) 30%, var(--line)); box-shadow: var(--shadow-md); }
+  .appCard:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 2px; }
+  .appCard.installed { border-color: color-mix(in oklab, var(--mint) 30%, var(--line-2)); }
+  .appCard.updatable { border-color: color-mix(in oklab, var(--warn) 42%, var(--line-2)); }
+  .cardBody { display: flex; width: 100%; min-width: 0; align-items: center; gap: 12px; padding: 13px 14px; border: 0; background: none; text-align: left; }
+  .cardMark {
+    display: grid; width: 34px; height: 34px; flex: none; place-items: center; border-radius: 10px;
+    background: var(--accent); color: var(--on-solid);
+  }
+  .cardMark[data-tone="mint"] { background: var(--mint); }
+  .cardMark[data-tone="wine"] { background: var(--wine); }
+  .cardMark[data-tone="warn"] { background: var(--warn); }
+  .cardMark[data-tone="plain"] { background: var(--ink-3); }
+  .cardMark svg { width: 17px; height: 17px; }
+  .cardText { min-width: 0; flex: 1; }
+  .cardText small { display: block; color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
+  .cardText .t { display: block; margin: 5px 0 4px; overflow: hidden; font-size: 14.5px; font-weight: 680; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
+  .cardText .d { display: block; color: var(--ink-3); font-size: 11px; line-height: 1.4; }
+  .cardFoot { display: flex; align-items: center; gap: 6px; margin-top: 8px; color: var(--ink-3); font-size: 10px; }
+  .viewPill { flex: none; margin-left: auto; padding: 4px 10px; border-radius: var(--border-radius-full, 999px); background: var(--accent-soft); color: var(--accent-deep); font-size: 10px; font-weight: 680; }
+  .stateChip { flex: none; padding: 3px 9px; border-radius: var(--border-radius-full, 999px); font-size: 9.5px; font-weight: 750; letter-spacing: .04em; text-transform: uppercase; }
+  .chip-ok { border: 1px solid color-mix(in oklab, var(--mint) 36%, var(--line-2)); background: color-mix(in oklab, var(--mint) 9%, var(--surface)); color: var(--mint); }
+  .chip-up { border: 1px solid color-mix(in oklab, var(--warn) 44%, var(--line-2)); background: color-mix(in oklab, var(--warn) 10%, var(--surface)); color: var(--warn); }
+  .chip-mut { border: 1px solid var(--line-2); background: var(--soft); color: var(--ink-3); }
+  .cardAct { display: flex; flex: none; align-items: center; gap: 8px; padding: 0 14px 13px 60px; }
+  .cardErr { padding: 8px 14px 10px; border-top: 1px dashed color-mix(in oklab, var(--bad) 34%, var(--line-2)); background: color-mix(in oklab, var(--bad) 6%, var(--surface)); color: var(--bad); font-size: 11px; }
+
+  /* ---- slim: the app card with no preview window ----
+     The stacked card is built AROUND the picture — mark over two lines of blurb over a separate
+     action row — and measured 185px at 390px / 206px at a 736px widget. Take the picture away and
+     most of that is spacing around nothing, so the card becomes a ROW instead: mark, title, one
+     truncated line, the action, all on the same baseline (measured 56px). What the row drops
+     with it is repetition rather than information — the category eyebrow repeats the shelf
+     heading it sits under, "by the makers" is the same publisher on every entry in this store,
+     and the state chip says what the button beside it already says (Open / Update / Unavailable),
+     while the card's border tint still carries the state. The full sentence and every one of
+     those readings live one tap away in the detail view.
+     Not scoped to the chat host: the browser viewer under 561px has no preview either, and the
+     shape follows the picture, not the context. */
+  .appCard.slim { display: flex; flex-wrap: wrap; align-items: center; }
+  /* flex-direction and align-items are re-stated, not inherited: the wide block below turns the
+     ordinary card body into a COLUMN (mark-less, stacked under its preview), and a slim row in
+     that state grows to 97px of stacked text — measured, at a 736px widget. */
+  .appCard.slim .cardBody { flex: 1; flex-direction: row; align-items: center; gap: 11px; padding: 11px 4px 11px 12px; }
+  .appCard.slim .cardMark { display: grid; width: 30px; height: 30px; border-radius: 9px; }
+  .appCard.slim .cardMark svg { width: 15px; height: 15px; }
+  .appCard.slim .cardText .t { margin: 0; font-size: 13.5px; }
+  .appCard.slim .cardText .d { overflow: hidden; margin-top: 2px; font-size: 10.5px; line-height: 1.35; text-overflow: ellipsis; white-space: nowrap; }
+  .appCard.slim .cardAct { padding: 0 12px 0 0; }
+  .appCard.slim .addBtn { min-width: 0; height: 30px; padding: 0 13px; font-size: 11.5px; }
+  .appCard.slim .cardErr { flex: 0 0 100%; }   /* the flex row would otherwise sit it beside the action */
+
+  .addBtn {
+    display: inline-flex; min-width: 84px; height: 34px; flex: none; align-items: center; justify-content: center;
+    gap: 6px; padding: 0 14px; border: 1px solid transparent; border-radius: var(--border-radius-md, 10px);
+    background: var(--accent-deep); color: var(--on-solid); font-size: 12px; font-weight: 700; line-height: 1;
+    text-decoration: none; box-shadow: var(--shadow-sm);
+    transition: transform var(--k-t-fast) var(--k-ease), opacity var(--k-t-fast);
+  }
+  .addBtn:hover { opacity: .9; }
+  .addBtn:active { transform: scale(.97); }
+  .addBtn.sec { border-color: color-mix(in oklab, var(--mint) 36%, var(--line)); background: var(--surface); color: var(--mint); box-shadow: none; }
+  .addBtn.quiet { border-color: var(--line); background: var(--surface); color: var(--ink-2); box-shadow: none; }
+  .addBtn:disabled { cursor: not-allowed; border-color: var(--line-2); background: var(--soft); color: var(--ink-3); box-shadow: none; }
+  .addBtn svg { width: 14px; height: 14px; }
+
+  /* Live app art: a fixed-height, inert window with a scaled natural-width iframe. */
+  .pv { position: relative; height: var(--pv-h, 150px); overflow: hidden; background: var(--soft); }
+  .pv iframe { position: absolute; top: 0; left: 0; border: 0; pointer-events: none; background: var(--surface); }
+  .pv-skel { position: absolute; inset: 12px 12px 18px; z-index: 0; border-radius: var(--border-radius-md, 10px); }
+  .pv::after { position: absolute; right: 0; bottom: 0; left: 0; z-index: 2; height: 32px; content: ""; pointer-events: none; background: linear-gradient(to bottom, transparent, color-mix(in oklab, var(--soft) 94%, transparent)); }
+  .pv-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--ink-3); font-size: 12px; }
+
+  .showMore {
+    display: flex; align-items: center; gap: 5px; margin: 12px auto 0; padding: 7px 15px;
+    border: 1px solid var(--line-2); border-radius: var(--border-radius-full, 999px);
+    background: var(--surface); color: var(--ink-2); font-size: 12px; font-weight: 650;
+  }
+  .showMore:hover { border-color: color-mix(in oklab, var(--accent) 34%, var(--line)); color: var(--ink); }
+  .showMore svg { width: 13px; height: 13px; }
+
+  .emptyState { display: grid; min-height: 280px; place-items: center; padding: 36px 14px; text-align: center; }
+  .emptyState > div { max-width: 44ch; }
+  .emptyState .mark { display: grid; width: 54px; height: 54px; margin: 0 auto 15px; place-items: center; border-radius: 15px; background: var(--accent-soft); color: var(--accent); }
+  .emptyState .mark svg { width: 26px; height: 26px; }
+  .emptyState h2 { margin: 0 0 8px; font-size: 22px; font-weight: 720; letter-spacing: -.025em; }
+  .emptyState p { margin: 0; color: var(--ink-2); font-size: 13px; line-height: 1.55; }
+  .emptyState .addBtn, .emptyState .k-code { margin-top: 14px; }
+  .ask-hint { display: block; margin-top: 14px; color: var(--ink-3); font-size: 12px; user-select: text; }
+  #err { margin: 16px 0 0; padding: 10px 12px; border: 1px solid color-mix(in oklab, var(--bad) 34%, var(--line-2)); border-radius: 10px; background: color-mix(in oklab, var(--bad) 7%, var(--surface)); color: var(--bad); font-size: 12px; }
+  #err:empty { display: none; }
+
+  .storeFooter { display: flex; align-items: flex-start; gap: 8px; margin-top: 26px; padding: 14px; border-top: 1px solid var(--line-2); color: var(--ink-3); font-size: 10.5px; line-height: 1.5; }
+  .storeFooter svg { width: 14px; height: 14px; flex: none; color: var(--accent); }
+  .storeFooter strong { color: var(--ink-2); }
+
+  /* Detail: a VIEW, not an overlay — the grid steps aside so the page keeps its natural height. */
+  .backLink {
+    display: inline-flex; align-items: center; gap: 7px; margin-bottom: 16px; padding: 6px 13px 6px 10px;
+    border: 1px solid var(--line-2); border-radius: var(--border-radius-full, 999px);
+    background: var(--surface); color: var(--accent-deep); font-size: 12px; font-weight: 620;
+  }
+  .backLink svg { width: 14px; height: 14px; }
+  .detailHeader { display: grid; grid-template-columns: minmax(0, 1fr); gap: 16px; align-items: start; }
+  /* No thumbnail frame (narrow, or any chat host — the detail view spends its one iframe on the
+     big preview below). One column, or the summary would sit in the .82fr track the wide block
+     sizes for a picture that is not there. */
+  .detailHeader.solo { grid-template-columns: minmax(0, 1fr); }
+  .detailThumb { position: relative; width: 100%; max-width: 160px; overflow: hidden; border: 1px solid var(--line-2); border-radius: 14px; background: var(--soft); box-shadow: var(--shadow-md); }
+  .detailThumb::before {
+    position: absolute; inset: 0 0 auto; z-index: 4; height: 22px; content: ""; pointer-events: none;
+    background:
+      radial-gradient(circle at 11px 11px, var(--bad) 0 3.5px, transparent 4px),
+      radial-gradient(circle at 25px 11px, var(--warn) 0 3.5px, transparent 4px),
+      radial-gradient(circle at 39px 11px, var(--mint) 0 3.5px, transparent 4px),
+      color-mix(in oklab, var(--softer) 88%, transparent);
+    box-shadow: 0 1px var(--line-2);
+  }
+  .detailThumb .pv { --pv-h: 130px; padding-top: 22px; }
+  .detailSummary h1 { max-width: 16ch; margin: 0 0 7px; font-size: clamp(22px, 7vw, 30px); font-weight: 740; letter-spacing: -.04em; line-height: 1.03; overflow-wrap: anywhere; }
+  .publisher { margin: 0 0 8px; color: var(--accent-deep); font-size: 11px; font-weight: 620; }
+  .detailDescription { max-width: 46ch; margin: 0; color: var(--ink-2); font-size: 12.5px; line-height: 1.5; }
+  .detailActions { display: flex; flex-wrap: wrap; align-items: center; gap: 9px; margin-top: 14px; }
+  .metaStrip { display: flex; gap: 0; margin: 22px -14px; padding: 15px 14px; overflow-x: auto; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); scrollbar-width: none; }
+  .metaStrip::-webkit-scrollbar { display: none; }
+  .metaStrip div { width: 142px; min-width: 142px; padding: 0 16px; }
+  .metaStrip div:first-child { padding-left: 0; }
+  .metaStrip div + div { border-left: 1px solid var(--line-2); }
+  .metaStrip small { display: block; margin-bottom: 5px; color: var(--ink-3); font-size: 9px; font-weight: 720; letter-spacing: .065em; text-transform: uppercase; }
+  .metaStrip b { display: block; overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .previewCard { overflow: hidden; border: 1px solid var(--line-2); border-radius: 15px; background: var(--surface); box-shadow: var(--shadow-md); }
+  .previewCard .pv { --pv-h: 420px; }
+  .previewCaption { display: flex; align-items: center; gap: 8px; margin: 0; padding: 12px 15px; border-top: 1px solid var(--line-2); color: var(--ink-3); font-size: 10.5px; line-height: 1.45; }
+  .previewCaption i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in oklab, var(--mint) 15%, transparent); }
+  .storyGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .storyCard { padding: 19px; border: 1px solid var(--line-2); border-radius: 14px; background: var(--soft); }
+  .storyCard small { color: var(--accent); font-size: 9px; font-weight: 720; letter-spacing: .06em; text-transform: uppercase; }
+  .storyCard h3 { margin: 8px 0; font-size: 16px; font-weight: 680; letter-spacing: -.02em; }
+  .storyCard p { margin: 0; color: var(--ink-2); font-size: 12px; line-height: 1.55; }
+  .detailErr { margin-top: 12px; padding: 9px 12px; border: 1px dashed color-mix(in oklab, var(--bad) 34%, var(--line-2)); border-radius: 10px; background: color-mix(in oklab, var(--bad) 6%, var(--surface)); color: var(--bad); font-size: 12px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    .featuredAction i, .editorialCard, .appCard { transition: none; }
+  }
+
+  /* ---- wide state (>560px): the Codex desktop storefront — fixed rail, big featured, dense grid ---- */
+  @media (min-width: 561px) {
+    .store { grid-template-columns: 202px minmax(0, 1fr); }
+    .rail {
+      display: flex; flex-direction: column; padding: 20px 13px 18px;
+      border-right: 1px solid var(--line-2);
+      background: color-mix(in oklab, var(--surface) 62%, var(--ground));
+    }
+    .identity { display: flex; align-items: center; gap: 9px; padding: 0 6px 15px; font-size: 15px; }
+    .identity > span { display: grid; width: 28px; height: 28px; flex: none; place-items: center; border-radius: 8px; background: linear-gradient(152deg, color-mix(in oklab, var(--accent) 74%, var(--ink-3)), var(--accent-deep)); color: var(--on-solid); box-shadow: var(--shadow-sm); }
+    .identity > span svg { width: 16px; height: 16px; }
+    .identity b { font-weight: 680; letter-spacing: -.01em; }
+    .rail .searchBox { margin: 0 1px 13px; }
+    .rail .searchBox input { height: 31px; font-size: 12px; }
+    .railNav { display: grid; gap: 3px; }
+    .railNav button {
+      display: flex; width: 100%; min-height: 33px; align-items: center; gap: 9px; padding: 0 9px;
+      border: 0; border-radius: 7px; background: transparent; color: var(--ink-2);
+      font-size: 12.5px; font-weight: 540; text-align: left;
+      transition: background var(--k-t-fast), color var(--k-t-fast);
+    }
+    .railNav button:hover { background: var(--soft); color: var(--ink); }
+    .railNav button[data-active="true"] { background: var(--accent-soft); color: var(--accent-deep); font-weight: 660; }
+    .railNav svg { width: 16px; height: 16px; flex: none; }
+    .railNav button > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .railNav small { margin-left: auto; color: var(--ink-3); font-size: 10px; font-variant-numeric: tabular-nums; }
+    .navLabel { margin: 15px 9px 4px; color: var(--ink-3); font-size: 10px; font-weight: 670; letter-spacing: .055em; text-transform: uppercase; }
+    .railStatus {
+      display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 2px 8px;
+      margin-top: auto; padding: 15px 8px 0; border-top: 1px solid var(--line-2); color: var(--ink-2); font-size: 11px;
+    }
+    .railStatus i { width: 7px; height: 7px; grid-row: span 2; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in oklab, var(--mint) 16%, transparent); }
+    .railStatus b { color: var(--ink); font-weight: 690; }
+    .railStatus small { color: var(--ink-3); font-size: 9.5px; letter-spacing: .03em; text-transform: uppercase; }
+    .catStrip { display: none; }
+    /* The bar survives into the wide form when this is a card in a chat — flatter, and without
+       its search field (the rail has one three centimetres below it). In the browser viewer the
+       rail's identity block IS the header, so the bar stays gone there. */
+    .mobileBar { display: none; }
+    body:not(.standalone) .mobileBar { display: flex; gap: 10px; min-height: 0; padding: 7px 13px; }
+    body:not(.standalone) .mobileBar .searchBox { display: none; }
+    body:not(.standalone) .mobileBar .barCopy { display: flex; align-items: baseline; gap: 8px; }
+    body:not(.standalone) .mobileBar #barStatus { display: inline-flex; margin-left: auto; }
+
+    .body { padding: clamp(22px, 3.4vw, 38px) clamp(22px, 3.4vw, 38px) 0; }
+    .pageHeader { display: flex; align-items: flex-end; justify-content: space-between; gap: 24px; margin-bottom: 17px; }
+    .pageHeader h1 { font-size: clamp(28px, 4vw, 40px); letter-spacing: -.035em; }
+    /* The promise line yields first. Both are flex items and shrink together by default, and the
+       capsule's 12px margins were enough to tip a 30px heading into breaking MID-WORD at Leo's
+       736px widget ("Discov / er" — `overflow-wrap: anywhere` is there for long app names, and it
+       does not distinguish). A heavier shrink factor on the paragraph, which wraps for a living,
+       spends the missing pixels where they cost nothing. Measured: 2 lines → 1 at 736px. */
+    .pageHeader > div { min-width: 0; }
+    .pageHeader p { flex: 0 3 auto; min-width: 0; margin: 0; text-align: right; }
+
+    /* 🔴 The horizontal scrollbar Leo saw on a ~736px widget was THIS: `minmax(220px, …)` +
+       `minmax(300px, …)` is a 520px floor, and the main column at 561–780px viewport is narrower
+       than that (rail 202px + the .body padding eat ~250px), so the card pushed the document
+       126px wider than its frame at 620px and 48px at 700px — measured, both gone at 0 after this.
+       A grid track's minimum is a HARD floor: it does not shrink, it overflows, and it takes the
+       document's width with it. The proportions are what the design is about (0.82 : 1.4), so
+       those stay and the floors go — the card composes down instead of forcing a scrollbar. */
+    .featured { min-height: 300px; grid-template-columns: minmax(0, .82fr) minmax(0, 1.4fr); }
+    .featuredCopy, .featuredVisual { min-width: 0; }   /* grid items default to min-content — the same floor by another door */
+    .featuredCopy { padding: clamp(24px, 3vw, 38px); }
+    .featuredVisual { padding: 26px 26px 26px 0; }
+    /* Codex tilts this in 3D. We cannot: a cross-document iframe under a 3D-transformed ancestor
+       is composited separately and intermittently paints NOTHING (measured — the frame was the right
+       size, its a11y tree had the app's text, the pixels were blank). The depth comes from the
+       shadow and the accent border instead, which cost no compositing promotion. */
+    .featuredPreview { --pv-h: 236px; }
+    /* The chat card's hero has no preview to make room for, so the ratio flips toward the copy:
+       at a 736px widget the main column is 493px, and a .82fr copy track left the 34px title
+       breaking at five characters a line. The drawn plate is happy with the smaller share. */
+    body:not(.standalone) .featured { min-height: 0; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); }
+    .featuredArt { margin: 22px 22px 22px 0; }
+    .editorialGrid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    /* Three ~150px columns: the one-line form has nowhere to go, so the slim editorial card
+       stacks — the same three readings, one under the other. */
+    .editorialCard.slim .editorialCopy { flex-direction: column; align-items: flex-start; gap: 0; padding: 12px 13px; }
+    .editorialCard.slim .editorialCopy b { width: 100%; flex: none; margin-top: 6px; }
+    .editorialCard.slim .editorialCopy span { margin-top: 5px; }
+    .appsGrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+    .appCard { grid-template-columns: minmax(140px, .82fr) minmax(150px, 1fr); }
+    .appCard .cardPreview { --pv-h: 148px; border-right: 1px solid var(--line-2); }
+    .appCard .cardBody { flex-direction: column; align-items: stretch; gap: 0; padding: 15px; }
+    .appCard .cardMark { display: none; }
+    .cardAct { padding: 0 15px 14px; }
+    .appCard.wide { grid-column: span 2; }
+
+    .metaStrip { margin-inline: 0; padding-inline: 0; }
+    /* Same hard floor the featured card had (230 + 260 + gap = ~520px of track minimum inside a
+       main column that is ~460px wide at a 736px widget), and the same fix — proportions, no floors. */
+    .detailHeader { grid-template-columns: minmax(0, .82fr) minmax(0, 1.2fr); gap: clamp(24px, 4vw, 42px); align-items: center; }
+    .detailThumb, .detailSummary { min-width: 0; }
+    .detailThumb { max-width: none; }
+    .detailThumb .pv { --pv-h: 224px; }
+    .previewCard .pv { --pv-h: 500px; }
+    .storyGrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .storeFooter { padding-inline: clamp(22px, 3.4vw, 38px); }
+  }
+  @media (min-width: 921px) {
+    .store { grid-template-columns: 226px minmax(0, 1fr); }
+  }
+
+  /* Density (shared pref, zero new keys): compact tightens preview windows and card padding.
+     Last in the sheet on purpose — it overrides the wide-state sizes above at equal specificity. */
+  body.compact .featuredPreview { --pv-h: 152px; }
+  body.compact .editorialPreview { --pv-h: 128px; }
+  body.compact .cardPreview { --pv-h: 122px; }
+  body.compact .cardBody { padding: 10px 12px; }
+  body.compact .appCard.slim .cardBody { padding: 8px 4px 8px 12px; }   /* the slim row has its own padding — tighten that one, or the pref does nothing here */
+</style>
+</head>
+<body>
+<main class="store">
+  <div class="mobileBar"><!-- the capsule's app bar: a child of .store so it spans the rail too -->
+    <span class="app-mark" aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h14l-1 9.5H4zM3 7l1.6-3.5h10.8L17 7M7.5 10.2v1.4a2.5 2.5 0 0 0 5 0v-1.4"/></svg></span>
+    <div class="barCopy">
+      <span class="eyebrow">open-mcp-apps</span>
+      <b data-i18n="appStore">App Store</b><!-- literal default: the i18n pass waits on the bridge, and a nameless bar in the meantime reads as a broken app -->
+    </div>
+    <div class="searchBox">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+      <input class="k-field" id="q-m" type="search" data-i18n-placeholder="searchApps" data-i18n-aria="searchApps" autocomplete="off" spellcheck="false">
+      <button type="button" data-clear data-i18n-aria="clearSearch"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>
+    <span class="k-badge" id="barStatus"></span><!-- the rail's counter, for the form that has no rail -->
+  </div>
+
+  <aside class="rail">
+    <div class="identity">
+      <span aria-hidden="true"><svg viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 7h14l-1 9.5H4zM3 7l1.6-3.5h10.8L17 7M7.5 10.2v1.4a2.5 2.5 0 0 0 5 0v-1.4"/></svg></span>
+      <b data-i18n="appStore"></b>
+    </div>
+    <div class="searchBox">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+      <input class="k-field" id="q" type="search" data-i18n-placeholder="searchApps" data-i18n-aria="searchApps" autocomplete="off" spellcheck="false">
+      <button type="button" data-clear data-i18n-aria="clearSearch"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>
+    <nav class="railNav" id="railNav" data-i18n-aria="appStore"></nav>
+    <div class="railStatus">
+      <i aria-hidden="true"></i>
+      <span><b class="k-num" id="pulseN">0</b> <span id="pulseT"></span></span>
+      <small data-i18n="builtInShelf"></small>
+    </div>
+  </aside>
+
+  <div class="main">
+    <div class="body">
+      <div id="browse">
+        <header class="pageHeader">
+          <div>
+            <span class="eyebrow" id="eyebrow"></span>
+            <h1 id="page-h"></h1>
+          </div>
+          <p data-i18n="previewPromise"></p>
+        </header>
+        <nav class="catStrip" id="catStrip" data-i18n-aria="appCategories"></nav>
+        <div id="sections"></div>
+        <div class="emptyState" id="empty" hidden>
+          <div>
+            <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></span>
+            <h2 data-i18n="unavailable"></h2>
+            <p data-i18n="unavailableDetail"></p>
+          </div>
+        </div>
+        <div id="err" role="alert"></div>
+      </div>
+
+      <section id="detail" hidden aria-labelledby="d-title"></section>
+    </div>
+
+    <footer class="storeFooter">
+      <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.5l5 2v3.7c0 3.2-2 5.8-5 7.3-3-1.5-5-4.1-5-7.3V3.5l5-2z"/><path d="M5.5 8l1.6 1.6 3.5-3.5"/></svg>
+      <span><strong data-i18n="footerLead"></strong> <span data-i18n="footerBody"></span></span>
+    </footer>
+  </div>
+</main>
+
+<script type="module">
+  // ---- i18n: one dictionary, en/zh, resolved from the shared `locale` preference ----
+  const STR = {
+    en: {
+      documentTitle: "App Store",
+      appStore: "App Store", searchApps: "Search apps", clearSearch: "Clear the search",
+      discover: "Discover", featured: "Featured", collections: "Collections",
+      shelf: "The open app shelf", searchResults: "Search results", apps: "Apps",
+      previewPromise: "Each preview is the app itself with sample data, not a marketing screenshot.",
+      appCategories: "App categories",
+      liveApps: "ready-made apps", liveApp: "ready-made app", builtInShelf: "Built-in shelf",
+      editorsIntroduction: "Editor's introduction", openLiveApp: "See the live app",
+      usefulNow: "Made to be useful immediately", usefulNowDetail: "Start with a real app, then reshape it by asking.",
+      startHere: "Start here", appsWeLove: "Apps we love", everydayWork: "For everyday work",
+      appCount: "{n} apps", appCount1: "1 app", ofCount: "{shown} of {total}",
+      seeAll: "See all", showAll: "Show all {n}", by: "by", makers: "the makers", view: "View",
+      noApps: "No apps found", noAppsDetail: "Try a broader word, a category such as Planning, or ask the AI to build it — that takes about a minute.",
+      unavailable: "The shelf is being stocked",
+      unavailableDetail: "No ready-made apps shipped with this install. Your AI can still build the app you need from scratch.",
+      buildIt: "Ask the AI to build it", askYourAi: "Ask your AI:", buildPrompt: "Build me a {q} app",
+      backToDiscover: "Back", add: "Add", adding: "Adding…", update: "Update", open: "Open",
+      unavailableName: "Unavailable", unavailableNameTitle: "A different app of yours already uses this name",
+      manageInSettings: "Manage in Settings", openSettingsMsg: "Open my settings.", openAppMsg: "Open my {name} app",
+      addedChip: "added", updateChip: "update available", inUseChip: "name in use",
+      publisher: "Made by the makers — the open-mcp-apps project.",
+      metaFormat: "Format", metaFormatValue: "Live MCP app",
+      metaCollection: "Collection", metaPrice: "Price", metaPriceValue: "Free — open source",
+      metaSize: "Size",
+      preview: "Preview", previewMeta: "Real renderer · sample data · read-only",
+      previewCaption: "This is the app itself, rendered safely with sample data. Your copy starts with your own information.",
+      previewPending: "A live preview is still being prepared for this app.",
+      moreLikeThis: "More in {cat}",
+      builtForYou: "Built to become yours",
+      story1Eyebrow: "One app, everywhere", story1Title: "Keep using the same thing",
+      story1Body: "Add it once, then open the same app in your AI or on the web. The data stays in one collection between chats.",
+      story2Eyebrow: "Editable by asking", story2Title: "Ready-made is only the start",
+      story2Body: "Ask for a new field, a different view or another summary. Your AI changes the app while its data stays in place.",
+      footerLead: "Your own apps stay yours.", footerBody: "App Store updates never overwrite a custom app with the same name.",
+      loadFailed: "Couldn't load the App Store — it retries when you come back.",
+      addFailed: "Couldn't add it.", previewUnavailable: "preview unavailable",
+    },
+    zh: {
+      documentTitle: "App 商店",
+      appStore: "App 商店", searchApps: "搜索应用", clearSearch: "清除搜索",
+      discover: "发现", featured: "精选", collections: "分类",
+      shelf: "开放应用架", searchResults: "搜索结果", apps: "应用",
+      previewPromise: "每个预览都是真实应用与示例数据，而不是营销截图。",
+      appCategories: "应用分类",
+      liveApps: "个现成应用", liveApp: "个现成应用", builtInShelf: "内置应用架",
+      editorsIntroduction: "编辑推荐", openLiveApp: "看看真实应用",
+      usefulNow: "装好就能真正派上用场", usefulNowDetail: "先从一个真实应用开始，再通过对话把它变成你需要的样子。",
+      startHere: "从这里开始", appsWeLove: "我们喜欢的应用", everydayWork: "日常工作精选",
+      appCount: "{n} 个应用", appCount1: "1 个应用", ofCount: "{total} 个中的 {shown} 个",
+      seeAll: "查看全部", showAll: "展开全部 {n} 个", by: "开发者", makers: "官方团队", view: "查看",
+      noApps: "没有找到应用", noAppsDetail: "试试更宽泛的关键词、换个分类，或者直接让 AI 现做一个——大概一分钟。",
+      unavailable: "应用架正在上新",
+      unavailableDetail: "这次安装没有附带现成应用。你仍然可以直接让 AI 从零构建需要的应用。",
+      buildIt: "让 AI 现做一个", askYourAi: "对你的 AI 说：", buildPrompt: "给我做一个 {q} 应用",
+      backToDiscover: "返回", add: "添加", adding: "正在添加…", update: "更新", open: "打开",
+      unavailableName: "不可用", unavailableNameTitle: "你已经有另一个应用占用了这个名字",
+      manageInSettings: "在设置里管理", openSettingsMsg: "打开我的设置。", openAppMsg: "打开我的 {name} 应用",
+      addedChip: "已添加", updateChip: "有更新", inUseChip: "名字被占用",
+      publisher: "由 open-mcp-apps 项目官方团队制作。",
+      metaFormat: "形式", metaFormatValue: "实时 MCP 应用",
+      metaCollection: "数据集", metaPrice: "价格", metaPriceValue: "免费 · 开源",
+      metaSize: "体积",
+      preview: "实时预览", previewMeta: "真实渲染 · 示例数据 · 只读",
+      previewCaption: "这里运行的就是应用本身，并以示例数据安全呈现。添加后会使用你自己的信息。",
+      previewPending: "这个应用的实时预览仍在准备中。",
+      moreLikeThis: "{cat} 里的其他应用",
+      builtForYou: "从现成应用，变成你的应用",
+      story1Eyebrow: "一个应用，处处可用", story1Title: "始终使用同一份应用",
+      story1Body: "添加一次，就能在 AI 对话或网页中打开同一个应用；不同对话之间仍共享同一份数据。",
+      story2Eyebrow: "开口就能修改", story2Title: "现成只是起点",
+      story2Body: "让 AI 增加字段、换一种视图或补一份总结。应用会继续变化，原有数据仍留在原处。",
+      footerLead: "你自己的应用永远是你的。", footerBody: "App 商店的更新不会覆盖同名的自制应用。",
+      loadFailed: "无法加载 App 商店——下次回到这里会自动重试。",
+      addFailed: "添加失败。", previewUnavailable: "预览不可用",
+    },
+  };
+  const locale = () => { const p = oma.pref("locale", "auto"); return p === "auto" ? navigator.language : p; };
+  const language = () => (String(locale()).toLowerCase().startsWith("zh") ? "zh" : "en");
+  const t = (key, vars = {}) => {
+    let value = STR[language()][key] ?? STR.en[key] ?? key;
+    for (const [name, replacement] of Object.entries(vars)) value = value.replaceAll(`{${name}}`, String(replacement));
+    return value;
+  };
+
+  const CAT_ORDER = ["Health & Habits", "Money", "Planning", "People"];   // known first, others appended
+  const WIDE_CARDS = new Set(["meal-planner", "bill-calendar"]);          // calendar-grid apps span 2 tracks
+  const NATURAL_W = 760;                                                  // px width apps render at inside a preview (oma.embed fit)
+  // "Start here" editorial rail: repo-curated picks (one per category), day-one, zero network.
+  // Moves to components/app-store-editorial.json once an engine tool exists to serve that file;
+  // picks missing from the local registry are silently skipped.
+  const START_HERE = ["habit-streaks", "savings-goals", "meal-planner", "keep-in-touch"];
+  const EDITORIAL_LABELS = ["startHere", "appsWeLove", "everydayWork"];
+
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random());
+  const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  const WIDE = matchMedia("(min-width: 561px)");
+  // The OTHER axis, and it is a context rather than a width: a card in a conversation versus the
+  // browser viewer. Read at render time exactly like WIDE.matches, and never mixed inside one
+  // render. `oma.standalone` is the same judge action() already uses for its Open link.
+  const chat = () => !oma.standalone;
+  let entries = [], busy = null, lastError = "", loadKey = "";   // registry list + load/install state
+  let query = "", filterCat = "";                                // active search / category filter
+  let errName = "", errText = "";                                // per-entry inline install error
+  let detailName = null, booted = false;
+  const expanded = new Set();       // shelf ids the user opened with "Show all"
+  // Discover is a shop WINDOW, not the inventory. A closed shelf used to show four entries, and
+  // with the nine categories the shipped registry carries that made the whole card 6,065px tall
+  // at 390px and 5,825px at a 736px widget (measured 2026-08-14, chat form) — a conversation
+  // scrolled past a storefront instead of glancing at one. A shelf shows a couple now and hands
+  // the rest to "See all" (which opens the category view, where nothing is capped) and to the
+  // category nav — the pill strip when narrow, the rail when wide.
+  //
+  // THREE IS A ROW, NOT A NUMBER — and only the viewer's wide form has one. The rule was written
+  // as "one row across", which the browser viewer honours literally: at 1280px the grid is three
+  // 440px tracks and three cards are one glance. A 736px chat widget is wide by the media query
+  // and NOT wide in the way that matters — the rail takes 202px, the main column is 493px, and
+  // `auto-fill` at a 330px minimum yields ONE track — so three cards there are three rows, which
+  // is the narrow case wearing the wide breakpoint's clothes. Measured, that difference is 272px
+  // of the card (2,233px at cap 3 versus 1,961px at cap 2). Hence: the CONTEXT picks the cap and
+  // the width only refines it inside the viewer.
+  const shelfCap = () => (!chat() && WIDE.matches ? 3 : 2);
+
+  const ICONS = {
+    discover: "M8 1.8l1.7 4.1L14 7.6l-4.3 1.7L8 13.4l-1.7-4.1L2 7.6l4.3-1.7z",
+    spark: "M8 2v3.2M8 10.8V14M2 8h3.2M10.8 8H14M4 4l2.2 2.2M9.8 9.8 12 12M12 4 9.8 6.2M6.2 9.8 4 12",
+    category: "M2.5 2.5h4.2v4.2H2.5zM9.3 2.5h4.2v4.2H9.3zM2.5 9.3h4.2v4.2H2.5zM9.3 9.3h4.2v4.2H9.3z",
+    box: "M8 1.8 13.5 5v6L8 14.2 2.5 11V5zM2.5 5 8 8.2 13.5 5M8 8.2V14.2",
+    down: "M3.5 6l4.5 4.5L12.5 6",
+    back: "M9.5 3.5 5 8l4.5 4.5",
+    plus: "M8 3.2v9.6M3.2 8h9.6",
+    check: "M3 8.5l3.5 3.5L13 5",
+    arrow: "M4 12 12 4M5.5 4H12v6.5",
+  };
+  const glyph = (n, cls) => `<svg${cls ? ` class="${cls}"` : ""} viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
+  const hueOf = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 5; };
+  const TONES = ["", "mint", "wine", "warn", "plain"];
+
+  // ---- live preview plumbing (write-set D) ---------------------------------------------
+  // Previews mount through oma.embed with the INERT preset: the runner machine
+  // (src/runner.mjs, bundled into the shell runtime) composes the sandboxed document —
+  // CSP-first, host tokens re-emitted — and feeds the entry's fixture snapshot. The app
+  // renders exactly as it would live, but inert: every write resolves harmlessly, nothing
+  // reaches the store, pointer events never enter the frame.
+  //
+  // IFRAME BUDGET — deliberately tighter than the SaaS storefront, which owns a whole page, and
+  // split by CONTEXT rather than by width:
+  //   · a chat host: ZERO speculative frames. The only live preview is the one in a detail view
+  //     the user opened — a single frame, asked for by a tap. Nothing on Discover carries a
+  //     `data-pv` slot there, so the budget machine below finds nothing to mount and no
+  //     `app_store_preview` call is made until someone opens an app. This is not only about
+  //     documents: at a 736px widget Discover was laying out 25 preview windows, six of them
+  //     mounted and the rest empty grey boxes, in a card that is scrolled past in a transcript.
+  //   · the browser viewer (`/view`, and an embedding shell): unchanged. Wide lazy-mounts as a
+  //     card nears the viewport with a hard cap of LIVE_CAP frames at once; mounting past the cap
+  //     releases the furthest one, which re-mounts if it scrolls back in. Narrow there still
+  //     carries only the featured card, which is where this budget started.
+  // The detail view's frame is tracked SEPARATELY and is never evicted: its wrap survives the
+  // re-renders that rebuild the grid, so releasing it here would blank a preview nothing rebuilds.
+  const LIVE_CAP = 6;           // sandboxed documents alive at once
+  const MOUNT_MARGIN = 200;     // px beyond the viewport that still counts as "about to be seen"
+  const previews = new Map();   // wrap element -> embed handle
+  let detailPv = null;          // the detail view's own embed handle, or null
+  function dropDetailPv() {     // the ONE place the detail view's iframe is released
+    if (detailPv) { try { detailPv.unmount(); } catch {} detailPv = null; }
+  }
+  function unmountWrap(wrap) {
+    const h = previews.get(wrap);
+    if (h) { previews.delete(wrap); try { h.unmount(); } catch {} }
+    if (wrap.isConnected) { wrap.innerHTML = skel(); delete wrap.dataset.live; }
+  }
+  function releaseGridPreviews() { for (const w of [...previews.keys()]) unmountWrap(w); }
+
+  const sections = document.getElementById("sections");
+  const detailBox = document.getElementById("detail");
+  const skel = () => '<div class="pv-skel k-skel"></div>';
+
+  // 🔴 ONE PASS OWNS WHICH WRAPS ARE LIVE. The first version let every finishing mount evict
+  // "the oldest" and re-observe the victim — a race with no owner. On a 1280x900 viewport eight
+  // wraps started together, each eviction re-armed a wrap that was still ON SCREEN, the observer
+  // re-fired, and the run settled with three cards permanently claimed-but-empty while off-screen
+  // cards kept their frames (measured 2026-08-13: 8 wraps marked live, 5 iframes).
+  //
+  // Priority is distance from the viewport centre, so a card you are looking at always outranks one
+  // you are not, and the pass is idempotent — running it twice changes nothing. Eviction can no
+  // longer blank something in view unless the budget is genuinely full of nearer cards.
+  let syncQueued = false;
+  function queueSync() {
+    if (syncQueued) return;
+    syncQueued = true;
+    requestAnimationFrame(() => { syncQueued = false; syncPreviews(); });
+  }
+  function syncPreviews() {
+    const vh = window.innerHeight || 800;
+    const scored = [];
+    for (const w of document.querySelectorAll(".pv[data-pv]")) {
+      if (w.dataset.role === "detail") continue;           // the detail frame is never in the pool
+      const r = w.getBoundingClientRect();
+      if (!r.width && !r.height) continue;                 // a hidden ancestor — not a candidate
+      if (r.bottom < -MOUNT_MARGIN || r.top > vh + MOUNT_MARGIN) continue;
+      scored.push([Math.abs(r.top + r.height / 2 - vh / 2), w]);
+    }
+    scored.sort((a, b) => a[0] - b[0]);
+    const want = new Set(scored.slice(0, LIVE_CAP).map((x) => x[1]));
+    for (const w of [...previews.keys()]) if (!want.has(w)) unmountWrap(w);
+    for (const w of want) if (!w.dataset.live) mountPreview(w);
+  }
+  addEventListener("scroll", queueSync, { passive: true, capture: true });
+  addEventListener("resize", queueSync, { passive: true });
+  // A chat host scrolls the PARENT document, where no scroll event of ours ever fires — there the
+  // observer is the trigger. It decides nothing; it only asks for a pass.
+  const io = new IntersectionObserver(queueSync, { rootMargin: MOUNT_MARGIN + "px" });
+  async function mountPreview(wrap) {
+    if (wrap.dataset.live) return;    // one mount per element (render() creates fresh elements)
+    wrap.dataset.live = "1";
+    // The detail view REUSES its wrap across entries — bind this response to the entry it was asked
+    // for, and drop it if the wrap moved on (or left the DOM) while the call was in flight.
+    const name = wrap.dataset.pv;
+    const detail = wrap.dataset.role === "detail";
+    const stale = () => !wrap.isConnected || wrap.dataset.pv !== name;
+    try {
+      const r = await oma.callTool("app_store_preview", { name });
+      if (stale()) return;
+      const sc = r && !r.isError ? r.structuredContent : null;
+      if (!sc || !sc.html) throw new Error("no preview payload");
+      const h = await oma.embed(name, {
+        into: wrap, preset: "inert", html: sc.html, fit: { width: NATURAL_W },
+        // `declaration` is the entry's own manifest, and without it the snapshot slice can only
+        // allow the app's NAME — so the 8 store entries whose rows live somewhere else (companion
+        // → companion-profile/-memories/-knows, elder-days → elder-meds/-checks/-vitals, …) were
+        // handed nothing and previewed their empty state. childPreviewSnapshot grew the parameter
+        // for exactly this and nothing ever passed it. The tier stays implicit: html is supplied,
+        // so embed never fetches app_html and defaults to "local" — which is the truth here, these
+        // are first-party entries read off disk, and it is what unlocks reading the manifest at all.
+        declaration: sc.manifest,
+        snapshot: { collection: name, items: (sc.fixtures && sc.fixtures.items) || [], version: 1 },
+      });
+      if (stale()) { h.unmount(); return; }
+      if (detail) detailPv = h; else previews.set(wrap, h);
+      wrap.prepend(h.el);   // the frame sits under the skeleton until it loads
+      h.el.setAttribute("title", name + " preview");
+      h.el.addEventListener("load", () => wrap.querySelector(".pv-skel")?.remove(), { once: true });
+      queueSync();   // a mount that landed after the pass that wanted it gets reconciled here
+    } catch (e) {
+      if (stale()) return;
+      // SAY WHY. This catch-all is the right shape — one broken entry must not take the grid down —
+      // but it used to swallow the only evidence there was, so "preview unavailable" was
+      // undiagnosable from a screenshot AND from the code. (It hid a real one: app_store_preview
+      // failing output validation for an entry whose fixtures followed the documented convention.)
+      console.warn(`[oma] App Store preview failed for "${name}":`, e);
+      wrap.querySelector(".pv-skel")?.remove();
+      wrap.insertAdjacentHTML("afterbegin", `<div class="pv-empty">${esc(t("previewUnavailable"))}</div>`);
+    }
+  }
+  // A preview window, or nothing at all when the budget says so.
+  const pvBox = (e, cls, role) =>
+    `<div class="pv ${cls}" data-pv="${esc(e.name)}"${role ? ` data-role="${role}"` : ""}>${skel()}</div>`;
+
+  // ---- search + filter -------------------------------------------------------------------
+  // Interim client-side ranker over the loaded registry — a documented approximation of the
+  // future app_store_search BM25 field weights (name prefix > title word > any name/title hit >
+  // description hit). Swapped wholesale when that tool lands; the two are never mixed.
+  function rankOf(e) {
+    const q = query.toLowerCase();
+    const n = e.name.toLowerCase(), tt = (e.title || "").toLowerCase();
+    if (n.startsWith(q)) return 0;
+    if (tt.split(/\W+/).some((w) => w.startsWith(q))) return 1;
+    if (n.includes(q) || tt.includes(q)) return 2;
+    if ((e.description || "").toLowerCase().includes(q)) return 3;
+    return 9;
+  }
+  const matches = (e) => (!filterCat || e.category === filterCat) && (!query || rankOf(e) < 9);
+  const visible = () => {
+    const s = entries.filter(matches);
+    return query ? s.sort((a, b) => rankOf(a) - rankOf(b) || a.name.localeCompare(b.name)) : s;
+  };
+  // Mode-prefixed fingerprint of what render() would show — the keystroke gate compares these.
+  const viewKey = () => (query ? "s:" : "b:") + filterCat + ":" + visible().map((e) => e.name).join("|");
+  // Escape-then-highlight: match on the raw string, wrap the escaped slice in <mark>.
+  function mark(s) {
+    s = String(s);
+    const q = query.toLowerCase(), i = q ? s.toLowerCase().indexOf(q) : -1;
+    if (i < 0) return esc(s);
+    return esc(s.slice(0, i)) + "<mark>" + esc(s.slice(i, i + q.length)) + "</mark>" + esc(s.slice(i + q.length));
+  }
+  const countLabel = (n) => (n === 1 ? t("appCount1") : t("appCount", { n }));
+
+  // ---- cards + shelves -------------------------------------------------------------------
+  function chip(e) {
+    if (e.update_available) return `<span class="stateChip chip-up">${esc(t("updateChip"))}</span>`;
+    if (e.installed && e.from_app_store) return `<span class="stateChip chip-ok">${esc(t("addedChip"))} ✓</span>`;
+    if (e.installed) return `<span class="stateChip chip-mut">${esc(t("inUseChip"))}</span>`;
+    return "";
+  }
+  function action(e) {
+    if (busy === e.name) return `<button class="addBtn" disabled>${esc(t("adding"))}</button>`;
+    if (e.update_available) return `<button class="addBtn" data-install="${esc(e.name)}">${esc(t("update"))}</button>`;
+    if (e.installed && e.from_app_store) return oma.standalone
+      ? `<a class="addBtn sec" href="${esc(oma.viewBase + e.name)}">${esc(t("open"))}</a>`
+      : `<button class="addBtn sec" data-open="${esc(e.name)}">${esc(t("open"))}</button>`;
+    if (e.installed) return `<button class="addBtn" disabled title="${esc(t("unavailableNameTitle"))}">${esc(t("unavailableName"))}</button>`;
+    return `<button class="addBtn" data-install="${esc(e.name)}">${glyph("plus")}${esc(t("add"))}</button>`;
+  }
+  const stateClass = (e) => e.update_available ? " updatable" : (e.installed && e.from_app_store) ? " installed" : "";
+  const cardErr = (e) => e.name === errName ? `<div class="cardErr" role="alert">${esc(errText)}</div>` : "";
+  function card(e, i) {
+    // One question decides the whole shape: does this card get a picture? Only the browser viewer
+    // wide enough for the two-track layout does (iframe budget above). Everything else is the
+    // slim row, whose CSS block explains what it drops and why.
+    if (chat() || !WIDE.matches) return `<div class="appCard slim${stateClass(e)}" data-name="${esc(e.name)}" style="--i:${i}">
+      <button class="cardBody" type="button" data-view="${esc(e.name)}">
+        <span class="cardMark" data-tone="${TONES[hueOf(e.name)]}" aria-hidden="true">${glyph("box")}</span>
+        <span class="cardText">
+          <span class="t">${mark(e.title || e.name)}</span>
+          <span class="d">${mark(e.description || e.name)}</span>
+        </span>
+      </button>
+      <div class="cardAct">${action(e)}</div>
+      ${cardErr(e)}
+    </div>`;
+    return `<div class="appCard${WIDE_CARDS.has(e.name) ? " wide" : ""}${stateClass(e)}" data-name="${esc(e.name)}" style="--i:${i}">
+      ${pvBox(e, "cardPreview")}
+      <div>
+        <button class="cardBody" type="button" data-view="${esc(e.name)}">
+          <span class="cardText">
+            <small>${esc(e.category)}</small>
+            <span class="t">${mark(e.title || e.name)}</span>
+            <span class="d k-ellip2">${mark(e.description || e.name)}</span>
+            <span class="cardFoot">${esc(t("by"))} ${esc(t("makers"))}<span class="viewPill">${esc(t("view"))}</span></span>
+          </span>
+        </button>
+        <div class="cardAct">${chip(e)}<span class="k-grow"></span>${action(e)}</div>
+      </div>
+      ${cardErr(e)}
+    </div>`;
+  }
+  // A shelf: heading + count + row grid. On Discover a closed shelf shows shelfCap() entries and
+  // the heading's "See all" opens the category view; an OPEN shelf (the category view itself)
+  // shows everything. The "Show all N" expander is a browser-viewer affordance only: in a chat
+  // card it would add a button under all nine shelves to duplicate the link already in the
+  // heading, and page length is the whole point of this pass.
+  function shelf(id, label, list, open) {
+    if (!list.length) return "";
+    const capped = !open && list.length > shelfCap();
+    const shown = capped ? list.slice(0, shelfCap()) : list;
+    return `<section class="section" data-shelf="${esc(id)}">
+      <div class="sectionHeading"><h2>${esc(label)}</h2><span>${esc(countLabel(list.length))}</span>${
+        open || filterCat === id ? "" : `<button class="seeAll" data-cat="${esc(id)}">${esc(t("seeAll"))}</button>`}</div>
+      <div class="appsGrid${booted ? "" : " k-stagger"}">${shown.map(card).join("")}</div>
+      ${capped && !chat() ? `<button class="showMore" data-more="${esc(id)}">${esc(t("showAll", { n: list.length }))}${glyph("down")}</button>` : ""}
+    </section>`;
+  }
+  // The one editorial slot: a big card with a live preview, plus a three-up "useful now" rail.
+  function featuredBlock(list) {
+    const pick = START_HERE.map((n) => list.find((e) => e.name === n)).find(Boolean) || list[0];
+    if (!pick) return "";
+    const rank = (n) => { const i = START_HERE.indexOf(n); return i < 0 ? 99 : i; };
+    const rail = list.filter((e) => e.name !== pick.name)
+      .slice().sort((a, b) => rank(a.name) - rank(b.name)).slice(0, 3);
+    const art = chat() || !WIDE.matches;   // same question the app cards ask: is there a picture?
+    const railHtml = !rail.length ? "" : `<section class="section">
+      <div class="sectionHeading"><h2>${esc(t("usefulNow"))}</h2><span class="lede">${esc(t("usefulNowDetail"))}</span></div>
+      <div class="editorialGrid">${rail.map((e, i) => `
+        <button class="editorialCard${art ? " slim" : ""}" type="button" data-view="${esc(e.name)}">
+          <span class="editorialCopy">
+            <small>${esc(t(EDITORIAL_LABELS[i] || "appsWeLove"))}</small>
+            <b>${esc(e.title || e.name)}</b>
+            <span>${esc(e.category)}</span>
+          </span>
+          ${art ? "" : pvBox(e, "editorialPreview")}
+        </button>`).join("")}</div>
+    </section>`;
+    return `<button class="featured" type="button" id="featured" data-view="${esc(pick.name)}">
+      <span class="featuredCopy">
+        <span>
+          <small>${esc(t("editorsIntroduction"))}</small>
+          <span class="fTitle">${esc(pick.title || pick.name)}</span>
+          <span class="fDesc">${esc(pick.description || "")}</span>
+        </span>
+        <span class="featuredAction">${esc(t("openLiveApp"))} <i aria-hidden="true">→</i></span>
+      </span>
+      ${chat()
+        ? `<span class="featuredArt" aria-hidden="true"><span class="artTile">${glyph("box")}</span></span>`
+        : `<span class="featuredVisual">${pvBox(pick, "featuredPreview")}</span>`}
+    </button>${railHtml}`;
+  }
+  // Search miss — the miss→generate loop: standalone gets a copyable prompt, chat a real button.
+  function miss() {
+    const ask = t("buildPrompt", { q: query });
+    return `<div class="emptyState">
+      <div>
+        <span class="mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="10.5" cy="10.5" r="6.5"/><path d="m15.5 15.5 5 5"/></svg></span>
+        <h2>${esc(t("noApps"))}</h2>
+        <p>${esc(t("noAppsDetail"))}</p>
+        ${oma.standalone
+          ? `<span class="ask-hint">${esc(t("askYourAi"))} <span class="k-code">${esc(ask)}</span></span>`
+          : `<button class="addBtn" data-build>${esc(t("buildIt"))}</button>`}
+      </div>
+    </div>`;
+  }
+
+  // ---- chrome: rail nav, category strip, counters ------------------------------------------
+  function categories() {
+    const seen = new Map();
+    for (const e of entries) seen.set(e.category, (seen.get(e.category) || 0) + 1);
+    const known = CAT_ORDER.filter((c) => seen.has(c));
+    const rest = [...seen.keys()].filter((c) => !CAT_ORDER.includes(c)).sort();
+    return [...known, ...rest].map((c) => ({ name: c, count: seen.get(c) }));
+  }
+  function syncChrome() {
+    const cats = categories();
+    const nav = document.getElementById("railNav");
+    nav.innerHTML = "";
+    const mk = (label, glyphName, cat, count) => {
+      const b = document.createElement("button");
+      b.type = "button";
+      b.dataset.active = String(cat === null ? (!filterCat && !query) : filterCat === cat);
+      if (cat !== null) b.dataset.cat = cat; else b.dataset.unfilter = "1";
+      b.innerHTML = glyph(glyphName) + `<span>${esc(label)}</span>` + (count != null ? `<small>${count}</small>` : "");
+      return b;
+    };
+    nav.append(mk(t("discover"), "discover", null));
+    const feat = document.createElement("button");
+    feat.type = "button";
+    feat.dataset.jump = "featured";
+    feat.innerHTML = glyph("spark") + `<span>${esc(t("featured"))}</span>`;
+    nav.append(feat);
+    if (cats.length) {
+      const lab = document.createElement("span");
+      lab.className = "navLabel";
+      lab.textContent = t("collections");
+      nav.append(lab);
+      for (const c of cats) nav.append(mk(c.name, "category", c.name, c.count));
+    }
+    const strip = document.getElementById("catStrip");
+    strip.innerHTML = "";
+    strip.hidden = !cats.length || !!query;
+    if (!strip.hidden) {
+      const all = document.createElement("button");
+      all.type = "button"; all.dataset.unfilter = "1"; all.dataset.active = String(!filterCat);
+      all.textContent = t("discover");
+      strip.append(all);
+      for (const c of cats) {
+        const b = document.createElement("button");
+        b.type = "button"; b.dataset.cat = c.name; b.dataset.active = String(filterCat === c.name);
+        b.textContent = c.name;
+        strip.append(b);
+      }
+    }
+    const active = !!(query || filterCat);
+    document.getElementById("eyebrow").textContent = query ? t("searchResults") : filterCat ? t("collections") : t("shelf");
+    document.getElementById("page-h").textContent = query ? `“${query}”` : filterCat || (WIDE.matches ? t("discover") : t("apps"));
+    for (const box of document.querySelectorAll("#q, #q-m")) if (box.value !== query) box.value = query;
+    const n = entries.length;
+    const shown = active ? entries.filter(matches).length : n;
+    const reading = active ? t("ofCount", { shown, total: n }) : (n === 1 ? t("liveApp") : t("liveApps"));
+    document.getElementById("pulseT").textContent = reading;
+    // The capsule bar's chip says exactly what the rail's counter says — one reading, and the
+    // bar is the only place it can appear in the form that has no rail (a card in a chat).
+    document.getElementById("barStatus").textContent = active ? reading : `${shown} ${reading}`;
+    pulse(shown);
+  }
+  function countUp(el, to) {
+    if (REDUCE || to < 2) { el.textContent = to; return; }
+    const t0 = performance.now();
+    (function tick(ts) {
+      const p = Math.min((ts - t0) / 500, 1), e = 1 - (1 - p) ** 3;   // ease-out cubic
+      el.textContent = Math.round(to * e);
+      if (p < 1) requestAnimationFrame(tick);
+    })(t0);
+  }
+  // The rail's live counter = entry count from the local registry, nothing more (no install
+  // counts anywhere). It animates once, on first mount.
+  function pulse(n) {
+    const el = document.getElementById("pulseN");
+    if (booted) el.textContent = n; else countUp(el, n);
+  }
+
+  // ---- detail view -------------------------------------------------------------------------
+  // Codex's storefront gives an app a PAGE, not a drawer: preview, install, meta strip, the
+  // "becomes yours" story, and a rail back into its category. Here it swaps in for the browse
+  // block, so the document keeps its natural height and needs no scrollport of its own.
+  let detailTrigger = null;   // the element that opened it — focus home on close
+  function openDetail(name, from) {
+    if (!detailName) detailTrigger = from || null;   // entry switches inside the view keep the original
+    detailName = name;
+    buildDetail();
+    document.getElementById("browse").hidden = true;   // the covered grid measures zero…
+    detailBox.hidden = false;
+    queueSync();                                       // …so the next pass releases its frames
+    document.getElementById("d-back")?.focus();
+  }
+  function closeDetail() {
+    if (!detailName) return;
+    dropDetailPv();
+    // Back to the retained trigger — or, if a re-render replaced it, to its rebuilt card.
+    const back = detailTrigger?.isConnected ? detailTrigger
+      : sections.querySelector(`[data-view="${CSS.escape(detailName)}"]`);
+    detailName = null; detailTrigger = null;
+    detailBox.hidden = true;
+    detailBox.innerHTML = "";
+    delete detailBox.dataset.entry;
+    document.getElementById("browse").hidden = false;
+    queueSync();
+    back?.focus();
+  }
+  // Installed entries point at settings for manage/remove — the detail view never grows its own
+  // remove button (cross-app ruling: Remove lives in settings' Installed detail view).
+  const manage = (e) => !(e.installed && e.from_app_store) ? "" : oma.standalone
+    ? `<a class="addBtn quiet" href="${esc(oma.viewBase + "settings")}">${esc(t("manageInSettings"))}</a>`
+    : `<button class="addBtn quiet" data-settings>${esc(t("manageInSettings"))}</button>`;
+  // Rebuilt ONLY when the entry changes: a state refresh (an install finishing, a refocus poll)
+  // repaints the action row in place. Re-running innerHTML would detach the preview iframe, and a
+  // detached-then-reattached iframe re-parses its srcdoc — the preview would blink on every poll.
+  function buildDetail() {
+    const e = entries.find((x) => x.name === detailName);
+    if (!e) return closeDetail();                 // entry left the registry list
+    if (detailBox.dataset.entry === e.name) { refreshDetailState(e); return; }
+    detailBox.dataset.entry = e.name;
+    dropDetailPv();
+    const rel = entries.filter((x) => x.category === e.category && x.name !== e.name).slice(0, 4);
+    const kb = (e.ui_size / 1024).toFixed(1) + " KB";
+    // The thumbnail is a SECOND live document of the same app, two screens above the big preview
+    // that already shows it. In a chat card the budget is one frame and this is not the one worth
+    // spending it on, so the header goes single-column there (as it already did when narrow).
+    const thumb = !chat() && WIDE.matches ? `<div class="detailThumb">${pvBox(e, "detailThumbPv")}</div>` : "";
+    // "More in <category>" rows never carried a preview, so they are slim by the same rule the
+    // browse grid follows — which also lifts them out of the wide two-track layout, where a
+    // pictureless card was being laid into the 140px picture track with the other track empty.
+    const relHtml = !rel.length ? "" : `<section class="section">
+      <div class="sectionHeading"><h2>${esc(t("moreLikeThis", { cat: e.category }))}</h2><span>${esc(countLabel(rel.length))}</span></div>
+      <div class="appsGrid">${rel.map((x) => `<div class="appCard slim${stateClass(x)}">
+        <button class="cardBody" type="button" data-view="${esc(x.name)}">
+          <span class="cardMark" data-tone="${TONES[hueOf(x.name)]}" aria-hidden="true">${glyph("box")}</span>
+          <span class="cardText"><span class="t">${esc(x.title || x.name)}</span>
+            <span class="d">${esc(x.description || "")}</span></span>
+        </button></div>`).join("")}</div>
+    </section>`;
+    detailBox.innerHTML = `
+      <button class="backLink" id="d-back">${glyph("back")}<span>${esc(t("backToDiscover"))}</span></button>
+      <div class="detailHeader${thumb ? "" : " solo"}">
+        ${thumb}
+        <div class="detailSummary">
+          <span class="eyebrow">${esc(e.category)}</span>
+          <h1 id="d-title">${esc(e.title || e.name)}</h1>
+          <p class="publisher">${esc(t("publisher"))}</p>
+          <p class="detailDescription">${esc(e.description || "")}</p>
+          <div class="detailActions" id="d-actions"></div>
+          <div class="detailErr" id="d-err" role="alert" hidden></div>
+        </div>
+      </div>
+      <div class="metaStrip">
+        <div><small>${esc(t("metaFormat"))}</small><b>${esc(t("metaFormatValue"))}</b></div>
+        <div><small>${esc(t("metaCollection"))}</small><b>${esc(e.category)}</b></div>
+        <div><small>${esc(t("metaSize"))}</small><b class="k-num">${esc(kb)}</b></div>
+        <div><small>${esc(t("metaPrice"))}</small><b>${esc(t("metaPriceValue"))}</b></div>
+      </div>
+      <section class="section">
+        <div class="sectionHeading"><h2>${esc(t("preview"))}</h2><span>${esc(t("previewMeta"))}</span></div>
+        <div class="previewCard">${pvBox(e, "", "detail")}
+          <p class="previewCaption"><i aria-hidden="true"></i>${esc(t("previewCaption"))}</p>
+        </div>
+      </section>
+      <section class="section">
+        <div class="sectionHeading"><h2>${esc(t("builtForYou"))}</h2></div>
+        <div class="storyGrid">
+          <div class="storyCard"><small>${esc(t("story1Eyebrow"))}</small><h3>${esc(t("story1Title"))}</h3><p>${esc(t("story1Body"))}</p></div>
+          <div class="storyCard"><small>${esc(t("story2Eyebrow"))}</small><h3>${esc(t("story2Title"))}</h3><p>${esc(t("story2Body"))}</p></div>
+        </div>
+      </section>
+      ${relHtml}`;
+    refreshDetailState(e);
+    mountPreview(detailBox.querySelector('.pv[data-role="detail"]'));
+    const thumbWrap = detailBox.querySelector(".detailThumbPv[data-pv]");
+    if (thumbWrap) { io.observe(thumbWrap); queueSync(); }
+  }
+  /** The only part of the detail view a state refresh may touch. */
+  function refreshDetailState(e) {
+    const acts = document.getElementById("d-actions");
+    if (acts) acts.innerHTML = chip(e) + action(e) + manage(e);
+    const err = document.getElementById("d-err");
+    if (err) { err.hidden = errName !== e.name; err.textContent = errName === e.name ? errText : ""; }
+  }
+
+  // ---- render ------------------------------------------------------------------------------
+  function render() {
+    releaseGridPreviews();                   // grid handles hold listeners — release before rebuilding
+    syncChrome();                            // (the detail view's handle is deliberately NOT in there)
+    document.getElementById("empty").hidden = entries.length > 0 || !!lastError;
+    document.getElementById("err").textContent = lastError;
+    const shown = visible();
+    let html;
+    if (query) {
+      // Search mode: one flat, ranked grid — hits never scatter across category sections.
+      html = shown.length ? `<div class="appsGrid">${shown.map(card).join("")}</div>` : miss();
+    } else if (filterCat) {
+      html = shelf(filterCat, filterCat, shown, true);
+    } else {
+      const cats = categories().map((c) => c.name);
+      html = featuredBlock(shown) + cats.map((c) => shelf(c, c, shown.filter((e) => e.category === c), expanded.has(c))).join("");
+    }
+    sections.innerHTML = html;
+    for (const wrap of sections.querySelectorAll(".pv[data-pv]")) io.observe(wrap);
+    queueSync();
+    if (detailName) buildDetail();   // the detail view mirrors the fresh install state
+    booted = true;
+  }
+  // Same visible set → keep the mounted previews alive, refresh only the <mark> highlights.
+  function retitle() {
+    for (const c of sections.querySelectorAll(".appCard")) {
+      const e = entries.find((x) => x.name === c.dataset.name);
+      if (!e) continue;
+      c.querySelector(".cardText .t").innerHTML = mark(e.title || e.name);
+      c.querySelector(".cardText .d").innerHTML = mark(e.description || e.name);
+    }
+  }
+
+  async function load(force) {
+    // Local registry only — the complete Tier-0 view, not a degraded one. Integration point:
+    // when the engine grows the remote feed (app_store_browse, docs/library-design.md), merge its
+    // entries here (same-name remote official replaces the builtin row) and light a feed-failure
+    // banner in the rail when that fetch fails. Absent feed → nothing extra renders.
+    try {
+      const r = await oma.callTool("app_store_list", {});
+      const sc = r && !r.isError ? r.structuredContent : null;
+      if (!sc) throw new Error("app_store_list failed");
+      entries = sc.entries || [];
+      lastError = "";
+    } catch {
+      lastError = t("loadFailed");
+    }
+    // Change-gated: a no-change refocus poll must not tear down the mounted live previews.
+    // The error state rides the fingerprint, so a failure and its recovery each render exactly
+    // once — even when recovery returns identical entries — and repeated failures render none.
+    const key = JSON.stringify([entries, lastError]);
+    if (force || key !== loadKey) { loadKey = key; render(); }
+  }
+  async function install(name) {
+    // v0: every entry is local, so Add always routes through install_from_app_store. Remote index
+    // entries will route through app_store_install {id, command_id} (SRI-verified) when that tool
+    // lands — cross-app ruling §2-7 — over this same busy/error/reload cycle.
+    busy = name; errName = errText = ""; render();
+    try {
+      const r = await oma.callTool("install_from_app_store", { name, command_id: uuid() });
+      if (r && r.isError) {
+        const txt = (r.content || []).find((c) => c.type === "text");
+        errName = name; errText = (txt && txt.text) || t("addFailed");
+      }
+    } catch (e) {
+      errName = name; errText = (e && e.message) || t("addFailed");
+    } finally {
+      busy = null;
+      await load(true);
+    }
+  }
+
+  // ---- events ------------------------------------------------------------------------------
+  document.body.addEventListener("click", (ev) => {
+    const el = ev.target.closest("button, a");
+    if (!el) return;
+    if (el.dataset.install) install(el.dataset.install);
+    else if (el.dataset.open) oma.sendMessage(t("openAppMsg", { name: el.dataset.open }));
+    else if (el.dataset.view) openDetail(el.dataset.view, el);
+    else if (el.dataset.cat != null) { filterCat = el.dataset.cat; query = ""; expanded.clear(); closeDetail(); render(); }
+    else if (el.dataset.unfilter != null) { filterCat = ""; query = ""; closeDetail(); render(); }
+    else if (el.dataset.jump != null) { closeDetail(); document.getElementById("featured")?.scrollIntoView({ behavior: REDUCE ? "auto" : "smooth", block: "start" }); }
+    else if (el.dataset.more != null) { expanded.add(el.dataset.more); render(); }
+    else if (el.dataset.build != null) oma.sendMessage(t("buildPrompt", { q: query }));
+    else if (el.dataset.settings != null) oma.sendMessage(t("openSettingsMsg"));
+    else if (el.dataset.clear != null) { query = ""; render(); }
+    else if (el.id === "d-back") closeDetail();
+  });
+  sections.addEventListener("keydown", (ev) => {
+    const c = ev.target.closest(".appCard");
+    if (!c) return;
+    if (ev.key === "ArrowDown" || ev.key === "ArrowUp") {
+      const cards = [...sections.querySelectorAll(".appCard .cardBody")];
+      const next = cards[cards.indexOf(ev.target.closest(".cardBody")) + (ev.key === "ArrowDown" ? 1 : -1)];
+      if (next) { ev.preventDefault(); next.focus(); }
+    }
+  });
+  // "/" focuses search; Esc peels one layer at a time: detail → query → open shelves → filter.
+  // Shelf expansions are cleared the moment search or a category filter STARTS (Esc-layering
+  // ruling), so the open-shelves layer only exists in browse mode — no invisible survivor
+  // waiting to reappear after the first Escape. In a chat card the layer never fills at all:
+  // that form draws no expander (shelf()), and "See all" opens the category view instead.
+  const searchBoxes = [document.getElementById("q"), document.getElementById("q-m")];
+  document.addEventListener("keydown", (ev) => {
+    if (ev.key === "/" && !/^(INPUT|TEXTAREA)$/.test(ev.target.tagName)) {
+      ev.preventDefault();
+      (WIDE.matches ? searchBoxes[0] : searchBoxes[1]).focus();
+    } else if (ev.key === "Escape") {
+      if (detailName) closeDetail();
+      else if (query) { query = ""; render(); }
+      else if (expanded.size) { expanded.clear(); render(); }
+      else if (filterCat) { filterCat = ""; render(); }
+    }
+  });
+  // Debounced + change-gated: a full render() tears down and re-mounts every visible preview
+  // iframe (fresh app_store_preview fetch each), so keystrokes must not trigger it needlessly.
+  let qTimer = null;
+  for (const box of searchBoxes) box.addEventListener("input", (ev) => {
+    clearTimeout(qTimer);
+    qTimer = setTimeout(() => {
+      const next = ev.target.value.trim();
+      if (next === query) return;
+      const before = viewKey();
+      if (next && !query) expanded.clear();   // entering search — browse expansions don't survive it
+      query = next;
+      if (viewKey() !== before) render();
+      else { syncChrome(); retitle(); }
+    }, 180);
+  });
+  // Registry writes never reach oma.onChange (it is collection-scoped) — instead re-list on
+  // refocus; the load() gate keeps a no-change poll from touching the DOM.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) load(); });
+  // Crossing the breakpoint changes which cards carry a live frame, what shape they take, and how
+  // many of them a shelf shows — rebuild.
+  WIDE.addEventListener("change", () => {
+    delete detailBox.dataset.entry;   // which cards carry a frame changes with the breakpoint
+    if (booted) render();
+  });
+  // Density (shared pref, zero new keys): compact tightens preview height + card padding.
+  const applyDensity = () => document.body.classList.toggle("compact", oma.pref("density", "comfortable") === "compact");
+  function applyI18n() {
+    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+    document.title = t("documentTitle");
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+    for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  }
+  // onPrefChange fires for EVERY settings write, and a render() tears down every mounted preview.
+  // Only the two preferences this app actually reads may cost a repaint.
+  let prefKey = "";
+  oma.onPrefChange(() => {
+    applyDensity();
+    const k = language() + "|" + oma.pref("density", "comfortable");
+    if (k === prefKey) return;
+    prefKey = k;
+    applyI18n();
+    delete detailBox.dataset.entry;
+    if (booted) render();
+  });
+
+  oma.ready(() => {
+    // Browser viewer: the runtime's stage frames the page there, so the app drops its own ground.
+    if (oma.standalone) document.body.classList.add("standalone");
+    applyDensity();
+    applyI18n();
+    prefKey = language() + "|" + oma.pref("density", "comfortable");
+    load();
+  });
+</script>
+</body>
+</html>

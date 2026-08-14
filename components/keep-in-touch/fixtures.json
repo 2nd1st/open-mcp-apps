@@ -1,0 +1,64 @@
+{
+  "items": [
+    {
+      "id": "a80d1583-4fa0-4d87-91ef-c455f7c50560",
+      "group": "Family",
+      "position": 1,
+      "fields": {
+        "person": "Aunt Rosa",
+        "relationship": "Family",
+        "last_contact": "2026-07-04",
+        "next_contact": "2026-07-21",
+        "channel": "Phone",
+        "context": "She was planning the garden beds—ask what ended up thriving.",
+        "priority": "high"
+      },
+      "version": 1
+    },
+    {
+      "id": "71e584e9-1000-4d66-b0f4-251aae4c9da9",
+      "group": "Friend",
+      "position": 1,
+      "fields": {
+        "person": "Maya Chen",
+        "relationship": "Friend",
+        "last_contact": "2026-06-21",
+        "next_contact": "2026-07-09",
+        "channel": "Signal",
+        "context": "Ask how the first month in her new product role has felt.",
+        "priority": "high"
+      },
+      "version": 1
+    },
+    {
+      "id": "7d330d26-f72f-4ab3-9adf-59d4d4685e50",
+      "group": "Mentor",
+      "position": 1,
+      "fields": {
+        "person": "Lena Ortiz",
+        "relationship": "Mentor",
+        "last_contact": "2026-06-11",
+        "next_contact": "2026-07-26",
+        "channel": "Email",
+        "context": "Share the decision on the new project direction and thank her for the nudge.",
+        "priority": "medium"
+      },
+      "version": 1
+    },
+    {
+      "id": "ba058718-15a5-441e-9834-6ace72264986",
+      "group": "Work",
+      "position": 1,
+      "fields": {
+        "person": "Noah Williams",
+        "relationship": "Work",
+        "last_contact": "2026-07-15",
+        "next_contact": "2026-07-29",
+        "channel": "Coffee",
+        "context": "Congratulate him on the launch and hear what the team learned.",
+        "priority": "medium"
+      },
+      "version": 1
+    }
+  ]
+}

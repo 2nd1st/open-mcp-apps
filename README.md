@@ -49,9 +49,9 @@ Come back in another chat — or another host — and it's still there, with you
 
 ![Claude — a new chat opens the same reading list, now eight books long](.github/screenshots/host-claude.webp)
 
-The built-in library ships 17 ready-made apps — real, working previews, installed in a click:
+The built-in App Store ships 21 ready-made apps — real, working previews, installed in a click:
 
-![The app library — live previews of ready-made apps](.github/screenshots/library.webp)
+![The App Store — live previews of ready-made apps](.github/screenshots/app-store.webp)
 
 | | |
 |---|---|
@@ -167,15 +167,15 @@ only thing standing between the internet and your data.
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
 | `src/guide.mjs` | the authoring contract the AI reads before generating an app |
 | `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
-| `components/` | 3 system apps installed on seed (settings, dashboard, library) + 17 library apps — not auto-installed; browse the library app for live previews with sample data and one-click install |
+| `components/` | 3 system apps installed on seed (settings, dashboard, app-store) + 21 App Store apps — not auto-installed; browse the app-store app for live previews with sample data and one-click install |
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 419 assertions over real stdio — incl. runtime app creation
-node test/http-smoke.mjs     #  53 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/server-smoke.mjs   # 421 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  61 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
-node test/seed-smoke.mjs     #  14 assertions on the seed / design-kit pipeline
-node test/files-smoke.mjs    #  45 assertions on the per-app file store (chunked uploads, GC races)
+node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline
+node test/files-smoke.mjs    #  41 assertions on the per-app file store (chunked uploads, GC races)
 ```
 
 ### Writing an app yourself
@@ -222,7 +222,7 @@ app that isn't locally trusted, plus reserved `security:*` / `policy:*` config k
 generic data writes can't touch and an out-of-band privileged writer.
 
 **Honest status:** everything in the OSS version — your apps, AI-built apps, and the built-in
-library apps (all first-party) — runs locally in direct mode with full trust; there is nothing
+App Store apps (all first-party) — runs locally in direct mode with full trust; there is nothing
 third-party to sandbox yet. The runner is *built and tested but dormant*: it is the ready seam
 for shared/published apps later, where review + sandboxing arrive together. See
 [`SECURITY.md`](SECURITY.md) for the full threat model and trust tiers.
@@ -252,14 +252,14 @@ Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared s
 on Codex desktop and the browser viewer.
 
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system apps installed (settings, dashboard, library); 17 library apps with live previews, one-click install
+- [x] system apps installed (settings, dashboard, app-store); 21 App Store apps with live previews, one-click install
 - [x] AI app creation loop (guide → save → dynamic tool)
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
 - [ ] `npx` one-command install
 - [ ] remote (Streamable HTTP) mode → claude.ai / ChatGPT / mobile
-- [ ] app export/import → sharing → community library (review + runner sandbox activate here)
+- [ ] app export/import → sharing → community App Store (review + runner sandbox activate here)
 
 ## License
 

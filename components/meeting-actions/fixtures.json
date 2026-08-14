@@ -1,0 +1,28 @@
+{
+  "items": [
+    {
+      "id": "meeting-action-01", "group": "mine", "position": 1, "version": 1,
+      "fields": { "title": "Send revised scope", "owner": "me", "person": "Maya Nakamura", "client": "Nakamura Studio", "status": "booked", "due_date": "2026-08-07", "created_date": "2026-08-05", "notes": "Calendar follow-up created" }
+    },
+    {
+      "id": "meeting-action-02", "group": "mine", "position": 2, "version": 1,
+      "fields": { "title": "Share the research outline", "owner": "me", "person": "Priya Shah", "client": "Northstar Lab", "status": "booked", "due_date": "2026-08-10", "created_date": "2026-08-05", "notes": "Attach the synthesis structure" }
+    },
+    {
+      "id": "meeting-action-03", "group": "mine", "position": 3, "version": 1,
+      "fields": { "title": "Confirm workshop attendees", "owner": "me", "person": "Maya Nakamura", "client": "Nakamura Studio", "status": "booked", "due_date": "2026-08-12", "created_date": "2026-08-05", "notes": "Calendar follow-up created" }
+    },
+    {
+      "id": "meeting-action-04", "group": "waiting", "position": 4, "version": 1,
+      "fields": { "title": "Approve revised budget", "owner": "them", "person": "Maya Nakamura", "client": "Nakamura Studio", "status": "waiting", "due_date": "2026-08-08", "created_date": "2026-08-01", "notes": "Needed before scope is final" }
+    },
+    {
+      "id": "meeting-action-05", "group": "waiting", "position": 5, "version": 1,
+      "fields": { "title": "Send analytics access", "owner": "them", "person": "Eli Ward", "client": "Marrow & Field", "status": "waiting", "due_date": "2026-08-06", "created_date": "2026-08-02", "notes": "Blocks the audit" }
+    },
+    {
+      "id": "meeting-action-06", "group": "waiting", "position": 6, "version": 1,
+      "fields": { "title": "Confirm legal reviewer", "owner": "them", "person": "Jon Bell", "client": "Kite & Co", "status": "waiting", "due_date": "2026-08-11", "created_date": "2026-08-04", "notes": "Proposal cannot move without a name" }
+    }
+  ]
+}

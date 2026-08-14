@@ -1,0 +1,2697 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Family Week · This Week, Together</title>
+<meta name="description" content="A shared family week for dinners, shopping, chores, notes, important dates, and weekend plans.">
+<meta name="oma-category" content="Family">
+
+<style>
+  body {
+    max-width: 760px;
+    margin-inline: auto;
+    background: transparent;
+    color: var(--color-text-primary);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    letter-spacing: 0;
+  }
+
+  .app {
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .app-bar {
+    min-height: 66px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .app-mark {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    flex: none;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 36%, var(--color-border-primary));
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, var(--color-background-primary));
+    color: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .app-mark svg {
+    width: 26px;
+    height: 26px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.45;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .app-name {
+    margin: 0;
+    font-size: 19px;
+    font-weight: 680;
+    letter-spacing: 0;
+    line-height: 1.2;
+  }
+
+  .app-actions {
+    margin-left: auto;
+  }
+
+  .app-actions .k-btn {
+    white-space: nowrap;
+  }
+
+  .overview {
+    display: grid;
+    grid-template-columns: minmax(145px, .72fr) minmax(0, 1.28fr);
+    gap: 16px;
+    align-items: center;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
+  }
+
+  .overview-main {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .overview-number {
+    font-size: 34px;
+    font-weight: 730;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .overview-label {
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+
+  .overview-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+
+  .overview-stat {
+    min-width: 0;
+  }
+
+  .overview-stat strong,
+  .overview-stat span {
+    display: block;
+  }
+
+  .overview-stat strong {
+    color: var(--color-text-primary);
+    font-size: 14px;
+    font-weight: 680;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .overview-stat span {
+    margin-top: 2px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
+  .dinner-band {
+    padding: 12px 16px 14px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .section-kicker {
+    margin-bottom: 8px;
+  }
+
+  .section-kicker h2 {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 690;
+    letter-spacing: 0;
+  }
+
+  .section-kicker .k-sub {
+    margin-top: 2px;
+  }
+
+  .dinner-grid {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .dinner-slot {
+    display: grid;
+    min-width: 0;
+    min-height: 112px;
+    padding: 8px 7px;
+    align-content: space-between;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    text-align: left;
+  }
+
+  .dinner-slot.filled {
+    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 28%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 6%, var(--color-background-primary));
+  }
+
+  .dinner-slot.today {
+    box-shadow: inset 0 0 0 2px var(--color-ring-primary);
+  }
+
+  .dinner-date-row,
+  .cook-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 4px;
+    min-width: 0;
+  }
+
+  .dinner-day {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 700;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .dinner-date {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .dish-name {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 8px 0;
+    font-size: 12px;
+    font-weight: 660;
+    line-height: 1.25;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .dish-name.empty {
+    color: var(--color-text-info, var(--color-ring-primary));
+    font-weight: 620;
+  }
+
+  .cook-chip {
+    display: inline-flex;
+    min-width: 0;
+    align-items: center;
+    gap: 5px;
+    color: var(--color-text-secondary);
+    font-size: 9.5px;
+  }
+
+  .avatar {
+    display: grid;
+    width: 21px;
+    height: 21px;
+    flex: none;
+    place-items: center;
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 14%, var(--color-background-secondary));
+    color: var(--color-text-success, var(--color-ring-primary));
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 750;
+  }
+
+  .cook-name {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .today-pip {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-ring-primary);
+  }
+
+  .editor-band {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--color-background-secondary);
+  }
+
+  .editor-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(120px, .65fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+
+  .field-block {
+    min-width: 0;
+  }
+
+  .field-block.wide {
+    grid-column: 1 / -1;
+  }
+
+  .field-block label {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--color-text-secondary);
+    font-size: 10.5px;
+    font-weight: 650;
+  }
+
+  .field-block .k-field {
+    width: 100%;
+  }
+
+  textarea.k-field {
+    min-height: 64px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .editor-actions {
+    margin-top: 10px;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+  }
+
+  .status-strip {
+    margin: 10px 16px 0;
+  }
+
+  .status-strip .k-badge {
+    width: 100%;
+    justify-content: flex-start;
+    padding: 7px 9px;
+    white-space: normal;
+  }
+
+  .content-flow {
+    min-width: 0;
+  }
+
+  .welcome-band {
+    display: grid;
+    grid-template-columns: 82px minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 7%, var(--color-background-primary));
+  }
+
+  .welcome-visual {
+    display: grid;
+    width: 82px;
+    height: 62px;
+    place-items: center;
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+    color: var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .welcome-visual svg {
+    width: 58px;
+    height: 42px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .welcome-copy h2 {
+    margin: 0 0 3px;
+    font-size: 15px;
+    font-weight: 690;
+    letter-spacing: 0;
+  }
+
+  .section-block {
+    padding: 15px 16px 17px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .section-block:last-child {
+    border-bottom: 0;
+  }
+
+  .section-head {
+    align-items: flex-start;
+    margin-bottom: 12px;
+  }
+
+  .section-head h2 {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 700;
+    letter-spacing: 0;
+  }
+
+  .section-actions {
+    margin-left: auto;
+  }
+
+  .section-head .k-badge {
+    flex: none;
+  }
+
+  .shopping-layout {
+    display: grid;
+    grid-template-columns: 150px minmax(0, 1fr);
+    gap: 18px;
+    align-items: stretch;
+  }
+
+  .bag-panel {
+    display: grid;
+    justify-items: center;
+    min-height: 0;
+    align-content: center;
+    padding: 13px 10px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 7%, var(--color-background-primary));
+  }
+
+  .bag-visual {
+    display: block;
+    width: 112px;
+    height: 112px;
+    border: 1px solid color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 22%, var(--color-border-secondary));
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 8%, var(--color-background-primary));
+    object-fit: cover;
+  }
+
+  .bag-score {
+    margin-top: 4px;
+    font-size: 23px;
+    font-weight: 730;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .bag-caption {
+    margin-top: 4px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    text-align: center;
+  }
+
+  .shopping-list {
+    min-width: 0;
+    overflow-x: hidden;
+  }
+
+  .aisle-group + .aisle-group {
+    margin-top: 12px;
+  }
+
+  .aisle-heading {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 4px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .aisle-heading .k-dot {
+    background: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .shopping-row {
+    display: grid;
+    grid-template-columns: 32px minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    min-height: 45px;
+    padding: 4px 0;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .shopping-row:last-child {
+    border-bottom: 0;
+  }
+
+  .shopping-check {
+    width: 24px;
+    height: 24px;
+    margin: 0;
+    accent-color: var(--color-text-success, var(--color-ring-primary));
+    cursor: pointer;
+  }
+
+  .shopping-item {
+    min-width: 0;
+  }
+
+  .shopping-item strong,
+  .shopping-item span {
+    display: block;
+  }
+
+  .shopping-item strong {
+    overflow: hidden;
+    font-size: 13px;
+    font-weight: 640;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .shopping-item span {
+    margin-top: 1px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  .shopping-row.done .shopping-item strong {
+    color: var(--color-text-tertiary);
+    text-decoration: line-through;
+  }
+
+  .shopping-row.done {
+    opacity: .72;
+  }
+
+  .done-aisle {
+    margin-top: 14px;
+    padding-top: 10px;
+    border-top: 1px dashed var(--color-border-primary);
+  }
+
+  .shopping-empty {
+    min-height: 190px;
+  }
+
+  .shopping-empty svg {
+    width: 68px;
+    height: 54px;
+    fill: none;
+    stroke: var(--color-text-info, var(--color-ring-primary));
+    stroke-width: 1.45;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .example-chips {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
+    margin-top: 3px;
+  }
+
+  .shopping-form {
+    margin-bottom: 13px;
+    padding: 12px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+  }
+
+  .shopping-form-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(100px, .55fr) minmax(100px, .55fr);
+    gap: 9px;
+  }
+
+  .shopping-form .k-field {
+    width: 100%;
+  }
+
+  .shopping-form-actions {
+    margin-top: 9px;
+    justify-content: flex-end;
+  }
+
+  .rotation-headline {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--color-text-secondary);
+    font-size: 10.5px;
+  }
+
+  .rotation-headline .k-dot {
+    background: var(--color-text-success, var(--color-ring-primary));
+  }
+
+  .chore-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .chore-row {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr) auto;
+    gap: 9px;
+    min-width: 0;
+    min-height: 58px;
+    align-items: center;
+    padding: 7px 10px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .chore-row:nth-child(odd) {
+    border-right: 1px solid var(--color-border-secondary);
+  }
+
+  .chore-avatar {
+    width: 30px;
+    height: 30px;
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 14%, var(--color-background-secondary));
+    color: var(--color-text-info, var(--color-ring-primary));
+    font-size: 10px;
+  }
+
+  .chore-copy {
+    min-width: 0;
+  }
+
+  .chore-copy strong,
+  .chore-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .chore-copy strong {
+    font-size: 12.5px;
+    font-weight: 680;
+  }
+
+  .chore-copy span {
+    margin-top: 2px;
+    color: var(--color-text-tertiary);
+    font-size: 9.5px;
+  }
+
+  .rotation-step {
+    min-width: 36px;
+    justify-content: center;
+    padding: 3px 6px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+  }
+
+  .board-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(110px, .34fr) auto;
+    gap: 8px;
+    margin-bottom: 12px;
+    padding: 10px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+  }
+
+  .board-form .k-field {
+    width: 100%;
+  }
+
+  .board-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+    overflow-x: hidden;
+    padding: 3px;
+  }
+
+  .board-note {
+    --note-tilt: -0.45deg;
+    position: relative;
+    display: grid;
+    min-width: 0;
+    height: 126px;
+    padding: 11px;
+    align-content: space-between;
+    border: 1px solid color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 28%, var(--color-border-secondary));
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 9%, var(--color-background-primary));
+    box-shadow: 0 2px 0 color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 15%, transparent);
+    transform: rotate(var(--note-tilt));
+  }
+
+  .board-note::before {
+    position: absolute;
+    top: 4px;
+    left: 50%;
+    width: 34px;
+    height: 4px;
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 24%, transparent);
+    content: "";
+    transform: translateX(-50%);
+  }
+
+  .board-note:nth-child(3n + 2) {
+    --note-tilt: 0.35deg;
+    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 25%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
+  }
+
+  .board-note:nth-child(3n + 3) {
+    --note-tilt: -0.2deg;
+    border-color: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 25%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 7%, var(--color-background-primary));
+  }
+
+  .board-copy {
+    display: -webkit-box;
+    overflow: hidden;
+    margin: 0;
+    color: var(--color-text-primary);
+    font-family: "Bradley Hand", "Segoe Print", "Comic Sans MS", cursive;
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.42;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+  }
+
+  .board-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+  }
+
+  .board-meta time {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .date-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .date-card {
+    display: grid;
+    grid-template-columns: 60px minmax(0, 1fr);
+    gap: 10px;
+    min-width: 0;
+    min-height: 90px;
+    align-items: center;
+    padding: 10px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-primary);
+  }
+
+  .date-card.nearest {
+    border-color: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 42%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 7%, var(--color-background-primary));
+    box-shadow: inset 3px 0 0 var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .date-card.nearest .countdown {
+    border-color: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 46%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 12%, var(--color-background-primary));
+  }
+
+  .date-card.nearest .countdown strong {
+    color: var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .countdown {
+    display: grid;
+    width: 60px;
+    height: 60px;
+    place-items: center;
+    align-content: center;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+  }
+
+  .countdown strong,
+  .countdown span {
+    display: block;
+  }
+
+  .countdown strong {
+    font-size: 21px;
+    font-weight: 740;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .countdown span {
+    margin-top: 3px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 8.5px;
+    text-transform: uppercase;
+  }
+
+  .date-copy {
+    min-width: 0;
+  }
+
+  .date-copy strong,
+  .date-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .date-copy strong {
+    font-size: 12.5px;
+    font-weight: 690;
+    line-height: 1.3;
+  }
+
+  .date-copy span {
+    margin-top: 4px;
+    color: var(--color-text-tertiary);
+    font-size: 9.5px;
+    white-space: nowrap;
+  }
+
+  .invite-panel {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 11px;
+    min-height: 92px;
+    align-items: center;
+    padding: 11px;
+    border: 1px dashed var(--color-border-primary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+  }
+
+  .invite-icon {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    place-items: center;
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 10%, var(--color-background-primary));
+    color: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .invite-icon svg {
+    width: 25px;
+    height: 25px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.4;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .invite-copy b,
+  .invite-copy span {
+    display: block;
+  }
+
+  .invite-copy b {
+    font-size: 12.5px;
+  }
+
+  .invite-copy span {
+    margin-top: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    line-height: 1.4;
+  }
+
+  .weekend-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .weekend-card {
+    position: relative;
+    min-width: 0;
+    min-height: 190px;
+    overflow: hidden;
+    padding: 14px;
+  }
+
+  .weekend-card.saturday {
+    border-top: 3px solid var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .weekend-card.sunday {
+    border-top: 3px solid var(--color-text-success, var(--color-ring-primary));
+  }
+
+  .weekend-card.has-plan {
+    padding-bottom: 48px;
+  }
+
+  .weekend-top {
+    margin-bottom: 10px;
+  }
+
+  .weekend-date {
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .weekend-card h3 {
+    margin: 0 0 7px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: 0;
+    line-height: 1.25;
+  }
+
+  .weekend-note {
+    margin: 8px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    line-height: 1.45;
+  }
+
+  .people-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px;
+    margin-top: 10px;
+  }
+
+  .person-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 7px 2px 3px;
+  }
+
+  .person-chip .avatar {
+    width: 18px;
+    height: 18px;
+    font-size: 8px;
+  }
+
+  .weekend-edit {
+    position: absolute;
+    right: 10px;
+    bottom: 10px;
+    padding: 5px 7px;
+  }
+
+  .weekend-empty {
+    display: grid;
+    min-height: 160px;
+    align-content: center;
+    justify-items: start;
+  }
+
+  .weekend-empty svg {
+    width: 54px;
+    height: 40px;
+    margin-bottom: 8px;
+    fill: none;
+    stroke: var(--color-text-info, var(--color-ring-primary));
+    stroke-width: 1.45;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .weekend-empty .k-row {
+    margin-top: 10px;
+    flex-wrap: wrap;
+  }
+
+  .weekend-editor {
+    margin-top: 12px;
+    padding: 13px;
+  }
+
+  body[data-density="compact"] .dinner-slot {
+    min-height: 100px;
+  }
+
+  body[data-density="compact"] .section-block {
+    padding-block: 12px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .k-btn,
+    .dinner-slot,
+    .weekend-card,
+    .shopping-row,
+    .chore-row,
+    .board-note,
+    .date-card,
+    .bag-visual {
+      transition: transform 180ms cubic-bezier(.2, .8, .3, 1), border-color 180ms cubic-bezier(.2, .8, .3, 1), background 180ms cubic-bezier(.2, .8, .3, 1), opacity 180ms cubic-bezier(.2, .8, .3, 1);
+    }
+
+    .k-btn:hover,
+    .dinner-slot:hover,
+    .weekend-card:hover,
+    .board-note:hover,
+    .date-card:hover {
+      transform: translateY(-1px);
+    }
+
+    .board-note:hover {
+      transform: translateY(-1px) rotate(0deg);
+    }
+
+    .k-btn:active,
+    .dinner-slot:active {
+      transform: scale(.98);
+    }
+
+    .shopping-row.done {
+      animation: item-settle 240ms cubic-bezier(.34, 1.56, .64, 1);
+    }
+
+    @keyframes item-settle {
+      0% { transform: scale(.97); }
+      100% { transform: scale(1); }
+    }
+  }
+
+  @media (max-width: 660px) {
+    .app-bar {
+      flex-wrap: wrap;
+    }
+
+    .app-actions {
+      display: flex;
+      width: 100%;
+      margin-left: 54px;
+    }
+
+    .overview {
+      grid-template-columns: 1fr;
+      gap: 10px;
+    }
+
+    .overview-main {
+      justify-content: space-between;
+    }
+
+    .shopping-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .bag-panel {
+      display: grid;
+      grid-template-columns: 112px auto;
+      width: min(100%, 310px);
+      min-height: 138px;
+      justify-self: center;
+      justify-content: center;
+      justify-items: start;
+      column-gap: 14px;
+      align-items: center;
+      padding-inline: 16px;
+    }
+
+    .bag-visual {
+      grid-row: 1 / span 2;
+    }
+
+    .bag-score,
+    .bag-caption {
+      text-align: left;
+    }
+
+    .board-grid,
+    .date-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .k-btn {
+      min-height: 40px;
+    }
+
+    .shopping-check {
+      width: 32px;
+      height: 32px;
+    }
+
+    .shopping-row {
+      grid-template-columns: 40px minmax(0, 1fr) auto;
+      min-height: 52px;
+    }
+
+  }
+
+  @media (max-width: 560px) {
+    .app-bar,
+    .overview,
+    .dinner-band,
+    .editor-band,
+    .section-block {
+      padding-inline: 12px;
+    }
+
+    .status-strip {
+      margin-inline: 12px;
+    }
+
+    .dinner-grid {
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 6px;
+    }
+
+    .dinner-slot {
+      min-height: 108px;
+      padding-inline: 7px;
+    }
+
+    .dinner-date {
+      display: none;
+    }
+
+    .dish-name {
+      font-size: 11.5px;
+      -webkit-line-clamp: 3;
+    }
+
+    .cook-name {
+      display: none;
+    }
+
+    .editor-grid,
+    .shopping-form-grid,
+    .board-form {
+      grid-template-columns: 1fr;
+    }
+
+    .field-block.wide {
+      grid-column: auto;
+    }
+
+    .welcome-band {
+      grid-template-columns: 64px minmax(0, 1fr);
+    }
+
+    .welcome-visual {
+      width: 64px;
+    }
+
+    .welcome-band > .k-btn {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+    }
+
+    .weekend-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .chore-grid,
+    .board-grid,
+    .date-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .chore-row:nth-child(odd) {
+      border-right: 0;
+    }
+
+    .invite-panel {
+      grid-template-columns: 46px minmax(0, 1fr);
+    }
+
+    .invite-panel .k-btn {
+      grid-column: 1 / -1;
+      justify-self: stretch;
+    }
+
+    .weekend-card {
+      min-height: 170px;
+    }
+
+    .k-btn {
+      min-height: 44px;
+    }
+
+    .shopping-check {
+      width: 40px;
+      height: 40px;
+    }
+
+    .weekend-edit {
+      width: 44px;
+      min-width: 44px;
+    }
+  }
+
+  @media (max-width: 410px) {
+    .app-actions {
+      margin-left: 0;
+    }
+
+    .app-actions .k-btn {
+      flex: 1;
+      padding-inline: 8px;
+    }
+
+    .overview-stats {
+      gap: 7px;
+    }
+
+    .overview-stat strong {
+      font-size: 12px;
+    }
+
+    .dinner-slot { min-height: 106px; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header class="app-bar k-row">
+    <div class="app-mark" aria-hidden="true">
+      <svg viewBox="0 0 28 28">
+        <path d="M4 12.5 14 4l10 8.5V24H4z"/>
+        <path d="M9 24v-7h10v7M9 10.5h2M17 10.5h2"/>
+        <path d="M21.5 4.5v4" opacity=".55"/>
+      </svg>
+    </div>
+    <div class="identity">
+      <div class="eyebrow" data-i18n="eyebrow"></div>
+      <h1 class="app-name" data-i18n="appName"></h1>
+    </div>
+    <div class="app-actions k-row">
+      <button class="k-btn ghost" id="changesButton" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 12.5V3.5h11v7h-7l-3 2zM5 6h6M5 8.5h4"/>
+        </svg>
+        <span data-i18n="changes"></span>
+      </button>
+      <button class="k-btn sec" id="planNextButton" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M3 2.5v11M2 5.5h11M5.5 2v2M10.5 2v2M5 8h2M9 8h2M5 11h2"/>
+        </svg>
+        <span data-i18n="planNext"></span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview" aria-labelledby="overviewLabel">
+    <div class="overview-main">
+      <strong class="overview-number" id="toBuyNumber">0</strong>
+      <span class="overview-label" id="overviewLabel" data-i18n="toBuy"></span>
+    </div>
+    <div class="overview-stats">
+      <div class="overview-stat">
+        <strong id="dinnerStat">0/7</strong>
+        <span data-i18n="dinnersPlanned"></span>
+      </div>
+      <div class="overview-stat">
+        <strong id="shoppingStat">0/0</strong>
+        <span data-i18n="shoppingDone"></span>
+      </div>
+      <div class="overview-stat">
+        <strong id="weekendStat">0/2</strong>
+        <span data-i18n="weekendReady"></span>
+      </div>
+    </div>
+  </section>
+
+  <section class="dinner-band" aria-labelledby="dinnerTitle">
+    <div class="section-kicker k-row">
+      <div>
+        <h2 id="dinnerTitle" data-i18n="dinnersTitle"></h2>
+        <div class="k-sub" id="weekRange"></div>
+      </div>
+      <span class="k-grow"></span>
+      <span class="k-badge info" id="todayBadge" data-i18n="today"></span>
+    </div>
+    <div class="dinner-grid" id="dinnerGrid"></div>
+  </section>
+
+  <section class="editor-band" id="dinnerEditor" hidden aria-labelledby="dinnerEditorTitle">
+    <div class="k-row">
+      <div>
+        <h2 class="k-h1" id="dinnerEditorTitle"></h2>
+        <div class="k-sub" id="dinnerEditorDate"></div>
+      </div>
+      <span class="k-grow"></span>
+      <button class="k-btn ghost" id="closeDinnerEditor" type="button" data-i18n-aria-label="close">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M4 4l8 8M12 4l-8 8"/>
+        </svg>
+      </button>
+    </div>
+    <form id="dinnerForm">
+      <div class="editor-grid">
+        <div class="field-block">
+          <label for="dinnerDish" data-i18n="dishLabel"></label>
+          <input class="k-field" id="dinnerDish" maxlength="100" required data-i18n-placeholder="dishPlaceholder">
+        </div>
+        <div class="field-block">
+          <label for="dinnerCook" data-i18n="cookLabel"></label>
+          <input class="k-field" id="dinnerCook" maxlength="60" data-i18n-placeholder="cookPlaceholder">
+        </div>
+        <div class="field-block wide">
+          <label for="dinnerNote" data-i18n="noteLabel"></label>
+          <input class="k-field" id="dinnerNote" maxlength="180" data-i18n-placeholder="dinnerNotePlaceholder">
+        </div>
+      </div>
+      <div class="editor-actions k-row">
+        <button class="k-btn danger" id="clearDinnerButton" type="button" hidden data-i18n="clearSlot"></button>
+        <span class="k-grow"></span>
+        <button class="k-btn sec" id="cancelDinnerButton" type="button" data-i18n="cancel"></button>
+        <button class="k-btn" id="saveDinnerButton" type="submit">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 8.5l3 3 7-7"/>
+          </svg>
+          <span data-i18n="saveDinner"></span>
+        </button>
+      </div>
+    </form>
+  </section>
+
+  <div class="status-strip" id="statusStrip" hidden>
+    <span class="k-badge" id="statusMessage" role="status"></span>
+  </div>
+
+  <main class="content-flow">
+    <section class="welcome-band" id="welcomeBand" hidden>
+      <div class="welcome-visual" aria-hidden="true">
+        <svg viewBox="0 0 60 44">
+          <path d="M7 18h46v20H7zM13 18v-5h34v5"/>
+          <path d="M18 8v10M30 8v10M42 8v10M14 26h8M26 26h8M38 26h8M14 32h8M26 32h8"/>
+        </svg>
+      </div>
+      <div class="welcome-copy">
+        <h2 data-i18n="welcomeTitle"></h2>
+        <div class="k-sub" data-i18n="welcomeBody"></div>
+      </div>
+      <button class="k-btn" id="memoryButton" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 2.5a5.5 5.5 0 1 0 5.5 5.5M8 5v3l2 1.5M11.5 2.5h2v2"/>
+        </svg>
+        <span data-i18n="tellAI"></span>
+      </button>
+    </section>
+
+    <section class="section-block" aria-labelledby="shoppingTitle">
+      <div class="section-head k-row">
+        <div>
+          <h2 id="shoppingTitle" data-i18n="shoppingTitle"></h2>
+          <div class="k-sub" id="shoppingSubtitle"></div>
+        </div>
+        <div class="section-actions">
+          <button class="k-btn sec" id="toggleShoppingForm" type="button">
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 2.5v11M2.5 8h11"/>
+            </svg>
+            <span data-i18n="addItem"></span>
+          </button>
+        </div>
+      </div>
+
+      <form class="shopping-form" id="shoppingForm" hidden>
+        <div class="shopping-form-grid">
+          <input class="k-field" id="shoppingItem" maxlength="100" required data-i18n-placeholder="itemPlaceholder" data-i18n-aria-label="itemLabel">
+          <input class="k-field" id="shoppingQty" maxlength="40" data-i18n-placeholder="qtyPlaceholder" data-i18n-aria-label="qtyLabel">
+          <input class="k-field" id="shoppingAisle" list="aisleOptions" maxlength="60" data-i18n-placeholder="aislePlaceholder" data-i18n-aria-label="aisleLabel">
+          <datalist id="aisleOptions">
+            <option value="Produce"></option>
+            <option value="Pantry"></option>
+            <option value="Dairy"></option>
+            <option value="Bakery"></option>
+            <option value="Frozen"></option>
+            <option value="Household"></option>
+            <option value="Other"></option>
+          </datalist>
+        </div>
+        <div class="shopping-form-actions k-row">
+          <button class="k-btn sec" id="cancelShoppingButton" type="button" data-i18n="cancel"></button>
+          <button class="k-btn" id="saveShoppingButton" type="submit">
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M3 8.5l3 3 7-7"/>
+            </svg>
+            <span data-i18n="addToList"></span>
+          </button>
+        </div>
+      </form>
+
+      <div class="shopping-layout">
+        <div class="bag-panel">
+          <img class="bag-visual" id="bagVisual" alt="" width="112" height="112" decoding="async">
+          <div class="bag-score" id="bagScore">0%</div>
+          <div class="bag-caption" id="bagCaption"></div>
+        </div>
+        <div class="shopping-list" id="shoppingList"></div>
+        <div class="k-empty shopping-empty" id="shoppingEmpty" hidden>
+          <svg viewBox="0 0 72 56" aria-hidden="true">
+            <path d="M12 18h48l-5 32H17zM25 21v-5c0-7 4-11 11-11s11 4 11 11v5"/>
+            <path d="M26 31h20M28 39h16" opacity=".55"/>
+          </svg>
+          <b data-i18n="shoppingEmptyTitle"></b>
+          <span data-i18n="shoppingEmptyBody"></span>
+          <div class="example-chips">
+            <span class="k-chip static" data-i18n="exampleApples"></span>
+            <span class="k-chip static" data-i18n="exampleMilk"></span>
+            <span class="k-chip static" data-i18n="exampleNoodles"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="section-block" aria-labelledby="choresTitle">
+      <div class="section-head k-row">
+        <div>
+          <h2 id="choresTitle" data-i18n="choresTitle"></h2>
+          <div class="rotation-headline">
+            <span class="k-dot"></span>
+            <span id="rotationWeek"></span>
+          </div>
+        </div>
+        <span class="k-grow"></span>
+        <span class="k-badge info" data-i18n="rotatesWeekly"></span>
+      </div>
+      <div class="chore-grid" id="choreGrid"></div>
+      <div id="choresEmpty" hidden></div>
+    </section>
+
+    <section class="section-block" aria-labelledby="boardTitle">
+      <div class="section-head k-row">
+        <div>
+          <h2 id="boardTitle" data-i18n="boardTitle"></h2>
+          <div class="k-sub" data-i18n="boardSubtitle"></div>
+        </div>
+        <div class="section-actions">
+          <button class="k-btn sec" id="toggleBoardForm" type="button">
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M8 2.5v11M2.5 8h11"/>
+            </svg>
+            <span data-i18n="addNote"></span>
+          </button>
+        </div>
+      </div>
+      <form class="board-form" id="boardForm" hidden>
+        <input class="k-field" id="boardNote" maxlength="180" required data-i18n-placeholder="boardNotePlaceholder" data-i18n-aria-label="boardNoteLabel">
+        <input class="k-field" id="boardAuthor" maxlength="60" data-i18n-placeholder="boardAuthorPlaceholder" data-i18n-aria-label="boardAuthorLabel">
+        <button class="k-btn" id="saveBoardButton" type="submit">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M2.5 8 13 3.5l-3.2 9-2.1-3.2zM7.7 9.3 13 3.5"/>
+          </svg>
+          <span data-i18n="postNote"></span>
+        </button>
+      </form>
+      <div class="board-grid" id="boardGrid"></div>
+      <div id="boardEmpty" hidden></div>
+    </section>
+
+    <section class="section-block" aria-labelledby="datesTitle">
+      <div class="section-head k-row">
+        <div>
+          <h2 id="datesTitle" data-i18n="datesTitle"></h2>
+          <div class="k-sub" id="datesSubtitle" data-i18n="datesSubtitle"></div>
+        </div>
+        <span class="k-grow"></span>
+        <span class="k-badge" data-i18n="nextThree"></span>
+      </div>
+      <div class="date-grid" id="dateGrid"></div>
+      <div id="datesEmpty" hidden></div>
+    </section>
+
+    <section class="section-block" aria-labelledby="weekendTitle">
+      <div class="section-head k-row">
+        <div>
+          <h2 id="weekendTitle" data-i18n="weekendTitle"></h2>
+          <div class="k-sub" data-i18n="weekendSubtitle"></div>
+        </div>
+      </div>
+      <div class="weekend-grid" id="weekendGrid"></div>
+
+      <section class="k-card weekend-editor" id="weekendEditor" hidden aria-labelledby="weekendEditorTitle">
+        <div class="k-row">
+          <div>
+            <h2 class="k-h1" id="weekendEditorTitle"></h2>
+            <div class="k-sub" id="weekendEditorDate"></div>
+          </div>
+          <span class="k-grow"></span>
+          <button class="k-btn ghost" id="closeWeekendEditor" type="button" data-i18n-aria-label="close">
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4 4l8 8M12 4l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <form id="weekendForm">
+          <div class="editor-grid">
+            <div class="field-block wide">
+              <label for="weekendPlan" data-i18n="planLabel"></label>
+              <input class="k-field" id="weekendPlan" maxlength="120" required data-i18n-placeholder="planPlaceholder">
+            </div>
+            <div class="field-block">
+              <label for="weekendWho" data-i18n="whoLabel"></label>
+              <input class="k-field" id="weekendWho" maxlength="180" data-i18n-placeholder="whoPlaceholder">
+            </div>
+            <div class="field-block">
+              <label for="weekendNote" data-i18n="noteLabel"></label>
+              <input class="k-field" id="weekendNote" maxlength="220" data-i18n-placeholder="planNotePlaceholder">
+            </div>
+          </div>
+          <div class="editor-actions k-row">
+            <button class="k-btn danger" id="removeWeekendButton" type="button" hidden data-i18n="removePlan"></button>
+            <span class="k-grow"></span>
+            <button class="k-btn sec" id="cancelWeekendButton" type="button" data-i18n="cancel"></button>
+            <button class="k-btn" id="saveWeekendButton" type="submit">
+              <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 8.5l3 3 7-7"/>
+              </svg>
+              <span data-i18n="savePlan"></span>
+            </button>
+          </div>
+        </form>
+      </section>
+    </section>
+  </main>
+</div>
+
+<script type="module">
+  const STR = {
+    en: {
+      eyebrow: "Family rhythm",
+      appName: "Family Week",
+      metaDescription: "A shared family week for dinners, shopping, chores, notes, important dates, and weekend plans.",
+      changes: "What changed?",
+      planNext: "Plan next week",
+      toBuy: "to buy",
+      dinnersPlanned: "dinners planned",
+      shoppingDone: "shopping done",
+      weekendReady: "weekend plans",
+      dinnersTitle: "Dinner this week",
+      today: "Today",
+      snapshot: "Snapshot · {date}",
+      pick: "+ pick",
+      dinnerEditorNew: "Pick dinner",
+      dinnerEditorEdit: "Change dinner",
+      dishLabel: "Dish",
+      dishPlaceholder: "What are you eating?",
+      cookLabel: "Cook",
+      cookPlaceholder: "Who is cooking?",
+      noteLabel: "Note",
+      dinnerNotePlaceholder: "Prep, leftovers, or one family request",
+      clearSlot: "Clear slot",
+      cancel: "Cancel",
+      saveDinner: "Save dinner",
+      close: "Close",
+      welcomeTitle: "This week starts with what your family already knows.",
+      welcomeBody: "Tell the AI what your family usually eats — it fills the week.",
+      tellAI: "Tell the AI",
+      shoppingTitle: "Shopping list",
+      addItem: "Add item",
+      shoppingCount: "{count} to buy",
+      bagProgress: "{done} of {total} in the bag",
+      bagEmptyAlt: "An empty illustrated paper shopping bag",
+      bagHalfAlt: "A half-full illustrated paper shopping bag",
+      bagFullAlt: "A full illustrated paper shopping bag",
+      itemLabel: "Shopping item",
+      itemPlaceholder: "Add milk, fruit, rice…",
+      qtyLabel: "Quantity",
+      qtyPlaceholder: "Qty",
+      aisleLabel: "Aisle",
+      aislePlaceholder: "Aisle",
+      addToList: "Add to list",
+      shoppingEmptyTitle: "Start the shared list",
+      shoppingEmptyBody: "Add the first thing, or ask the AI to pull ingredients from this week's dinners.",
+      exampleApples: "apples",
+      exampleMilk: "milk",
+      exampleNoodles: "noodles",
+      completed: "Done",
+      choresTitle: "Chores rotation",
+      rotatesWeekly: "Rotates weekly",
+      rotationWeek: "ISO week {week} · next turn Monday",
+      choreTurn: "{name}'s turn",
+      choreEmptyTitle: "Make the weekly jobs feel fair",
+      choreEmptyBody: "Add household tasks and the member roster once; assignments rotate from the ISO week at render time.",
+      setupChores: "Set up with AI",
+      boardTitle: "Family board",
+      boardSubtitle: "Short notes everyone can spot.",
+      addNote: "New note",
+      boardNoteLabel: "Family note",
+      boardNotePlaceholder: "Reminder, hand-off, or a quick heads-up…",
+      boardAuthorLabel: "Author",
+      boardAuthorPlaceholder: "Your name",
+      postNote: "Post",
+      noteFrom: "From {name}",
+      unknownAuthor: "Family",
+      boardEmptyTitle: "Pin the first family note",
+      boardEmptyBody: "A short reminder here is easier to find than one buried in chat.",
+      writeNote: "Write a note",
+      datesTitle: "Important dates",
+      datesSubtitle: "Birthdays and anniversaries, counted from today.",
+      datesSubtitleSnapshot: "Birthdays and anniversaries, counted from the {date} snapshot.",
+      nextThree: "Next 3",
+      dayUnit: "day",
+      daysUnit: "days",
+      todayUnit: "today",
+      birthday: "Birthday",
+      anniversary: "Anniversary",
+      datesEmptyTitle: "Keep the days that matter close",
+      datesEmptyBody: "Add birthdays and anniversaries as dates; the countdown always recalculates at render time.",
+      addDates: "Add dates with AI",
+      weekendTitle: "Weekend plans",
+      weekendSubtitle: "One good idea for each day is enough.",
+      saturday: "Saturday",
+      sunday: "Sunday",
+      noPlan: "Nothing planned yet",
+      askWeather: "Ask AI for weather ideas",
+      addPlan: "Add our own",
+      editPlan: "Edit plan",
+      planEditorNew: "Add weekend plan",
+      planEditorEdit: "Edit weekend plan",
+      planLabel: "Plan",
+      planPlaceholder: "Hike, market, movie night…",
+      whoLabel: "Who's in",
+      whoPlaceholder: "Names, separated by commas",
+      planNotePlaceholder: "Time, meeting point, or what to bring",
+      savePlan: "Save plan",
+      removePlan: "Remove plan",
+      todayRelative: "today",
+      tomorrowRelative: "tomorrow",
+      inDays: "in {count} days",
+      daysAgo: "{count} days ago",
+      dinnerSaved: "Dinner saved for {date}.",
+      dinnerRemoved: "Dinner slot cleared.",
+      shoppingAdded: "Added to the shopping list.",
+      shoppingUpdated: "Shopping list updated.",
+      boardAdded: "Note posted to the family board.",
+      planSaved: "Weekend plan saved.",
+      planRemoved: "Weekend plan removed.",
+      readFailed: "Could not refresh the family week: {error}",
+      saveFailed: "Nothing was saved: {error}",
+      invalidData: "The {collection} collection returned invalid data.",
+      produce: "Produce",
+      pantry: "Pantry",
+      dairy: "Dairy",
+      bakery: "Bakery",
+      frozen: "Frozen",
+      household: "Household",
+      other: "Other",
+      noCook: "Unclaimed",
+      planNextMessage: "Plan our family dinners for next week ({start} to {end}). Use what you remember about what we enjoy, avoid inventing allergies or preferences, and write the plan into family-dinners with one row per date. Then review family-shopping and add only the ingredients we are missing. Use one data_batch across the relevant collections and tell me exactly what changed.",
+      changesMessage: "What changed while I was away? Use data_changes to review recent edits in family-dinners, family-shopping, family-weekend, family-chores, family-board, and family-dates. Summarize who changed what when the data shows it, and call out anything that still needs a decision.",
+      memoryMessage: "Fill this Family Week from what you genuinely remember about us. For the current week ({start} to {end}), add dinners we have actually discussed or clearly mark suggestions as suggestions; add matching shopping items only when useful; add known weekend plans, chores, family notes, and important dates only when remembered. Use the six Family Week collections. Do not invent allergies, commitments, dates, or family members. Tell me what you added.",
+      weatherMessage: "Suggest three family-friendly ideas for {date} based on the local weather. Keep them practical for our household and ask me to choose one before writing anything to family-weekend.",
+      choresMessage: "Set up a fair chores rotation in family-chores. Ask me for the household member names and recurring tasks first. Store each task with the member roster and an anchor_date only; do not store this week's assignment because the widget computes it from the ISO week at render time.",
+      datesMessage: "Help me add birthdays and anniversaries to family-dates. Ask for the real label, person, kind, and original ISO date. Do not invent dates. The widget will calculate the next annual occurrence and days remaining at render time.",
+    },
+    zh: {
+      eyebrow: "全家节奏",
+      appName: "全家这一周",
+      metaDescription: "把晚餐、采购、家务、家庭便签、重要日期和周末计划放进全家共享的一周。",
+      changes: "离开时改了啥？",
+      planNext: "规划下周",
+      toBuy: "件待买",
+      dinnersPlanned: "晚餐已安排",
+      shoppingDone: "采购已完成",
+      weekendReady: "周末有计划",
+      dinnersTitle: "这周晚餐",
+      today: "今天",
+      snapshot: "快照 · {date}",
+      pick: "+ 选一道",
+      dinnerEditorNew: "选一道晚餐",
+      dinnerEditorEdit: "更换晚餐",
+      dishLabel: "菜名",
+      dishPlaceholder: "今晚吃什么？",
+      cookLabel: "谁来做",
+      cookPlaceholder: "认领做饭的人",
+      noteLabel: "备注",
+      dinnerNotePlaceholder: "备菜、剩菜安排，或家里人的一个要求",
+      clearSlot: "清空这格",
+      cancel: "取消",
+      saveDinner: "保存晚餐",
+      close: "关闭",
+      welcomeTitle: "这一周，从家里本来就熟悉的日子开始。",
+      welcomeBody: "告诉 AI 你们家平时爱吃什么，它会把这一周填起来。",
+      tellAI: "告诉 AI",
+      shoppingTitle: "购物清单",
+      addItem: "加一项",
+      shoppingCount: "还有 {count} 件要买",
+      bagProgress: "购物袋里已有 {done}/{total} 件",
+      bagEmptyAlt: "空的纸质购物袋暖色插画",
+      bagHalfAlt: "半满的纸质购物袋暖色插画",
+      bagFullAlt: "装满的纸质购物袋暖色插画",
+      itemLabel: "采购品",
+      itemPlaceholder: "牛奶、水果、米……",
+      qtyLabel: "数量",
+      qtyPlaceholder: "数量",
+      aisleLabel: "区域",
+      aislePlaceholder: "货架区域",
+      addToList: "加入清单",
+      shoppingEmptyTitle: "一起写下第一样",
+      shoppingEmptyBody: "先加一件，或让 AI 从这周晚餐里整理需要的食材。",
+      exampleApples: "苹果",
+      exampleMilk: "牛奶",
+      exampleNoodles: "面条",
+      completed: "已买好",
+      choresTitle: "家务轮值",
+      rotatesWeekly: "每周轮换",
+      rotationWeek: "ISO 第 {week} 周 · 下周一换班",
+      choreTurn: "本周轮到 {name}",
+      choreEmptyTitle: "让每周家务分得更公平",
+      choreEmptyBody: "只需录入一次任务和成员名单；每次渲染按 ISO 周数自动轮换本周分配。",
+      setupChores: "让 AI 设置",
+      boardTitle: "家庭公告板",
+      boardSubtitle: "全家一眼能看到的短便签。",
+      addNote: "新便签",
+      boardNoteLabel: "家庭便签",
+      boardNotePlaceholder: "提醒、交接，或一句临时通知……",
+      boardAuthorLabel: "作者",
+      boardAuthorPlaceholder: "你的名字",
+      postNote: "发布",
+      noteFrom: "来自 {name}",
+      unknownAuthor: "家里人",
+      boardEmptyTitle: "钉上第一张家庭便签",
+      boardEmptyBody: "短提醒放在这里，比埋在聊天记录里更容易找到。",
+      writeNote: "写一张便签",
+      datesTitle: "重要日子",
+      datesSubtitle: "生日与纪念日，按今天实时倒数。",
+      datesSubtitleSnapshot: "生日与纪念日，按 {date} 的快照日期倒数。",
+      nextThree: "最近 3 个",
+      dayUnit: "天",
+      daysUnit: "天",
+      todayUnit: "今天",
+      birthday: "生日",
+      anniversary: "纪念日",
+      datesEmptyTitle: "把重要的日子放在近处",
+      datesEmptyBody: "录入生日和纪念日的原始日期；倒数会在每次渲染时重新计算。",
+      addDates: "让 AI 添加日期",
+      weekendTitle: "周末计划",
+      weekendSubtitle: "一天有一个好点子，就够热闹了。",
+      saturday: "周六",
+      sunday: "周日",
+      noPlan: "还没有安排",
+      askWeather: "让 AI 按天气出主意",
+      addPlan: "我们自己加",
+      editPlan: "编辑计划",
+      planEditorNew: "添加周末计划",
+      planEditorEdit: "编辑周末计划",
+      planLabel: "计划",
+      planPlaceholder: "爬山、逛市集、家庭电影夜……",
+      whoLabel: "谁参加",
+      whoPlaceholder: "名字之间用逗号分开",
+      planNotePlaceholder: "时间、碰头地点，或要带什么",
+      savePlan: "保存计划",
+      removePlan: "移除计划",
+      todayRelative: "今天",
+      tomorrowRelative: "明天",
+      inDays: "{count} 天后",
+      daysAgo: "{count} 天前",
+      dinnerSaved: "已保存 {date} 的晚餐。",
+      dinnerRemoved: "这格晚餐已清空。",
+      shoppingAdded: "已加入购物清单。",
+      shoppingUpdated: "购物清单已更新。",
+      boardAdded: "便签已发布到家庭公告板。",
+      planSaved: "周末计划已保存。",
+      planRemoved: "周末计划已移除。",
+      readFailed: "无法刷新全家这一周：{error}",
+      saveFailed: "没有保存：{error}",
+      invalidData: "{collection} 集合返回了无效数据。",
+      produce: "果蔬",
+      pantry: "食品柜",
+      dairy: "乳品",
+      bakery: "烘焙",
+      frozen: "冷冻",
+      household: "家居",
+      other: "其他",
+      noCook: "等人认领",
+      planNextMessage: "请规划我们家下周（{start} 至 {end}）的晚餐。参考你记得的真实口味，不要编造过敏或偏好；把每天的安排写入 family-dinners，每个日期一行。然后检查 family-shopping，只补真正缺少的食材。请对相关集合使用一次 data_batch，并明确告诉我改了什么。",
+      changesMessage: "我不在家这段时间大家改了什么？请用 data_changes 查看 family-dinners、family-shopping、family-weekend、family-chores、family-board 和 family-dates 的近期变化；数据能说明时总结谁在什么时候改了什么，并指出仍需决定的事项。",
+      memoryMessage: "请用你真实记得的内容填这份全家周计划。针对本周（{start} 至 {end}），加入我们确实聊过的晚餐；不确定的只能明确标成建议。只在有用时补购物项，并仅在确实记得时加入周末安排、家务、家庭便签和重要日子。使用六个 Family Week 集合，不要编造过敏、承诺、日期或家庭成员。最后告诉我写入了什么。",
+      weatherMessage: "请根据 {date} 的本地天气，给我们家三个实际可行的周末点子。先让我选一个，再写入 family-weekend。",
+      choresMessage: "请帮我在 family-chores 建立公平的家务轮值。先询问家庭成员姓名和固定任务；每个任务只存成员名单与 anchor_date，不要存“本周是谁”，因为组件会在渲染时按 ISO 周数计算。",
+      datesMessage: "请帮我把生日和纪念日加入 family-dates。先询问真实的名称、人物、类型和原始 ISO 日期，不要编造日期。组件会在渲染时计算下一次周年和剩余天数。",
+    }
+  };
+
+  const DINNER_COLLECTION = "family-dinners";
+  const SHOPPING_COLLECTION = "family-shopping";
+  const WEEKEND_COLLECTION = "family-weekend";
+  const CHORES_COLLECTION = "family-chores";
+  const BOARD_COLLECTION = "family-board";
+  const DATES_COLLECTION = "family-dates";
+  const COLLECTIONS = [DINNER_COLLECTION, SHOPPING_COLLECTION, WEEKEND_COLLECTION, CHORES_COLLECTION, BOARD_COLLECTION, DATES_COLLECTION];
+  const WEEK_START_INDEX = { monday: 1, sunday: 0, saturday: 6 };
+  const AISLE_KEYS = {
+    produce: "produce",
+    pantry: "pantry",
+    dairy: "dairy",
+    bakery: "bakery",
+    frozen: "frozen",
+    household: "household",
+    other: "other"
+  };
+  const AISLE_ORDER = ["Produce", "Pantry", "Dairy", "Bakery", "Frozen", "Household", "Other"];
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const BAG_IMAGES = {
+    empty: "data:image/jpeg;base64,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",
+    half: "data:image/jpeg;base64,/9j/4AAQSkZJRgABAQAASABIAAD/4QBMRXhpZgAATU0AKgAAAAgAAYdpAAQAAAABAAAAGgAAAAAAA6ABAAMAAAABAAEAAKACAAQAAAABAAABgKADAAQAAAABAAABgAAAAAD/7QA4UGhvdG9zaG9wIDMuMAA4QklNBAQAAAAAAAA4QklNBCUAAAAAABDUHYzZjwCyBOmACZjs+EJ+/8AAEQgBgAGAAwEiAAIRAQMRAf/EAB8AAAEFAQEBAQEBAAAAAAAAAAABAgMEBQYHCAkKC//EALUQAAIBAwMCBAMFBQQEAAABfQECAwAEEQUSITFBBhNRYQcicRQygZGhCCNCscEVUtHwJDNicoIJChYXGBkaJSYnKCkqNDU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6g4SFhoeIiYqSk5SVlpeYmZqio6Slpqeoqaqys7S1tre4ubrCw8TFxsfIycrS09TV1tfY2drh4uPk5ebn6Onq8fLz9PX29/j5+v/EAB8BAAMBAQEBAQEBAQEAAAAAAAABAgMEBQYHCAkKC//EALURAAIBAgQEAwQHBQQEAAECdwABAgMRBAUhMQYSQVEHYXETIjKBCBRCkaGxwQkjM1LwFWJy0QoWJDThJfEXGBkaJicoKSo1Njc4OTpDREVGR0hJSlNUVVZXWFlaY2RlZmdoaWpzdHV2d3h5eoKDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLDxMXGx8jJytLT1NXW19jZ2uLj5OXm5+jp6vLz9PX29/j5+v/bAEMAEBAQEBAQHBAQHCgcHBwoNigoKCg2RDY2NjY2RFJERERERERSUlJSUlJSUmNjY2NjY3Nzc3NzgYGBgYGBgYGBgf/bAEMBFBUVIR8hOB8fOIdcS1yHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh//dAAQAGP/aAAwDAQACEQMRAD8A7qiiisiwooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKAP/0O6ooorIsKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiikAUUUUwCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA/9HuqKKKyLCiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoqN5Y4/vsBVR7+NfujP14qXJLcai3sX6KzBqSdNoP0ap0vYW4OR+tHOg5WXKKQMGGVORS1QgooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooA//S7qiiisiwooooAKKKKACiiigAooooAKSlooAKKKy9RvGgAhiOGbkn0FJuyuI0yQOpxS1xjIzSAOxOe561f07UPJf7PcPlD0Y9j/hUKdxcx0lFICCMilrQoSloooAKzLq/CArGf+Bf4UX9zsHlKcf3j/So7G034uJx1+6voKzk23ZFpJK7K8Vrc3Pzn5FPc9TV5NMtlHzZY+5rRopqCQnNsqfYbX+5+pqF9PT/AJZMV9jz/wDXrRopuKFzMxN09q+HGM/kf8a1IZ1mHHWpHjSVCjjINY0iPZygZ+Un5WqLOO2xekjcoqKGUSpnuOoqWtEzMKKKKYBRRRQAUUUUAFFFQtcW6ttaRQfTNJu24JE1FICGGVOR7UtMAooooAKKKKACiiigAooooA//0+6ooorIsKKKKACiiigAooooAKKKpX8jR2/yHBY4zSbsrgW9y5xkZp1cgh/eYYY5p/250YojNx054rJVfIm51lctqkn+lkjoMD8qu2GpPK4inx83Q+/vWZqW6K5cEZ53fgaJu60BvQa+SNwqmRgADqTUyMoYITlW6fjQBiQDHQ1Bma+j3Dhjauc8ZHtiugrltK+a+3exrqa2hsaR2CmSOI0LnsM0+szU5dkKxjguf5VTdlctK7sUIIzd3ID8gHc1dFWNYMkMTStyXPA9hT5dQbOE4+nNZRkorUuSbehrUVhm4u26K/1/yKVbudPvbh9R/jT9ouwuRm3RVGO8z98fiP8ACrisrjcpyKtST2Jaa3HVDPCs8Rjbv0+tTUVQjGs5SjhX6/dP9K2axbtPLutw6SD9a1423xq/qKzhpdFy7j6KKK0ICiiigAqOWVIYzJIcAU8kKCzcAda5q5uGu5cj7g6D+tZVKnKjSnDmY+e6nujhcqnYD+tJ9mAjJ6VJbR87sVYnOBXG7tc0jpvZ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",
+    full: "data:image/jpeg;base64,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KnUd80KlTqppiBRzVlARSLHipgtUkS2OWnUlLVkhRRRQB//V7mkpaSsSxaKKKACiiigAooooAKKKKACkpaKACjFJS0AJiilooATFIVFLS0AR7BTDHU9JSsO5V8sik8sHrVukwKXKO5SMKntULWiNwRWntFIVpcoXMR9NibotVm00j7jEV0Wyk20uUfMcwbK4Xo26mGK4XqufpXUFB6VGYh6VLgilNnMeY6cMrD8M09bnHf8APiugMCntUTWiN1FT7NFc5li4zUwmQjnip206I9BUTaaf4HIpezHzoa4DqGXkrWReNmcgd8H9K1fsF2hzG/5iq8ml3Ur73wM9cUKDByRkbiTsQZP8qtQ2xzubk1qxaZ5YA29KvJa7a0SIbM5IMdBVlYq0BBUoi9BTsK5RWHNTiLFWRGaeFp2FchWPHWpNlSBadTsTcaFxTqKKYC0UUlMQtFFFAH//1u5ooorEsKKKKACiiigAooooAKKKKACiiigAooooAKKKKACkpaKACiiigAooooAKKKKACiiigBMUm0U6igBu0UbR6U6igBm0UuKdRSGM2ilxTqKBDdoowKdRTATFFLRQAlLRRQAUUUUAFFFFABRRRQAUUUUAf//Z"
+  };
+
+  let fixturePreview = false;
+  let previewClockDate = null;
+  const clockNow = () => previewClockDate ? new Date(previewClockDate) : new Date();
+  const actualToday = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const today    = () => { const n = clockNow(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
+  const nextOccurrence = (anchorIso, everyDays) => {
+    const a = dateOnly(anchorIso);
+    const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
+    return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
+  };
+
+  let model = { dinners: [], shopping: [], weekend: [], chores: [], board: [], dates: [] };
+  let hostState = { items: [] };
+  let refreshTask = null;
+  let refreshQueued = false;
+  let statusTimer = 0;
+  let dinnerSelection = null;
+  let weekendSelection = null;
+  let shoppingFormOpen = false;
+  let boardFormOpen = false;
+
+  function language() {
+    return localeCode().toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+
+  function t(key, values = {}) {
+    const template = STR[language()][key] ?? STR.en[key] ?? key;
+    return String(template).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? "");
+  }
+
+  function localeCode() {
+    const value = oma.pref("locale", "auto");
+    return value === "auto" ? (navigator.language || "en") : value;
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function svgNode(tag, attributes = {}) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+    return node;
+  }
+
+  function icon(path) {
+    const svg = svgNode("svg", { class: "k-icon", viewBox: "0 0 16 16", "aria-hidden": "true" });
+    svg.append(svgNode("path", { d: path }));
+    return svg;
+  }
+
+  function toISO(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function formatNumber(value, digits = 0) {
+    return new Intl.NumberFormat(localeCode(), { maximumFractionDigits: digits }).format(value);
+  }
+
+  function formatDate(iso, options = { month: "short", day: "numeric" }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso || "");
+    const mode = oma.pref("date_format", "auto");
+    if (mode === "yyyy-mm-dd") return String(iso);
+    const [year, month, day] = String(iso).split("-");
+    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+    return new Intl.DateTimeFormat(localeCode(), options).format(dateOnly(iso));
+  }
+
+  function formatLongDate(iso) {
+    return formatDate(iso, { weekday: "long", month: "long", day: "numeric" });
+  }
+
+  function startOfWeek(base) {
+    const startKey = oma.pref("week_start", "monday");
+    const startIndex = WEEK_START_INDEX[startKey] ?? 1;
+    const delta = (base.getDay() - startIndex + 7) % 7;
+    return new Date(base.getFullYear(), base.getMonth(), base.getDate() - delta);
+  }
+
+  function datesOfWeek(base = today()) {
+    const start = startOfWeek(base);
+    return Array.from({ length: 7 }, (_, index) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index));
+  }
+
+  function weekendDates(base = today()) {
+    const week = datesOfWeek(base);
+    return [week.find((date) => date.getDay() === 6), week.find((date) => date.getDay() === 0)].filter(Boolean);
+  }
+
+  function nextWeekDates() {
+    const currentStart = startOfWeek(today());
+    const anchor = new Date(currentStart.getFullYear(), currentStart.getMonth(), currentStart.getDate() + 7);
+    const nextStart = nextOccurrence(toISO(anchor), 7);
+    return Array.from({ length: 7 }, (_, index) => new Date(nextStart.getFullYear(), nextStart.getMonth(), nextStart.getDate() + index));
+  }
+
+  function relativeDate(iso) {
+    const days = daysUntil(iso);
+    if (days === 0) return t("todayRelative");
+    if (days === 1) return t("tomorrowRelative");
+    if (days > 1) return t("inDays", { count: formatNumber(days) });
+    return t("daysAgo", { count: formatNumber(Math.abs(days)) });
+  }
+
+  function mod(value, divisor) {
+    return ((value % divisor) + divisor) % divisor;
+  }
+
+  function isoWeekInfo(date = today()) {
+    const utc = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const weekday = utc.getUTCDay() || 7;
+    utc.setUTCDate(utc.getUTCDate() + 4 - weekday);
+    const isoYear = utc.getUTCFullYear();
+    const yearStart = new Date(Date.UTC(isoYear, 0, 1));
+    const week = Math.ceil((((utc - yearStart) / 86400000) + 1) / 7);
+    return { year: isoYear, week };
+  }
+
+  function isoWeekSerial(date) {
+    const monday = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+    const offset = (monday.getUTCDay() + 6) % 7;
+    monday.setUTCDate(monday.getUTCDate() - offset);
+    return Math.floor(monday.getTime() / (7 * 86400000));
+  }
+
+  function nextAnnualOccurrence(anchorIso) {
+    const anchor = dateOnly(anchorIso);
+    const now = today();
+    const make = (year) => {
+      const lastDay = new Date(year, anchor.getMonth() + 1, 0).getDate();
+      return new Date(year, anchor.getMonth(), Math.min(anchor.getDate(), lastDay));
+    };
+    const thisYear = make(now.getFullYear());
+    return thisYear < now ? make(now.getFullYear() + 1) : thisYear;
+  }
+
+  function initials(name) {
+    const clean = String(name || "").trim();
+    if (!clean) return "?";
+    const parts = clean.split(/\s+/).filter(Boolean);
+    return parts.length > 1 ? `${parts[0][0]}${parts.at(-1)[0]}`.toUpperCase() : clean.slice(0, 2).toUpperCase();
+  }
+
+  function parseWho(value) {
+    if (Array.isArray(value)) return value.map(String).map((name) => name.trim()).filter(Boolean);
+    if (typeof value !== "string") return [];
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String).map((name) => name.trim()).filter(Boolean);
+    } catch {
+      return value.split(/[,，、\n]/).map((name) => name.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function applyI18n() {
+    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+    document.title = t("appName");
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+    for (const node of document.querySelectorAll("[data-i18n-aria-label]")) node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel));
+  }
+
+  function showStatus(message, tone = "ok", persistent = false) {
+    const strip = document.getElementById("statusStrip");
+    const badge = document.getElementById("statusMessage");
+    badge.className = `k-badge ${tone}`;
+    badge.textContent = message;
+    strip.hidden = false;
+    clearTimeout(statusTimer);
+    if (!persistent) {
+      statusTimer = setTimeout(() => {
+        strip.hidden = true;
+      }, 3400);
+    }
+  }
+
+  function toolFailure(response, fallback) {
+    const structured = response?.structuredContent;
+    if (!response || response.isError || response.ok === false || structured?.ok === false) {
+      const message = response?.note || structured?.note || response?.reason || structured?.reason || response?.content?.[0]?.text || fallback;
+      throw new Error(message);
+    }
+  }
+
+  function validDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  }
+
+  function fixtureRows(items) {
+    return {
+      dinners: items.filter((item) => item.collection === DINNER_COLLECTION),
+      shopping: items.filter((item) => item.collection === SHOPPING_COLLECTION),
+      weekend: items.filter((item) => item.collection === WEEKEND_COLLECTION),
+      chores: items.filter((item) => item.collection === CHORES_COLLECTION),
+      board: items.filter((item) => item.collection === BOARD_COLLECTION),
+      dates: items.filter((item) => item.collection === DATES_COLLECTION)
+    };
+  }
+
+  function hasFixtureRows(rows) {
+    return rows.dinners.length || rows.shopping.length || rows.weekend.length || rows.chores.length || rows.board.length || rows.dates.length;
+  }
+
+  function previewDateOf(rows) {
+    const dates = rows.board
+      .map((item) => String(item.fields?.date || ""))
+      .filter(validDate)
+      .sort();
+    if (!dates.length) return null;
+    const date = dateOnly(dates.at(-1));
+    date.setHours(12, 0, 0, 0);
+    return date;
+  }
+
+  async function readCollection(collection) {
+    const response = await oma.callTool("data_list", { collection, limit: 500 });
+    toolFailure(response, collection);
+    const items = response?.structuredContent?.items;
+    if (!Array.isArray(items)) throw new Error(t("invalidData", { collection }));
+    return items;
+  }
+
+  function refreshCollections(state = hostState) {
+    hostState = state || hostState;
+    refreshQueued = true;
+    if (refreshTask) return refreshTask;
+
+    refreshTask = (async () => {
+      while (refreshQueued) {
+        refreshQueued = false;
+        const previewRows = fixtureRows(hostState.items || []);
+        if (hasFixtureRows(previewRows)) {
+          fixturePreview = true;
+          previewClockDate = previewDateOf(previewRows);
+          model = previewRows;
+          render();
+          continue;
+        }
+
+        fixturePreview = false;
+        previewClockDate = null;
+        const [dinners, shopping, weekend, chores, board, dates] = await Promise.all(COLLECTIONS.map(readCollection));
+        model = { dinners, shopping, weekend, chores, board, dates };
+        render();
+      }
+    })().finally(() => {
+      refreshTask = null;
+    });
+    return refreshTask;
+  }
+
+  function requestRefresh(state) {
+    void refreshCollections(state).catch((error) => {
+      showStatus(t("readFailed", { error: String(error?.message || error) }), "bad", true);
+    });
+  }
+
+  async function dataWrite(tool, args) {
+    const response = await oma.callTool(tool, {
+      command_id: crypto.randomUUID(),
+      ...args,
+      actor: "human"
+    });
+    toolFailure(response, t("saveFailed", { error: tool }));
+    return response;
+  }
+
+  async function runWrite(button, action, successMessage) {
+    if (button) button.disabled = true;
+    try {
+      await action();
+      await refreshCollections();
+      showStatus(successMessage, "ok");
+      return true;
+    } catch (error) {
+      showStatus(t("saveFailed", { error: String(error?.message || error) }), "bad", true);
+      requestRefresh();
+      return false;
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function dinnersForWeek() {
+    const week = datesOfWeek();
+    const start = toISO(week[0]);
+    const end = toISO(week[6]);
+    const byDate = new Map();
+    for (const item of [...model.dinners].sort((a, b) => a.position - b.position)) {
+      const date = String(item.fields?.date || "");
+      if (date >= start && date <= end && String(item.fields?.dish || "").trim()) byDate.set(date, item);
+    }
+    return { week, byDate };
+  }
+
+  function shoppingRows() {
+    return model.shopping.filter((item) => String(item.fields?.item || "").trim())
+      .sort((a, b) => Number(Boolean(a.fields.done_at)) - Number(Boolean(b.fields.done_at)) || a.position - b.position);
+  }
+
+  function weekendRows() {
+    const byDate = new Map();
+    for (const item of [...model.weekend].sort((a, b) => a.position - b.position)) {
+      if (validDate(item.fields?.date) && String(item.fields?.plan || "").trim()) byDate.set(String(item.fields.date), item);
+    }
+    return byDate;
+  }
+
+  function choreRows() {
+    return [...model.chores]
+      .filter((item) => String(item.fields?.task || "").trim() && validDate(item.fields?.anchor_date) && parseWho(item.fields?.members).length)
+      .sort((a, b) => a.position - b.position);
+  }
+
+  function boardRows() {
+    return [...model.board]
+      .filter((item) => String(item.fields?.note || "").trim() && validDate(item.fields?.date))
+      .sort((a, b) => String(b.fields.date).localeCompare(String(a.fields.date)) || b.position - a.position);
+  }
+
+  function importantDateRows() {
+    return model.dates
+      .filter((item) => String(item.fields?.label || "").trim() && validDate(item.fields?.date))
+      .map((item) => {
+        const next = nextAnnualOccurrence(item.fields.date);
+        return { item, next, days: Math.round((next - today()) / 86400000) };
+      })
+      .sort((a, b) => a.days - b.days || a.item.position - b.item.position)
+      .slice(0, 3);
+  }
+
+  function invitePanel(path, titleKey, bodyKey, buttonKey, action) {
+    const panel = el("div", "invite-panel");
+    const visual = el("div", "invite-icon");
+    const svg = svgNode("svg", { viewBox: "0 0 28 28", "aria-hidden": "true" });
+    svg.append(svgNode("path", { d: path }));
+    visual.append(svg);
+    const copy = el("div", "invite-copy");
+    copy.append(el("b", "", t(titleKey)));
+    copy.append(el("span", "", t(bodyKey)));
+    const button = el("button", "k-btn sec", t(buttonKey));
+    button.type = "button";
+    button.onclick = action;
+    panel.append(visual, copy, button);
+    return panel;
+  }
+
+  function renderOverview() {
+    const { byDate } = dinnersForWeek();
+    const shopping = shoppingRows();
+    const done = shopping.filter((item) => item.fields.done_at).length;
+    const toBuy = shopping.length - done;
+    const weekend = weekendRows();
+    const currentWeekend = weekendDates().filter((date) => weekend.has(toISO(date))).length;
+    document.getElementById("toBuyNumber").textContent = formatNumber(toBuy);
+    document.getElementById("dinnerStat").textContent = `${formatNumber(byDate.size)}/7`;
+    document.getElementById("shoppingStat").textContent = `${formatNumber(done)}/${formatNumber(shopping.length)}`;
+    document.getElementById("weekendStat").textContent = `${formatNumber(currentWeekend)}/2`;
+  }
+
+  function renderDinners() {
+    const root = document.getElementById("dinnerGrid");
+    root.replaceChildren();
+    const { week, byDate } = dinnersForWeek();
+    const nowIso = toISO(today());
+    document.getElementById("weekRange").textContent = `${formatDate(toISO(week[0]))} – ${formatDate(toISO(week[6]))}`;
+
+    for (const date of week) {
+      const iso = toISO(date);
+      const item = byDate.get(iso) || null;
+      const fields = item?.fields || {};
+      const button = el("button", `dinner-slot${item ? " filled" : ""}${iso === nowIso ? " today" : ""}`);
+      button.type = "button";
+      button.setAttribute("aria-label", `${formatLongDate(iso)} · ${item ? fields.dish : t("pick")}`);
+
+      const dateRow = el("div", "dinner-date-row");
+      dateRow.append(el("span", "dinner-day", new Intl.DateTimeFormat(localeCode(), { weekday: "short" }).format(date)));
+      if (iso === nowIso) dateRow.append(el("span", "today-pip"));
+      else dateRow.append(el("span", "dinner-date", formatNumber(date.getDate())));
+
+      button.append(dateRow);
+      button.append(el("span", `dish-name${item ? "" : " empty"}`, item ? String(fields.dish) : t("pick")));
+
+      const cookRow = el("div", "cook-row");
+      const cook = String(fields.cook || "").trim();
+      const chip = el("span", "cook-chip");
+      chip.append(el("span", "avatar", cook ? initials(cook) : "+"));
+      chip.append(el("span", "cook-name", cook || t("noCook")));
+      cookRow.append(chip);
+      button.append(cookRow);
+      button.onclick = () => openDinnerEditor(iso, item);
+      root.append(button);
+    }
+  }
+
+  function renderShopping() {
+    const rows = shoppingRows();
+    const active = rows.filter((item) => !item.fields.done_at);
+    const done = rows.filter((item) => item.fields.done_at);
+    const total = rows.length;
+    const progress = total ? done.length / total : 0;
+    const percent = Math.round(progress * 100);
+    const bagState = progress === 0 ? "empty" : progress < .75 ? "half" : "full";
+    const bag = document.getElementById("bagVisual");
+    document.getElementById("shoppingSubtitle").textContent = t("shoppingCount", { count: formatNumber(active.length) });
+    document.getElementById("bagScore").textContent = `${formatNumber(percent)}%`;
+    document.getElementById("bagCaption").textContent = t("bagProgress", { done: formatNumber(done.length), total: formatNumber(total) });
+    bag.src = BAG_IMAGES[bagState];
+    bag.alt = t(`bag${bagState[0].toUpperCase()}${bagState.slice(1)}Alt`);
+    document.getElementById("shoppingEmpty").hidden = total > 0;
+
+    const root = document.getElementById("shoppingList");
+    root.replaceChildren();
+    root.hidden = total === 0;
+
+    const groups = new Map();
+    for (const item of active) {
+      const aisle = String(item.fields.aisle || "Other").trim() || "Other";
+      if (!groups.has(aisle)) groups.set(aisle, []);
+      groups.get(aisle).push(item);
+    }
+
+    const orderedAisles = [...groups.keys()].sort((a, b) => {
+      const ai = AISLE_ORDER.indexOf(a);
+      const bi = AISLE_ORDER.indexOf(b);
+      return (ai < 0 ? 99 : ai) - (bi < 0 ? 99 : bi) || a.localeCompare(b);
+    });
+
+    for (const aisle of orderedAisles) root.append(renderAisle(aisle, groups.get(aisle), false));
+    if (done.length && oma.pref("show_completed", true)) root.append(renderAisle(t("completed"), done, true));
+  }
+
+  function aisleLabel(aisle) {
+    const key = AISLE_KEYS[String(aisle || "").trim().toLowerCase()];
+    return key ? t(key) : String(aisle || t("other"));
+  }
+
+  function renderAisle(aisle, items, doneGroup) {
+    const group = el("section", `aisle-group${doneGroup ? " done-aisle" : ""}`);
+    const heading = el("div", "aisle-heading");
+    heading.append(el("span", "k-dot"));
+    heading.append(el("span", "", doneGroup ? aisle : aisleLabel(aisle)));
+    heading.append(el("span", "k-num", formatNumber(items.length)));
+    group.append(heading);
+
+    for (const item of items) {
+      const row = el("div", `shopping-row${item.fields.done_at ? " done" : ""}`);
+      const checkbox = el("input", "shopping-check");
+      checkbox.type = "checkbox";
+      checkbox.checked = Boolean(item.fields.done_at);
+      checkbox.setAttribute("aria-label", String(item.fields.item));
+      checkbox.onchange = () => toggleShopping(item, checkbox.checked, checkbox);
+
+      const copy = el("div", "shopping-item");
+      copy.append(el("strong", "", String(item.fields.item)));
+      const meta = [String(item.fields.qty || "").trim(), doneGroup ? aisleLabel(item.fields.aisle || "Other") : ""].filter(Boolean).join(" · ");
+      if (meta) copy.append(el("span", "", meta));
+      row.append(checkbox, copy);
+      row.append(el("span", "k-mut k-num", item.fields.done_at ? "✓" : ""));
+      group.append(row);
+    }
+    return group;
+  }
+
+  function renderChores() {
+    const rows = choreRows();
+    const root = document.getElementById("choreGrid");
+    const empty = document.getElementById("choresEmpty");
+    const currentWeek = isoWeekInfo();
+    document.getElementById("rotationWeek").textContent = t("rotationWeek", { week: formatNumber(currentWeek.week) });
+    root.replaceChildren();
+    empty.replaceChildren();
+    root.hidden = rows.length === 0;
+    empty.hidden = rows.length > 0;
+
+    if (!rows.length) {
+      empty.append(invitePanel(
+        "M5 7h18M7 4v6M21 4v6M6 13h6v5H6zM16 13h6v5h-6zM6 21h6M16 21h6",
+        "choreEmptyTitle",
+        "choreEmptyBody",
+        "setupChores",
+        () => oma.sendMessage(t("choresMessage"))
+      ));
+      return;
+    }
+
+    for (const item of rows) {
+      const fields = item.fields;
+      const members = parseWho(fields.members);
+      const weeksPassed = isoWeekSerial(today()) - isoWeekSerial(dateOnly(fields.anchor_date));
+      const slot = Math.max(0, Number(item.position || 1) - 1);
+      const assignee = members[mod(weeksPassed + slot, members.length)];
+      const row = el("div", "chore-row");
+      row.append(el("span", "avatar chore-avatar", initials(assignee)));
+      const copy = el("div", "chore-copy");
+      copy.append(el("strong", "", String(fields.task)));
+      copy.append(el("span", "", t("choreTurn", { name: assignee })));
+      row.append(copy);
+      row.append(el("span", "k-badge rotation-step", `W${formatNumber(currentWeek.week)}`));
+      root.append(row);
+    }
+  }
+
+  function renderBoard() {
+    const rows = boardRows();
+    const root = document.getElementById("boardGrid");
+    const empty = document.getElementById("boardEmpty");
+    root.replaceChildren();
+    empty.replaceChildren();
+    root.hidden = rows.length === 0;
+    empty.hidden = rows.length > 0;
+
+    if (!rows.length) {
+      empty.append(invitePanel(
+        "M6 5h16v16H10l-4 3zM10 10h8M10 14h6",
+        "boardEmptyTitle",
+        "boardEmptyBody",
+        "writeNote",
+        () => setBoardForm(true)
+      ));
+      return;
+    }
+
+    for (const item of rows) {
+      const author = String(item.fields.author || "").trim() || t("unknownAuthor");
+      const note = el("article", "board-note");
+      note.append(el("p", "board-copy", String(item.fields.note)));
+      const meta = el("div", "board-meta");
+      const chip = el("span", "k-chip static person-chip");
+      chip.append(el("span", "avatar", initials(author)));
+      chip.append(el("span", "", author));
+      const time = el("time", "", formatDate(item.fields.date));
+      time.dateTime = String(item.fields.date);
+      meta.append(chip, time);
+      note.append(meta);
+      root.append(note);
+    }
+  }
+
+  function renderImportantDates() {
+    const rows = importantDateRows();
+    const root = document.getElementById("dateGrid");
+    const empty = document.getElementById("datesEmpty");
+    root.replaceChildren();
+    empty.replaceChildren();
+    root.hidden = rows.length === 0;
+    empty.hidden = rows.length > 0;
+
+    if (!rows.length) {
+      empty.append(invitePanel(
+        "M7 4v4M21 4v4M5 7h18v16H5zM9 12h3v3H9zM16 12h3M16 16h3M9 19h10",
+        "datesEmptyTitle",
+        "datesEmptyBody",
+        "addDates",
+        () => oma.sendMessage(t("datesMessage"))
+      ));
+      return;
+    }
+
+    rows.forEach(({ item, next, days }, index) => {
+      const card = el("article", `date-card${index === 0 ? " nearest" : ""}`);
+      const countdown = el("div", "countdown");
+      countdown.append(el("strong", "", formatNumber(days)));
+      countdown.append(el("span", "", days === 0 ? t("todayUnit") : t(days === 1 ? "dayUnit" : "daysUnit")));
+      const copy = el("div", "date-copy");
+      copy.append(el("strong", "", String(item.fields.label)));
+      const kindKey = String(item.fields.kind || "").trim().toLowerCase();
+      const kind = kindKey === "birthday" || kindKey === "anniversary" ? t(kindKey) : String(item.fields.kind || "").trim();
+      copy.append(el("span", "", [kind, formatDate(toISO(next))].filter(Boolean).join(" · ")));
+      card.append(countdown, copy);
+      root.append(card);
+    });
+  }
+
+  function renderWeekend() {
+    const root = document.getElementById("weekendGrid");
+    root.replaceChildren();
+    const byDate = weekendRows();
+    const dates = weekendDates();
+    dates.forEach((date, index) => root.append(renderWeekendCard(date, byDate.get(toISO(date)) || null, index)));
+  }
+
+  function renderWeekendCard(date, item, index) {
+    const iso = toISO(date);
+    const dayKey = date.getDay() === 6 ? "saturday" : "sunday";
+    const card = el("article", `k-card weekend-card ${dayKey} k-stagger`);
+    card.style.setProperty("--i", index);
+
+    const top = el("div", "weekend-top k-row");
+    top.append(el("span", "k-badge info", t(dayKey)));
+    top.append(el("span", "k-grow"));
+    top.append(el("span", "weekend-date", `${formatDate(iso)} · ${relativeDate(iso)}`));
+    card.append(top);
+
+    if (!item) {
+      const empty = el("div", "weekend-empty");
+      const visual = svgNode("svg", { viewBox: "0 0 56 42", "aria-hidden": "true" });
+      visual.append(svgNode("path", { d: "M5 33c8-8 15-12 23-12s15 4 23 12M17 18l6-7 6 7M36 17h10M41 12v10" }));
+      visual.append(svgNode("path", { d: "M9 35h38", opacity: ".5" }));
+      empty.append(visual);
+      empty.append(el("h3", "", t("noPlan")));
+      empty.append(el("div", "k-sub", t("weekendSubtitle")));
+      const actions = el("div", "k-row");
+      const ask = el("button", "k-btn sec", t("askWeather"));
+      ask.type = "button";
+      ask.onclick = () => askWeatherIdeas(iso);
+      const add = el("button", "k-btn ghost", t("addPlan"));
+      add.type = "button";
+      add.onclick = () => openWeekendEditor(iso, null);
+      actions.append(ask, add);
+      empty.append(actions);
+      card.append(empty);
+      return card;
+    }
+
+    card.classList.add("has-plan");
+    card.append(el("h3", "", String(item.fields.plan)));
+    const who = parseWho(item.fields.who);
+    if (who.length) {
+      const people = el("div", "people-row");
+      for (const name of who) {
+        const chip = el("span", "k-chip static person-chip");
+        chip.append(el("span", "avatar", initials(name)));
+        chip.append(el("span", "", name));
+        people.append(chip);
+      }
+      card.append(people);
+    }
+    if (item.fields.note) card.append(el("p", "weekend-note", String(item.fields.note)));
+    const edit = el("button", "k-btn ghost weekend-edit");
+    edit.type = "button";
+    edit.title = t("editPlan");
+    edit.setAttribute("aria-label", t("editPlan"));
+    edit.append(icon("M3 11.5V14h2.5L13 6.5 9.5 3 2 10.5zM8.5 4l3.5 3.5"));
+    edit.onclick = () => openWeekendEditor(iso, item);
+    card.append(edit);
+    return card;
+  }
+
+  function renderWelcome() {
+    const empty = model.dinners.length === 0 && model.shopping.length === 0 && model.weekend.length === 0
+      && model.chores.length === 0 && model.board.length === 0 && model.dates.length === 0;
+    document.getElementById("welcomeBand").hidden = !empty;
+  }
+
+  function render() {
+    applyI18n();
+    document.body.dataset.density = oma.pref("density", "comfortable");
+    const snapshot = fixturePreview && toISO(today()) !== toISO(actualToday());
+    const snapshotDate = formatDate(toISO(today()));
+    document.getElementById("todayBadge").textContent = snapshot ? t("snapshot", { date: snapshotDate }) : t("today");
+    document.getElementById("datesSubtitle").textContent = snapshot
+      ? t("datesSubtitleSnapshot", { date: snapshotDate })
+      : t("datesSubtitle");
+    renderOverview();
+    renderDinners();
+    renderShopping();
+    renderChores();
+    renderBoard();
+    renderImportantDates();
+    renderWeekend();
+    renderWelcome();
+  }
+
+  function openDinnerEditor(date, item) {
+    dinnerSelection = { date, item };
+    const editor = document.getElementById("dinnerEditor");
+    editor.hidden = false;
+    document.getElementById("dinnerEditorTitle").textContent = t(item ? "dinnerEditorEdit" : "dinnerEditorNew");
+    document.getElementById("dinnerEditorDate").textContent = formatLongDate(date);
+    document.getElementById("dinnerDish").value = item?.fields.dish || "";
+    document.getElementById("dinnerCook").value = item?.fields.cook || "";
+    document.getElementById("dinnerNote").value = item?.fields.note || "";
+    const clear = document.getElementById("clearDinnerButton");
+    clear.hidden = !item;
+    clear.textContent = t("clearSlot");
+    requestAnimationFrame(() => {
+      editor.scrollIntoView({ block: "nearest" });
+      document.getElementById("dinnerDish").focus({ preventScroll: true });
+    });
+  }
+
+  function closeDinnerEditor() {
+    dinnerSelection = null;
+    document.getElementById("dinnerEditor").hidden = true;
+  }
+
+  async function saveDinner(event) {
+    event.preventDefault();
+    if (!dinnerSelection) return;
+    const fields = {
+      date: dinnerSelection.date,
+      dish: document.getElementById("dinnerDish").value.trim(),
+      cook: document.getElementById("dinnerCook").value.trim(),
+      note: document.getElementById("dinnerNote").value.trim()
+    };
+    if (!fields.dish) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+    const button = document.getElementById("saveDinnerButton");
+    const ok = await runWrite(button, () => dinnerSelection.item
+      ? dataWrite("data_update_item", { id: dinnerSelection.item.id, fields })
+      : dataWrite("data_add_item", { collection: DINNER_COLLECTION, group: "week", fields }),
+    t("dinnerSaved", { date: formatDate(fields.date) }));
+    if (ok) closeDinnerEditor();
+  }
+
+  async function clearDinner() {
+    if (!dinnerSelection?.item) return;
+    const button = document.getElementById("clearDinnerButton");
+    const ok = await runWrite(button, () => dataWrite("data_delete_item", { id: dinnerSelection.item.id }), t("dinnerRemoved"));
+    if (ok) closeDinnerEditor();
+  }
+
+  function setShoppingForm(open) {
+    shoppingFormOpen = open;
+    document.getElementById("shoppingForm").hidden = !open;
+    if (open) {
+      document.getElementById("shoppingAisle").value = oma.pref("default_aisle", "Produce");
+      requestAnimationFrame(() => document.getElementById("shoppingItem").focus());
+    }
+  }
+
+  async function addShopping(event) {
+    event.preventDefault();
+    const fields = {
+      item: document.getElementById("shoppingItem").value.trim(),
+      aisle: document.getElementById("shoppingAisle").value.trim() || "Other",
+      qty: document.getElementById("shoppingQty").value.trim()
+    };
+    if (!fields.item) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+    const button = document.getElementById("saveShoppingButton");
+    const ok = await runWrite(button, () => dataWrite("data_add_item", {
+      collection: SHOPPING_COLLECTION,
+      group: fields.aisle,
+      fields
+    }), t("shoppingAdded"));
+    if (ok) {
+      event.currentTarget.reset();
+      setShoppingForm(false);
+    }
+  }
+
+  async function toggleShopping(item, checked, checkbox) {
+    checkbox.disabled = true;
+    const fields = { done_at: checked ? clockNow().toISOString() : null };
+    const ok = await runWrite(checkbox, () => dataWrite("data_update_item", { id: item.id, fields }), t("shoppingUpdated"));
+    if (!ok) checkbox.checked = Boolean(item.fields.done_at);
+  }
+
+  function setBoardForm(open) {
+    boardFormOpen = open;
+    document.getElementById("boardForm").hidden = !open;
+    if (open) requestAnimationFrame(() => document.getElementById("boardNote").focus());
+  }
+
+  async function addBoardNote(event) {
+    event.preventDefault();
+    const fields = {
+      note: document.getElementById("boardNote").value.trim(),
+      author: document.getElementById("boardAuthor").value.trim(),
+      date: toISO(today())
+    };
+    if (!fields.note) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+    const button = document.getElementById("saveBoardButton");
+    const ok = await runWrite(button, () => dataWrite("data_add_item", {
+      collection: BOARD_COLLECTION,
+      group: "board",
+      fields
+    }), t("boardAdded"));
+    if (ok) {
+      event.currentTarget.reset();
+      setBoardForm(false);
+    }
+  }
+
+  function openWeekendEditor(date, item) {
+    weekendSelection = { date, item };
+    const editor = document.getElementById("weekendEditor");
+    editor.hidden = false;
+    document.getElementById("weekendEditorTitle").textContent = t(item ? "planEditorEdit" : "planEditorNew");
+    document.getElementById("weekendEditorDate").textContent = formatLongDate(date);
+    document.getElementById("weekendPlan").value = item?.fields.plan || "";
+    document.getElementById("weekendWho").value = parseWho(item?.fields.who).join(", ");
+    document.getElementById("weekendNote").value = item?.fields.note || "";
+    const remove = document.getElementById("removeWeekendButton");
+    remove.hidden = !item;
+    remove.textContent = t("removePlan");
+    requestAnimationFrame(() => {
+      editor.scrollIntoView({ block: "nearest" });
+      document.getElementById("weekendPlan").focus({ preventScroll: true });
+    });
+  }
+
+  function closeWeekendEditor() {
+    weekendSelection = null;
+    document.getElementById("weekendEditor").hidden = true;
+  }
+
+  async function saveWeekend(event) {
+    event.preventDefault();
+    if (!weekendSelection) return;
+    const fields = {
+      date: weekendSelection.date,
+      plan: document.getElementById("weekendPlan").value.trim(),
+      who: document.getElementById("weekendWho").value.split(/[,，、\n]/).map((name) => name.trim()).filter(Boolean),
+      note: document.getElementById("weekendNote").value.trim()
+    };
+    if (!fields.plan) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+    const button = document.getElementById("saveWeekendButton");
+    const ok = await runWrite(button, () => weekendSelection.item
+      ? dataWrite("data_update_item", { id: weekendSelection.item.id, fields })
+      : dataWrite("data_add_item", { collection: WEEKEND_COLLECTION, group: "weekend", fields }),
+    t("planSaved"));
+    if (ok) closeWeekendEditor();
+  }
+
+  async function removeWeekend() {
+    if (!weekendSelection?.item) return;
+    const button = document.getElementById("removeWeekendButton");
+    const ok = await runWrite(button, () => dataWrite("data_delete_item", { id: weekendSelection.item.id }), t("planRemoved"));
+    if (ok) closeWeekendEditor();
+  }
+
+  function askWeatherIdeas(date) {
+    oma.sendMessage(t("weatherMessage", { date: formatLongDate(date) }));
+  }
+
+  function askPlanNextWeek() {
+    const dates = nextWeekDates();
+    oma.sendMessage(t("planNextMessage", { start: toISO(dates[0]), end: toISO(dates[6]) }));
+  }
+
+  function askChanges() {
+    oma.sendMessage(t("changesMessage"));
+  }
+
+  function askMemorySeed() {
+    const week = datesOfWeek();
+    oma.sendMessage(t("memoryMessage", { start: toISO(week[0]), end: toISO(week[6]) }));
+  }
+
+  document.getElementById("planNextButton").onclick = askPlanNextWeek;
+  document.getElementById("changesButton").onclick = askChanges;
+  document.getElementById("memoryButton").onclick = askMemorySeed;
+  document.getElementById("closeDinnerEditor").onclick = closeDinnerEditor;
+  document.getElementById("cancelDinnerButton").onclick = closeDinnerEditor;
+  document.getElementById("clearDinnerButton").onclick = clearDinner;
+  document.getElementById("dinnerForm").onsubmit = saveDinner;
+  document.getElementById("toggleShoppingForm").onclick = () => setShoppingForm(!shoppingFormOpen);
+  document.getElementById("cancelShoppingButton").onclick = () => setShoppingForm(false);
+  document.getElementById("shoppingForm").onsubmit = addShopping;
+  document.getElementById("toggleBoardForm").onclick = () => setBoardForm(!boardFormOpen);
+  document.getElementById("boardForm").onsubmit = addBoardNote;
+  document.getElementById("closeWeekendEditor").onclick = closeWeekendEditor;
+  document.getElementById("cancelWeekendButton").onclick = closeWeekendEditor;
+  document.getElementById("removeWeekendButton").onclick = removeWeekend;
+  document.getElementById("weekendForm").onsubmit = saveWeekend;
+
+  oma.ready(requestRefresh);
+  oma.onChange(requestRefresh);
+  oma.onPrefChange(render);
+  setInterval(requestRefresh, 30000);
+</script>
+</body>
+</html>

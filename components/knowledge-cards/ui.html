@@ -1,0 +1,1940 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge Cards · Visual Answer Library</title>
+<meta name="description" content="Keep useful AI answers in a searchable visual library. After installing, seed it with the AI: it can generate/attach images for each card.">
+<meta name="oma-category" content="Learning">
+
+<!-- gpt-image production seed spec: square 1:1, photorealistic, generated in one batch per topic. Store fixture images are AI-generated preview references and are labeled as such in media_source/media_credit. -->
+<style>
+  body {
+    max-width: 760px;
+    margin-inline: auto;
+    background: transparent;
+  }
+
+  button,
+  input,
+  textarea {
+    letter-spacing: 0;
+  }
+
+  .app {
+    position: relative;
+    min-width: 0;
+  }
+
+  .app-bar {
+    align-items: center;
+    gap: var(--k-s2);
+    padding: 10px 15px 9px;
+  }
+
+  .brand-mark {
+    width: 36px;
+    height: 36px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    color: var(--color-text-info, var(--color-ring-primary));
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, transparent);
+  }
+
+  .brand-mark svg {
+    width: 20px;
+    height: 20px;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    margin: 0 0 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .identity .k-h1 {
+    margin: 0;
+    font-size: 19px;
+    letter-spacing: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .bar-action {
+    margin-left: auto;
+    flex: none;
+  }
+
+  .bar-action .k-icon {
+    margin-right: 5px;
+  }
+
+  .ask-strip {
+    display: flex;
+    align-items: center;
+    gap: var(--k-s2);
+    margin: 0 15px 8px;
+    padding: 8px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
+    box-shadow: var(--shadow-sm);
+  }
+
+  .ask-mark {
+    width: 30px;
+    height: 30px;
+    flex: none;
+    display: grid;
+    place-items: center;
+    color: var(--color-text-info, var(--color-ring-primary));
+  }
+
+  .ask-mark .k-icon {
+    width: 19px;
+    height: 19px;
+  }
+
+  #askInput {
+    min-width: 0;
+    flex: 1;
+    border-color: transparent;
+    background: transparent;
+    box-shadow: none;
+  }
+
+  #askSubmit {
+    flex: none;
+  }
+
+  #askSubmit .k-icon {
+    margin-right: 5px;
+  }
+
+  .overview {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    min-width: 0;
+    padding: 6px 15px;
+    border-block: 1px solid var(--color-border-secondary);
+  }
+
+  .overview-main,
+  .stat {
+    display: flex;
+    align-items: baseline;
+    gap: 4px;
+    min-width: max-content;
+  }
+
+  .overview-number {
+    font-size: 13px;
+    font-weight: 720;
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .overview-label,
+  .stat-label {
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    line-height: 1.2;
+  }
+
+  .stat {
+    padding-left: 12px;
+    border-left: 1px solid var(--color-border-secondary);
+  }
+
+  .stat-value {
+    font-size: 12px;
+    font-weight: 680;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .controls {
+    padding: 8px 15px 7px;
+  }
+
+  .search-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    align-items: center;
+    min-width: 0;
+  }
+
+  .search-shell {
+    position: relative;
+    min-width: 0;
+    flex: 1;
+  }
+
+  .search-shell > .k-icon {
+    position: absolute;
+    left: 11px;
+    top: 50%;
+    translate: 0 -50%;
+    color: var(--color-text-tertiary);
+    pointer-events: none;
+  }
+
+  #searchInput {
+    width: 100%;
+    min-height: 32px;
+    padding-left: 34px;
+    padding-right: 34px;
+    font-size: 12px;
+  }
+
+  #clearSearch {
+    position: absolute;
+    right: 4px;
+    top: 50%;
+    translate: 0 -50%;
+    width: 29px;
+    min-width: 29px;
+    height: 29px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .sort-tabs {
+    flex: none;
+  }
+
+  .sort-tabs .k-tab {
+    min-width: 44px;
+    min-height: 30px;
+    padding-inline: 7px;
+    font-size: 10.5px;
+  }
+
+  .topic-row {
+    display: flex;
+    flex: 1 0 100%;
+    flex-wrap: wrap;
+    gap: 4px;
+    min-width: 0;
+    margin: 0;
+    padding: 1px 0;
+  }
+
+  .topic-row .k-chip {
+    flex: none;
+    min-height: 26px;
+    padding-inline: 8px;
+    font-size: 10px;
+  }
+
+  .write-error {
+    position: fixed;
+    top: 10px;
+    left: 50%;
+    z-index: 30;
+    display: flex;
+    align-items: center;
+    gap: var(--k-s2);
+    width: min(620px, calc(100% - 24px));
+    margin: 0;
+    padding: 9px 11px;
+    translate: -50% 0;
+    white-space: normal;
+    box-shadow: var(--shadow-lg, var(--shadow-sm));
+  }
+
+  .write-error .k-grow {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .write-error .k-btn {
+    width: 28px;
+    min-width: 28px;
+    height: 28px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  #writeError[hidden],
+  #clearSearch[hidden],
+  #detailOverlay[hidden],
+  .media-loading[hidden],
+  .media-retry[hidden],
+  .media-placeholder[hidden],
+  .card-image[hidden] {
+    display: none;
+  }
+
+  .gallery-scroll {
+    overflow: visible;
+    padding: 5px 15px 17px;
+  }
+
+  .gallery {
+    columns: 2;
+    column-gap: var(--k-s3);
+  }
+
+  .knowledge-card {
+    --topic-color: var(--color-text-info, var(--color-ring-primary));
+    position: relative;
+    display: inline-block;
+    width: 100%;
+    margin: 0 0 var(--k-s3);
+    padding: 0;
+    overflow: hidden;
+    border-top: 2px solid var(--topic-color);
+    break-inside: avoid;
+    cursor: pointer;
+  }
+
+  .knowledge-card:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+
+  .knowledge-card.is-text-only {
+    min-height: 198px;
+    background:
+      radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--topic-color) 13%, transparent), transparent 46%),
+      var(--color-background-primary);
+  }
+
+  .knowledge-card.is-text-only::after {
+    position: absolute;
+    top: 13px;
+    right: 16px;
+    color: color-mix(in oklab, var(--topic-color) 12%, transparent);
+    font-size: 56px;
+    font-weight: 780;
+    line-height: 1;
+    content: attr(data-glyph);
+    pointer-events: none;
+  }
+
+  .knowledge-card.is-text-only .card-body {
+    position: relative;
+    z-index: 1;
+    min-height: 196px;
+    padding: 17px 17px 18px;
+  }
+
+  .knowledge-card.is-text-only .card-kicker {
+    padding-right: 42px;
+  }
+
+  .knowledge-card.is-text-only .card-title {
+    max-width: 19ch;
+    font-size: 18px;
+  }
+
+  .card-media,
+  .detail-media {
+    position: relative;
+    overflow: hidden;
+    background: var(--color-background-secondary);
+  }
+
+  .card-media {
+    aspect-ratio: var(--media-ratio, 4 / 3);
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .card-image {
+    width: 100%;
+    height: 100%;
+    display: block;
+    object-fit: cover;
+  }
+
+  .media-placeholder {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    overflow: hidden;
+    color: var(--topic-color);
+    background-color: color-mix(in oklab, var(--topic-color) 9%, var(--color-background-secondary));
+    background-image: repeating-linear-gradient(
+      135deg,
+      color-mix(in oklab, var(--topic-color) 7%, transparent) 0,
+      color-mix(in oklab, var(--topic-color) 7%, transparent) 1px,
+      transparent 1px,
+      transparent 12px
+    );
+  }
+
+  .placeholder-letter {
+    font-family: var(--font-sans);
+    font-size: 48px;
+    font-weight: 760;
+    line-height: 1;
+  }
+
+  .placeholder-caption {
+    position: absolute;
+    right: 9px;
+    bottom: 8px;
+    max-width: calc(100% - 18px);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .media-loading {
+    position: absolute;
+    inset: 0;
+    border-radius: 0;
+  }
+
+  .media-retry {
+    position: absolute;
+    left: 50%;
+    bottom: 10px;
+    translate: -50% 0;
+  }
+
+  .media-retry .k-icon {
+    margin-right: 4px;
+  }
+
+  .media-origin {
+    --origin-color: var(--color-text-info, var(--color-ring-primary));
+    position: absolute;
+    top: 9px;
+    left: 9px;
+    z-index: 3;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    max-width: calc(100% - 18px);
+    min-height: 24px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in oklab, var(--origin-color) 32%, var(--color-border-primary));
+    border-radius: var(--border-radius-full);
+    color: var(--color-text-primary);
+    background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
+    box-shadow: var(--shadow-sm);
+    font-size: 9.5px;
+    font-weight: 720;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    backdrop-filter: blur(10px);
+  }
+
+  .media-origin::before {
+    width: 6px;
+    height: 6px;
+    flex: none;
+    border-radius: 50%;
+    background: var(--origin-color);
+    content: "";
+  }
+
+  .media-origin[data-source="user"] {
+    --origin-color: var(--color-text-success, var(--k-hue-3));
+  }
+
+  .media-origin[data-source="ai"] {
+    --origin-color: var(--k-hue-4, var(--color-text-info, var(--color-ring-primary)));
+  }
+
+  .card-body {
+    padding: 13px 14px 15px;
+  }
+
+  .card-kicker {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-bottom: 9px;
+  }
+
+  .topic-chip {
+    --topic-color: var(--color-text-info, var(--color-ring-primary));
+    color: var(--topic-color);
+    border-color: color-mix(in oklab, var(--topic-color) 34%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--topic-color) 9%, transparent);
+  }
+
+  .k-chip.topic-chip.static:hover {
+    color: var(--topic-color);
+    border-color: color-mix(in oklab, var(--topic-color) 34%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--topic-color) 9%, transparent);
+  }
+
+  .card-time {
+    margin-left: auto;
+    min-width: 0;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+
+  .card-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: 17px;
+    font-weight: 720;
+    line-height: 1.32;
+    overflow-wrap: anywhere;
+  }
+
+  .card-answer {
+    display: -webkit-box;
+    margin: 9px 0 0;
+    overflow: hidden;
+    color: var(--color-text-secondary);
+    font-size: 13.5px;
+    line-height: 1.58;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 4;
+  }
+
+  .empty-shell {
+    padding: 20px 0 8px;
+  }
+
+  .empty-shell .k-empty {
+    min-height: 300px;
+  }
+
+  .empty-sketch {
+    position: relative;
+    width: 156px;
+    height: 116px;
+    margin: 0 auto 13px;
+  }
+
+  .sketch-card {
+    position: absolute;
+    width: 92px;
+    height: 104px;
+    padding: 10px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .sketch-card.back {
+    left: 18px;
+    top: 8px;
+    rotate: -7deg;
+    color: var(--k-hue-2, var(--color-text-info, var(--color-ring-primary)));
+  }
+
+  .sketch-card.front {
+    right: 12px;
+    top: 1px;
+    rotate: 6deg;
+    color: var(--k-hue-4, var(--color-text-success));
+  }
+
+  .sketch-card svg {
+    width: 42px;
+    height: 42px;
+    margin: 4px auto 10px;
+  }
+
+  .sketch-line {
+    height: 5px;
+    margin-top: 6px;
+    border-radius: var(--border-radius-full);
+    background: color-mix(in oklab, currentColor 25%, transparent);
+  }
+
+  .sketch-line.short {
+    width: 62%;
+  }
+
+  .empty-title {
+    margin: 0 0 7px;
+    color: var(--color-text-primary);
+    font-size: 17px;
+    font-weight: 720;
+  }
+
+  .empty-copy {
+    max-width: 430px;
+    margin: 0 auto 13px;
+    color: var(--color-text-secondary);
+    line-height: 1.6;
+  }
+
+  .empty-copy strong {
+    color: var(--color-text-primary);
+  }
+
+  .no-match {
+    min-height: 230px;
+  }
+
+  .detail-overlay {
+    position: absolute;
+    inset: 0;
+    z-index: 20;
+    display: grid;
+    align-items: start;
+    justify-items: center;
+    padding: 12px;
+    background: color-mix(in oklab, var(--color-background-inverse) 40%, transparent);
+  }
+
+  .detail-panel {
+    --topic-color: var(--color-text-info, var(--color-ring-primary));
+    width: min(680px, 100%);
+    max-height: none;
+    padding: 0;
+    overflow: visible;
+    border-top: 4px solid var(--topic-color);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-lg, var(--shadow-sm));
+  }
+
+  .detail-head {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    align-items: center;
+    padding: 11px 13px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .detail-head .k-btn {
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+  }
+
+  .detail-grid {
+    display: grid;
+    grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr);
+    min-width: 0;
+  }
+
+  .detail-media {
+    min-height: 280px;
+    border-right: 1px solid var(--color-border-secondary);
+  }
+
+  .detail-media .placeholder-letter {
+    font-size: 72px;
+  }
+
+  .detail-content {
+    min-width: 0;
+    padding: 18px;
+  }
+
+  .detail-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-bottom: 10px;
+  }
+
+  .detail-credit {
+    display: flex;
+    gap: 6px;
+    align-items: baseline;
+    margin: 12px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text-tertiary);
+    background: var(--color-background-secondary);
+    font-size: 10.5px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-credit strong {
+    flex: none;
+    color: var(--color-text-secondary);
+    font-weight: 700;
+  }
+
+  .detail-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-size: 22px;
+    font-weight: 740;
+    line-height: 1.25;
+    overflow-wrap: anywhere;
+  }
+
+  .detail-answer {
+    margin: 13px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    line-height: 1.72;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+
+  .edit-form {
+    display: grid;
+    gap: 10px;
+    margin-top: 17px;
+    padding-top: 15px;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .field-label {
+    display: grid;
+    gap: 5px;
+    color: var(--color-text-secondary);
+    font-size: 11.5px;
+    font-weight: 650;
+  }
+
+  .edit-form textarea.k-field {
+    min-height: 76px;
+    resize: vertical;
+    line-height: 1.5;
+  }
+
+  .detail-actions {
+    display: flex;
+    gap: var(--k-s2);
+    align-items: center;
+    flex-wrap: wrap;
+    margin-top: 14px;
+  }
+
+  .detail-actions .k-btn .k-icon,
+  .edit-form .k-btn .k-icon {
+    margin-right: 5px;
+  }
+
+  .danger-zone {
+    margin-left: auto;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .detail-panel {
+      animation: detail-in var(--k-t-slow) var(--k-spring);
+    }
+
+    .sketch-card.front {
+      animation: sketch-breathe 3.4s var(--k-ease) infinite alternate;
+    }
+
+    @keyframes detail-in {
+      from {
+        opacity: 0;
+        translate: 0 10px;
+        scale: .985;
+      }
+    }
+
+    @keyframes sketch-breathe {
+      to {
+        translate: 0 -3px;
+      }
+    }
+  }
+
+  @media (max-width: 840px) {
+    .bar-action,
+    #askSubmit,
+    #clearSearch {
+      min-width: 40px;
+      min-height: 40px;
+    }
+
+    #askInput,
+    #searchInput,
+    .sort-tabs .k-tab,
+    .topic-row .k-chip {
+      min-height: 40px;
+    }
+
+    .topic-row .k-chip {
+      padding-inline: 9px;
+    }
+  }
+
+  @media (max-width: 660px) {
+    .topic-row {
+      flex-basis: 180px;
+    }
+
+    .detail-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .detail-media {
+      width: 100%;
+      min-width: 0;
+      min-height: 0;
+      aspect-ratio: var(--media-ratio, 4 / 3);
+      border-right: 0;
+      border-bottom: 1px solid var(--color-border-secondary);
+    }
+  }
+
+  @media (max-width: 520px) {
+    .app-bar {
+      gap: 6px;
+      padding-inline: 10px;
+    }
+
+    .bar-action {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+      min-height: 40px;
+      margin-left: auto;
+      padding: 0;
+      display: grid;
+      place-items: center;
+    }
+
+    .bar-action .k-icon {
+      margin: 0;
+    }
+
+    .bar-action span {
+      display: none;
+    }
+
+    .eyebrow {
+      display: none;
+    }
+
+    .ask-strip {
+      min-height: 52px;
+      margin: 0 10px 7px;
+      padding: 6px;
+    }
+
+    #askInput {
+      min-height: 40px;
+    }
+
+    #askSubmit {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+      min-height: 40px;
+      padding: 0;
+    }
+
+    #askSubmit .k-icon {
+      margin: 0;
+    }
+
+    #askSubmit .ask-label {
+      display: none;
+    }
+
+    .overview {
+      gap: 8px;
+      padding-inline: 10px;
+    }
+
+    .stat {
+      padding-left: 8px;
+    }
+
+    .controls {
+      padding-inline: 10px;
+    }
+
+    #searchInput {
+      min-height: 40px;
+      font-size: 12.5px;
+    }
+
+    #clearSearch {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+    }
+
+    .sort-tabs .k-tab {
+      min-height: 40px;
+    }
+
+    .search-shell {
+      min-width: 142px;
+    }
+
+    .topic-row {
+      flex-basis: 100%;
+    }
+
+    .topic-row .k-chip {
+      min-height: 40px;
+      padding-inline: 9px;
+    }
+
+    .gallery {
+      columns: 1;
+    }
+
+    .gallery-scroll {
+      padding-inline: 10px;
+    }
+
+    .knowledge-card {
+      display: block;
+    }
+
+    .detail-panel {
+      max-height: none;
+    }
+
+    .detail-head .k-btn {
+      width: 40px;
+      min-width: 40px;
+      height: 40px;
+    }
+
+    .detail-title {
+      font-size: 19px;
+    }
+
+    .detail-content {
+      padding: 15px;
+    }
+
+    .detail-actions .k-btn {
+      flex: 1 1 auto;
+      min-height: 44px;
+    }
+
+    .edit-form .k-btn,
+    .media-retry,
+    .write-error .k-btn {
+      min-height: 44px;
+    }
+
+    .danger-zone {
+      margin-left: 0;
+    }
+  }
+
+  @media (max-width: 420px) {
+    .search-row {
+      align-items: stretch;
+      flex-wrap: wrap;
+      gap: 7px 6px;
+    }
+
+    .search-shell {
+      flex: 1 0 100%;
+      min-width: 0;
+    }
+
+    .topic-row {
+      flex: 1 0 100%;
+      min-width: 0;
+    }
+
+    .overview {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px 12px;
+      align-items: start;
+    }
+
+    .overview-main,
+    .stat {
+      min-width: 0;
+      padding-left: 0;
+      border-left: 0;
+    }
+  }
+</style>
+</head>
+<body>
+  <main class="app" id="appRoot">
+    <header class="k-row app-bar">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 5.5h10.5A2.5 2.5 0 0 1 17 8v11H6.5A2.5 2.5 0 0 1 4 16.5z"/>
+          <path d="M7 2.5h10.5A2.5 2.5 0 0 1 20 5v11"/>
+          <path d="m8.5 10 2 2 4-4"/>
+        </svg>
+      </div>
+      <div class="identity">
+        <p class="eyebrow" data-i18n="eyebrow">Visual knowledge index</p>
+        <h1 class="k-h1" data-i18n="app_title">Knowledge Cards</h1>
+      </div>
+      <button class="k-btn sec bar-action" id="harvestButton" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M8 1.5 9.2 5l3.3 1.2-3.3 1.2L8 11 6.8 7.4 3.5 6.2 6.8 5zM12.5 10l.6 1.8 1.9.7-1.9.7-.6 1.8-.6-1.8-1.9-.7 1.9-.7z"/>
+        </svg>
+        <span data-i18n="harvest">Harvest chat</span>
+      </button>
+    </header>
+
+    <form class="ask-strip" id="askForm">
+      <span class="ask-mark" aria-hidden="true">
+        <svg class="k-icon" viewBox="0 0 16 16">
+          <path d="M8 1.5 9.2 5l3.3 1.2-3.3 1.2L8 11 6.8 7.4 3.5 6.2 6.8 5zM12.5 10l.6 1.8 1.9.7-1.9.7-.6 1.8-.6-1.8-1.9-.7 1.9-.7z"/>
+        </svg>
+      </span>
+      <input class="k-field" id="askInput" type="text" data-i18n-placeholder="ask_placeholder" data-i18n-aria-label="ask_aria" placeholder="Photograph or ask anything..." aria-label="Ask a question to answer and keep">
+      <button class="k-btn" id="askSubmit" type="submit" data-i18n-title="ask_button" data-i18n-aria-label="ask_button" title="Ask & keep" aria-label="Ask & keep">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="M2.5 3.5h11v7h-6l-3.5 3v-3H2.5z"/>
+        </svg>
+        <span class="ask-label" data-i18n="ask_button">Ask &amp; keep</span>
+      </button>
+    </form>
+
+    <section class="overview" data-i18n-aria-label="overview_aria" aria-label="Knowledge card overview">
+      <div class="overview-main">
+        <span class="overview-number k-num" id="totalCount">0</span>
+        <div class="overview-label" data-i18n="answers_saved">answers saved</div>
+      </div>
+      <div class="stat">
+        <span class="stat-value k-num" id="topicCount">0</span>
+        <span class="stat-label" data-i18n="topics">topics</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value k-num" id="imageCount">0</span>
+        <span class="stat-label" data-i18n="with_images">with images</span>
+      </div>
+      <div class="stat">
+        <span class="stat-value k-num" id="weekCount">0</span>
+        <span class="stat-label" data-i18n="last_seven_days">last 7 days</span>
+      </div>
+    </section>
+
+    <section class="controls" data-i18n-aria-label="filters_aria" aria-label="Filter knowledge cards">
+      <div class="search-row">
+        <div class="search-shell">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M7 2.5a4.5 4.5 0 1 1 0 9 4.5 4.5 0 0 1 0-9zM10.5 10.5l3 3"/>
+          </svg>
+          <input class="k-field" id="searchInput" type="search" data-i18n-placeholder="search_placeholder" data-i18n-aria-label="search_aria" placeholder="Search cards" aria-label="Search knowledge cards">
+          <button class="k-btn ghost" id="clearSearch" type="button" data-i18n-aria-label="clear_search" data-i18n-title="clear_search" aria-label="Clear search" title="Clear search" hidden>
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m4 4 8 8M12 4l-8 8"/>
+            </svg>
+          </button>
+        </div>
+        <div class="k-tabs sort-tabs" data-i18n-aria-label="sort_aria" aria-label="Sort order">
+          <button class="k-tab" id="sortNewest" type="button" data-sort="newest" data-i18n="newest">New</button>
+          <button class="k-tab" id="sortOldest" type="button" data-sort="oldest" data-i18n="oldest">Old</button>
+        </div>
+        <div class="topic-row" id="topicRow" data-i18n-aria-label="topic_filter_aria" aria-label="Filter by topic"></div>
+      </div>
+    </section>
+
+    <div class="k-badge bad write-error" id="writeError" role="alert" hidden>
+      <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+        <path d="M8 2.2 14 13H2zM8 5.5v3.8M8 11.8v.1"/>
+      </svg>
+      <span class="k-grow" id="writeErrorText"></span>
+      <button class="k-btn ghost" id="dismissError" type="button" data-i18n-aria-label="dismiss_error" aria-label="Dismiss error">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
+          <path d="m4 4 8 8M12 4l-8 8"/>
+        </svg>
+      </button>
+    </div>
+
+    <section class="gallery-scroll" id="galleryScroll" aria-live="polite">
+      <div class="k-empty">
+        <div class="k-skel" style="width:132px;height:12px"></div>
+        <div class="k-skel" style="width:210px;height:12px;margin-top:10px"></div>
+      </div>
+    </section>
+
+    <div class="detail-overlay" id="detailOverlay" role="dialog" aria-modal="true" aria-labelledby="detailTitle" hidden>
+      <article class="k-card detail-panel" id="detailPanel"></article>
+    </div>
+  </main>
+
+  <script type="module">
+    const oma = window.oma;
+
+    const STR = {
+      en: {
+        page_title: "Knowledge Cards - Keep useful answers in a visual library",
+        meta_description: "Keep useful AI answers in a searchable visual library. After installing, seed it with the AI: it can generate/attach images for each card.",
+        eyebrow: "Visual knowledge index",
+        app_title: "Knowledge Cards",
+        harvest: "Harvest chat",
+        ask_placeholder: "Photograph or ask anything...",
+        ask_aria: "Ask a question to answer and keep",
+        ask_button: "Ask & keep",
+        overview_aria: "Knowledge card overview",
+        answers_saved: "answers saved",
+        topics: "topics",
+        with_images: "with images",
+        last_seven_days: "last 7 days",
+        filters_aria: "Filter knowledge cards",
+        search_placeholder: "Search cards",
+        search_aria: "Search knowledge cards",
+        clear_search: "Clear search",
+        sort_aria: "Sort order",
+        newest: "New",
+        oldest: "Old",
+        topic_filter_aria: "Filter by topic",
+        dismiss_error: "Dismiss error",
+        untagged: "Untagged",
+        untitled: "Untitled knowledge",
+        no_answer: "This card does not have an answer yet.",
+        date_missing: "Date missing",
+        first_glyph: "K",
+        all: "All",
+        image_failed: "Image unavailable",
+        text_only: "Text knowledge",
+        image_loading: "Loading image",
+        retry: "Retry",
+        file_unavailable: "File access is unavailable",
+        open_card: "Open knowledge card: {title}",
+        empty_title: "Keep the answer after your next question",
+        empty_before: "Photograph or ask the AI, then say ",
+        empty_emphasis: "“save this as a knowledge card.”",
+        empty_after: " You can also harvest useful answers from an existing chat.",
+        empty_action: "Harvest this chat",
+        no_match_title: "No matching card",
+        no_match_copy: "Try a shorter search, or switch the topic filter back to All.",
+        clear_filters: "Clear filters",
+        close_detail: "Close details",
+        has_original: "Original image",
+        media_user: "Your photo",
+        media_web: "Web reference",
+        media_ai: "AI reference",
+        media_attached: "Attached image",
+        media_credit: "Image source",
+        topic: "Topic",
+        topic_placeholder: "For example: Plants",
+        my_note: "My note",
+        note_placeholder: "Add the context, a mistake to avoid, or the next step",
+        save_changes: "Save changes",
+        save_error: "Changes were not saved. Try again.",
+        follow_up: "Ask a follow-up",
+        follow_prompt: "I want to follow up on the knowledge card “{title}”. Existing answer: {answer}\nMy new question is:",
+        delete: "Delete",
+        delete_error: "Delete failed. Try again.",
+        sort_error: "The sort preference was not saved. Try again.",
+        ask_prompt: "If I attached a photo, inspect that original image closely; otherwise use my text question. Explain the answer clearly, then save the result as a knowledge card while preserving the original photo.",
+        ask_user_prefix: "Question: ",
+        harvest_prompt: "Review the image and text questions I have already asked in this conversation, and save the answers with long-term value to knowledge-cards. Preserve an uploaded photo instead of replacing it with generated art: use file_write to save it to cards/<id>.<ext>, set media_source to user, and keep the original context in media_credit. For a useful web reference, save a local copy rather than hotlinking it, set media_source to web, and record the publisher and page in media_credit. For an AI-generated explanatory image, set media_source to ai and label it plainly; never present generated artwork as a user photo. Use addItem with title, answer, topic, image, image_alt, media_ratio, media_source, media_credit, asked_at, and source_note. Use media_ratio 4:3, 3:4, 1:1, 16:9, or 3:2 to match the real image. Text-only answers do not need an image. Store the original absolute ISO time."
+      },
+      zh: {
+        page_title: "知识卡片 - 把有用答案留在可搜索的视觉图库里",
+        meta_description: "把有用的 AI 答案留在可搜索的视觉图库里。安装后可让 AI 播种：它能为每张卡生成或附加图片。",
+        eyebrow: "视觉知识索引",
+        app_title: "知识卡片",
+        harvest: "整理聊天",
+        ask_placeholder: "拍照或问任何问题...",
+        ask_aria: "提问并把答案保存下来",
+        ask_button: "提问并保存",
+        overview_aria: "知识卡片概览",
+        answers_saved: "条已保存答案",
+        topics: "个分类",
+        with_images: "张含图片",
+        last_seven_days: "条近 7 天",
+        filters_aria: "筛选知识卡片",
+        search_placeholder: "搜索卡片",
+        search_aria: "搜索知识卡片",
+        clear_search: "清空搜索",
+        sort_aria: "排序方式",
+        newest: "最新",
+        oldest: "最早",
+        topic_filter_aria: "按分类筛选",
+        dismiss_error: "关闭错误提示",
+        untagged: "未分类",
+        untitled: "未命名知识",
+        no_answer: "这张卡还没有答案。",
+        date_missing: "日期待补",
+        first_glyph: "知",
+        all: "全部",
+        image_failed: "图片读取失败",
+        text_only: "纯文字知识",
+        image_loading: "正在读取图片",
+        retry: "重试",
+        file_unavailable: "文件读取能力不可用",
+        open_card: "打开知识卡片：{title}",
+        empty_title: "下一次问完，就把答案留下来",
+        empty_before: "拍照或问 AI 后，说一句",
+        empty_emphasis: "“存进知识卡片。”",
+        empty_after: "已有聊天也能一键整理，不需要改变提问习惯。",
+        empty_action: "整理这段对话",
+        no_match_title: "没有找到这张卡",
+        no_match_copy: "试试缩短关键词，或切回“全部”分类。",
+        clear_filters: "清除筛选",
+        close_detail: "关闭详情",
+        has_original: "含原图",
+        media_user: "用户照片",
+        media_web: "网络参考",
+        media_ai: "AI 参考图",
+        media_attached: "附加图片",
+        media_credit: "图片来源",
+        topic: "分类",
+        topic_placeholder: "例如：植物",
+        my_note: "我的标注",
+        note_placeholder: "补一句当时的场景、易错点或下一步",
+        save_changes: "保存修改",
+        save_error: "修改没有保存，请重试。",
+        follow_up: "继续追问",
+        follow_prompt: "我想继续追问知识卡片“{title}”。已有答案：{answer}\n我的新问题是：",
+        delete: "删除",
+        delete_error: "删除失败，请重试。",
+        sort_error: "排序偏好没有保存，请重试。",
+        ask_prompt: "如果我附了照片，请认真查看这张原始照片；否则就根据文字问题回答。解释清楚后，把答案保存成知识卡片，并保留原始照片。",
+        ask_user_prefix: "问题：",
+        harvest_prompt: "请回看这段对话里我已经问过的图片和文字问题，把有长期价值的答案整理进 knowledge-cards。用户上传的照片必须保留原图，不要替换成生成插画：先用 file_write 保存到 cards/<id>.<ext>，把 media_source 写成 user，并在 media_credit 保留原始场景。网络参考图请保存本地副本而不是直接热链，把 media_source 写成 web，并在 media_credit 记录发布方和页面。AI 生成的解释图把 media_source 写成 ai，并明确标注；不能把生成图伪装成用户实拍。addItem 写入 title、answer、topic、image、image_alt、media_ratio、media_source、media_credit、asked_at 和 source_note。media_ratio 按真实图片填写 4:3、3:4、1:1、16:9 或 3:2；纯文字答案不需要配图。日期请写当时的绝对 ISO 时间。"
+      }
+    };
+
+    const localeSetting = () => {
+      const pref = String(oma.pref("locale", "auto") || "auto");
+      return pref === "auto" ? String(navigator.language || "en") : pref;
+    };
+
+    const language = () => localeSetting().toLowerCase().startsWith("zh") ? "zh" : "en";
+
+    const t = (key, values = {}) => {
+      const source = STR[language()][key] ?? STR.en[key] ?? key;
+      return String(source).replace(/\{(\w+)\}/g, (_, name) => values[name] ?? `{${name}}`);
+    };
+
+    const applyStaticI18n = () => {
+      document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+      document.title = t("page_title");
+      for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+      for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+      for (const node of document.querySelectorAll("[data-i18n-aria-label]")) node.setAttribute("aria-label", t(node.dataset.i18nAriaLabel));
+      for (const node of document.querySelectorAll("[data-i18n-title]")) node.title = t(node.dataset.i18nTitle);
+    };
+
+    const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+    const today    = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+    const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
+    const nextOccurrence = (anchorIso, everyDays) => {
+      const a = dateOnly(anchorIso);
+      const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
+      return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
+    };
+
+    const ICONS = {
+      close: "M4 4l8 8M12 4l-8 8",
+      refresh: "M13.5 8A5.5 5.5 0 1 1 11.9 4.1M13.5 1.5v3h-3",
+      message: "M2.5 3.5h11v7h-6l-3.5 3v-3H2.5z",
+      check: "M2.5 8.5l3.5 3.5 7.5-8",
+      trash: "M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4"
+    };
+
+    let query = "";
+    let selectedTopic = "";
+    let openId = null;
+    let detailDraft = null;
+    let detailTrigger = null;
+
+    const element = (tag, className, text) => {
+      const node = document.createElement(tag);
+      if (className) node.className = className;
+      if (text !== undefined) node.textContent = text;
+      return node;
+    };
+
+    const svgNode = (viewBox, content, className = "") => {
+      const template = document.createElement("template");
+      template.innerHTML = `<svg viewBox="${viewBox}" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${content}</svg>`;
+      const svg = template.content.firstElementChild;
+      if (className) svg.setAttribute("class", className);
+      return svg;
+    };
+
+    const icon = (name) => svgNode("0 0 16 16", `<path d="${ICONS[name]}"/>`, "k-icon");
+
+    const locale = () => {
+      const value = localeSetting();
+      if (value === "auto") return navigator.language || "en-US";
+      if (value === "en") return "en-US";
+      if (value === "zh") return "zh-CN";
+      return value;
+    };
+
+    const numberText = (value) => new Intl.NumberFormat(locale()).format(Number(value) || 0);
+
+    const topicOf = (item) => String(item.fields.topic || "").trim() || t("untagged");
+
+    const titleOf = (item) => String(item.fields.title || "").trim() || t("untitled");
+
+    const answerOf = (item) => String(item.fields.answer || "").trim() || t("no_answer");
+
+    const noteOf = (item) => String(item.fields.source_note || "").trim();
+
+    const imageOf = (item) => String(item.fields.image_data || item.fields.image || "").trim();
+
+    const imageAltOf = (item) => String(item.fields.image_alt || "").trim() || titleOf(item);
+
+    const mediaSourceOf = (item) => {
+      const source = String(item.fields.media_source || "").trim();
+      return ["user", "web", "ai"].includes(source) ? source : "";
+    };
+
+    const mediaSourceLabel = (item) => {
+      const source = mediaSourceOf(item);
+      return source ? t(`media_${source}`) : t("media_attached");
+    };
+
+    const mediaCreditOf = (item) => String(item.fields.media_credit || "").trim();
+
+    const hashText = (value) => {
+      let hash = 0;
+      for (const char of String(value)) hash = (hash * 31 + char.codePointAt(0)) >>> 0;
+      return hash;
+    };
+
+    const topicColor = (topic) => {
+      if (String(topic).trim().toLowerCase() === "study") {
+        return "color-mix(in oklab, var(--k-hue-2, var(--color-text-secondary)) 82%, var(--k-hue-3, var(--color-text-secondary)))";
+      }
+      const index = hashText(topic) % 6;
+      return `var(--k-hue-${index}, var(--color-text-info, var(--color-ring-primary)))`;
+    };
+
+    const applyTopicColor = (node, topic) => {
+      node.style.setProperty("--topic-color", topicColor(topic));
+    };
+
+    const explicitMediaRatio = (item) => ({
+      "4:3": "4 / 3",
+      "3:4": "3 / 4",
+      "1:1": "1 / 1",
+      "16:9": "16 / 9",
+      "3:2": "3 / 2"
+    })[String(item.fields.media_ratio || "").trim()] || "";
+
+    const mediaRatio = (item) => {
+      const explicit = explicitMediaRatio(item);
+      if (explicit) return explicit;
+      const choice = hashText(item.id || titleOf(item)) % 3;
+      if (choice === 0) return "4 / 3";
+      if (choice === 1) return "5 / 4";
+      return "1 / 1";
+    };
+
+    const firstGlyph = (item) => Array.from(titleOf(item))[0] || t("first_glyph");
+
+    const relativeDate = (iso) => {
+      if (!iso || !Number.isFinite(dateOnly(iso).getTime())) return t("date_missing");
+      const delta = daysUntil(iso);
+      return new Intl.RelativeTimeFormat(locale(), { numeric: "auto" }).format(delta, "day");
+    };
+
+    const absoluteDate = (iso) => {
+      if (!iso || !Number.isFinite(dateOnly(iso).getTime())) return t("date_missing");
+      const value = String(iso).slice(0, 10);
+      const [year, month, day] = value.split("-");
+      const format = oma.pref("date_format", "auto");
+      if (format === "yyyy-mm-dd") return `${year}-${month}-${day}`;
+      if (format === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+      if (format === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+      return new Intl.DateTimeFormat(locale(), {
+        year: "numeric",
+        month: "short",
+        day: "numeric"
+      }).format(dateOnly(iso));
+    };
+
+    const askedTimestamp = (iso) => {
+      const dateLabel = absoluteDate(iso);
+      const parsed = new Date(iso);
+      if (!String(iso).includes("T") || !Number.isFinite(parsed.getTime())) return dateLabel;
+      const timeLabel = new Intl.DateTimeFormat(locale(), {
+        hour: "2-digit",
+        minute: "2-digit"
+      }).format(parsed);
+      return `${dateLabel} · ${timeLabel}`;
+    };
+
+    const askedTimeValue = (item) => {
+      const iso = String(item.fields.asked_at || "");
+      const value = iso.includes("T") ? Date.parse(iso) : dateOnly(iso).getTime();
+      return Number.isFinite(value) ? value : 0;
+    };
+
+    const sortedItems = (items) => {
+      const direction = oma.pref("sort_order", "newest") === "oldest" ? 1 : -1;
+      return [...items].sort((a, b) => {
+        const byDate = (askedTimeValue(a) - askedTimeValue(b)) * direction;
+        if (byDate) return byDate;
+        return (Number(a.position) - Number(b.position)) * direction;
+      });
+    };
+
+    const errorMessage = (error, fallback) => {
+      if (error && error.message) return error.message;
+      if (error && error.content && error.content[0] && error.content[0].text) return error.content[0].text;
+      return fallback;
+    };
+
+    const requireSuccess = (result, fallback) => {
+      if (result && result.isError) throw new Error(errorMessage(result, fallback));
+      if (result && result.ok === false) throw new Error(result.note || result.reason || fallback);
+      return result;
+    };
+
+    const showError = (message) => {
+      document.getElementById("writeErrorText").textContent = message;
+      document.getElementById("writeError").hidden = false;
+    };
+
+    const hideError = () => {
+      document.getElementById("writeError").hidden = true;
+    };
+
+    const sendHarvestRequest = () => {
+      oma.sendMessage(t("harvest_prompt"));
+    };
+
+    const sendAskRequest = () => {
+      const input = document.getElementById("askInput");
+      const question = input.value.trim();
+      const message = question
+        ? `${t("ask_prompt")}\n\n${t("ask_user_prefix")}${question}`
+        : t("ask_prompt");
+      oma.sendMessage(message);
+      input.value = "";
+    };
+
+    const makeTopicChip = (label, value, count) => {
+      const active = selectedTopic === value;
+      const button = element("button", `k-chip${active ? " on" : ""}`, `${label} ${numberText(count)}`);
+      button.type = "button";
+      button.setAttribute("aria-pressed", String(active));
+      button.onclick = () => {
+        selectedTopic = value;
+        render(oma.state);
+      };
+      return button;
+    };
+
+    const renderTopics = (items) => {
+      const counts = new Map();
+      for (const item of items) {
+        const topic = topicOf(item);
+        counts.set(topic, (counts.get(topic) || 0) + 1);
+      }
+      if (selectedTopic && !counts.has(selectedTopic)) selectedTopic = "";
+      const row = document.getElementById("topicRow");
+      row.innerHTML = "";
+      row.append(makeTopicChip(t("all"), "", items.length));
+      for (const [topic, count] of [...counts].sort((a, b) => a[0].localeCompare(b[0], locale()))) {
+        const chip = makeTopicChip(topic, topic, count);
+        applyTopicColor(chip, topic);
+        chip.classList.add("topic-chip");
+        row.append(chip);
+      }
+    };
+
+    const buildMedia = (item, detail = false) => {
+      const topic = topicOf(item);
+      const root = element("div", detail ? "detail-media" : "card-media");
+      applyTopicColor(root, topic);
+      root.style.setProperty("--media-ratio", mediaRatio(item));
+
+      const placeholder = element("div", "media-placeholder");
+      const letter = element("span", "placeholder-letter", firstGlyph(item));
+      const caption = element("span", "placeholder-caption", imageOf(item) ? t("image_failed") : t("text_only"));
+      placeholder.append(letter, caption);
+
+      const image = element("img", "card-image");
+      image.alt = imageAltOf(item);
+      image.hidden = true;
+
+      const loading = element("div", "k-skel media-loading");
+      loading.setAttribute("aria-label", t("image_loading"));
+      loading.hidden = true;
+
+      const retry = element("button", "k-btn sec media-retry");
+      retry.type = "button";
+      retry.append(icon("refresh"), document.createTextNode(t("retry")));
+      retry.hidden = true;
+
+      const origin = imageOf(item) ? element("span", "media-origin", mediaSourceLabel(item)) : null;
+      if (origin) origin.dataset.source = mediaSourceOf(item) || "attached";
+
+      root.append(placeholder, image, loading, retry);
+      if (origin) root.append(origin);
+
+      let attempt = 0;
+      const load = async () => {
+        const path = imageOf(item);
+        if (!path) {
+          loading.hidden = true;
+          retry.hidden = true;
+          image.hidden = true;
+          placeholder.hidden = false;
+          caption.textContent = t("text_only");
+          return;
+        }
+
+        const mine = ++attempt;
+        loading.hidden = false;
+        retry.hidden = true;
+        image.hidden = true;
+        placeholder.hidden = false;
+        caption.textContent = t("image_loading");
+
+        try {
+          let url;
+          if (path.startsWith("data:image/")) {
+            url = path;
+          } else {
+            if (!oma.files || typeof oma.files.url !== "function") throw new Error(t("file_unavailable"));
+            url = await oma.files.url(path);
+          }
+          if (mine !== attempt || !root.isConnected) return;
+          await new Promise((resolve, reject) => {
+            image.onload = resolve;
+            image.onerror = reject;
+            image.src = url;
+          });
+          if (mine !== attempt || !root.isConnected) return;
+          if (!explicitMediaRatio(item) && image.naturalWidth > 0 && image.naturalHeight > 0) {
+            root.style.setProperty("--media-ratio", `${image.naturalWidth} / ${image.naturalHeight}`);
+          }
+          loading.hidden = true;
+          placeholder.hidden = true;
+          retry.hidden = true;
+          image.hidden = false;
+        } catch {
+          if (mine !== attempt || !root.isConnected) return;
+          loading.hidden = true;
+          image.hidden = true;
+          placeholder.hidden = false;
+          caption.textContent = t("image_failed");
+          retry.hidden = false;
+        }
+      };
+
+      retry.onclick = (event) => {
+        event.stopPropagation();
+        load();
+      };
+
+      queueMicrotask(load);
+      return root;
+    };
+
+    const makeCard = (item, index) => {
+      const topic = topicOf(item);
+      const card = element("article", "k-card is-click knowledge-card");
+      card.dataset.id = item.id;
+      card.tabIndex = 0;
+      card.setAttribute("role", "button");
+      card.setAttribute("aria-label", t("open_card", { title: titleOf(item) }));
+      card.style.setProperty("--i", String(index));
+      applyTopicColor(card, topic);
+      const hasImage = Boolean(imageOf(item));
+      if (!hasImage) {
+        card.classList.add("is-text-only");
+        card.dataset.glyph = firstGlyph(item);
+      }
+
+      const body = element("div", "card-body");
+      const kicker = element("div", "card-kicker");
+      const topicChip = element("span", "k-chip static topic-chip", topic);
+      applyTopicColor(topicChip, topic);
+      const time = element("span", "card-time k-num", relativeDate(item.fields.asked_at));
+      kicker.append(topicChip, time);
+
+      const title = element("h2", "card-title k-ellip2", titleOf(item));
+      const answer = element("p", "card-answer", answerOf(item));
+      body.append(kicker, title, answer);
+      if (hasImage) card.append(buildMedia(item), body);
+      else card.append(body);
+
+      const open = () => openDetail(item.id, card);
+      card.onclick = (event) => {
+        if (!event.target.closest("button")) open();
+      };
+      card.onkeydown = (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          open();
+        }
+      };
+      return card;
+    };
+
+    const makeEmptyState = () => {
+      const shell = element("div", "empty-shell");
+      const empty = element("div", "k-empty");
+      const sketch = element("div", "empty-sketch");
+
+      const back = element("div", "sketch-card back");
+      const backIcon = svgNode(
+        "0 0 48 48",
+        '<path d="M11 34c4-10 9-15 18-20 1 10-2 20-13 23M17 27c5-1 9-4 12-8"/>'
+      );
+      backIcon.setAttribute("stroke-width", "1.8");
+      back.append(backIcon, element("div", "sketch-line"), element("div", "sketch-line short"));
+
+      const front = element("div", "sketch-card front");
+      const frontIcon = svgNode(
+        "0 0 48 48",
+        '<rect x="8" y="11" width="32" height="25" rx="3"/><circle cx="18" cy="20" r="3"/><path d="m11 32 8-7 6 5 5-4 7 6"/>'
+      );
+      frontIcon.setAttribute("stroke-width", "1.8");
+      front.append(frontIcon, element("div", "sketch-line"), element("div", "sketch-line short"));
+
+      sketch.append(back, front);
+      const title = element("h2", "empty-title", t("empty_title"));
+      const copy = element("p", "empty-copy");
+      copy.append(
+        document.createTextNode(t("empty_before")),
+        element("strong", null, t("empty_emphasis")),
+        document.createTextNode(t("empty_after"))
+      );
+      const action = element("button", "k-btn", t("empty_action"));
+      action.type = "button";
+      action.prepend(icon("message"));
+      action.onclick = sendHarvestRequest;
+      action.hidden = !!oma.standalone;
+      empty.append(sketch, title, copy, action);
+      shell.append(empty);
+      return shell;
+    };
+
+    const makeNoMatchState = () => {
+      const empty = element("div", "k-empty no-match");
+      const title = element("h2", "empty-title", t("no_match_title"));
+      const copy = element("p", "empty-copy", t("no_match_copy"));
+      const action = element("button", "k-btn sec", t("clear_filters"));
+      action.type = "button";
+      action.onclick = () => {
+        query = "";
+        selectedTopic = "";
+        document.getElementById("searchInput").value = "";
+        render(oma.state);
+      };
+      empty.append(title, copy, action);
+      return empty;
+    };
+
+    const filteredItems = (items) => {
+      const normalizedQuery = query.trim().toLocaleLowerCase(locale());
+      return sortedItems(items.filter((item) => {
+        if (selectedTopic && topicOf(item) !== selectedTopic) return false;
+        if (!normalizedQuery) return true;
+        const haystack = [
+          titleOf(item),
+          answerOf(item),
+          topicOf(item),
+          noteOf(item)
+        ].join(" ").toLocaleLowerCase(locale());
+        return haystack.includes(normalizedQuery);
+      }));
+    };
+
+    const renderGallery = (items) => {
+      const scroll = document.getElementById("galleryScroll");
+      scroll.innerHTML = "";
+      if (!items.length) {
+        scroll.append(makeEmptyState());
+        return;
+      }
+      const visible = filteredItems(items);
+      if (!visible.length) {
+        scroll.append(makeNoMatchState());
+        return;
+      }
+      const gallery = element("div", "gallery k-stagger");
+      visible.forEach((item, index) => gallery.append(makeCard(item, index)));
+      scroll.append(gallery);
+    };
+
+    const renderStats = (items) => {
+      const topics = new Set(items.map(topicOf));
+      const withImages = items.filter((item) => imageOf(item)).length;
+      const recent = items.filter((item) => {
+        const delta = daysUntil(item.fields.asked_at);
+        return Number.isFinite(delta) && delta <= 0 && delta >= -6;
+      }).length;
+      document.getElementById("totalCount").textContent = numberText(items.length);
+      document.getElementById("topicCount").textContent = numberText(topics.size);
+      document.getElementById("imageCount").textContent = numberText(withImages);
+      document.getElementById("weekCount").textContent = numberText(recent);
+    };
+
+    const closeDetail = () => {
+      openId = null;
+      detailDraft = null;
+      document.getElementById("detailOverlay").hidden = true;
+      document.getElementById("appRoot").querySelectorAll(":scope > :not(#detailOverlay):not(#writeError)").forEach((node) => {
+        node.inert = false;
+      });
+      const target = detailTrigger && detailTrigger.isConnected
+        ? detailTrigger
+        : document.querySelector(`[data-id="${CSS.escape(String(detailTrigger?.dataset.id || ""))}"]`);
+      detailTrigger = null;
+      if (target) target.focus();
+    };
+
+    const openDetail = (id, trigger) => {
+      const item = oma.state.items.find((entry) => entry.id === id);
+      if (!item) return;
+      openId = id;
+      detailTrigger = trigger || document.querySelector(`[data-id="${CSS.escape(id)}"]`);
+      detailDraft = {
+        id,
+        topic: String(item.fields.topic || ""),
+        note: String(item.fields.source_note || ""),
+        dirty: false
+      };
+      document.getElementById("detailOverlay").hidden = false;
+      document.getElementById("appRoot").querySelectorAll(":scope > :not(#detailOverlay):not(#writeError)").forEach((node) => {
+        node.inert = true;
+      });
+      renderDetail(item);
+    };
+
+    const renderDetail = (item) => {
+      if (!item || item.id !== openId) {
+        closeDetail();
+        return;
+      }
+      if (!detailDraft || detailDraft.id !== item.id) {
+        detailDraft = {
+          id: item.id,
+          topic: String(item.fields.topic || ""),
+          note: String(item.fields.source_note || ""),
+          dirty: false
+        };
+      } else if (!detailDraft.dirty) {
+        detailDraft.topic = String(item.fields.topic || "");
+        detailDraft.note = String(item.fields.source_note || "");
+      }
+
+      const topic = topicOf(item);
+      const panel = document.getElementById("detailPanel");
+      panel.innerHTML = "";
+      applyTopicColor(panel, topic);
+
+      const head = element("header", "k-row detail-head");
+      const headTopic = element("span", "k-chip static topic-chip", topic);
+      applyTopicColor(headTopic, topic);
+      const headTime = element("span", "k-mut k-num", relativeDate(item.fields.asked_at));
+      const close = element("button", "k-btn ghost");
+      close.type = "button";
+      close.title = t("close_detail");
+      close.setAttribute("aria-label", t("close_detail"));
+      close.append(icon("close"));
+      close.onclick = closeDetail;
+      head.append(headTopic, headTime, element("span", "k-grow"), close);
+
+      const grid = element("div", "detail-grid");
+      grid.append(buildMedia(item, true));
+
+      const content = element("div", "detail-content");
+      const meta = element("div", "detail-meta");
+      meta.append(
+        element("span", "k-mut k-num", askedTimestamp(item.fields.asked_at)),
+        imageOf(item) ? element("span", "k-badge info", mediaSourceLabel(item)) : element("span", "k-badge", t("text_only"))
+      );
+      const title = element("h2", "detail-title", titleOf(item));
+      title.id = "detailTitle";
+      const answer = element("p", "detail-answer", answerOf(item));
+      const credit = mediaCreditOf(item) ? element("p", "detail-credit") : null;
+      if (credit) {
+        credit.append(
+          element("strong", "", `${t("media_credit")}:`),
+          document.createTextNode(mediaCreditOf(item))
+        );
+      }
+
+      const form = element("form", "edit-form");
+      const topicLabel = element("label", "field-label", t("topic"));
+      const topicInput = element("input", "k-field");
+      topicInput.type = "text";
+      topicInput.value = detailDraft.topic;
+      topicInput.placeholder = t("topic_placeholder");
+      topicInput.maxLength = 40;
+      topicInput.setAttribute("list", "topicSuggestions");
+      topicLabel.append(topicInput);
+
+      const suggestions = element("datalist");
+      suggestions.id = "topicSuggestions";
+      const topics = [...new Set(oma.state.items.map(topicOf))].filter((value) => value !== t("untagged"));
+      for (const value of topics) {
+        const option = document.createElement("option");
+        option.value = value;
+        suggestions.append(option);
+      }
+
+      const noteLabel = element("label", "field-label", t("my_note"));
+      const noteInput = element("textarea", "k-field");
+      noteInput.value = detailDraft.note;
+      noteInput.placeholder = t("note_placeholder");
+      noteInput.maxLength = 1200;
+      noteLabel.append(noteInput);
+
+      const save = element("button", "k-btn", t("save_changes"));
+      save.type = "submit";
+      save.prepend(icon("check"));
+
+      const markDirty = () => {
+        detailDraft.topic = topicInput.value;
+        detailDraft.note = noteInput.value;
+        detailDraft.dirty = true;
+      };
+      topicInput.oninput = markDirty;
+      noteInput.oninput = markDirty;
+
+      form.onsubmit = async (event) => {
+        event.preventDefault();
+        save.disabled = true;
+        hideError();
+        try {
+          const nextTopic = topicInput.value.trim();
+          const nextNote = noteInput.value.trim();
+          const result = await oma.updateItem(item.id, {
+            topic: nextTopic || null,
+            source_note: nextNote || null
+          });
+          requireSuccess(result, t("save_error"));
+          detailDraft.topic = nextTopic;
+          detailDraft.note = nextNote;
+          detailDraft.dirty = false;
+        } catch (error) {
+          showError(errorMessage(error, t("save_error")));
+          save.disabled = false;
+        }
+      };
+      form.append(topicLabel, suggestions, noteLabel, save);
+
+      const actions = element("div", "detail-actions");
+      const followUp = element("button", "k-btn sec", t("follow_up"));
+      followUp.type = "button";
+      followUp.prepend(icon("message"));
+      followUp.hidden = !!oma.standalone;
+      followUp.onclick = () => {
+        oma.sendMessage(t("follow_prompt", { title: titleOf(item), answer: answerOf(item) }));
+      };
+
+      const remove = element("button", "k-btn danger danger-zone", t("delete"));
+      remove.type = "button";
+      remove.prepend(icon("trash"));
+      remove.onclick = async () => {
+        remove.disabled = true;
+        hideError();
+        try {
+          const result = await oma.deleteItem(item.id);
+          requireSuccess(result, t("delete_error"));
+          closeDetail();
+        } catch (error) {
+          showError(errorMessage(error, t("delete_error")));
+          remove.disabled = false;
+        }
+      };
+      actions.append(followUp, remove);
+
+      content.append(meta, title, answer);
+      if (credit) content.append(credit);
+      content.append(form, actions);
+      grid.append(content);
+      panel.append(head, grid);
+      close.focus({ preventScroll: true });
+    };
+
+    const renderSort = () => {
+      const order = oma.pref("sort_order", "newest");
+      document.getElementById("sortNewest").classList.toggle("on", order !== "oldest");
+      document.getElementById("sortOldest").classList.toggle("on", order === "oldest");
+      document.getElementById("sortNewest").setAttribute("aria-pressed", String(order !== "oldest"));
+      document.getElementById("sortOldest").setAttribute("aria-pressed", String(order === "oldest"));
+    };
+
+    const render = (state) => {
+      const items = Array.isArray(state.items) ? state.items : [];
+      applyStaticI18n();
+      renderStats(items);
+      renderTopics(items);
+      renderSort();
+      renderGallery(items);
+      document.getElementById("clearSearch").hidden = !query;
+      document.getElementById("harvestButton").hidden = !!oma.standalone;
+      if (openId) {
+        const item = items.find((entry) => entry.id === openId);
+        if (item) renderDetail(item);
+        else closeDetail();
+      }
+    };
+
+    document.getElementById("searchInput").oninput = (event) => {
+      query = event.currentTarget.value;
+      render(oma.state);
+    };
+
+    document.getElementById("clearSearch").onclick = () => {
+      query = "";
+      document.getElementById("searchInput").value = "";
+      render(oma.state);
+      document.getElementById("searchInput").focus();
+    };
+
+    document.getElementById("askForm").onsubmit = (event) => {
+      event.preventDefault();
+      sendAskRequest();
+    };
+
+    for (const button of document.querySelectorAll("[data-sort]")) {
+      button.onclick = async () => {
+        hideError();
+        try {
+          const result = await oma.setPref("sort_order", button.dataset.sort);
+          requireSuccess(result, t("sort_error"));
+          render(oma.state);
+        } catch (error) {
+          showError(errorMessage(error, t("sort_error")));
+        }
+      };
+    }
+
+    document.getElementById("harvestButton").onclick = sendHarvestRequest;
+    document.getElementById("dismissError").onclick = hideError;
+    document.getElementById("detailOverlay").onclick = (event) => {
+      if (event.target === event.currentTarget) closeDetail();
+    };
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape" && openId) closeDetail();
+    });
+
+    oma.onPrefChange(() => render(oma.state));
+    oma.onChange(render);
+    oma.ready(render);
+  </script>
+</body>
+</html>

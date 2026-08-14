@@ -1,0 +1,207 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "show_available_tools",
+      "type": "boolean",
+      "label": "Show available tools",
+      "description": "Keep workshop tools visible alongside checked-out and on-site gear.",
+      "default": true
+    },
+    {
+      "key": "stale_update_hours",
+      "type": "number",
+      "label": "Field update goes stale after",
+      "description": "Hours before an active job is shown as needing a fresh site update.",
+      "default": 6,
+      "min": 1,
+      "max": 24,
+      "step": 1
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density",
+    "confirm_delete"
+  ],
+  "collections": {
+    "job-kit-jobs": {
+      "label_field": "title",
+      "strict": true,
+      "fields": {
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "site": {
+          "type": "string",
+          "required": true
+        },
+        "address": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "active",
+            "upcoming",
+            "paused",
+            "done"
+          ]
+        },
+        "crew": {
+          "type": "array"
+        },
+        "start_date": {
+          "type": "string"
+        },
+        "due_date": {
+          "type": "string"
+        },
+        "progress": {
+          "type": "number"
+        },
+        "next_action": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "job-kit-tools": {
+      "label_field": "name",
+      "strict": true,
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "code": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "available",
+            "checked_out",
+            "on_site",
+            "missing",
+            "service"
+          ]
+        },
+        "location": {
+          "type": "string"
+        },
+        "holder": {
+          "type": "string"
+        },
+        "job_id": {
+          "type": "string"
+        },
+        "kit": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "job-kit-actions": {
+      "label_field": "title",
+      "strict": true,
+      "fields": {
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "job_id": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "open",
+            "blocked",
+            "done"
+          ]
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "now",
+            "today",
+            "soon"
+          ]
+        },
+        "owner": {
+          "type": "string"
+        },
+        "due_date": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      }
+    },
+    "job-kit-updates": {
+      "label_field": "message",
+      "strict": true,
+      "fields": {
+        "job_id": {
+          "type": "string",
+          "required": true
+        },
+        "author": {
+          "type": "string",
+          "required": true
+        },
+        "message": {
+          "type": "string",
+          "required": true
+        },
+        "created_at": {
+          "type": "string",
+          "required": true
+        },
+        "source": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "text",
+            "photo"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "progress",
+            "blocker",
+            "tool",
+            "delivery",
+            "general"
+          ]
+        }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "local-tools"
+  }
+}

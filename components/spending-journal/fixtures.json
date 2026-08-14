@@ -1,0 +1,79 @@
+{
+  "items": [
+    {
+      "id": "02a9d795-faaa-44ec-9cab-4029c77b1918",
+      "group": "Dining",
+      "position": 1,
+      "fields": {
+        "merchant": "Morning Tide Café",
+        "amount": 8.9,
+        "currency": "USD",
+        "date": "2026-07-21",
+        "category": "Dining",
+        "payment_method": "Apple Pay",
+        "note": "Coffee and breakfast"
+      },
+      "version": 1
+    },
+    {
+      "id": "2f17178f-0f6c-4920-b35b-8f53edac16d4",
+      "group": "Entertainment",
+      "position": 1,
+      "fields": {
+        "merchant": "Cloud Nine Cinema",
+        "amount": 18.5,
+        "currency": "USD",
+        "date": "2026-07-16",
+        "category": "Entertainment",
+        "payment_method": "Apple Pay",
+        "note": "Friday night film"
+      },
+      "version": 1
+    },
+    {
+      "id": "1490d3b5-4575-4b40-8319-b15d443a8169",
+      "group": "Groceries",
+      "position": 1,
+      "fields": {
+        "merchant": "Green Leaf Grocer",
+        "amount": 36.45,
+        "currency": "USD",
+        "date": "2026-07-23",
+        "category": "Groceries",
+        "payment_method": "Card",
+        "note": "Fruit, vegetables and pantry basics"
+      },
+      "version": 1
+    },
+    {
+      "id": "044939ed-670c-42fb-a0df-0288320ce92b",
+      "group": "Health",
+      "position": 1,
+      "fields": {
+        "merchant": "Harbour Pharmacy",
+        "amount": 14.2,
+        "currency": "USD",
+        "date": "2026-07-13",
+        "category": "Health",
+        "payment_method": "Card",
+        "note": "Everyday essentials"
+      },
+      "version": 1
+    },
+    {
+      "id": "42f2a1ee-a43b-458b-b383-a9b41511781c",
+      "group": "Transport",
+      "position": 1,
+      "fields": {
+        "merchant": "Metro Transit",
+        "amount": 24,
+        "currency": "USD",
+        "date": "2026-07-19",
+        "category": "Transport",
+        "payment_method": "Card",
+        "note": "Weekly travel top-up"
+      },
+      "version": 1
+    }
+  ]
+}

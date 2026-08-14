@@ -1,0 +1,11 @@
+{
+  "manifest_version": 2,
+  "uses_shared": [
+    "locale",
+    "week_start",
+    "date_format",
+    "currency",
+    "density",
+    "confirm_delete"
+  ]
+}

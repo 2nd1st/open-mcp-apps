@@ -8,10 +8,11 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { SETTINGS_COLLECTION, RESERVED_KEY_RE } from "../store.mjs";
-import { RO, WRITE, snapshotSchema, ackSchema, capsShape, SHARED_PREFS, LOCKED_APPS, tierOf, CAP_NAMES } from "../contracts.mjs";
+import { RO, WRITE, ackSchema, SHARED_PREFS, CAP_NAMES, coerceCap, capValueHelp } from "../contracts.mjs";
+import { latestPref } from "../runtime-core.mjs";
 
 export function register(ctx) {
-  const { server, store, hostName, failNote, fail, computeCaps, toAck } = ctx;
+  const { server, store, hostName, failNote, fail, toAck } = ctx;
 
   // ------------------------------------------------------ prefs schema (settings pane, P4)
   server.registerTool(
@@ -37,34 +38,10 @@ export function register(ctx) {
     }),
   );
 
-  // ------------------------------------------------------ permissions overview (settings pane)
-  server.registerTool(
-    "app_permissions",
-    {
-      title: "App permissions overview",
-      annotations: RO,
-      description: "For every app: its author, trust tier, whether it's a locked system app, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
-      inputSchema: {},
-      outputSchema: {
-        apps: z.array(z.object({
-          name: z.string(), author: z.string(),
-          tier: z.enum(["local", "library-reviewed", "unreviewed"]),
-          locked: z.boolean(), caps: capsShape,
-        })),
-      },
-    },
-    async () => {
-      const apps = store.listApps().map((c) => {
-        const tier = tierOf(c.author);
-        return { name: c.name, author: c.author, tier, locked: LOCKED_APPS.has(c.name), caps: computeCaps(c.name, tier) };
-      });
-      const text = apps.length
-        ? "App permissions:\n" + apps.map((c) =>
-            `  - ${c.name} · tier ${c.tier} (by ${c.author})${c.locked ? " · LOCKED" : ""} · files ${c.caps.file_read ? "r" : "-"}${c.caps.file_write ? "w" : "-"} · sendMessage ${c.caps.send_message ? "on" : "off"}`).join("\n")
-        : "No apps installed.";
-      return { content: [{ type: "text", text }], structuredContent: { apps } };
-    },
-  );
+  // app_permissions retired 2026-08-04 (elegance review A13): its per-app rows were a projection
+  // of what app_html already returns (author, tier, caps — and now locked), to a single caller
+  // that fetches app_html for every app anyway. The settings pane assembles the same view from
+  // list_apps (locked rides each row) + its app_html cache.
 
   // -------------------------------------------------------------- privileged policy writer
   // The ONLY path that can write reserved security:*/policy:* keys. Privilege travels
@@ -80,7 +57,7 @@ export function register(ctx) {
       description: "Privileged writer for reserved settings keys (security:* / policy:*) — the ONLY tool that can write them; the generic data_* tools refuse reserved keys. Upserts one key/value in the settings collection.",
       inputSchema: {
         key: z.string().describe("a reserved key, e.g. security:kanban:send_message (cap suffixes are snake_case — the caps field names)"),
-        value: z.string().describe("the policy value, e.g. allow | ask | deny | confirm"),
+        value: z.string().describe("the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list. An unknown value is REFUSED, never stored"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
       outputSchema: ackSchema,
@@ -96,8 +73,16 @@ export function register(ctx) {
       const warn = capSeg && !CAP_NAMES.includes(capSeg)
         ? `\n⚠ "${capSeg}" is not a capability the engine reads — the key is stored but has NO effect. Valid caps (snake_case): ${CAP_NAMES.join(", ")}.`
         : "";
+      // Value validation — a WARNING would not have been enough here. An unrecognized value made
+      // computeCaps fall back to the TIER DEFAULT, and local's preset is everything ALLOWED: a
+      // policy typed `ask` did not fail to apply, it left the app at the WIDEST setting while the
+      // receipt read "Set …". Refuse, and say what the vocabulary is (coerceCap owns the ruling).
+      if (capSeg && CAP_NAMES.includes(capSeg) && coerceCap(capSeg, a.value) === undefined)
+        return fail(`"${a.value}" is not a value the engine reads for "${capSeg}" — NOTHING was written (an unreadable value would have left the app at its tier default, which for a local app is fully allowed). Valid: ${capValueHelp(capSeg)}.`);
       const cid = a.command_id || randomUUID();
-      const existing = store.snapshot(SETTINGS_COLLECTION).items.find((i) => i.fields.key === key);
+      // The row the READERS will read (computeCaps takes the last one) — updating any other
+      // makes a policy that reports itself set and never takes effect.
+      const existing = latestPref(store.snapshot(SETTINGS_COLLECTION).items, key);
       const r = existing
         ? store.executePrivileged({ type: "update_item", command_id: cid, id: existing.id, fields: { value: a.value }, actor: "human", host: hostName() })
         : store.executePrivileged({ type: "add_item", command_id: cid, collection: SETTINGS_COLLECTION, fields: { key, value: a.value }, actor: "human", host: hostName() });

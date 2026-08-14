@@ -13,7 +13,7 @@ export function register(ctx) {
 
   // ------------------------------------------------------------ per-app file plane (scope b)
   // Opaque user-file storage the AI uses to stash + retrieve files the user hands it (chat
-  // attachments, generated exports). Bytes ride a swappable backend (src/files.mjs); these tools
+  // attachments, generated exports). Bytes live in a local content-addressed folder (src/files.mjs); these tools
   // mirror the data_* shape. The file_read/file_write caps exist as the tier SEAM but are NOT gated
   // here — direct/AI use is local-tier (full). The runner enforces them for untrusted apps
   // once tiering lands. We store bytes OPAQUELY: any file, accepted wholesale, never interpreted.
@@ -172,7 +172,7 @@ export function register(ctx) {
 
   // Chunked write — the large-file path (single-shot file_write caps at MAX_FILE_INLINE_BYTES,
   // the per-file ceiling is MAX_FILE_BYTES). begin → chunk (in order, one at a time) → commit;
-  // bytes stream to backend staging, so nothing big ever sits in RAM, and commit lands through
+  // bytes stream to on-disk staging, so nothing big ever sits in RAM, and commit lands through
   // the exact same ref/quota/idempotency transaction as a single-shot write.
   server.registerTool(
     "file_write_begin",
@@ -229,12 +229,11 @@ export function register(ctx) {
         mime: z.string().optional(),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted. A retried commit with the same id returns the original receipt instead of demanding a re-upload"),
         expected_version: z.number().optional(),
-        expected_sha256: z.string().optional().describe("precheck: refuse (losslessly — the upload survives) if the staged bytes hash differently"),
       },
       outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
     },
     async (a) => {
-      const r = await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version, expected_sha256: a.expected_sha256 });
+      const r = await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
       if (!r.ok) return fail(fileFailNote(r));
       const m = r.meta;
       return {
@@ -244,30 +243,10 @@ export function register(ctx) {
     },
   );
 
-  server.registerTool(
-    "file_write_abort",
-    {
-      title: "Abort a chunked file write",
-      annotations: WRITE,
-      description: "Discard an in-flight upload and its staged bytes. Safe to call on an already-gone upload.",
-      inputSchema: { upload_id: z.string() },
-      outputSchema: { upload_id: z.string(), aborted: z.boolean() },
-    },
-    async (a) => {
-      // The answer is READ, not discarded. abortUpload refuses while a commit holds the upload
-      // ({ok:false, error:"upload_busy"}) — and this used to throw that away and reply
-      // aborted:true regardless, while the commit it did not stop went on to store the file.
-      // Telling someone their upload is gone when it is about to land is the worst of the three
-      // ways to be wrong: they stop watching.
-      const r = await fileChannel.abortUpload(a.upload_id);
-      if (r && r.ok === false) {
-        return fail(r.error === "upload_busy"
-          ? "That upload is being committed right now and was NOT aborted — wait for the commit to answer, then delete the file if you did not want it."
-          : fileFailNote(r));
-      }
-      return { content: [{ type: "text", text: "Upload discarded." }], structuredContent: { upload_id: a.upload_id, aborted: true } };
-    },
-  );
+  // file_write_abort retired 2026-08-04 (elegance A12): abandoned staging expires on its own
+  // (30 idle minutes, the TTL sweep in files.mjs), and the explicit abort was the only thing that
+  // created the abort-vs-commit race its own comment warned about. A caller that wants a staged
+  // upload gone simply stops sending chunks.
 
   server.registerTool(
     "file_delete",
@@ -275,11 +254,27 @@ export function register(ctx) {
       title: "Delete an app file",
       annotations: DESTRUCTIVE,
       description: "Permanently delete one file an app has stored.",
-      inputSchema: { command_id: z.string().describe("idempotency key (uuid)"), app: z.string(), path: z.string(), expected_version: z.number().optional() },
-      outputSchema: { app: z.string(), path: z.string(), deleted: z.boolean(), files_version: z.number() },
+      inputSchema: { command_id: z.string().describe("idempotency key (uuid)"), app: z.string(), path: z.string(), expected_version: z.number().optional(),
+        actor: z.enum(["human", "agent"]).optional(), request_state: z.string().optional() },
+      outputSchema: { app: z.string(), path: z.string(), deleted: z.boolean().optional(), files_version: z.number().optional(),
+        ok: z.boolean().optional(), reason: z.string().optional(), preview: z.string().optional(), request_state: z.string().optional(), expires_at: z.string().optional(), note: z.string().optional() },
     },
     async (a) => {
-      const r = await fileChannel.del(a.app, a.path, { command_id: a.command_id, expected_version: a.expected_version });
+      // No `via`: the file plane never grew the shadow-provenance edge the item plane has, so the
+      // confirmation principal for a file delete is the actor alone (per-app confirm_delete
+      // overrides therefore do not apply to files — the global preference does).
+      const r = await fileChannel.del(a.app, a.path, { command_id: a.command_id, expected_version: a.expected_version,
+        actor: a.actor, request_state: a.request_state });
+      // Same two-phase shape data_delete_item publishes — a demand is not an error, and it must
+      // carry the state or the caller is told to resend something it never received.
+      if (r.confirmation_required) {
+        const note = `Confirmation required — deleting "${a.path}" from "${a.app}". Confirm with the user, then re-send with request_state (expires ${r.expires_at}).`;
+        return { content: [{ type: "text", text: note }],
+          // `preview` names what is about to go, in the same key data_delete_item uses — it is
+          // what the shell's overlay puts in front of the user, and without it the question
+          // degrades to "Delete this item?" about a file whose name we know perfectly well.
+          structuredContent: { app: a.app, path: a.path, ok: false, reason: "confirmation_required", preview: a.path, request_state: r.request_state, expires_at: r.expires_at, note } };
+      }
       if (!r.ok) return fail(fileFailNote(r));
       return { content: [{ type: "text", text: `Deleted "${a.path}" from "${a.app}".` }], structuredContent: { app: a.app, path: a.path, deleted: true, files_version: store.filesVersion() } };
     },

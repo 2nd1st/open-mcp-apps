@@ -1,0 +1,82 @@
+{
+  "items": [
+    {
+      "id": "f69cfb87-e084-4b88-9f16-466407f27882",
+      "group": "breakfast",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-20",
+        "meal_type": "breakfast",
+        "dish": "Berry oat breakfast jars",
+        "servings": 2,
+        "ingredients_note": "Rolled oats, yoghurt, berries, chia; prep the night before"
+      },
+      "version": 1
+    },
+    {
+      "id": "c1e9a1fc-bd79-4d90-97c6-9374cacbdf44",
+      "group": "breakfast",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-24",
+        "meal_type": "breakfast",
+        "dish": "Spinach feta omelette",
+        "servings": 2,
+        "ingredients_note": "Use up the baby spinach"
+      },
+      "version": 1
+    },
+    {
+      "id": "b74782d6-3579-4e73-806a-5a0c3f94ff18",
+      "group": "dinner",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-20",
+        "meal_type": "dinner",
+        "dish": "Miso salmon rice bowls",
+        "servings": 2,
+        "ingredients_note": "Salmon, edamame, cucumber, rice, white miso"
+      },
+      "version": 1
+    },
+    {
+      "id": "cb80770e-24c1-43e2-89cc-a0abfb155a89",
+      "group": "dinner",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-22",
+        "meal_type": "dinner",
+        "dish": "Ginger chicken lettuce cups",
+        "servings": 4,
+        "ingredients_note": "Chicken mince, water chestnuts, herbs, lettuce"
+      },
+      "version": 1
+    },
+    {
+      "id": "13ec3b12-2a5d-474e-99ba-7011f9634f8c",
+      "group": "lunch",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-21",
+        "meal_type": "lunch",
+        "dish": "Roast vegetable couscous",
+        "servings": 3,
+        "ingredients_note": "Use leftover roast vegetables; add feta and lemon"
+      },
+      "version": 1
+    },
+    {
+      "id": "b13b8cee-7193-49f8-8f62-45a62cbf0740",
+      "group": "lunch",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-25",
+        "meal_type": "lunch",
+        "dish": "Tomato pesto toasties",
+        "servings": 2,
+        "ingredients_note": "Sourdough, mozzarella, tomatoes, pesto"
+      },
+      "version": 1
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "manifest_version": 2,
+  "uses_shared": ["locale", "date_format"],
+  "collections": {
+    "actions": {
+      "label_field": "title",
+      "fields": {
+        "title": { "type": "string", "required": true },
+        "owner": { "type": "string", "required": true, "enum": ["me", "them"] },
+        "person": { "type": "string" },
+        "client": { "type": "string" },
+        "status": { "type": "string", "required": true, "enum": ["open", "booked", "waiting", "done"] },
+        "due_date": { "type": "string" },
+        "created_date": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app"
+}

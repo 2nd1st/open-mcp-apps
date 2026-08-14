@@ -11,9 +11,6 @@
       "readOnlyHint": true
     },
     "description": "Open ANY app from the registry by name as an interactive widget — use when the user wants to SEE or OPERATE the data (to merely read facts, use data_list — no UI). Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear). Prefer reusing an app on a different collection over creating near-duplicate apps.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "app": {
@@ -115,27 +112,22 @@
   },
   {
     "_meta": {
-      "openai/widgetAccessible": true
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
     },
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true
     },
     "description": "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
-        "length": {
-          "type": "number"
-        },
         "name": {
           "type": "string"
-        },
-        "offset": {
-          "description": "window the html (same grammar as get_app); omit for the whole document",
-          "type": "number"
         }
       },
       "required": [
@@ -187,15 +179,11 @@
             },
             "settings_write": {
               "type": "boolean"
-            },
-            "update_context": {
-              "type": "boolean"
             }
           },
           "required": [
             "call_tools",
             "send_message",
-            "update_context",
             "delete_items",
             "cross_collection_read",
             "cross_collection_write",
@@ -224,41 +212,22 @@
             }
           ]
         },
-        "eot": {
-          "type": "string"
-        },
         "html": {
           "type": "string"
+        },
+        "locked": {
+          "description": "a fixed system app (settings renders these read-only)",
+          "type": "boolean"
         },
         "name": {
           "type": "string"
         },
-        "next_offset": {
-          "anyOf": [
-            {
-              "type": "number"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "offset": {
-          "type": "number"
-        },
-        "returned": {
-          "type": "number"
-        },
         "tier": {
           "enum": [
             "local",
-            "library-reviewed",
             "unreviewed"
           ],
           "type": "string"
-        },
-        "total": {
-          "type": "number"
         },
         "version": {
           "type": "number"
@@ -270,6 +239,7 @@
         "html",
         "author",
         "tier",
+        "locked",
         "collection",
         "caps"
       ],
@@ -283,9 +253,6 @@
       "readOnlyHint": true
     },
     "description": "READ THIS FIRST before creating or editing an app. Returns the window.oma API contract, available CSS design tokens, the data model, and a minimal working app template.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "topic": {
@@ -313,9 +280,6 @@
       "readOnlyHint": true
     },
     "description": "List UI apps in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "kind": {
@@ -327,12 +291,6 @@
             "any"
           ],
           "type": "string"
-        },
-        "limit": {
-          "description": "cap the rows listed (the total is always reported)",
-          "exclusiveMinimum": 0,
-          "maximum": 9007199254740991,
-          "type": "integer"
         },
         "name": {
           "description": "exact app name — the fastest way to answer \"open my X\"",
@@ -360,22 +318,31 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read an app's HTML source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
     "inputSchema": {
       "properties": {
         "length": {
-          "description": "max characters for this window (default fits the result budget)",
+          "description": "max characters for this window (default fits the result budget; ui slot only)",
           "type": "number"
         },
         "name": {
           "type": "string"
         },
+        "node": {
+          "description": "read the element marked data-oma-node=\"<node>\" — the window (and its hash) covers exactly that element (ui slot only)",
+          "type": "string"
+        },
         "offset": {
-          "description": "character offset to read from (default 0)",
+          "description": "character offset to read from (default 0; ui slot only)",
           "type": "number"
+        },
+        "slot": {
+          "description": "default ui; manifest returns {manifest: object|null} whole",
+          "enum": [
+            "ui",
+            "manifest"
+          ],
+          "type": "string"
         }
       },
       "required": [
@@ -389,6 +356,23 @@
       "properties": {
         "eot": {
           "type": "string"
+        },
+        "hash": {
+          "type": "string"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "type": "string"
@@ -421,9 +405,7 @@
       },
       "required": [
         "name",
-        "version",
-        "offset",
-        "text"
+        "version"
       ],
       "type": "object"
     },
@@ -436,10 +418,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Create or update a UI app in the persistent registry. The HTML must follow the contract from get_app_guide (single self-contained HTML using window.oma; no external resources). After saving, open it IMMEDIATELY with open_app. Saving an existing name creates a new version (history kept).",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Create or update a UI app in the persistent registry. Two slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block) — and manifest, the app's declaration as a JSON object (kind, collections, settings, scene; keys in get_app_guide). manifest: null clears the declaration. Creating needs ui. Every save snapshots both slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -454,24 +433,32 @@
           "description": "REQUIRED when overwriting an existing app: the version you read (get_app). Creating a new name needs none",
           "type": "number"
         },
-        "html": {
-          "description": "complete self-contained HTML document using window.oma",
-          "type": "string"
-        },
         "manifest": {
-          "description": "RETIRED — declare inside the html (see get_app_guide)"
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "declaration object (whole-value replace), null to clear, omit to keep"
         },
         "name": {
           "description": "app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')",
           "type": "string"
         },
-        "scene": {
-          "description": "RETIRED — declare inside the html (see get_app_guide)"
+        "ui": {
+          "description": "complete self-contained HTML document using window.oma; omit on update to keep the current one",
+          "type": "string"
         }
       },
       "required": [
-        "name",
-        "html"
+        "name"
       ],
       "type": "object"
     },
@@ -485,14 +472,14 @@
         "created": {
           "type": "boolean"
         },
-        "declaration": {
-          "type": "string"
-        },
         "eot": {
           "type": "string"
         },
         "expected_version": {
           "type": "number"
+        },
+        "manifest_action": {
+          "type": "string"
         },
         "name": {
           "type": "string"
@@ -537,10 +524,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Surgical edits to an app WITHOUT round-tripping the whole source: each edit replaces old_string (which must match exactly once, or set replace_all) with new_string. All edits apply together against expected_version, or nothing applies. No pre-read needed for source you just saved — your copy is byte-exact and your receipt carries the version; get_app is for source you did not write. The #oma-manifest block is re-read on save.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The #oma-manifest block is re-read on save.",
     "inputSchema": {
       "properties": {
         "actor": {
@@ -559,13 +543,26 @@
           "type": "string"
         },
         "edits": {
-          "description": "applied in order; exact string match including whitespace",
+          "description": "each item is RANGE (offset+length+expect_hash) or STRING (old_string)",
           "items": {
             "properties": {
+              "expect_hash": {
+                "description": "RANGE form: get_app's hash for that window",
+                "type": "string"
+              },
+              "length": {
+                "description": "RANGE form: get_app's returned",
+                "type": "number"
+              },
               "new_string": {
                 "type": "string"
               },
+              "offset": {
+                "description": "RANGE form: from get_app's offset",
+                "type": "number"
+              },
               "old_string": {
+                "description": "STRING form: exact match including whitespace",
                 "type": "string"
               },
               "replace_all": {
@@ -573,7 +570,6 @@
               }
             },
             "required": [
-              "old_string",
               "new_string"
             ],
             "type": "object"
@@ -603,14 +599,14 @@
         "created": {
           "type": "boolean"
         },
-        "declaration": {
-          "type": "string"
-        },
         "eot": {
           "type": "string"
         },
         "expected_version": {
           "type": "number"
+        },
+        "manifest_action": {
+          "type": "string"
         },
         "name": {
           "type": "string"
@@ -655,43 +651,31 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Flip an app out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_apps {visibility: \"archived\"} shows them. This is the KEEP-everything half of the pair: to remove an app and the data only it used, delete_app with data:\"cascade\" (permanent).",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Upgrade a kind:\"visual\" app to a full app in ONE atomic step: the engine flips `kind` in the stored manifest, keeping every other declared key, and saves a new version (OCC-guarded, history kept). Already an app is a no-op; downgrades are refused — demoting is an author edit (save_app with the manifest), not a lifecycle verb.",
     "inputSchema": {
       "properties": {
-        "actor": {
-          "enum": [
-            "human",
-            "agent"
-          ],
-          "type": "string"
-        },
-        "app": {
-          "type": "string"
-        },
-        "archived": {
-          "description": "true = archive; false = bring it back (listed)",
-          "type": "boolean"
-        },
         "command_id": {
-          "description": "idempotency key — generate a fresh uuid per action",
+          "description": "idempotency key (uuid); auto-generated if omitted",
+          "type": "string"
+        },
+        "name": {
+          "description": "an existing app with kind \"visual\" (list_apps {kind:\"visual\"} shows them)",
           "type": "string"
         }
       },
       "required": [
-        "command_id",
-        "app",
-        "archived"
+        "name"
       ],
       "type": "object"
     },
-    "name": "archive_app",
+    "name": "promote_app",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
         "eot": {
+          "type": "string"
+        },
+        "kind": {
           "type": "string"
         },
         "name": {
@@ -709,7 +693,7 @@
         "version": {
           "type": "number"
         },
-        "visibility": {
+        "was": {
           "type": "string"
         }
       },
@@ -718,7 +702,122 @@
       ],
       "type": "object"
     },
-    "title": "Archive / restore an app"
+    "title": "Promote visual to app"
+  },
+  {
+    "_meta": {
+      "openai/widgetAccessible": true
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
+      "readOnlyHint": false
+    },
+    "description": "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
+    "inputSchema": {
+      "additionalProperties": {},
+      "properties": {
+        "actor": {
+          "enum": [
+            "human",
+            "agent"
+          ],
+          "type": "string"
+        },
+        "app": {
+          "type": "string",
+          "x-mcp-header": "App"
+        },
+        "args": {
+          "additionalProperties": {},
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "command_id": {
+          "description": "idempotency key — generate a fresh uuid per action",
+          "type": "string"
+        },
+        "function": {
+          "type": "string",
+          "x-mcp-header": "Function"
+        }
+      },
+      "required": [
+        "command_id",
+        "app",
+        "function"
+      ],
+      "type": "object"
+    },
+    "name": "call_function",
+    "outputSchema": {
+      "additionalProperties": false,
+      "properties": {
+        "available": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "eot": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "result": {},
+        "violations": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "writes": {
+          "items": {
+            "additionalProperties": false,
+            "properties": {
+              "collection": {
+                "type": "string"
+              },
+              "id": {
+                "type": "string"
+              },
+              "idempotent": {
+                "type": "boolean"
+              },
+              "op": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "number"
+              }
+            },
+            "required": [
+              "op",
+              "id",
+              "collection",
+              "seq"
+            ],
+            "type": "object"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "ok"
+      ],
+      "type": "object"
+    },
+    "title": "Call an app function"
   },
   {
     "_meta": {
@@ -729,9 +828,6 @@
       "readOnlyHint": true
     },
     "description": "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_app for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "collection": {
@@ -865,9 +961,6 @@
       "readOnlyHint": false
     },
     "description": "Apply up to 200 writes in ONE transaction — for seeding an app from what you already know, or filling a board in one go, instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item / data_delete_item, as {type, ...args}: type is add_item | update_item | move_item | delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "actor": {
@@ -909,6 +1002,9 @@
         "eot": {
           "type": "string"
         },
+        "expires_at": {
+          "type": "string"
+        },
         "failed_index": {
           "type": "number"
         },
@@ -918,7 +1014,13 @@
         "ok": {
           "type": "boolean"
         },
+        "preview": {
+          "type": "string"
+        },
         "reason": {
+          "type": "string"
+        },
+        "request_state": {
           "type": "string"
         },
         "results": {
@@ -957,9 +1059,6 @@
       "readOnlyHint": true
     },
     "description": "What happened in a collection after a ledger position YOU hold — including edits the USER made in the widget, which never pass through you. Any mark you already have works as `since`: a write ack's `seq`, data_list's `version`, or the last call's `next_since`. Returns the contiguous run of events right after it (oldest first, whole events: actor, item id, fields) plus `next_since` to continue; omit `since` to just learn the current position.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "collection": {
@@ -1032,120 +1131,6 @@
     "title": "What changed since you last looked"
   },
   {
-    "annotations": {
-      "openWorldHint": false,
-      "readOnlyHint": true
-    },
-    "description": "Count, sum, min, max or average a collection's items — optionally grouped by a field — WITHOUT the rows travelling anywhere. Use it for \"how much did I spend per category\", \"how many are still open\", \"what is the largest\": the answer comes back with `matched`, the number of rows it was computed over, so it can be checked. `match` takes exactly data_list's filter grammar. One collection, AND-ed filters, no joins — read the rows with data_list if you need something this cannot express.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "properties": {
-        "collection": {
-          "type": "string"
-        },
-        "group": {
-          "description": "restrict to one group/lane before aggregating",
-          "type": "string"
-        },
-        "group_by": {
-          "description": "field to bucket by, e.g. \"category\" — biggest bucket first",
-          "type": "string"
-        },
-        "match": {
-          "additionalProperties": {},
-          "description": "same filter grammar as data_list's match",
-          "propertyNames": {
-            "type": "string"
-          },
-          "type": "object"
-        },
-        "metrics": {
-          "description": "default [{op:\"count\"}]",
-          "items": {
-            "properties": {
-              "field": {
-                "description": "required for everything except count",
-                "type": "string"
-              },
-              "op": {
-                "enum": [
-                  "count",
-                  "sum",
-                  "min",
-                  "max",
-                  "avg"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "op"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "collection"
-      ],
-      "type": "object"
-    },
-    "name": "data_query",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "collection": {
-          "type": "string"
-        },
-        "eot": {
-          "type": "string"
-        },
-        "group": {
-          "type": "string"
-        },
-        "groups": {
-          "items": {
-            "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
-            },
-            "type": "object"
-          },
-          "type": "array"
-        },
-        "matched": {
-          "description": "rows the numbers were computed over — the audit trail of the answer",
-          "type": "number"
-        },
-        "note": {
-          "type": "string"
-        },
-        "returned": {
-          "type": "number"
-        },
-        "scanned": {
-          "description": "rows looked at",
-          "type": "number"
-        },
-        "total": {
-          "description": "buckets that exist; if greater than returned, the smallest were omitted",
-          "type": "number"
-        }
-      },
-      "required": [
-        "collection",
-        "scanned",
-        "matched",
-        "groups"
-      ],
-      "type": "object"
-    },
-    "title": "Aggregate without reading the rows"
-  },
-  {
     "_meta": {
       "openai/widgetAccessible": true
     },
@@ -1154,9 +1139,6 @@
       "readOnlyHint": true
     },
     "description": "The cheapest possible change check: returns the global change counter (seq) plus settings/files sub-counters. If seq hasn't moved since you last looked, NOTHING changed anywhere — skip re-reading. Widgets use this for adaptive polling; you can too before re-listing a collection.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {},
       "type": "object"
@@ -1197,9 +1179,6 @@
       "readOnlyHint": true
     },
     "description": "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind an app to. Renders no UI.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {},
       "type": "object"
@@ -1260,9 +1239,6 @@
       "readOnlyHint": false
     },
     "description": "Add an item to a collection. `group` is the app-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "additionalProperties": {},
       "properties": {
@@ -1392,9 +1368,6 @@
       "readOnlyHint": false
     },
     "description": "Shallow-merge fields into an item (set a key to null to remove it). Uses optimistic concurrency.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "additionalProperties": {},
       "properties": {
@@ -1522,9 +1495,6 @@
       "readOnlyHint": false
     },
     "description": "Move an item to another group and/or position (e.g. kanban column).",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "additionalProperties": {},
       "properties": {
@@ -1648,10 +1618,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Delete an item permanently.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Delete an item permanently. May return reason:\"confirmation_required\" with a request_state — show the user what is named in `note`, then re-send the same call with request_state attached.",
     "inputSchema": {
       "additionalProperties": {},
       "properties": {
@@ -1671,6 +1638,12 @@
         },
         "id": {
           "type": "string"
+        },
+        "request_state": {
+          "type": "string"
+        },
+        "require_confirmation": {
+          "type": "boolean"
         }
       },
       "required": [
@@ -1694,6 +1667,9 @@
         },
         "expected_version": {
           "type": "number"
+        },
+        "expires_at": {
+          "type": "string"
         },
         "id": {
           "type": "string"
@@ -1739,7 +1715,13 @@
         "prev_collection_seq": {
           "type": "number"
         },
+        "preview": {
+          "type": "string"
+        },
         "reason": {
+          "type": "string"
+        },
+        "request_state": {
           "type": "string"
         },
         "seq": {
@@ -1765,9 +1747,6 @@
       "readOnlyHint": true
     },
     "description": "List the files an app (app) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "app": {
@@ -1809,9 +1788,6 @@
               "app": {
                 "type": "string"
               },
-              "backend": {
-                "type": "string"
-              },
               "created_at": {
                 "type": "string"
               },
@@ -1841,7 +1817,6 @@
               "size",
               "mime",
               "version",
-              "backend",
               "created_at",
               "updated_at"
             ],
@@ -1904,9 +1879,6 @@
       "readOnlyHint": true
     },
     "description": "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_app, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "app": {
@@ -1999,9 +1971,6 @@
       "readOnlyHint": false
     },
     "description": "Store a file for an app (create or overwrite by path). `data_base64` is the file bytes, base64-encoded — pass any file the user gave you or that you generated. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "app": {
@@ -2084,9 +2053,6 @@
       "readOnlyHint": false
     },
     "description": "Start a chunked upload for a file too big for file_write's single call. Returns an upload_id; send the bytes in order with file_write_chunk (each chunk up to ~5 MiB of raw bytes), then file_write_commit names the file. Uploads expire after 30 idle minutes; per-file ceiling 250 MiB.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "app": {
@@ -2130,9 +2096,6 @@
       "readOnlyHint": false
     },
     "description": "Append the next chunk of bytes (base64) to an upload started with file_write_begin. Send chunks strictly in order, one at a time. Pass `seq` (0-based chunk index) so a resend after a lost response is acknowledged instead of double-appended.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "data_base64": {
@@ -2187,17 +2150,10 @@
       "readOnlyHint": false
     },
     "description": "Finalize an upload as an app file (create or overwrite by path) — the chunked equivalent of file_write. The upload is consumed either way; on failure, restart from file_write_begin.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "command_id": {
           "description": "idempotency key (uuid); auto-generated if omitted. A retried commit with the same id returns the original receipt instead of demanding a re-upload",
-          "type": "string"
-        },
-        "expected_sha256": {
-          "description": "precheck: refuse (losslessly — the upload survives) if the staged bytes hash differently",
           "type": "string"
         },
         "expected_version": {
@@ -2261,58 +2217,21 @@
   },
   {
     "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false
-    },
-    "description": "Discard an in-flight upload and its staged bytes. Safe to call on an already-gone upload.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "properties": {
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id"
-      ],
-      "type": "object"
-    },
-    "name": "file_write_abort",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "aborted": {
-          "type": "boolean"
-        },
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id",
-        "aborted"
-      ],
-      "type": "object"
-    },
-    "title": "Abort a chunked file write"
-  },
-  {
-    "annotations": {
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false
     },
     "description": "Permanently delete one file an app has stored.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
+        "actor": {
+          "enum": [
+            "human",
+            "agent"
+          ],
+          "type": "string"
+        },
         "app": {
           "type": "string"
         },
@@ -2324,6 +2243,9 @@
           "type": "number"
         },
         "path": {
+          "type": "string"
+        },
+        "request_state": {
           "type": "string"
         }
       },
@@ -2344,18 +2266,34 @@
         "deleted": {
           "type": "boolean"
         },
+        "expires_at": {
+          "type": "string"
+        },
         "files_version": {
           "type": "number"
         },
+        "note": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean"
+        },
         "path": {
+          "type": "string"
+        },
+        "preview": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "request_state": {
           "type": "string"
         }
       },
       "required": [
         "app",
-        "path",
-        "deleted",
-        "files_version"
+        "path"
       ],
       "type": "object"
     },
@@ -2366,10 +2304,7 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List an app's checkpoints as {checkpoint, ts, html_size} — metadata only, NEVER the html (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone).",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots BOTH slots (ui + manifest); restore brings back the pair.",
     "inputSchema": {
       "properties": {
         "name": {
@@ -2392,17 +2327,17 @@
               "checkpoint": {
                 "type": "number"
               },
-              "html_size": {
-                "type": "number"
-              },
               "ts": {
                 "type": "string"
+              },
+              "ui_size": {
+                "type": "number"
               }
             },
             "required": [
               "checkpoint",
               "ts",
-              "html_size"
+              "ui_size"
             ],
             "type": "object"
           },
@@ -2428,9 +2363,6 @@
       "readOnlyHint": false
     },
     "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from app_history; after restoring, open_app to view it.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "checkpoint": {
@@ -2455,88 +2387,13 @@
     "title": "Restore an app version"
   },
   {
-    "_meta": {
-      "openai/widgetAccessible": true
-    },
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": false
-    },
-    "description": "Internal: the widget loader reports whether an app's html mounted cleanly. A failure report about the current version triggers an automatic rollback to the previous version (history preserved, max 3 per app per server run). Not normally called by the AI — use restore_app to roll back deliberately.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "properties": {
-        "app": {
-          "type": "string"
-        },
-        "error": {
-          "description": "the uncaught error message, when ok=false",
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "version": {
-          "description": "the app version that was rendering",
-          "type": "number"
-        }
-      },
-      "required": [
-        "app",
-        "version",
-        "ok"
-      ],
-      "type": "object"
-    },
-    "name": "render_health",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "app": {
-          "type": "string"
-        },
-        "new_version": {
-          "description": "the new current version number after the revert",
-          "type": "number"
-        },
-        "note": {
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "restored_version": {
-          "description": "the historical version whose html is now current again",
-          "type": "number"
-        },
-        "reverted": {
-          "type": "boolean"
-        }
-      },
-      "required": [
-        "app",
-        "ok",
-        "reverted"
-      ],
-      "type": "object"
-    },
-    "title": "Report app render health (internal)"
-  },
-  {
     "annotations": {
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Delete an app. data:\"keep\" (default) removes only the app; data:\"cascade\" ALSO deletes the data only this app was using — permanently, with no undo. Cascade is two steps: call it once to get a plan (what would be deleted, what would be kept and why), show the user, then call again with that plan_token. Collections another app also uses are NEVER deleted. To keep everything and just clear the shelf, use archive_app instead.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Delete an app from the registry. Default data:\"keep\" is a tombstone: its data, files and history are KEPT and restore_app can bring the app back. data:\"cascade\" ALSO permanently deletes the data provably only this app used (plus its settings) — it always returns a disposition plan first: read the plan to the user (what will be deleted AND what will be kept and why), then re-send the same call with request_state. Cascade is NOT undoable. Shared or unprovable collections are always kept.",
     "inputSchema": {
       "properties": {
         "actor": {
@@ -2551,7 +2408,7 @@
           "type": "string"
         },
         "data": {
-          "description": "cascade also deletes the data only this app used (permanent)",
+          "description": "\"keep\" (default): tombstone, data survives. \"cascade\": delete the app AND the data only it used — two-step confirmed, permanent",
           "enum": [
             "keep",
             "cascade"
@@ -2561,8 +2418,8 @@
         "name": {
           "type": "string"
         },
-        "plan_token": {
-          "description": "from the plan you showed the user — required to cascade",
+        "request_state": {
+          "description": "the state from a prior confirmation_required answer — re-send the identical call with it attached",
           "type": "string"
         }
       },
@@ -2583,15 +2440,12 @@
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Browse the built-in library: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_app {app: \"library\"} shows the browsable library app.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Browse the built-in App Store: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_app {app: \"app-store\"} shows the browsable App Store app.",
     "inputSchema": {
       "properties": {},
       "type": "object"
     },
-    "name": "library_list",
+    "name": "app_store_list",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2605,8 +2459,11 @@
               "description": {
                 "type": "string"
               },
-              "from_library": {
-                "description": "installed copy came from the library",
+              "from_app_store": {
+                "description": "installed copy came from the App Store",
+                "type": "boolean"
+              },
+              "has_manifest": {
                 "type": "boolean"
               },
               "has_preview": {
@@ -2618,11 +2475,11 @@
               "name": {
                 "type": "string"
               },
-              "size": {
-                "type": "number"
-              },
               "title": {
                 "type": "string"
+              },
+              "ui_size": {
+                "type": "number"
               },
               "update_available": {
                 "type": "boolean"
@@ -2633,10 +2490,11 @@
               "title",
               "description",
               "category",
-              "size",
+              "ui_size",
+              "has_manifest",
               "has_preview",
               "installed",
-              "from_library",
+              "from_app_store",
               "update_available"
             ],
             "type": "object"
@@ -2649,24 +2507,26 @@
       ],
       "type": "object"
     },
-    "title": "List library apps"
+    "title": "List App Store apps"
   },
   {
     "_meta": {
-      "openai/widgetAccessible": true
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
     },
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Internal: returns a library entry's html plus its embedded mock-data fixtures, so the library app can render a LIVE sandboxed preview card (srcdoc + stub oma + mock snapshot). Read-only; nothing is installed. Not useful to call directly.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Internal: returns an App Store entry's ui and manifest plus its mock-data fixtures, so the App Store app can render a LIVE sandboxed preview card (srcdoc + stub oma + mock snapshot). Read-only; nothing is installed. Not useful to call directly.",
     "inputSchema": {
       "properties": {
         "name": {
-          "description": "library entry name (see library_list)",
+          "description": "App Store entry name (see app_store_list)",
           "type": "string"
         }
       },
@@ -2675,7 +2535,7 @@
       ],
       "type": "object"
     },
-    "name": "library_preview",
+    "name": "app_store_preview",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2737,7 +2597,22 @@
           "description": "embedded mock snapshot items, or null if the entry ships none"
         },
         "html": {
+          "description": "the entry's ui slot (field named for its format — the preview iframe srcdocs it)",
           "type": "string"
+        },
+        "manifest": {
+          "anyOf": [
+            {
+              "additionalProperties": {},
+              "propertyNames": {
+                "type": "string"
+              },
+              "type": "object"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "name": {
           "type": "string"
@@ -2752,11 +2627,12 @@
         "description",
         "category",
         "html",
+        "manifest",
         "fixtures"
       ],
       "type": "object"
     },
-    "title": "Library live-preview payload (internal)"
+    "title": "App Store live-preview payload (internal)"
   },
   {
     "_meta": {
@@ -2768,10 +2644,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Install (or update) a ready-made app from the built-in library into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the library (newer library version), not from edits. Use library_list to see what's available. Installing is HALF the job: before handing it over, seed the collection with the user's real rows (data_batch, from what you already know of them) — an installed app opened empty and generic is half-delivered.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
+    "description": "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available. Installing is HALF the job: before handing it over, seed the collection with the user's real rows (data_batch, from what you already know of them) — an installed app opened empty and generic is half-delivered.",
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -2779,7 +2652,7 @@
           "type": "string"
         },
         "name": {
-          "description": "library entry name (see library_list)",
+          "description": "App Store entry name (see app_store_list)",
           "type": "string"
         }
       },
@@ -2788,7 +2661,7 @@
       ],
       "type": "object"
     },
-    "name": "install_from_library",
+    "name": "install_from_app_store",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2812,20 +2685,22 @@
       ],
       "type": "object"
     },
-    "title": "Install a library app"
+    "title": "Install an App Store app"
   },
   {
     "_meta": {
-      "openai/widgetAccessible": true
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
     },
     "annotations": {
       "openWorldHint": false,
       "readOnlyHint": true
     },
     "description": "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Apps read effective values via oma.pref(); this tool only describes what exists. Read-only.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {},
       "type": "object"
@@ -2928,122 +2803,13 @@
     "title": "Shared preference catalog"
   },
   {
-    "annotations": {
-      "openWorldHint": false,
-      "readOnlyHint": true
-    },
-    "description": "For every app: its author, trust tier, whether it's a locked system app, and the effective capability grants (including file_read/file_write). This is what the settings Permissions pane renders. Read-only; capability OVERRIDES are written with security_set.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
-    "inputSchema": {
-      "properties": {},
-      "type": "object"
-    },
-    "name": "app_permissions",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "apps": {
-          "items": {
-            "additionalProperties": false,
-            "properties": {
-              "author": {
-                "type": "string"
-              },
-              "caps": {
-                "additionalProperties": false,
-                "properties": {
-                  "call_tools": {
-                    "items": {
-                      "type": "string"
-                    },
-                    "type": "array"
-                  },
-                  "cross_collection_read": {
-                    "type": "boolean"
-                  },
-                  "cross_collection_write": {
-                    "type": "boolean"
-                  },
-                  "delete_items": {
-                    "enum": [
-                      "allow",
-                      "confirm",
-                      "deny"
-                    ],
-                    "type": "string"
-                  },
-                  "file_read": {
-                    "type": "boolean"
-                  },
-                  "file_write": {
-                    "type": "boolean"
-                  },
-                  "read_source": {
-                    "type": "boolean"
-                  },
-                  "send_message": {
-                    "type": "boolean"
-                  },
-                  "settings_write": {
-                    "type": "boolean"
-                  },
-                  "update_context": {
-                    "type": "boolean"
-                  }
-                },
-                "required": [
-                  "call_tools",
-                  "send_message",
-                  "update_context",
-                  "delete_items",
-                  "cross_collection_read",
-                  "cross_collection_write",
-                  "settings_write",
-                  "read_source",
-                  "file_read",
-                  "file_write"
-                ],
-                "type": "object"
-              },
-              "locked": {
-                "type": "boolean"
-              },
-              "name": {
-                "type": "string"
-              },
-              "tier": {
-                "enum": [
-                  "local",
-                  "library-reviewed",
-                  "unreviewed"
-                ],
-                "type": "string"
-              }
-            },
-            "required": [
-              "name",
-              "author",
-              "tier",
-              "locked",
-              "caps"
-            ],
-            "type": "object"
-          },
-          "type": "array"
-        }
-      },
-      "required": [
-        "apps"
-      ],
-      "type": "object"
-    },
-    "title": "App permissions overview"
-  },
-  {
     "_meta": {
-      "openai/widgetAccessible": true
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
     },
     "annotations": {
       "destructiveHint": false,
@@ -3052,9 +2818,6 @@
       "readOnlyHint": false
     },
     "description": "Privileged writer for reserved settings keys (security:* / policy:*) — the ONLY tool that can write them; the generic data_* tools refuse reserved keys. Upserts one key/value in the settings collection.",
-    "execution": {
-      "taskSupport": "forbidden"
-    },
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -3066,7 +2829,7 @@
           "type": "string"
         },
         "value": {
-          "description": "the policy value, e.g. allow | ask | deny | confirm",
+          "description": "the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list. An unknown value is REFUSED, never stored",
           "type": "string"
         }
       },

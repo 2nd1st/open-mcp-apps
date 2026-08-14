@@ -1,0 +1,160 @@
+{
+  "items": [
+    {
+      "id": "1c6d8bb4-5215-41ea-a56c-4a8265237e30",
+      "group": "plan",
+      "position": 1,
+      "fields": {
+        "day": "mon",
+        "focus": "Squat Day",
+        "exercises": [
+          {
+            "name": "Barbell Back Squat",
+            "muscle": "Quadriceps",
+            "equipment": "Barbell"
+          },
+          {
+            "name": "Bulgarian Split Squat",
+            "muscle": "Glutes",
+            "equipment": "Dumbbells"
+          },
+          "Hanging Leg Raise"
+        ]
+      },
+      "version": 1,
+      "collection": "training-plan"
+    },
+    {
+      "id": "b38811c4-19b6-4dd2-abd6-03aff3cde08b",
+      "group": "plan",
+      "position": 2,
+      "fields": {
+        "day": "wed",
+        "focus": "Bench Day",
+        "exercises": [
+          "Barbell Bench Press",
+          {
+            "name": "One-arm Dumbbell Row",
+            "muscle": "Upper back",
+            "equipment": "Dumbbell"
+          },
+          {
+            "name": "Incline Dumbbell Press",
+            "muscle": "Upper chest",
+            "equipment": "Dumbbells"
+          }
+        ]
+      },
+      "version": 1,
+      "collection": "training-plan"
+    },
+    {
+      "id": "6dbbcb17-74d3-4efb-b85f-67a63abf5c7d",
+      "group": "plan",
+      "position": 3,
+      "fields": {
+        "day": "sat",
+        "focus": "Deadlift Day",
+        "exercises": [
+          {
+            "name": "Barbell Deadlift",
+            "muscle": "Hamstrings",
+            "equipment": "Barbell"
+          },
+          "Standing Overhead Press",
+          {
+            "name": "Pull-up",
+            "muscle": "Lats",
+            "equipment": "Bodyweight"
+          }
+        ]
+      },
+      "version": 1,
+      "collection": "training-plan"
+    },
+    {
+      "id": "ba2e4cd4-687d-410a-b535-985804fa426e",
+      "group": "session",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-13",
+        "focus": "Squat Day",
+        "top_set": "Back Squat 82.5kg×5",
+        "volume_note": "Completed all squat 5×5 sets; Bulgarian split squat 3×10; hanging leg raise 3×12",
+        "feel": "Steady, current best 5×5"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    },
+    {
+      "id": "da7aefca-ddf4-4bba-99cc-4b9bd763b74a",
+      "group": "session",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-15",
+        "focus": "Bench Day",
+        "top_set": "Bench Press 62.5kg×5",
+        "volume_note": "Planned bench 5×5; completed 4 reps on the final set; rows and incline dumbbell press as planned",
+        "feel": "Hard, short on sleep"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    },
+    {
+      "id": "66f25c9a-e6ef-40a9-9da0-9746885827e4",
+      "group": "session",
+      "position": 3,
+      "fields": {
+        "date": "2026-07-18",
+        "focus": "Deadlift Day",
+        "top_set": "Deadlift 115kg×3",
+        "volume_note": "Deadlift 3×3; standing overhead press 40kg 3×6; four pull-up sets",
+        "feel": "Stable lockout and grip"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    },
+    {
+      "id": "e6779a9e-b2c7-49c1-9184-f5dd7f04ed1f",
+      "group": "session",
+      "position": 4,
+      "fields": {
+        "date": "2026-07-20",
+        "focus": "Squat Day",
+        "top_set": "Back Squat 75kg×5",
+        "volume_note": "Left knee felt tight, so reduced load for 3×5; added Romanian deadlift 70kg 3×8",
+        "feel": "Conservative, pain-free movement first"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    },
+    {
+      "id": "ce2ae79d-c78c-451a-8681-21386148864f",
+      "group": "session",
+      "position": 5,
+      "fields": {
+        "date": "2026-07-22",
+        "focus": "Bench Day",
+        "top_set": "Bench Press 62.5kg×5",
+        "volume_note": "Completed bench 5×5; incline dumbbell press 24kg per hand for 3×8",
+        "feel": "Smooth, one or two reps still in reserve"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    },
+    {
+      "id": "c5e1d775-f515-44d6-82ed-a7fb81a57332",
+      "group": "session",
+      "position": 6,
+      "fields": {
+        "date": "2026-07-25",
+        "focus": "Deadlift Day",
+        "top_set": "Deadlift 117.5kg×3",
+        "volume_note": "Deadlift 3×3; standing overhead press 42.5kg 3×5; four pull-up sets",
+        "feel": "Strong, current best triple"
+      },
+      "version": 1,
+      "collection": "training-sessions"
+    }
+  ]
+}

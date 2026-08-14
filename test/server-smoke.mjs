@@ -4,8 +4,8 @@
 // Covers the creation loop itself: seed apps present → generic data flow →
 // save_app at runtime → the open_<name> tool appears dynamically → shell-wrapped ui://.
 // Run: node test/server-smoke.mjs
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { randomUUID } from "node:crypto";
 import { unlinkSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -17,12 +17,15 @@ const DB = join(ROOT, "test", "smoke.db");
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 rmSync(join(ROOT, "test", "files"), { recursive: true, force: true }); // file-plane blobs land beside the test db
 
-// seed directly into the test db
+// seed directly into the test db — every shipped entry (v6 layout: components/<name>/ with the
+// manifest as its own slot file)
 {
   const store = openStore(DB);
-  for (const file of readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html"))) {
-    store.execute({ type: "save_app", command_id: "seed-" + file, name: basename(file, ".html"),
-      html: readFileSync(join(ROOT, "components", file), "utf-8"), actor: "seed" });
+  for (const name of readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")))) {
+    let manifest = null;
+    try { manifest = JSON.parse(readFileSync(join(ROOT, "components", name, "manifest.json"), "utf-8")); } catch { /* none */ }
+    store.execute({ type: "save_app", command_id: "seed-" + name, name,
+      ui: readFileSync(join(ROOT, "components", name, "ui.html"), "utf-8"), manifest, actor: "seed" });
   }
   store.close();
 }
@@ -60,22 +63,37 @@ const doc = res.contents[0];
 ok("MIME correct", doc.mimeType === "text/html;profile=mcp-app");
 ok("shell runtime injected", doc.text.includes('data-oma="runtime"') && doc.text.includes("window.oma"));
 ok("design tokens injected", doc.text.includes('data-oma="tokens"'));
-ok("app version injected (render-health identity)", doc.text.includes("__OMA_APP_VERSION__"));
+ok("no version global rides the document (render-health identity retired with auto-revert, B3)", !doc.text.includes("__OMA_APP_VERSION__"));
 ok("early-error buffer injected before app code", doc.text.includes("__OMA_EARLY_ERRORS__"));
 
-console.log("2b-lib. every shipped library entry can actually be previewed");
+console.log("2b-lib. every shipped App Store entry can actually be previewed");
 // One entry shipped with fixtures in the DOCUMENTED shape ({collection, group, fields}) and its
 // preview failed output validation on every host, because the tool declared the full store-item
 // shape instead. The card said "preview unavailable" and the app swallowed the reason.
 // Sweeping all of them is the only assertion that catches the next one.
 {
-  const entries = (await client.callTool({ name: "library_list", arguments: {} })).structuredContent.entries;
+  const entries = (await client.callTool({ name: "app_store_list", arguments: {} })).structuredContent.entries;
   const broken = [];
   for (const e of entries) {
-    const r = await client.callTool({ name: "library_preview", arguments: { name: e.name } }).catch((err) => ({ isError: true, content: [{ text: String(err.message) }] }));
+    const r = await client.callTool({ name: "app_store_preview", arguments: { name: e.name } }).catch((err) => ({ isError: true, content: [{ text: String(err.message) }] }));
     if (r.isError || !r.structuredContent?.html) broken.push(e.name);
   }
-  ok(`all ${entries.length} library entries preview cleanly`, broken.length === 0, `broken: ${broken.join(", ")}`);
+  ok(`all ${entries.length} App Store entries preview cleanly`, broken.length === 0, `broken: ${broken.join(", ")}`);
+
+  // …and the blurb the storefront shows is the WHOLE sentence. The attribute parser used to accept
+  // either quote as the closer regardless of which one opened, so a `content="…"` holding an
+  // apostrophe — "today's medicines", "that week's Monday" — ended at the apostrophe and four apps
+  // shipped half a description. The round trip is the assertion: whatever came back must appear in
+  // the source file still wrapped in its own quotes. Re-deriving it with a regex here would only
+  // prove the two regexes agree.
+  const halved = [];
+  for (const e of entries) {
+    const src = readFileSync(join(ROOT, "components", e.name, "ui.html"), "utf-8");
+    if (e.description && !src.includes(`content="${e.description}"`) && !src.includes(`content='${e.description}'`))
+      halved.push(e.name);
+  }
+  ok("every App Store description survives to its closing quote (apostrophes included)",
+    halved.length === 0, `truncated: ${halved.join(", ")}`);
 }
 
 console.log("2b-ui. widget security declaration (ChatGPT submission gate)");
@@ -110,19 +128,31 @@ console.log("2b-ui. widget security declaration (ChatGPT submission gate)");
 
 console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hints.mjs)");
 {
-  // The RC requires ttlMs + cacheScope on tools/list, resources/list, resources/read and
+  // The spec requires ttlMs + cacheScope on tools/list, resources/list, resources/read and
   // resources/templates/list. What matters here is not that the fields EXIST but that the scope
   // tells the truth: "public" invites a shared gateway to serve one tenant's bytes to another, so
   // every store-derived answer has to be private. This test is the guard on that distinction.
-  const listed = await client.listResources();
+  //
+  // Cache fields are 2026-07-28 vocabulary and the SDK emits them on modern-era responses only —
+  // so this section speaks that era over its own pinned connection. The rest of the file stays on
+  // the legacy wire on purpose: that is what every shipped host speaks today.
+  const modern = new Client({ name: "smoke", version: "1.0.0" },
+    { versionNegotiation: { mode: { pin: "2026-07-28" } } });
+  await modern.connect(new StdioClientTransport({
+    command: "node",
+    args: [join(ROOT, "src", "server.mjs")],
+    env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke", OMA_DYNAMIC_TOOLS: "1" },
+  }));
+  const listed = await modern.listResources();
   ok("resources/list carries hints", typeof listed.ttlMs === "number" && listed.ttlMs >= 0);
   ok('resources/list is private — it enumerates THIS tenant\'s app names',
     listed.cacheScope === "private", listed.cacheScope);
-  ok("per-app read is private", res.cacheScope === "private", res.cacheScope);
+  const appRead = await modern.readResource({ uri: "ui://open-mcp-apps/habit-streaks.html" });
+  ok("per-app read is private", appRead.cacheScope === "private", appRead.cacheScope);
   ok("per-app read promises no freshness — the AI can rewrite the app mid-sentence",
-    res.ttlMs === 0, String(res.ttlMs));
+    appRead.ttlMs === 0, String(appRead.ttlMs));
 
-  const loaderRead = await client.readResource({ uri: "ui://open-mcp-apps/app.html" });
+  const loaderRead = await modern.readResource({ uri: "ui://open-mcp-apps/app.html" });
   // This asserted `public` until the browser viewer became default-on. The rule did not change and
   // neither did wrapLoader(): the scope is read off the ANSWER, and a running viewer puts its own
   // origin into the widget security declaration, which is deployment-derived by definition — two
@@ -150,39 +180,41 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
   // redirect_domains derived from viewBase). Two deployments then answer the same URI with
   // different metadata while both say "public".
   {
+    // The decision moved to REGISTRATION (tools/apps.mjs computes the loader's cacheHint from
+    // widgetDomain/viewBase; the SDK projects it onto modern-era reads — projection covered by
+    // the loader assertions above). So the branch is probed where it is decided: the registered
+    // resource's stored hint. Reaching into _registeredResources is the same knowingly-taken
+    // coupling installSchemaTrim documents; if the SDK moves the field, this reds loudly.
     const { openStore: openS } = await import("../src/store.mjs");
     const { createEngine: mkEngine } = await import("../src/engine.mjs");
-    const { Client: Cl } = await import("@modelcontextprotocol/sdk/client/index.js");
-    const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
     const probe = join(ROOT, "test", "scope-probe.db");
-    const scopeOf = async (opts) => {
+    const scopeOf = (opts) => {
       for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
       const st2 = openS(probe);
-      const eng = mkEngine(st2, opts);
-      const [a, b] = InMemoryTransport.createLinkedPair();
-      const cl = new Cl({ name: "scope-probe", version: "1" }, { capabilities: {} });
-      await Promise.all([eng.connect(a), cl.connect(b)]);
-      const r = await cl.readResource({ uri: "ui://open-mcp-apps/app.html" });
-      await cl.close(); st2.close();
-      return { scope: r.cacheScope, ttl: r.ttlMs };
+      const hint = mkEngine(st2, opts)._registeredResources?.["ui://open-mcp-apps/app.html"]?.cacheHint;
+      st2.close();
+      // No hint = the SDK default (private/zero) inherited by OMISSION — the elegance-A18 form:
+      // only the truly-universal answer declares itself public.
+      return hint ? { scope: hint.cacheScope, ttl: hint.ttlMs } : { scope: "default-private", ttl: 0 };
     };
-    const plain = await scopeOf({});
+    const plain = scopeOf({});
     ok("baseline: with no deployment-derived metadata the loader stays public", plain.scope === "public", JSON.stringify(plain));
-    const domained = await scopeOf({ widgetDomain: "https://widgets.example.test" });
-    ok("🔴 a deployment that sets widgetDomain drops the loader to PRIVATE",
-      domained.scope === "private", JSON.stringify(domained));
-    const viewed = await scopeOf({ viewBase: "https://viewer.example.test" });
+    const domained = scopeOf({ widgetDomain: "https://widgets.example.test" });
+    ok("🔴 a deployment that sets widgetDomain OMITS the hint → private/zero default",
+      domained.scope === "default-private", JSON.stringify(domained));
+    const viewed = scopeOf({ viewBase: "https://viewer.example.test" });
     ok("🔴 …and so does one whose viewBase makes redirect_domains deployment-specific",
-      viewed.scope === "private", JSON.stringify(viewed));
+      viewed.scope === "default-private", JSON.stringify(viewed));
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
   }
 
   // Pins the premise of calling the template list public. If a store-derived template ever gets
   // registered, this fails and the scope decision comes back up for review.
-  const templates = await client.listResourceTemplates();
+  const templates = await modern.listResourceTemplates();
   ok("resource templates: none registered, so the list is engine-constant",
     (templates.resourceTemplates ?? []).length === 0 && templates.cacheScope === "public",
     `${(templates.resourceTemplates ?? []).length} template(s), scope ${templates.cacheScope}`);
+  await modern.close();
 }
 
 // An app now declares itself INSIDE its document, so a test that wants a declaration builds
@@ -231,7 +263,7 @@ const noteHtml = `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body>
 // Overwrites need the version the author read (write-set C contract) — this helper is the test's
 // "I just looked" shorthand.
 const verOf = async (n) => (await client.callTool({ name: "list_apps", arguments: { name: n } })).structuredContent.apps[0]?.version;
-const save = await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", html: noteHtml, description: "simple note list" } });
+const save = await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", ui: noteHtml, description: "simple note list" } });
 // The echoed version is the GLOBAL ledger seq (three-axis merge), so it moves whenever the seed
 // set grows. The old literal 'v1' check survived v12 only because "v12" CONTAINS "v1" — substring
 // luck, not a passing test. Pin the shape, not a number the seed count controls.
@@ -244,12 +276,12 @@ const notesRes = await client.readResource({ uri: "ui://open-mcp-apps/smoke-note
 ok("new app served shell-wrapped", notesRes.contents[0].text.includes("window.oma") && notesRes.contents[0].text.includes('id="l"'));
 
 console.log("5. app update = new version, served immediately");
-const save2 = await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", html: noteHtml.replace('id="l"', 'id="l" class="v2"'), description: "", expected_version: save.structuredContent.version } });
+const save2 = await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", ui: noteHtml.replace('id="l"', 'id="l" class="v2"'), description: "", expected_version: save.structuredContent.version } });
 // An app's version is its ledger position too, so "the second save" is a LARGER number, not 2.
 ok("the second save advanced the version", /updated/.test(save2.content[0].text) && /Saved "smoke-notes" v\d+/.test(save2.content[0].text));
 const notesV2 = await client.readResource({ uri: "ui://open-mcp-apps/smoke-notes.html" });
 ok("resource serves v2 live (no re-register)", notesV2.contents[0].text.includes('class="v2"'));
-const seedCount = readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html")).length;
+const seedCount = readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html"))).length;
 const listC = await client.callTool({ name: "list_apps", arguments: {} });
 ok(`registry lists ${seedCount} seeds + smoke-notes`, listC.structuredContent.apps.length === seedCount + 1);
 // Found by the live-model eval (test/eval-live.mjs, task "onboarding"): a brand-new user's registry
@@ -284,11 +316,11 @@ ok("lists the kanban collection with count", colls.structuredContent.collections
 ok("model-readable summary", colls.content[0].text.includes("kanban: 1 item"));
 
 console.log("7. guardrails");
-const badName = await client.callTool({ name: "save_app", arguments: { name: "Bad Name!", html: noteHtml } });
+const badName = await client.callTool({ name: "save_app", arguments: { name: "Bad Name!", ui: noteHtml } });
 ok("bad name rejected", badName.isError === true);
-const extUrl = await client.callTool({ name: "save_app", arguments: { name: "ext-test", html: noteHtml.replace("<ul", '<script src="https://evil.example/x.js"></script><ul') } });
+const extUrl = await client.callTool({ name: "save_app", arguments: { name: "ext-test", ui: noteHtml.replace("<ul", '<script src="https://evil.example/x.js"></script><ul') } });
 ok("external URL warned", extUrl.content[0].text.includes("External URLs detected"));
-const noOma = await client.callTool({ name: "save_app", arguments: { name: "static-test", html: "<!DOCTYPE html><html><body><h1>static</h1>no api here, just markup filling the minimum size…</body></html>" } });
+const noOma = await client.callTool({ name: "save_app", arguments: { name: "static-test", ui: "<!DOCTYPE html><html><body><h1>static</h1>no api here, just markup filling the minimum size…</body></html>" } });
 ok("no-oma warned", noOma.content[0].text.includes("never references the oma API"));
 // …and the aliases a real app actually uses do NOT warn. A measured author re-sent an entire
 // 33KB document to silence this on working code; a linter that cries wolf costs more than it saves.
@@ -302,7 +334,7 @@ ok("no-oma warned", noOma.content[0].text.includes("never references the oma API
   };
   let quiet = [];
   for (const [label, js] of Object.entries(forms)) {
-    const r = await client.callTool({ name: "save_app", arguments: { name: "lint-" + label.replace(/[^a-z]+/g, "-").replace(/^-|-$/g, ""), html: wrap(js) } });
+    const r = await client.callTool({ name: "save_app", arguments: { name: "lint-" + label.replace(/[^a-z]+/g, "-").replace(/^-|-$/g, ""), ui: wrap(js) } });
     if (r.content[0].text.includes("never references the oma API")) quiet.push(label);
   }
   ok("the oma-reference check accepts every idiomatic spelling, not just the literal `oma.`",
@@ -347,7 +379,7 @@ console.log("9. onboarding vs inventory — the instructions address the reader 
   // The positive half of the eval finding: on a fresh install list_apps must SAY the user has
   // nothing, because the registry it shows them is not empty — it holds our three system apps.
   {
-    const { InMemoryTransport: IMT } = await import("@modelcontextprotocol/sdk/inMemory.js");
+    const { InMemoryTransport: IMT } = await import("@modelcontextprotocol/client");
     const [ct2, st2] = IMT.createLinkedPair();
     const eng2 = createEngine(st); await eng2.connect(st2);
     const c2 = new Client({ name: "fresh", version: "1.0.0" }); await c2.connect(ct2);
@@ -362,7 +394,7 @@ console.log("9. onboarding vs inventory — the instructions address the reader 
     /proactivity/i.test(blank) && /tokens ONCE/i.test(blank) && /on-request/i.test(blank));
 
   st.execute({ type: "save_app", command_id: "onb-1", name: "expenses-2026",
-    html: "<p>x</p>".repeat(200), description: "Expense tracker. Logs spending by merchant.", actor: "agent" });
+    ui: "<p>x</p>".repeat(200), description: "Expense tracker. Logs spending by merchant.", actor: "agent" });
   const settled = createEngine(st).server._instructions;
   ok("once they own an app, the onboarding procedure is GONE — it would be wrong advice",
     !settled.includes("GETTING STARTED"));
@@ -409,7 +441,7 @@ const kBefore = await gv();
 await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", group: "To Do", fields: { title: "not a setting" } } });
 ok("foreign-collection write leaves settings_version unchanged", (await sv()) === sVer && (await gv()) > kBefore);
 // (d) save_app does NOT bump it (component_saved events carry no `collection`)
-await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", html: noteHtml.replace('id="l"', 'id="l" data-r="10"'), description: "", expected_version: await verOf("smoke-notes") } });
+await client.callTool({ name: "save_app", arguments: { name: "smoke-notes", ui: noteHtml.replace('id="l"', 'id="l" data-r="10"'), description: "", expected_version: await verOf("smoke-notes") } });
 ok("save_app leaves settings_version unchanged", (await sv()) === sVer);
 // (e) settings DELETE bumps it
 const sDel = await client.callTool({ name: "data_delete_item", arguments: { command_id: randomUUID(), id: sId } });
@@ -438,7 +470,7 @@ console.log("12. save_app rejects EVERY reserved name, and says which list it is
   const reserved = [...RESERVED_APP_NAMES];
   ok(`the reserved set is non-empty and read from source (${reserved.length} names)`, reserved.length >= 6);
   for (const rn of reserved) {
-    const rr = await client.callTool({ name: "save_app", arguments: { name: rn, html: noteHtml } });
+    const rr = await client.callTool({ name: "save_app", arguments: { name: rn, ui: noteHtml } });
     ok(`reserved name "${rn}" rejected`, rr.isError === true, rr.content?.[0]?.text);
     // The message must name the whole rule, not a subset of it — that is the whole defect here.
     ok(`…and the refusal lists "${rn}" among the reserved names it is enforcing`,
@@ -448,9 +480,9 @@ console.log("12. save_app rejects EVERY reserved name, and says which list it is
   }
 }
 
-console.log("12b. locked system apps — settings/library refuse tool-side save, restore & delete (seed/privileged exempt)");
-for (const ln of ["settings", "library"]) {
-  const lr = await client.callTool({ name: "save_app", arguments: { name: ln, html: noteHtml } });
+console.log("12b. locked system apps — settings/app-store refuse tool-side save, restore & delete (seed/privileged exempt)");
+for (const ln of ["settings", "app-store"]) {
+  const lr = await client.callTool({ name: "save_app", arguments: { name: ln, ui: noteHtml } });
   ok(`locked "${ln}" refuses save_app`, lr.isError === true && /locked system app/.test(lr.content[0].text));
   const lrr = await client.callTool({ name: "restore_app", arguments: { name: ln, checkpoint: 1 } });
   ok(`locked "${ln}" refuses restore_app`, lrr.isError === true && /locked system app/.test(lrr.content[0].text));
@@ -458,7 +490,7 @@ for (const ln of ["settings", "library"]) {
   ok(`locked "${ln}" refuses delete_app`, lrd.isError === true && /locked system app/.test(lrd.content[0].text));
 }
 // dashboard is intentionally editable (the personal launcher) — a tool-side save must SUCCEED.
-const dashSave = await client.callTool({ name: "save_app", arguments: { name: "dashboard", html: noteHtml, description: "editable launcher", expected_version: await verOf("dashboard") } });
+const dashSave = await client.callTool({ name: "save_app", arguments: { name: "dashboard", ui: noteHtml, description: "editable launcher", expected_version: await verOf("dashboard") } });
 ok("dashboard is NOT locked — save_app succeeds", !dashSave.isError && /Saved "dashboard"/.test(dashSave.content[0].text));
 
 console.log("12c. 🔴 A STORE THAT PREDATES A RESERVED NAME MUST STILL BOOT (anti-brick)");
@@ -479,7 +511,7 @@ console.log("12c. 🔴 A STORE THAT PREDATES A RESERVED NAME MUST STILL BOOT (an
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
     const st = openStore(probe);
     // The privileged path is how such a row got there: it predates today's reserved-name check.
-    st.execute({ type: "save_app", command_id: randomUUID(), name, html: HTML, actor: "seed" });
+    st.execute({ type: "save_app", command_id: randomUUID(), name, ui: HTML, actor: "seed" });
     let err = null, eng = null;
     try { eng = createEngine(st); } catch (e) { err = e; }
     return { st, err, eng };
@@ -529,32 +561,36 @@ const KNOWN_SAFE = new Set([
   // Chunked large-file write: same channel/backend as file_write — staging lives under the
   // backend's own .tmp (uuid names, never caller input), commit lands through the identical
   // write_file store transaction. No new fs surface beyond src/files.mjs (§1.5).
-  "file_write_begin", "file_write_chunk", "file_write_commit", "file_write_abort",
+  "file_write_begin", "file_write_chunk", "file_write_commit",
   // data_version: read-only aggregate over change_event via prepared statements — no primitives.
   "data_version",
   // Write-set C additions (§1.5 review): edit_app applies exact-string replacements
-  // in-memory and lands through the SAME save_app store path — no new primitive;
-  // archive_app flips one registry column through a typed store command. (call_function's
-  // seat was PULLED 2026-07-27 — it returns with its executor when OMA_FUNCTIONS lands, and
-  // re-enters this list at that review.)
-  "edit_app", "archive_app",
-  // Library: library_list/library_preview/install_from_library read ONLY repo components/*.html
-  // through src/library.mjs, whose name argument is APP_NAME_RE-validated (no dots/slashes
-  // → no traversal) and whose dir is fixed at module load; library_preview additionally returns
-  // the entry's EMBEDDED fixtures JSON (parsed, fail-null) — still the same fixed dir, no
-  // primitives; install writes go through the same save_app store path with actor
+  // in-memory and lands through the SAME save_app store path — no new primitive.
+  // (archive_app's seat retired 2026-08-04 elegance B2 — returns with its settings entry
+  // and re-enters this list at that review.)
+  "edit_app",
+  // W3 (§1.5 review, 2026-08-05): call_function runs an app-DECLARED body in node:vm with
+  // codeGeneration off; the context holds ONLY args + a frozen data api (list/count/add/update —
+  // the store's own prepared-statement paths, collection-walled, budgeted, via-stamped). No
+  // require/process/fs/shell/socket/fetch/timers reachable — no OS primitive. vm is an isolation
+  // seam, not a hardened boundary (functions.mjs header): same trust class as the app's own
+  // browser JS over the same verbs, which is why the seat is createEngine OPT-IN and this local
+  // entrypoint is the party that opts in.
+  "call_function",
+  // W-P (§8-R3): promote_app rewrites the declaration's `kind` IN MEMORY (writeDeclaration,
+  // manifest-block.mjs) and lands through the SAME save_app store path under OCC — no new
+  // primitive, no new code path into the store (security-model §1.5).
+  "promote_app",
+  // App Store: app_store_list/app_store_preview/install_from_app_store read ONLY repo
+  // components/*.html through src/app-store.mjs, whose name argument is APP_NAME_RE-validated
+  // (no dots/slashes → no traversal) and whose dir is fixed at module load; app_store_preview
+  // additionally returns the entry's EMBEDDED fixtures JSON (parsed, fail-null) — still the same
+  // fixed dir, no primitives; install writes go through the same save_app store path with actor
   // "library" (provenance stamp; first-party content → local tier, direct render).
-  "library_list", "library_preview", "install_from_library",
-  // app_permissions: read-only projection of registry rows + tier presets + policy
-  // overlays (computeCaps) — same data security_set/settings already expose, no primitives.
-  "app_permissions",
+  "app_store_list", "app_store_preview", "install_from_app_store",
   // ui_prefs_schema: returns a static in-engine catalog constant — no store read, no primitives.
   "ui_prefs_schema",
-  // render_health: accepts a health report and can only trigger the SAME restore path as
-  // restore_app (save_app via store.execute, local-tier + unlocked apps only,
-  // 3-per-run budget). No fs/shell/socket primitive; worst abuse = rolling an app back to
-  // its own earlier version, which restore_app already allows.
-  "render_health",
+  // (render_health retired 2026-08-04, elegance B3 — the broken-mount notice is client-side now.)
   // data_changes: read-only ledger projection for ONE collection (store.changesSince) plus a
   // watermark write scoped to (collection, host). Same rows data_list already exposes, no
   // primitives; it cannot mutate items and cannot read across collections.
@@ -564,10 +600,7 @@ const KNOWN_SAFE = new Set([
   // thing that executes them, exactly as it does for a single write. No primitives; the only new
   // reach is "more of what was already reachable, atomically", bounded by MAX_BATCH_COMMANDS.
   "data_batch",
-  // data_query: read-only aggregate over ONE collection through the same prepared row reads and the
-  // same filter table as data_list's match. It returns numbers, never rows, and by construction
-  // cannot read across collections or write anything. No primitives.
-  "data_query",
+  // (data_query's dormant seat retired 2026-08-04, elegance A5 — returns slim when it ships.)
 ]);
 const DYNAMIC_OPEN_RE = /^open_[a-z0-9_]+$/; // per-app open_<name> (dynamic tools)
 ({ tools } = await client.listTools());
@@ -598,13 +631,13 @@ ok(
 console.log("14. app_history — version metadata only, NEVER the html");
 const histHtml1 = noteHtml;
 const histHtml2 = noteHtml.replace("<ul", '<ul data-hist-v2=""');
-await client.callTool({ name: "save_app", arguments: { name: "hist-probe", html: histHtml1, description: "history probe" } });
-await client.callTool({ name: "save_app", arguments: { name: "hist-probe", html: histHtml2, description: "", expected_version: await verOf("hist-probe") } });
+await client.callTool({ name: "save_app", arguments: { name: "hist-probe", ui: histHtml1, description: "history probe" } });
+await client.callTool({ name: "save_app", arguments: { name: "hist-probe", ui: histHtml2, description: "", expected_version: await verOf("hist-probe") } });
 const hist = await client.callTool({ name: "app_history", arguments: { name: "hist-probe" } });
 const hEntries = hist.structuredContent?.history || [];
 ok("two saves → two history entries", !hist.isError && hEntries.length === 2);
 ok("newest-first ordering", hEntries[0]?.checkpoint > hEntries[1]?.checkpoint);
-ok("entries carry numeric html_size matching the saved bytes", hEntries[0]?.html_size === histHtml2.length && hEntries[1]?.html_size === histHtml1.length);
+ok("entries carry numeric ui_size matching the saved bytes", hEntries[0]?.ui_size === histHtml2.length && hEntries[1]?.ui_size === histHtml1.length);
 ok("entries carry a ts string", hEntries.every((h) => typeof h.ts === "string" && h.ts.length > 0));
 ok("history NEVER carries the html itself", hEntries.every((h) => !("html" in h)) && !JSON.stringify(hist.structuredContent).includes("data-hist-v2"));
 const histMissing = await client.callTool({ name: "app_history", arguments: { name: "no-such-comp" } });
@@ -613,8 +646,10 @@ ok("unknown app → clean error", histMissing.isError === true && /No history/.t
 console.log("14b. checkpoint rollback — get_app_version is RETIRED; restore_app rolls forward a copy");
 // hEntries is newest-first, and the vocabulary is now the app's own counter: checkpoint 1 is the
 // first save. The ledger seq still exists underneath — it just no longer reaches this surface.
-const gvGone = await client.callTool({ name: "get_app_version", arguments: { name: "hist-probe", checkpoint: 1 } });
-ok("get_app_version is retired — the seat is gone", gvGone.isError === true && /not found/.test(gvGone.content[0].text));
+// v2 client semantics: an unknown tool is a JSON-RPC error (-32602) and callTool THROWS —
+// the v1 in-band {isError} shape is gone, so a retired seat is asserted by catching.
+const gvGone = await client.callTool({ name: "get_app_version", arguments: { name: "hist-probe", checkpoint: 1 } }).catch((e) => e);
+ok("get_app_version is retired — the seat is gone", gvGone instanceof Error && /not found/.test(gvGone.message));
 // restore checkpoint 1 → re-saved as a NEW current one, history preserved, current html reverts.
 const restore = await client.callTool({ name: "restore_app", arguments: { name: "hist-probe", checkpoint: 1 } });
 ok("restore rolls FORWARD to a new checkpoint (history preserved, never rewritten)",
@@ -628,7 +663,7 @@ const restoreMissing = await client.callTool({ name: "restore_app", arguments: {
 ok("restore of an unknown checkpoint → clean error", restoreMissing.isError === true && /No checkpoint 99/.test(restoreMissing.content[0].text));
 
 console.log("15. delete_app — tombstone delete, idempotent replay");
-await client.callTool({ name: "save_app", arguments: { name: "doomed", html: noteHtml, description: "delete fixture" } });
+await client.callTool({ name: "save_app", arguments: { name: "doomed", ui: noteHtml, description: "delete fixture" } });
 // a settings row under the app's group must SURVIVE the delete (no cascade — the
 // settings app's Orphaned section is the janitor, docs/settings-design.md §7)
 const dPref = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "settings", group: "doomed", fields: { key: "kept_after_delete", value: "yes" } } });
@@ -649,100 +684,27 @@ ok("same command_id replay is a no-op success (idempotent)", !del2.isError && de
 const delMissing = await client.callTool({ name: "delete_app", arguments: { name: "never-existed", command_id: randomUUID() } });
 ok("deleting an unknown app fails cleanly", delMissing.isError === true && /No app "never-existed" in the registry/.test(delMissing.content[0].text));
 
-console.log("15b. delete data:\"cascade\" — the plan is the confirmation, and sharing wins ties");
-// "Delete means delete" (Leo 2026-07-28), with the one thing it must never do: break a SECOND app.
-// Ownership evidence is weak by measurement (the manifest's collections key has zero real-world
-// adoption; the ledger's via is stamped only on widget writes), so the rule is deliberately
-// lopsided — an unproven collection is KEPT. Deleting too little leaves rows a user can delete
-// again; deleting too much is silent breakage with the data gone.
+// 15b. cascade returned in W1 (elegance B1's promised comeback) — no bespoke plan_token this
+// time: the demand rides the W-S request_state two-step, and the first call NEVER deletes.
+console.log("15b. delete_app data:\"cascade\" — two-step demand, then the data goes too");
 {
-  const mk = async (n) => client.callTool({ name: "save_app", arguments: { name: n, html: noteHtml, description: n } });
-  await mk("cascade-app"); await mk("cascade-neighbour");
-  const row = (collection, via) => client.callTool({ name: "data_add_item",
-    arguments: { command_id: randomUUID(), collection, fields: { t: collection }, ...(via ? { via: { app: via } } : {}) } });
-  await row("cascade-app", "cascade-app");            // the app's own, name-matched
-  await row("shared-trips", "cascade-app");           // both apps have written here…
-  await row("shared-trips", "cascade-neighbour");     // …so it is shared
-  await row("orphan-notes", null);                    // AI-written only: nothing links it to anyone
-
-  const planCall = await client.callTool({ name: "delete_app", arguments: { name: "cascade-app", data: "cascade", command_id: randomUUID() } });
-  const plan = planCall.structuredContent;
-  ok("step 1 returns a plan and deletes NOTHING", plan.ok === false && typeof plan.plan_token === "string"
-    && !(await client.callTool({ name: "list_apps", arguments: {} })).structuredContent.apps.every((c) => c.name !== "cascade-app"));
-  ok("the plan names the shared collection as kept, with a reason",
-    plan.collections.some((c) => c.collection === "shared-trips" && c.verdict === "shared" && /also used by cascade-neighbour/.test(c.why)));
-  ok("…and the app's own collection as the only thing it would remove",
-    plan.collections.filter((c) => c.verdict === "exclusive").map((c) => c.collection).join() === "cascade-app");
-  ok("the plan text says out loud that this cannot be undone", /CANNOT be undone/.test(planCall.content[0].text));
-
-  const wrong = await client.callTool({ name: "delete_app", arguments: { name: "cascade-app", data: "cascade", plan_token: "0".repeat(16), command_id: randomUUID() } });
-  ok("a token that does not match the CURRENT world is refused", wrong.structuredContent.ok === false && wrong.structuredContent.reason === "plan_changed");
-  ok("…and nothing was deleted by the refused attempt",
-    (await client.callTool({ name: "app_history", arguments: { name: "cascade-app" } })).structuredContent?.history?.length === 1
-    && (await client.callTool({ name: "data_list", arguments: { collection: "cascade-app" } })).structuredContent.items.length === 1);
-
-  // A collection that was ALREADY THERE when a same-named app arrived is not the app's to delete.
-  // Sharing a name proves nothing, and "no other app wrote here" proves nothing either, because the
-  // AI writes most rows with no via stamp. (Found by adversarial review; reproduced before fixing:
-  // 50 rows of pre-existing user data classified exclusive purely on the name.)
-  await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "older-than-its-app", fields: { t: "was here first" } } });
-  await client.callTool({ name: "save_app", arguments: { name: "older-than-its-app", html: noteHtml, description: "same name, arrived later" } });
-  const squat = (await client.callTool({ name: "delete_app", arguments: { name: "older-than-its-app", data: "cascade", command_id: randomUUID() } })).structuredContent;
-  ok("a collection that predates its same-named app is NOT deletable data",
-    squat.collections.find((c) => c.collection === "older-than-its-app")?.verdict !== "exclusive",
-    JSON.stringify(squat.collections));
-
-  const done = await client.callTool({ name: "delete_app", arguments: { name: "cascade-app", data: "cascade", plan_token: plan.plan_token, command_id: randomUUID() } });
-  ok("the matching token executes", done.structuredContent.ok === true && done.structuredContent.removed[0].collection === "cascade-app");
-  ok("the app's own rows are GONE", (await client.callTool({ name: "data_list", arguments: { collection: "cascade-app" } })).structuredContent.items.length === 0);
-  ok("🔴 the SHARED collection survives — deleting one app never breaks another",
-    (await client.callTool({ name: "data_list", arguments: { collection: "shared-trips" } })).structuredContent.items.length === 2);
-  ok("a collection nobody can be proven to own survives too",
-    (await client.callTool({ name: "data_list", arguments: { collection: "orphan-notes" } })).structuredContent.items.length === 1);
-  ok("the neighbour app is untouched",
-    (await client.callTool({ name: "list_apps", arguments: {} })).structuredContent.apps.some((c) => c.name === "cascade-neighbour"));
-  // The collection's OWN stream has to say what happened to it. component_deleted alone did not:
-  // per-collection ledger reads filter on payload.collection, so a widget bound to this collection
-  // was told "nothing changed" while every row in it had just been destroyed (adversarial review).
-  const evs = await client.callTool({ name: "data_changes", arguments: { collection: "cascade-app", since: 0 } });
-  ok("the cleared collection's own stream reports it", !evs.isError && /rows_cleared/.test(evs.content[0].text), evs.content[0].text.slice(0, 160));
-}
-
-console.log("15b2. the plan token pins the ROWS, not just how many there were");
-// "Confirming means the world still looks like what the user was shown" was the whole claim behind
-// hashing the plan. It was only true at the granularity of a row COUNT: the hash covered
-// {name, per-collection verdict/rows/why, settings_keys}, so replacing every row while keeping the
-// count left a stale token valid — and the rows then destroyed had never appeared in any plan the
-// user saw. Between showing a plan and confirming it there is a whole conversational turn, and a
-// widget can write in it.
-{
-  await client.callTool({ name: "save_app", arguments: { name: "token-app", html: noteHtml, description: "token fixture" } });
-  const mk = (t) => client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "token-app", fields: { t } } });
-  const r1 = await mk("A1");
-  const r2 = await mk("A2");
-
-  const planA = (await client.callTool({ name: "delete_app", arguments: { name: "token-app", data: "cascade", command_id: randomUUID() } })).structuredContent;
-  ok("a plan is offered for the two rows the user can see", planA.collections.find((c) => c.collection === "token-app")?.rows === 2);
-
-  // The user reads the plan. Before they answer, the widget swaps the contents — same count.
-  for (const r of [r1, r2])
-    await client.callTool({ name: "data_delete_item", arguments: { command_id: randomUUID(), collection: "token-app", id: r.structuredContent.id } });
-  await mk("B1-never-shown");
-  await mk("B2-never-shown");
-
-  const stale = await client.callTool({ name: "delete_app", arguments: { name: "token-app", data: "cascade", plan_token: planA.plan_token, command_id: randomUUID() } });
-  ok("🔴 the old token is REFUSED once the rows themselves changed",
-    stale.structuredContent.ok === false && stale.structuredContent.reason === "plan_changed",
-    JSON.stringify(stale.structuredContent).slice(0, 200));
-  ok("…and nothing was deleted on the way to saying no",
-    (await client.callTool({ name: "data_list", arguments: { collection: "token-app" } })).structuredContent.items.length === 2);
-  ok("…and a fresh plan comes back with it, so the user can be re-asked rather than stranded",
-    typeof stale.structuredContent.plan_token === "string" && stale.structuredContent.plan_token !== planA.plan_token);
-
-  const good = await client.callTool({ name: "delete_app", arguments: { name: "token-app", data: "cascade", plan_token: stale.structuredContent.plan_token, command_id: randomUUID() } });
-  ok("the CURRENT plan's token still executes — the pin did not make cascade unusable",
-    good.structuredContent.ok === true && good.structuredContent.removed[0].rows === 2,
-    JSON.stringify(good.structuredContent).slice(0, 200));
+  await client.callTool({ name: "save_app", arguments: { name: "cascade-probe", ui: noteHtml, description: "x" } });
+  await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "cascade-probe", fields: { t: 1 } } });
+  const demand = await client.callTool({ name: "delete_app", arguments: { name: "cascade-probe", data: "cascade", command_id: randomUUID() } });
+  const dsc = demand.structuredContent;
+  ok("the first cascade call is a DEMAND, not a delete (and not isError — the demand is the payload)",
+    !demand.isError && dsc.reason === "confirmation_required" && typeof dsc.request_state === "string");
+  ok("…carrying the disposition plan with per-collection verdicts",
+    Array.isArray(dsc.plan) && dsc.plan.some((c) => c.collection === "cascade-probe" && c.verdict === "exclusive"));
+  ok("…and nothing was deleted yet",
+    (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe" } })).structuredContent.items.length === 1);
+  const confirmed = await client.callTool({ name: "delete_app",
+    arguments: { name: "cascade-probe", data: "cascade", command_id: randomUUID(), request_state: dsc.request_state } });
+  ok("re-sent with request_state, the cascade executes and says what it took",
+    !confirmed.isError && confirmed.structuredContent.deleted === true &&
+    (confirmed.structuredContent.cascaded || []).some((c) => c.collection === "cascade-probe" && c.rows === 1));
+  ok("…and the exclusive collection's rows are gone",
+    (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe" } })).structuredContent.items.length === 0);
 }
 
 console.log("15c. checkpoints — the number a person reads is not the ledger's");
@@ -754,10 +716,10 @@ console.log("15c. checkpoints — the number a person reads is not the ledger's"
 {
   // Advance the global axis FIRST, so a coincidental match at 1 cannot make this pass by luck.
   for (let i = 0; i < 5; i++) await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "axis-noise", fields: { i } } });
-  await client.callTool({ name: "save_app", arguments: { name: "cp-app", html: noteHtml, description: "checkpoint fixture" } });
+  await client.callTool({ name: "save_app", arguments: { name: "cp-app", ui: noteHtml, description: "checkpoint fixture" } });
   for (let i = 0; i < 7; i++) await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "axis-noise", fields: { j: i } } });
   const cur = (await client.callTool({ name: "get_app", arguments: { name: "cp-app" } })).structuredContent;
-  await client.callTool({ name: "save_app", arguments: { name: "cp-app", html: noteHtml.replace("</body>", "<i>v2</i></body>"), expected_version: cur.version } });
+  await client.callTool({ name: "save_app", arguments: { name: "cp-app", ui: noteHtml.replace("</body>", "<i>v2</i></body>"), expected_version: cur.version } });
 
   const h = await client.callTool({ name: "app_history", arguments: { name: "cp-app" } });
   const hist = h.structuredContent.history;
@@ -777,54 +739,80 @@ console.log("15c. checkpoints — the number a person reads is not the ledger's"
   ok("restore_app takes a checkpoint, not a version", !restored.isError && /from checkpoint 1/.test(restored.content[0].text));
   const bad = await client.callTool({ name: "restore_app", arguments: { name: "cp-app", checkpoint: 99, command_id: randomUUID() } });
   ok("…and an out-of-range checkpoint fails by saying how many there are", bad.isError === true && /it has \d+/.test(bad.content[0].text));
+
+  // 🔴 The idempotent replay must SAY it did nothing. The store already made the retry a no-op,
+  // but restore_app dropped `r.idempotent` on the floor and recited "Restored … saved as a new
+  // checkpoint" — a rollback the user is told happened twice. save_app / edit_app / promote_app
+  // all pre-check priorReceipt; this verb now does too.
+  const cps = async () => (await client.callTool({ name: "app_history", arguments: { name: "cp-app" } })).structuredContent.history.length;
+  const replayCid = randomUUID();
+  const cpBefore = await cps();
+  const rep1 = await client.callTool({ name: "restore_app", arguments: { name: "cp-app", checkpoint: 1, command_id: replayCid } });
+  const cpMid = await cps();
+  const rep2 = await client.callTool({ name: "restore_app", arguments: { name: "cp-app", checkpoint: 1, command_id: replayCid } });
+  const cpAfter = await cps();
+  ok("a first restore under a fresh command_id does make a checkpoint",
+    !rep1.isError && /Restored "cp-app" from checkpoint 1/.test(rep1.content[0].text) && cpMid === cpBefore + 1, `${cpBefore} → ${cpMid}`);
+  ok("🔴 a replay of the SAME command_id says it already happened — never 'Restored … as a new checkpoint'",
+    !rep2.isError && /Already restored/.test(rep2.content[0].text) && !/saved as a new checkpoint/.test(rep2.content[0].text), rep2.content[0].text.slice(0, 160));
+  ok("…and the replay leaves the checkpoint count exactly where it was", cpAfter === cpMid, `${cpBefore} → ${cpMid} → ${cpAfter}`);
+  // A different app under a command_id already spent on cp-app is a reuse, not a replay.
+  const repMismatch = await client.callTool({ name: "restore_app", arguments: { name: "hist-probe", checkpoint: 1, command_id: replayCid } });
+  ok("…a command_id spent on another app is refused as a reuse, not answered as a replay",
+    repMismatch.isError === true && /already used by a DIFFERENT command/.test(repMismatch.content[0].text), repMismatch.content[0].text.slice(0, 120));
 }
 
 console.log("16. scene now travels in the declaration — valid slug filed, unknown slug warned");
 // scene moved out of the tool's parameters and into the document, like everything else an app
-// says about itself. The COLUMN still exists and the Library still reads it — it is a projection of
+// says about itself. The COLUMN still exists and the App Store still reads it — it is a projection of
 // the declaration, kept so a taxonomy query never has to parse JSON.
 const sceneOk = await client.callTool({ name: "save_app", arguments: { name: "scene-probe", description: "scene fixture",
-  html: withDecl(noteHtml, { manifest_version: 2, scene: { category_id: "local-tools", tags: ["probe"] } }) } });
+  ui: noteHtml, manifest: { manifest_version: 2, scene: { category_id: "local-tools", tags: ["probe"] } } } });
 ok("a declared scene saves without a warning", !sceneOk.isError && sceneOk.content[0].text.includes('Saved "scene-probe"') && !sceneOk.content[0].text.includes("Unknown scene.category_id"));
 const sceneBad = await client.callTool({ name: "save_app", arguments: { name: "scene-bad",
-  html: withDecl(noteHtml, { manifest_version: 2, scene: { category_id: "not-a-real-slug" } }) } });
+  ui: noteHtml, manifest: { manifest_version: 2, scene: { category_id: "not-a-real-slug" } } } });
 ok("an unknown category_id → the save still succeeds (our taxonomy, not the author's fault)", !sceneBad.isError && sceneBad.content[0].text.includes('Saved "scene-bad"'));
-ok("...and the reply says the Library will not file it", /Unknown scene\.category_id "not-a-real-slug"/.test(sceneBad.content[0].text));
+ok("...and the reply says the App Store will not file it", /Unknown scene\.category_id "not-a-real-slug"/.test(sceneBad.content[0].text));
 const sceneComps = (await client.callTool({ name: "list_apps", arguments: {} })).structuredContent.apps;
 ok("a declared scene is projected into the column list_apps reads", sceneComps.find((c) => c.name === "scene-probe")?.category_id === "local-tools");
 ok("scene-less apps carry category_id null (uniform schema)", sceneComps.find((c) => c.name === "habit-streaks")?.category_id === null);
-// The old parameters are gone, and a caller that still sends them is TOLD rather than silently ignored.
-const oldParam = await client.callTool({ name: "save_app", arguments: { name: "scene-probe", html: noteHtml, scene: { category_id: "local-tools" } } });
-ok("passing the retired scene/manifest parameter is refused, with where the declaration lives now",
-  oldParam.isError === true && /no longer parameters/.test(oldParam.content[0].text) && /oma-manifest/.test(oldParam.content[0].text));
+// The retired scene/manifest parameters left the schema entirely (elegance A14): a typed input
+// schema strips undeclared keys, so a stale caller's extra key is dropped and the save proceeds
+// on the html alone — where the declaration actually lives.
+const oldParam = await client.callTool({ name: "save_app", arguments: { name: "scene-probe", ui: noteHtml, expected_version: sceneComps.find((c) => c.name === "scene-probe").version, scene: { category_id: "local-tools" } } });
+ok("a stale caller's retired scene/manifest key is stripped by the schema and the save succeeds",
+  oldParam.isError !== true && oldParam.structuredContent?.ok === true);
 
 console.log("17. trust tiers & caps — app_html carries {author, tier, caps}");
 // (a) local tier: seed/agent/human authors run direct with the all-allow preset
 const localTier = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent;
 ok("seed-authored → tier local", localTier.author === "seed" && localTier.tier === "local");
 ok("local caps: call_tools is the wildcard", Array.isArray(localTier.caps?.call_tools) && localTier.caps.call_tools.length === 1 && localTier.caps.call_tools[0] === "*");
-ok("local caps: messaging + settings allowed, delete_items allow", localTier.caps.send_message === true && localTier.caps.update_context === true && localTier.caps.settings_write === true && localTier.caps.delete_items === "allow");
+ok("local caps: messaging + settings allowed, delete_items allow", localTier.caps.send_message === true && localTier.caps.settings_write === true && localTier.caps.delete_items === "allow");
+// The retired cap is absent from the SHAPE, not merely false — app_html's outputSchema pins the
+// caps object, so a name still riding along would be a permission the panel could draw again.
+ok("the retired update_context cap is not in the served caps shape at all", !("update_context" in localTier.caps));
 // (b) NON-local fixture: written through a second store handle on the same file. WAL tolerates
 // our short-lived writer next to the server's connection; the write is fully committed (handle
 // closed) before the next MCP call, so the server's fresh read transaction sees it.
 {
   const direct = openStore(DB);
   const r = direct.execute({ type: "save_app", command_id: randomUUID(), name: "library-fixture",
-    html: "<!DOCTYPE html><html><body><div id='lib'>library fixture — not locally authored</div></body></html>",
+    ui: "<!DOCTYPE html><html><body><div id='lib'>library fixture — not locally authored</div></body></html>",
     actor: "library-test" });
   direct.close();
   ok("fixture written directly with author library-test", r.ok === true);
 }
 const unrev = (await client.callTool({ name: "app_html", arguments: { name: "library-fixture" } })).structuredContent;
 ok("unknown author → tier unreviewed", unrev.author === "library-test" && unrev.tier === "unreviewed");
-ok("unreviewed caps: empty call_tools, no messaging", unrev.caps.call_tools.length === 0 && unrev.caps.send_message === false && unrev.caps.update_context === false);
+ok("unreviewed caps: empty call_tools, no messaging", unrev.caps.call_tools.length === 0 && unrev.caps.send_message === false);
 ok("unreviewed caps: delete_items deny; cross/settings/source all denied", unrev.caps.delete_items === "deny" && unrev.caps.cross_collection_read === false && unrev.caps.cross_collection_write === false && unrev.caps.settings_write === false && unrev.caps.read_source === false);
 // (c) security:<app>:<cap> overlay via the privileged writer flips exactly ONE cap
 const ovr = await client.callTool({ name: "security_set", arguments: { key: "security:library-fixture:send_message", value: "allow" } });
 ok("security_set writes the per-app overlay row", !ovr.isError);
 const unrev2 = (await client.callTool({ name: "app_html", arguments: { name: "library-fixture" } })).structuredContent;
 ok("overlay applied: send_message flipped to true", unrev2.caps.send_message === true);
-ok("overlay is surgical: everything else keeps the unreviewed preset", unrev2.tier === "unreviewed" && unrev2.caps.call_tools.length === 0 && unrev2.caps.update_context === false && unrev2.caps.delete_items === "deny" && unrev2.caps.settings_write === false);
+ok("overlay is surgical: everything else keeps the unreviewed preset", unrev2.tier === "unreviewed" && unrev2.caps.call_tools.length === 0 && unrev2.caps.read_source === false && unrev2.caps.file_write === false && unrev2.caps.delete_items === "deny" && unrev2.caps.settings_write === false);
 
 console.log("18. loader runner branch — chokepoint markers (served doc + the ONE machine)");
 // Write-set D: the runner machine lives ONCE in src/runner.mjs and ships to the loader inside
@@ -847,8 +835,8 @@ const sandboxValues = [
 ok("no sandbox value grants allow-same-origin", sandboxValues.length > 0 && sandboxValues.every((v) => !v.includes("allow-same-origin")));
 ok("tier branch: local (or missing tier) mounts direct", loaderDoc.includes('sc.tier == null || sc.tier === "local"') && loaderDoc.includes("return mount(sc.html)"));
 ok("non-local tiers route through the runner machine (oma.embed)", loaderDoc.includes("oma.embed(name, {") && loaderDoc.includes("caps: sc.caps || {}"));
-ok("control-plane denylist present with every registry/policy-mutating tool", runnerSrc.includes("isControlPlaneTool(tl)") && ["security_set", "save_app", "edit_app", "archive_app", "delete_app", "restore_app", "install_from_library", "render_health"].every((n) => policySrc.includes('"' + n + '"')));
-ok("control-plane deny also covers future library_* tools AND internal `_` RPC names", policySrc.includes('indexOf("library_") === 0') && policySrc.includes('indexOf("_") === 0'));
+ok("control-plane denylist present with every registry/policy-mutating tool", runnerSrc.includes("isControlPlaneTool(tl)") && ["security_set", "save_app", "edit_app", "archive_app", "delete_app", "restore_app", "install_from_app_store"].every((n) => policySrc.includes('"' + n + '"')));
+ok("control-plane deny also covers future app_store_* tools AND internal `_` RPC names", policySrc.includes('indexOf("app_store_") === 0') && policySrc.includes('indexOf("_") === 0'));
 ok("control-plane tools rejected with a clear message", runnerSrc.includes("is not available to apps") && loaderDoc.includes("is not available to apps"));
 // CSP-first: the runner builds our own <head> with the CSP as the FIRST child; it never anchors
 // on the app's own <head> (a pre-<head> script would otherwise run before the policy).
@@ -859,16 +847,48 @@ const dottedSet = await client.callTool({ name: "security_set", arguments: { key
 ok("security_set stores an unknown/dotted cap but WARNS", !dottedSet.isError && /send_message|valid cap|unknown cap|snake_case/i.test(dottedSet.content[0].text));
 const habitCaps2 = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent.caps;
 ok("dotted cap is inert — computeCaps reads only snake_case (habit-streaks local stays all-allow)", habitCaps2.send_message === true);
+// 🔴 A RETIRED cap is the same species as a never-existed one, and this one has stock in the wild:
+// `update_context` was settable for months with no enforcement point, so real stores carry
+// `security:<app>:update_context` rows. Two behaviours are pinned. (i) The WRITE path: it lands on
+// the unknown-cap branch — stored, and the receipt says plainly it has no effect, with a valid-cap
+// list that no longer contains it (a list still naming it would re-advertise the dead switch).
+const retiredSet = await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:update_context", value: "deny" } });
+const retiredMsg = retiredSet.content[0].text;
+ok("🔴 the retired update_context cap now writes through the unknown-cap path — stored, warned as having NO effect",
+  !retiredSet.isError && /"update_context" is not a capability the engine reads/.test(retiredMsg) && /stored but has NO effect/.test(retiredMsg), retiredMsg.slice(0, 200));
+ok("…and the warning's valid-cap list no longer advertises it", /Valid caps \(snake_case\): ([^.]*)\./.test(retiredMsg) && !/Valid caps \(snake_case\): [^.]*update_context/.test(retiredMsg), retiredMsg.slice(-160));
+// (ii) The READ path: the legacy row is now sitting in the store. computeCaps iterates CAP_NAMES,
+// so it never even looks the key up — no throw, no resurrected key, and every other cap unmoved.
+const habitCapsRetired = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent.caps;
+ok("🔴 a legacy security:<app>:update_context row is read past in silence — no crash, no key, nothing else moved",
+  habitCapsRetired && !("update_context" in habitCapsRetired) && habitCapsRetired.send_message === true && habitCapsRetired.delete_items === "allow" && habitCapsRetired.settings_write === true && habitCapsRetired.call_tools[0] === "*");
+// 🔴 The VALUE half of the same contract, and it fails the other way: an unreadable value used to
+// fall back to the TIER DEFAULT, and local's preset is everything ALLOWED — so a policy typed
+// `ask` left the app at its WIDEST setting while the receipt read "Set …". Refuse, don't degrade.
+const askSet = await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:send_message", value: "ask" } });
+ok("🔴 an unknown cap VALUE is refused outright (no silent fallback to the tier default)", askSet.isError === true, askSet.content[0].text.slice(0, 160));
+ok("…and the refusal carries the legal value set + says nothing was written",
+  /allow \| deny/.test(askSet.content[0].text) && /NOTHING was written/i.test(askSet.content[0].text), askSet.content[0].text.slice(0, 200));
+const askDel = await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:delete_items", value: "ask" } });
+ok("…delete_items has its own vocabulary and the refusal quotes THAT one (confirm, not ask)",
+  askDel.isError === true && /allow \| confirm \| deny/.test(askDel.content[0].text), askDel.content[0].text.slice(0, 200));
+const habitCaps3 = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent.caps;
+ok("…and the refused write really did not land — caps are untouched", habitCaps3.send_message === true && habitCaps3.delete_items === "allow");
+const denySet = await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:send_message", value: "deny" } });
+const habitCaps4 = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent.caps;
+ok("…while a value the engine DOES read still writes and takes effect", !denySet.isError && habitCaps4.send_message === false);
+// Put it back: later sections read habit-streaks' caps as the all-allow local baseline.
+await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:send_message", value: "allow" } });
 
 console.log("20. save_app scene — change, explicit clear, invalid preserves existing");
-await client.callTool({ name: "save_app", arguments: { name: "scene-probe", html: noteHtml, scene: { category_id: "input-cocreate" } } });
-await client.callTool({ name: "save_app", arguments: { name: "scene-probe", html: noteHtml, scene: null } });
+await client.callTool({ name: "save_app", arguments: { name: "scene-probe", ui: noteHtml, scene: { category_id: "input-cocreate" } } });
+await client.callTool({ name: "save_app", arguments: { name: "scene-probe", ui: noteHtml, scene: null } });
 
 console.log("21. version continuity — delete then recreate keeps history monotonic");
-await client.callTool({ name: "save_app", arguments: { name: "ver-probe", html: noteHtml, description: "v1" } });
-await client.callTool({ name: "save_app", arguments: { name: "ver-probe", html: histHtml2, description: "v2", expected_version: await verOf("ver-probe") } });
+await client.callTool({ name: "save_app", arguments: { name: "ver-probe", ui: noteHtml, description: "v1" } });
+await client.callTool({ name: "save_app", arguments: { name: "ver-probe", ui: histHtml2, description: "v2", expected_version: await verOf("ver-probe") } });
 await client.callTool({ name: "delete_app", arguments: { name: "ver-probe", command_id: randomUUID() } });
-await client.callTool({ name: "save_app", arguments: { name: "ver-probe", html: noteHtml, description: "v3", expected_version: await verOf("ver-probe") } });
+await client.callTool({ name: "save_app", arguments: { name: "ver-probe", ui: noteHtml, description: "v3", expected_version: await verOf("ver-probe") } });
 const verHist = (await client.callTool({ name: "app_history", arguments: { name: "ver-probe" } })).structuredContent.history;
 // Continuity across delete/recreate is FREE: the ledger never goes backwards, so a recreated
 // app cannot collide with a tombstoned history row — the property the old maxHistVersion+1
@@ -892,10 +912,10 @@ ok("recreate keeps versions monotonic and collision-free (no REPLACE over a tomb
 
 console.log("22. idempotency is bound to the command (type + target)");
 const reuseId = randomUUID();
-await client.callTool({ name: "save_app", arguments: { name: "reuse-a", html: noteHtml, description: "reuse fixture" } });
+await client.callTool({ name: "save_app", arguments: { name: "reuse-a", ui: noteHtml, description: "reuse fixture" } });
 const delReuse = await client.callTool({ name: "delete_app", arguments: { name: "reuse-a", command_id: reuseId } });
 ok("first delete with the id succeeds", !delReuse.isError);
-await client.callTool({ name: "save_app", arguments: { name: "reuse-b", html: noteHtml, description: "second fixture" } });
+await client.callTool({ name: "save_app", arguments: { name: "reuse-b", ui: noteHtml, description: "second fixture" } });
 const reuse = await client.callTool({ name: "delete_app", arguments: { name: "reuse-b", command_id: reuseId } });
 ok("reusing a command_id for a DIFFERENT target is rejected (command_id_reused)", reuse.isError === true && /command_id|different command/i.test(reuse.content[0].text));
 const stillThere = (await client.callTool({ name: "list_apps", arguments: {} })).structuredContent.apps;
@@ -962,8 +982,8 @@ ok("file_list shows the stored file", !fls.isError && fls.structuredContent.file
 // file_usage is retired (write-set C): the same totals ride every file_list page.
 ok("usage rides file_list — one fact, one spelling (file_usage retired)",
   fls.structuredContent.usage.bytes > 0 && typeof fls.structuredContent.files_version === "number");
-const fusGone = await client.callTool({ name: "file_usage", arguments: { app: "smoke-notes" } });
-ok("file_usage's seat is gone", fusGone.isError === true && /not found/.test(fusGone.content[0].text));
+const fusGone = await client.callTool({ name: "file_usage", arguments: { app: "smoke-notes" } }).catch((e) => e);
+ok("file_usage's seat is gone", fusGone instanceof Error && /not found/.test(fusGone.message));
 const frdMissing = await client.callTool({ name: "file_read", arguments: { app: "smoke-notes", path: "ghost.txt" } });
 ok("file_read of a missing file → clean error", frdMissing.isError === true && /No file/.test(frdMissing.content[0].text));
 const fdel = await client.callTool({ name: "file_delete", arguments: { command_id: fcid(), app: "smoke-notes", path: "note.txt" } });
@@ -1017,7 +1037,7 @@ const manManifest = { collections: { "man-data": { strict: true, fields: {
   count: { type: "number" },
   state: { type: "string", enum: ["open", "done"] },
 } } } };
-const manSave = await client.callTool({ name: "save_app", arguments: { name: "man-probe", html: withDecl(noteHtml, manManifest), description: "manifest probe" } });
+const manSave = await client.callTool({ name: "save_app", arguments: { name: "man-probe", ui: noteHtml, manifest: manManifest, description: "manifest probe" } });
 ok("man-probe saved with a manifest", !manSave.isError && /Saved "man-probe"/.test(manSave.content[0].text));
 const manAdd = (fields) => client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "man-data", fields } });
 const vReq = await manAdd({ count: 1 });
@@ -1035,14 +1055,14 @@ const vMerge = await client.callTool({ name: "data_update_item", arguments: { co
 ok("update merging to an invalid state → rejected (post-merge validated)", vMerge.isError === true && /schema_violation/.test(vMerge.content[0].text));
 const vFree = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "man-free", fields: { anything: "goes" } } });
 ok("ungoverned collections stay free-form", !vFree.isError);
-const manBad = await client.callTool({ name: "save_app", arguments: { name: "man-probe", expected_version: await verOf("man-probe"), html: withDecl(noteHtml, { collections: { settings: { fields: { key: { type: "string" } } } } }) } });
+const manBad = await client.callTool({ name: "save_app", arguments: { name: "man-probe", expected_version: await verOf("man-probe"), ui: noteHtml, manifest: { collections: { settings: { fields: { key: { type: "string" } } } } } } });
 ok("a declaration may not govern the settings collection", manBad.isError === true && /reserved "settings"/.test(manBad.content[0].text));
-await client.callTool({ name: "save_app", arguments: { name: "man-probe", html: noteHtml, description: "resave with no declaration block", expected_version: await verOf("man-probe") } });
+await client.callTool({ name: "save_app", arguments: { name: "man-probe", ui: noteHtml, description: "resave with no declaration block", expected_version: await verOf("man-probe") } });
 const vStill = await manAdd({ count: 3 });
 ok("a document with NO block preserves the stored declaration (bad add still rejects)", vStill.isError === true && /schema_violation/.test(vStill.content[0].text));
-await client.callTool({ name: "save_app", arguments: { name: "man-probe", html: withDecl(noteHtml, {}), expected_version: await verOf("man-probe") } });
+await client.callTool({ name: "save_app", arguments: { name: "man-probe", ui: noteHtml, manifest: null, expected_version: await verOf("man-probe") } });
 const vFreed = await manAdd({ count: 3 });
-ok("an EMPTY block clears it (same add now succeeds)", !vFreed.isError);
+ok("manifest: null clears it (same add now succeeds)", !vFreed.isError);
 
 console.log("26b. data_batch — N writes, one transaction, one event per write");
 const bCmds = (n, coll) => Array.from({ length: n }, (_, i) => ({ type: "add_item", collection: coll, fields: { title: `row ${i}`, amount: i } }));
@@ -1084,7 +1104,7 @@ console.log("26b2. the batch wall — the vocabulary is the four item commands, 
 const bStore = openStore(DB);
 const settingsBefore = bStore.getApp("settings").html;
 const bEscape = await client.callTool({ name: "data_batch", arguments: { command_id: randomUUID(), commands: [
-  { type: "save_app", name: "settings", html: "<p>overwritten</p>" },
+  { type: "save_app", name: "settings", ui: "<p>overwritten</p>" },
 ] } });
 ok("a non-item command is refused BY NAME instead of opening a second door to core()",
   bEscape.isError === true && /add_item, update_item, move_item, delete_item/.test(bEscape.content[0].text));
@@ -1161,38 +1181,32 @@ ok("a typo'd operator is a NAMED error, not a silent empty result",
 
 console.log("26b6. an exact-name lookup is explicit intent — defaults scope browsing, not existence");
 bStore.execute({ type: "save_app", command_id: randomUUID(), name: "hidden-visual", visibility: "unlisted", actor: "human",
-  html: `<p>tucked away</p><script type="application/json" id="oma-manifest">{"manifest_version":2,"kind":"visual"}<` + `/script>` });
+  ui: `<p>tucked away</p>`, manifest: { manifest_version: 2, kind: "visual" } });
 const hidFound = await client.callTool({ name: "list_apps", arguments: { name: "hidden-visual" } });
 ok("list_apps {name} finds an unlisted non-app instead of reporting it does not exist",
   !hidFound.isError && hidFound.structuredContent.total === 1 && hidFound.structuredContent.apps[0].name === "hidden-visual");
 const hidScoped = await client.callTool({ name: "list_apps", arguments: { name: "hidden-visual", kind: "app" } });
 ok("...while a filter the caller actually passed still applies", hidScoped.structuredContent.total === 0);
 
-console.log("26c. data_query — the answer travels, the rows do not");
-// Off by default: the seat is registered so no cached tool list is ever invalidated by its arrival,
-// and calling it says so instead of failing obscurely.
-const qOff = await client.callTool({ name: "data_query", arguments: { collection: "batch-probe" } });
-ok("with the flag off the seat exists and explains itself", qOff.isError === true && /OMA_QUERY/.test(qOff.content[0].text));
-
 console.log("27b. stewardship declarations — `fields` is optional; declaring a collection ≠ validating it");
 const stewSave = await client.callTool({ name: "save_app", arguments: {
   name: "stew-probe", description: "stewardship only",
-  html: withDecl(noteHtml, { collections: { "stew-data": {}, "stew-labelled": { label_field: "headline" } } }),
+  ui: noteHtml, manifest: { collections: { "stew-data": {}, "stew-labelled": { label_field: "headline" } } },
 } });
 ok("a fields-less declaration is accepted (pure stewardship)", !stewSave.isError && /Saved "stew-probe"/.test(stewSave.content[0].text));
 const stewWrite = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "stew-data", fields: { anything: "goes", n: 7 } } });
 ok("writing to a stewardship-only collection validates nothing and does not throw", !stewWrite.isError);
 const labWrite = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "stew-labelled", fields: { headline: "hi" } } });
 ok("label_field alone is a legal declaration", !labWrite.isError);
-const strictNoFields = await client.callTool({ name: "save_app", arguments: { name: "stew-probe", expected_version: await verOf("stew-probe"), html: withDecl(noteHtml, { collections: { "stew-data": { strict: true } } }) } });
+const strictNoFields = await client.callTool({ name: "save_app", arguments: { name: "stew-probe", expected_version: await verOf("stew-probe"), ui: noteHtml, manifest: { collections: { "stew-data": { strict: true } } } } });
 ok("strict without fields is rejected as a shape error (reads as a typo, never an intent)",
   strictNoFields.isError === true && /strict requires fields/.test(strictNoFields.content[0].text));
-const badLabel = await client.callTool({ name: "save_app", arguments: { name: "stew-probe", expected_version: await verOf("stew-probe"), html: withDecl(noteHtml, { collections: { "stew-data": { label_field: "" } } }) } });
+const badLabel = await client.callTool({ name: "save_app", arguments: { name: "stew-probe", expected_version: await verOf("stew-probe"), ui: noteHtml, manifest: { collections: { "stew-data": { label_field: "" } } } } });
 ok("label_field must be a non-empty string", badLabel.isError === true && /label_field/.test(badLabel.content[0].text));
 // Two apps declaring the same collection: the contract is the UNION, and strict only holds
 // if every declarer asked for it — a sibling tightening its own view must not reject our writes.
-await client.callTool({ name: "save_app", arguments: { name: "union-a", html: withDecl(noteHtml, { collections: { "union-data": { fields: { a: { type: "string", required: true } } } } }) } });
-await client.callTool({ name: "save_app", arguments: { name: "union-b", html: withDecl(noteHtml, { collections: { "union-data": { strict: true, fields: { b: { type: "number", required: true } } } } }) } });
+await client.callTool({ name: "save_app", arguments: { name: "union-a", ui: noteHtml, manifest: { collections: { "union-data": { fields: { a: { type: "string", required: true } } } } } } });
+await client.callTool({ name: "save_app", arguments: { name: "union-b", ui: noteHtml, manifest: { collections: { "union-data": { strict: true, fields: { b: { type: "number", required: true } } } } } } });
 const unionMissing = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "union-data", fields: { a: "x" } } });
 ok("union of declarations: b (declared by the other app) is required too",
   unionMissing.isError === true && /schema_violation/.test(unionMissing.content[0].text));
@@ -1213,10 +1227,6 @@ const lcAny = await client.callTool({ name: "list_apps", arguments: { kind: "any
 ok("default scope is kind=app + featured/listed (the openable apps)",
   lcDefault.structuredContent.apps.every((c) => c.kind === "app" && ["featured", "listed"].includes(c.visibility)));
 ok("kind/visibility any widens to the whole registry", lcAny.structuredContent.total >= lcDefault.structuredContent.total);
-const lcCap = await client.callTool({ name: "list_apps", arguments: { limit: 2 } });
-ok("limit caps the rows but the reply reports the true match count",
-  lcCap.structuredContent.apps.length === 2 && lcCap.structuredContent.total > 2 &&
-  new RegExp(`${lcCap.structuredContent.total} match, showing 2`).test(lcCap.content[0].text));
 ok("the store's own listApps() is unfiltered — the registry's consumers see everything",
   lcAny.structuredContent.total === lcAny.structuredContent.shown);
 
@@ -1276,15 +1286,17 @@ ok("…and it carries the three slimming rules, since basics is the chapter auth
 }
 ok("style stands alone: it repeats the hard rules rather than assuming basics was read",
   /NO external resources/.test(gStyle) && /design tokens/.test(gStyle));
-ok("a chapter whose capability is behind a flag says so plainly, and points back",
-  /Not available yet/.test(gFns) && /topic: "basics"/.test(gFns));
+ok("the functions chapter teaches the SHIPPED thing — declaration, body grammar, sync axiom — and points back",
+  /manifest\.functions/.test(gFns) && /text\/oma-function/.test(gFns)
+  && /SYNCHRONOUS/.test(gFns) && /topic: "basics"/.test(gFns));
 
 console.log("27f. open_app binding — the declaration finally participates");
 {
   const barrel = await import("../index.mjs");
-  const decl = (colls) => `<script type="application/json" id="oma-manifest">\n${JSON.stringify({ manifest_version: 2, collections: colls })}\n</script>`;
   const body = "<h1>t</h1><script type=\"module\">oma.ready(() => {});</scr" + "ipt>";
-  const save = (name, colls) => client.callTool({ name: "save_app", arguments: { name, html: `<!DOCTYPE html><html><head>${decl(colls)}</head><body>${body}</body></html>` } });
+  const save = (name, colls) => client.callTool({ name: "save_app", arguments: { name,
+    ui: `<!DOCTYPE html><html><head></head><body>${body}</body></html>`,
+    manifest: { manifest_version: 2, collections: colls } } });
   const openedOn = async (name, args = {}) => {
     const r = await client.callTool({ name: "open_app", arguments: { app: name, ...args } });
     return r.structuredContent.collection;
@@ -1297,7 +1309,7 @@ console.log("27f. open_app binding — the declaration finally participates");
   await save("bind-two", { trips: {}, legs: {} });
   ok("two declared collections ⇒ no single answer, so the app NAME stays the default",
     await openedOn("bind-two") === "bind-two");
-  const plain = await client.callTool({ name: "save_app", arguments: { name: "bind-none", html: `<!DOCTYPE html><html><body>${body}</body></html>` } });
+  const plain = await client.callTool({ name: "save_app", arguments: { name: "bind-none", ui: `<!DOCTYPE html><html><body>${body}</body></html>` } });
   ok("no declaration at all ⇒ unchanged behaviour", !plain.isError && await openedOn("bind-none") === "bind-none");
 
   // ONE TRUTH, THREE DOORS. The loader now paints from app_html's `collection`, so that
@@ -1365,27 +1377,27 @@ console.log("27g. tokenCSS — an embedder's PER-APP theme must not be baked int
 }
 
 console.log("27c. app-form invariant — every atom has a face (empty_html replaces the size floor)");
-const emptyHtml = await client.callTool({ name: "save_app", arguments: { name: "faceless", html: "   \n\t " } });
-ok("whitespace-only html → empty_html, and the note says why apps need a face",
-  emptyHtml.isError === true && /empty_html/.test(emptyHtml.content[0].text) && /person opens/.test(emptyHtml.content[0].text));
-const tinySave = await client.callTool({ name: "save_app", arguments: { name: "tiny-but-real", html: "<p>hi</p>" } });
+const emptyHtml = await client.callTool({ name: "save_app", arguments: { name: "faceless", ui: "   \n\t " } });
+ok("whitespace-only ui → empty_ui, and the note says why apps need a face",
+  emptyHtml.isError === true && /empty_ui/.test(emptyHtml.content[0].text) && /person opens/.test(emptyHtml.content[0].text));
+const tinySave = await client.callTool({ name: "save_app", arguments: { name: "tiny-but-real", ui: "<p>hi</p>" } });
 ok("a 9-char app saves (small is reversible; the old 50-char floor was not the defence)", !tinySave.isError);
 ok("save ack reports the size unconditionally", /9 chars/.test(tinySave.content[0].text));
-const grown = await client.callTool({ name: "save_app", arguments: { name: "tiny-but-real", html: noteHtml, expected_version: await verOf("tiny-but-real") } });
+const grown = await client.callTool({ name: "save_app", arguments: { name: "tiny-but-real", ui: noteHtml, expected_version: await verOf("tiny-but-real") } });
 ok("an overwrite reports the size PAIR, so a suspicious shrink announces itself",
   new RegExp(`9 → ${noteHtml.length}`).test(grown.content[0].text));
 
-console.log("28. library — refusal over a local app; real install → first-party content runs LOCAL/direct");
-const gl0 = (await client.callTool({ name: "library_list", arguments: {} })).structuredContent.entries;
-ok(`library lists the ${seedCount - 3} shipped apps (system settings/dashboard/library excluded)`,
-  gl0.length === seedCount - 3 && !gl0.some((e) => ["settings", "dashboard", "library"].includes(e.name)));
+console.log("28. App Store — refusal over a local app; real install → first-party content runs LOCAL/direct");
+const gl0 = (await client.callTool({ name: "app_store_list", arguments: {} })).structuredContent.entries;
+ok(`the App Store lists the ${seedCount - 3} shipped apps (system settings/dashboard/app-store excluded)`,
+  gl0.length === seedCount - 3 && !gl0.some((e) => ["settings", "dashboard", "app-store"].includes(e.name)));
 const gBefore = gl0.find((e) => e.name === "habit-streaks");
-ok("seeded habit-streaks shows installed but NOT from_library", gBefore?.installed === true && gBefore?.from_library === false);
-const gRefuse = await client.callTool({ name: "install_from_library", arguments: { name: "habit-streaks" } });
+ok("seeded habit-streaks shows installed but NOT from_app_store", gBefore?.installed === true && gBefore?.from_app_store === false);
+const gRefuse = await client.callTool({ name: "install_from_app_store", arguments: { name: "habit-streaks" } });
 ok("install over the seed-authored copy is refused", gRefuse.isError === true && /already exists/.test(gRefuse.content[0].text) && /seed-authored/.test(gRefuse.content[0].text));
 await client.callTool({ name: "delete_app", arguments: { name: "habit-streaks", command_id: randomUUID() } });
-const gInst = await client.callTool({ name: "install_from_library", arguments: { name: "habit-streaks" } });
-// OSS decision (Leo 2026-07-24): library content is FIRST-PARTY → author "library" is a
+const gInst = await client.callTool({ name: "install_from_app_store", arguments: { name: "habit-streaks" } });
+// OSS decision (Leo 2026-07-24): App Store content is FIRST-PARTY → author "library" is a
 // provenance stamp mapping to tier LOCAL (direct render), same standing as the user's own
 // apps. The runner + review flow stay dormant until the SaaS publishing pipeline.
 ok("after delete, install succeeds at tier local (history continued, version rolls forward)",
@@ -1395,9 +1407,9 @@ ok("app_html: author library → tier local (first-party)", gHtml.author === "li
 ok("local caps: full-trust preset (file_read+file_write+send_message all true)", gHtml.caps.file_read === true && gHtml.caps.file_write === true && gHtml.caps.send_message === true);
 const gRes = await client.readResource({ uri: "ui://open-mcp-apps/habit-streaks.html" });
 ok("direct-mode ui:// resource serves the wrapped app (NOT a runner placeholder)", gRes.contents[0].text.includes("window.oma") && !gRes.contents[0].text.includes("Sandboxed runner required"));
-const gAfter = (await client.callTool({ name: "library_list", arguments: {} })).structuredContent.entries.find((e) => e.name === "habit-streaks");
-ok("library_list now shows installed + from_library + no update pending", gAfter?.installed === true && gAfter?.from_library === true && gAfter?.update_available === false);
-const gAgain = await client.callTool({ name: "install_from_library", arguments: { name: "habit-streaks" } });
+const gAfter = (await client.callTool({ name: "app_store_list", arguments: {} })).structuredContent.entries.find((e) => e.name === "habit-streaks");
+ok("app_store_list now shows installed + from_app_store + no update pending", gAfter?.installed === true && gAfter?.from_app_store === true && gAfter?.update_available === false);
+const gAgain = await client.callTool({ name: "install_from_app_store", arguments: { name: "habit-streaks" } });
 ok("re-install is a friendly no-op (already up to date, not an error)", !gAgain.isError && /already installed and up to date/.test(gAgain.content[0].text) && gAgain.structuredContent.updated === false);
 
 console.log("29. chunked file write — begin/chunk/commit lifecycle over MCP");
@@ -1417,17 +1429,11 @@ const cRead = await client.callTool({ name: "file_read", arguments: { app: "smok
 ok("file_read returns the assembled bytes + matching sha", !cRead.isError && cRead.structuredContent.data_base64 === b64("hello world") && cRead.structuredContent.sha256 === cCommit.structuredContent.sha256);
 const ckLate = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: upId, data_base64: b64("more") } });
 ok("chunk after commit → upload gone", ckLate.isError === true && /No such upload/.test(ckLate.content[0].text));
-const cBeg2 = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
-const upId2 = cBeg2.structuredContent.upload_id;
-await client.callTool({ name: "file_write_chunk", arguments: { upload_id: upId2, data_base64: b64("doomed") } });
-const cAb = await client.callTool({ name: "file_write_abort", arguments: { upload_id: upId2 } });
-ok("abort discards the upload", !cAb.isError && cAb.structuredContent.aborted === true);
-const cAbCommit = await client.callTool({ name: "file_write_commit", arguments: { upload_id: upId2, path: "never.bin" } });
-ok("commit after abort → clean error", cAbCommit.isError === true && /No such upload/.test(cAbCommit.content[0].text));
+// file_write_abort retired (elegance A12): an unwanted upload is simply abandoned — the idle
+// TTL owns cleanup, and the seat that raced its own commit is gone.
 const cBeg3 = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
 const cEmpty = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: cBeg3.structuredContent.upload_id, data_base64: "" } });
 ok("empty chunk rejected", cEmpty.isError === true && /Empty chunk/.test(cEmpty.content[0].text));
-await client.callTool({ name: "file_write_abort", arguments: { upload_id: cBeg3.structuredContent.upload_id } });
 
 // ── 29b. receipts that disagree with the facts ────────────────────────────────────────────────
 // Three defects with one shape, all three reproduced on a live server before being fixed: the call
@@ -1448,7 +1454,6 @@ ok("…and the file that was already at that path is untouched", b64Keep.structu
 const b64Beg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
 const b64Chunk = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: b64Beg.structuredContent.upload_id, data_base64: "!!!not-base64!!!" } });
 ok("…and so does file_write_chunk, which had no check of any kind", b64Chunk.isError === true);
-await client.callTool({ name: "file_write_abort", arguments: { upload_id: b64Beg.structuredContent.upload_id } });
 // The guard has to reject the malformed WITHOUT rejecting the merely unusual: base64 wrapped
 // across lines is legal and is what many encoders emit. A guard that fails this is a new bug.
 const b64Wrapped = await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "smoke-notes", path: "wrap.txt", data_base64: b64("hello world").replace(/(.{4})/g, "$1\n") } });
@@ -1470,85 +1475,30 @@ const shapeList = await client.callTool({ name: "data_list", arguments: { collec
 ok("…so the collection is still readable afterwards", !shapeList.isError && Array.isArray(shapeList.structuredContent?.items),
   JSON.stringify(shapeList.content?.[0]?.text));
 
-// V-4 — abortUpload refuses while a commit holds the upload ({ok:false,error:"upload_busy"}), and
-// the handler threw that answer away and always replied aborted:true. Asserted as a CONTRADICTION
-// rather than as "the race landed": racing is not something a test gets to insist on, but "you
-// discarded it" and "it was stored" cannot both be true. The counter below is the non-vacuity
-// guard — if the window never opened, the assertion above it proved nothing.
-let sawCommitWin = 0;
-for (let attempt = 0; attempt < 5; attempt++) {
-  const beg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
-  const up = beg.structuredContent.upload_id;
-  for (let i = 0; i < 3; i++) await client.callTool({ name: "file_write_chunk", arguments: { upload_id: up, data_base64: Buffer.alloc(700_000, 9).toString("base64"), seq: i } });
-  const commitP = client.callTool({ name: "file_write_commit", arguments: { upload_id: up, path: `race-${attempt}.bin`, command_id: randomUUID() } });
-  const abortR = await client.callTool({ name: "file_write_abort", arguments: { upload_id: up } });
-  const commitR = await commitP.catch((e) => ({ isError: true, thrown: String(e && e.message) }));
-  if (!commitR.isError) sawCommitWin++;
-  ok(`abort does not claim a discard that did not happen (attempt ${attempt + 1})`,
-    !(abortR.structuredContent?.aborted === true && !commitR.isError),
-    `aborted=${abortR.structuredContent?.aborted} committed=${!commitR.isError}`);
-}
-ok(`the busy window actually opened — ${sawCommitWin}/5 attempts had the commit land`, sawCommitWin > 0,
-  "every attempt aborted before the commit started, so the assertions above never met the case they exist for");
+// V-4 (abort-vs-commit contradiction) retired with file_write_abort itself — no abort, no race.
 
-console.log("30. render_health — auto-revert on a failed mount; stale/healthy/locked/non-local/budget guards");
-const rhA = noteHtml.replace('id="l"', 'id="l" data-rh="A-marker"');
-const rhB = noteHtml.replace('id="l"', 'id="l" data-rh="B-marker"');
-// A widget reports the VERSION it actually mounted (its __OMA_APP_VERSION__), which is a
-// ledger position — render_health is machinery, not a surface a person reads, so it keeps that
-// vocabulary. app_history stopped handing the seq out, so both numbers are read from the
-// registry at the moment each save lands.
-await client.callTool({ name: "save_app", arguments: { name: "rh-probe", html: rhA, description: "render-health probe" } });
-const rhV1 = await verOf("rh-probe");
-await client.callTool({ name: "save_app", arguments: { name: "rh-probe", html: rhB, description: "", expected_version: rhV1 } });
-const rhV2 = await verOf("rh-probe");
-const rh1 = await client.callTool({ name: "render_health", arguments: { app: "rh-probe", version: rhV2, ok: false, error: "boom" } });
-ok("failure on the current version → reverted to the previous one, rolled forward as a new version",
-  !rh1.isError && rh1.structuredContent.reverted === true && rh1.structuredContent.restored_version === rhV1 && rh1.structuredContent.new_version > rhV2);
-const rhCur = await client.callTool({ name: "get_app", arguments: { name: "rh-probe" } });
-ok("current source is the restored html again (marker A, served as the new version)",
-  rhCur.content[0].text.includes(`rh-probe v${rh1.structuredContent.new_version}`) && rhCur.content[0].text.includes("A-marker") && !rhCur.content[0].text.includes("B-marker"));
-const rhStale = await client.callTool({ name: "render_health", arguments: { app: "rh-probe", version: rhV2, ok: false, error: "boom again" } });
-ok("stale report (an older version while a newer one is current) → ignored", rhStale.structuredContent.reverted === false && /Stale report/.test(rhStale.structuredContent.note));
-const rhOk = await client.callTool({ name: "render_health", arguments: { app: "rh-probe", version: 3, ok: true } });
-ok("healthy report never reverts", rhOk.structuredContent.reverted === false);
-const settingsVer = (await client.callTool({ name: "app_html", arguments: { name: "settings" } })).structuredContent.version;
-const rhLock = await client.callTool({ name: "render_health", arguments: { app: "settings", version: settingsVer, ok: false, error: "boom" } });
-ok("locked system app is never auto-reverted", rhLock.structuredContent.reverted === false && /Locked/.test(rhLock.structuredContent.note));
-// library-fixture (§17b, author "library-test") is the surviving non-local app now that
-// library installs are first-party/local.
-const rhNlVer = (await client.callTool({ name: "app_html", arguments: { name: "library-fixture" } })).structuredContent.version;
-const rhNl = await client.callTool({ name: "render_health", arguments: { app: "library-fixture", version: rhNlVer, ok: false, error: "boom" } });
-ok("non-local app is never auto-reverted", rhNl.structuredContent.reverted === false && /Non-local/.test(rhNl.structuredContent.note));
-// Budget is a HARD 3-per-server-run ceiling: healthy (ok:true) reports do NOT reset it — the
-// review round proved a resettable budget is hollow (interleaved ok:true reports allowed 8
-// forced reverts). rh1 above consumed 1 of 3, so of the next three break+report cycles only
-// TWO revert; the third is refused at the cap.
-let budgetReverts = 0;
-for (let i = 0; i < 3; i++) {
-  await client.callTool({ name: "save_app", arguments: { name: "rh-probe", html: noteHtml.replace('id="l"', `id="l" data-rh="broken-${i}"`), description: "", expected_version: await verOf("rh-probe") } });
-  const v = (await client.callTool({ name: "app_html", arguments: { name: "rh-probe" } })).structuredContent.version;
-  const rep = await client.callTool({ name: "render_health", arguments: { app: "rh-probe", version: v, ok: false, error: "boom " + i } });
-  if (rep.structuredContent.reverted === true) budgetReverts++;
+// §30 (render_health auto-revert) retired 2026-08-04 (elegance B3, Leo): the seat is gone —
+// a broken mount is a client-side user notice naming app_history → restore_app. Pinned here:
+{
+  const rhGone = await client.callTool({ name: "render_health", arguments: { app: "settings", version: 1, ok: false } }).catch((e) => e);
+  ok("render_health has NO seat (retired with auto-revert — recovery is explicit restore_app)",
+    rhGone instanceof Error && /not found/.test(String(rhGone.message)));
 }
-ok("hard budget: only two more reverts fit (3 total per run; ok:true does NOT reset)", budgetReverts === 2);
-await client.callTool({ name: "save_app", arguments: { name: "rh-probe", html: noteHtml.replace('id="l"', 'id="l" data-rh="broken-final"'), description: "", expected_version: await verOf("rh-probe") } });
-const vFinal = (await client.callTool({ name: "app_html", arguments: { name: "rh-probe" } })).structuredContent.version;
-const rhLimit = await client.callTool({ name: "render_health", arguments: { app: "rh-probe", version: vFinal, ok: false, error: "boom final" } });
-ok("the next failure hits the 3-per-run budget → refused with a limit note", rhLimit.structuredContent.reverted === false && /Auto-revert limit reached/.test(rhLimit.structuredContent.note));
 
-console.log("31. ui_prefs_schema + app_permissions — the settings pane's data sources");
+console.log("31. ui_prefs_schema + the app_html/list_apps perms sources — the settings pane's data");
 const prefsShared = (await client.callTool({ name: "ui_prefs_schema", arguments: {} })).structuredContent.shared;
 ok("shared catalog has ≥8 entries", Array.isArray(prefsShared) && prefsShared.length >= 8);
 const wpsPref = prefsShared.find((p) => p.key === "widget_poll_seconds");
 ok("widget_poll_seconds is a number pref", wpsPref?.type === "number");
 const proPref = prefsShared.find((p) => p.key === "proactivity");
 ok("proactivity is an enum with 2 options", proPref?.type === "enum" && Array.isArray(proPref.options) && proPref.options.length === 2);
-const perms = (await client.callTool({ name: "app_permissions", arguments: {} })).structuredContent.apps;
-const permSettings = perms.find((c) => c.name === "settings");
-ok("settings: locked:true, tier local", permSettings?.locked === true && permSettings?.tier === "local");
-const permHabit = perms.find((c) => c.name === "habit-streaks");
-ok("habit-streaks (library-installed): tier local, full file caps (first-party)", permHabit?.tier === "local" && permHabit?.caps.file_read === true && permHabit?.caps.file_write === true);
+// app_permissions retired (elegance A13): the pane's truths now ride reads it already makes —
+// `locked` on every list_apps row, tier+caps on app_html.
+const permRows = (await client.callTool({ name: "list_apps", arguments: { kind: "any", visibility: "any" } })).structuredContent.apps;
+ok("list_apps rows carry locked — settings is locked:true", permRows.find((c) => c.name === "settings")?.locked === true);
+const habitMeta = (await client.callTool({ name: "app_html", arguments: { name: "habit-streaks" } })).structuredContent;
+ok("app_html carries tier+caps+locked — habit-streaks (App Store-installed): local tier, full file caps, not locked",
+  habitMeta.tier === "local" && habitMeta.locked === false && habitMeta.caps.file_read === true && habitMeta.caps.file_write === true);
 
 console.log("33. data_changes — the reopen story, end to end");
 {
@@ -1612,7 +1562,7 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
   // An app bigger than one window, so the walk is real.
   const bigBody = `<!DOCTYPE html><html><body><div id="pad">${"lorem-ipsum-".repeat(4000)}</div><ul id="l"></ul>
 <script type="module">oma.ready(() => {});</script></body></html>`;
-  await client.callTool({ name: "save_app", arguments: { name: "win-probe", html: bigBody, description: "window probe" } });
+  await client.callTool({ name: "save_app", arguments: { name: "win-probe", ui: bigBody, description: "window probe" } });
   const w1 = (await client.callTool({ name: "get_app", arguments: { name: "win-probe" } })).structuredContent;
   ok("a big source comes back as a WINDOW, not whole",
     w1.text.length < bigBody.length && w1.total === bigBody.length && typeof w1.next_offset === "number");
@@ -1624,11 +1574,11 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
   }
   ok("the window walk reassembles the EXACT source", assembled === bigBody);
 
-  const noVer = await client.callTool({ name: "save_app", arguments: { name: "win-probe", html: bigBody } });
+  const noVer = await client.callTool({ name: "save_app", arguments: { name: "win-probe", ui: bigBody } });
   ok("overwrite without expected_version is refused BY NAME, carrying the current version",
     noVer.isError === true && noVer.structuredContent?.reason === "expected_version_required" &&
     noVer.structuredContent?.version === w1.version);
-  const staleSave = await client.callTool({ name: "save_app", arguments: { name: "win-probe", html: bigBody, expected_version: 1 } });
+  const staleSave = await client.callTool({ name: "save_app", arguments: { name: "win-probe", ui: bigBody, expected_version: 1 } });
   ok("a stale expected_version is a conflict carrying the CURRENT version",
     staleSave.isError === true && staleSave.structuredContent?.reason === "version_conflict" &&
     staleSave.structuredContent?.expected_version === w1.version);
@@ -1650,27 +1600,18 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
     expected_version: w1.version, edits: [{ old_string: 'data-edited="1"', new_string: "" }] } });
   ok("an edit against a stale version is a conflict — NOTHING was applied", eStale.isError === true && /re-read/.test(eStale.content[0].text));
 
-  const arch = await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "win-probe", archived: true } });
-  ok("archive flips visibility and stamps the one axis",
-    !arch.isError && arch.structuredContent.visibility === "archived" && typeof arch.structuredContent.version === "number");
-  const shelf = (await client.callTool({ name: "list_apps", arguments: {} })).structuredContent;
-  ok("an archived app leaves the default shelf", !shelf.apps.some((c) => c.name === "win-probe"));
-  const archShelf = (await client.callTool({ name: "list_apps", arguments: { visibility: "archived", kind: "any" } })).structuredContent;
-  ok("…and shows under visibility: archived", archShelf.apps.some((c) => c.name === "win-probe"));
-  const unarch = await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "win-probe", archived: false } });
-  ok("unarchive brings it back", !unarch.isError && unarch.structuredContent.visibility === "listed");
-  const lockArch = await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "settings", archived: true } });
-  ok("a system app cannot be shelved", lockArch.isError === true);
+  // archive_app's seat retired 2026-08-04 (elegance B2 — concept kept, store command intact,
+  // flip/replay semantics pinned at store level in ledger-smoke §14). Seat absence pinned here:
+  const archGone = await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "win-probe", archived: true } }).catch((e) => e);
+  ok("archive_app has NO seat (returns with a settings entry)", archGone instanceof Error && /not found/.test(String(archGone.message)));
 
   const cfTools = await client.listTools();
-  ok("call_function has NO seat until the function pillar ships (pulled 2026-07-27)",
-    !cfTools.tools.some((t) => t.name === "call_function"));
+  ok("call_function's seat is LIVE on the local entrypoint (W3 — the 2026-07-27 pull's own return condition)",
+    cfTools.tools.some((t) => t.name === "call_function"));
 
   const chWhole = (await client.callTool({ name: "app_html", arguments: { name: "win-probe" } })).structuredContent;
-  ok("app_html zero-param carries the WHOLE document (the widget cannot assemble windows)",
+  ok("app_html always carries the WHOLE document (the widget cannot assemble windows; a model reading source has get_app)",
     chWhole.html.length === e1.structuredContent.size);
-  const chWin = (await client.callTool({ name: "app_html", arguments: { name: "win-probe", offset: 0, length: 1000 } })).structuredContent;
-  ok("…and windows only when asked", chWin.html.length === 1000 && typeof chWin.next_offset === "number");
 
   const fbytes = Buffer.from("0123456789".repeat(400));
   await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "win-probe", path: "win.bin", data_base64: fbytes.toString("base64") } });
@@ -1689,8 +1630,8 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
   console.log("34b. C-review residue pins");
   // A lost-reply retry of a CREATE must return the receipt, not die on the overwrite guard.
   const cRid = randomUUID();
-  const c1 = await client.callTool({ name: "save_app", arguments: { command_id: cRid, name: "retry-probe", html: noteHtml, description: "retry probe" } });
-  const c2 = await client.callTool({ name: "save_app", arguments: { command_id: cRid, name: "retry-probe", html: noteHtml, description: "retry probe" } });
+  const c1 = await client.callTool({ name: "save_app", arguments: { command_id: cRid, name: "retry-probe", ui: noteHtml, description: "retry probe" } });
+  const c2 = await client.callTool({ name: "save_app", arguments: { command_id: cRid, name: "retry-probe", ui: noteHtml, description: "retry probe" } });
   ok("a created app's lost-reply retry returns the original receipt",
     !c2.isError && c2.structuredContent.version === c1.structuredContent.version && /Already saved/.test(c2.content[0].text));
   const eRid = randomUUID();
@@ -1701,7 +1642,7 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
   ok("an edit's lost-reply retry replays — even though the original edit consumed its own old_string",
     !ed2.isError && ed2.structuredContent.version === ed1.structuredContent.version && /Already applied/.test(ed2.content[0].text));
   await client.callTool({ name: "delete_app", arguments: { name: "retry-probe", command_id: randomUUID() } });
-  const res = await client.callTool({ name: "save_app", arguments: { name: "retry-probe", html: noteHtml, expected_version: ed1.structuredContent.version } });
+  const res = await client.callTool({ name: "save_app", arguments: { name: "retry-probe", ui: noteHtml, expected_version: ed1.structuredContent.version } });
   ok("saving over a DELETED app with a version token is a conflict, never a silent resurrection",
     res.isError === true && /DELETED after you read/.test(res.content[0].text) &&
     (await client.callTool({ name: "list_apps", arguments: { name: "retry-probe" } })).structuredContent.total === 0);
@@ -1716,23 +1657,9 @@ console.log("34. write-set C — windows, the edit loop, archive, and the seats"
   const ahead = (await client.callTool({ name: "data_changes", arguments: { collection: "batch-probe", since: 9999999 } })).structuredContent;
   ok("a mark ahead of the ledger is re-anchored loudly, not silently pinned",
     ahead.events.length === 0 && ahead.next_since === ahead.latest_seq && /ahead of this ledger/.test(ahead.note));
-  const aRid = randomUUID();
-  await client.callTool({ name: "archive_app", arguments: { command_id: aRid, app: "hidden-visual", archived: true } });
-  await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "hidden-visual", archived: false } });
-  const aReplay = await client.callTool({ name: "archive_app", arguments: { command_id: aRid, app: "hidden-visual", archived: true } });
-  ok("an archive replayed after an unarchive reports the ORIGINAL flip, not current state",
-    !aReplay.isError && aReplay.structuredContent.visibility === "archived" && /idempotent replay/.test(aReplay.content[0].text));
   const badFc = await client.callTool({ name: "file_list", arguments: { app: "win-probe", cursor: "@@bad@@" } });
   ok("file_list refuses a corrupted cursor exactly like data_list", badFc.isError === true && /Invalid cursor/.test(badFc.content[0].text));
-  // Auto-revert must restore the previous DIFFERENT document — version flips (archive) write no html.
-  await client.callTool({ name: "save_app", arguments: { name: "rv-probe", html: noteHtml, description: "rv" } });
-  await client.callTool({ name: "save_app", arguments: { name: "rv-probe", html: histHtml2, description: "", expected_version: await verOf("rv-probe") } });
-  await client.callTool({ name: "archive_app", arguments: { command_id: randomUUID(), app: "rv-probe", archived: true } });
-  const rvCur = await verOf("rv-probe");
-  const rh = await client.callTool({ name: "render_health", arguments: { app: "rv-probe", version: rvCur, ok: false, error: "boom" } });
-  const rvNow = (await client.callTool({ name: "get_app", arguments: { name: "rv-probe" } })).structuredContent;
-  ok("auto-revert skips version flips and identical html — it restores the previous DIFFERENT document",
-    rh.structuredContent.reverted === true && rvNow.text.includes('id="l"') && !rvNow.text.includes("data-hist-v2"));
+  // (auto-revert's "previous DIFFERENT document" test retired with auto-revert itself, B3.)
   const rtSrc = (await import("node:fs")).readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf8");
   const rnSrc = (await import("node:fs")).readFileSync(join(ROOT, "src", "runner.mjs"), "utf8");
   ok("the runtime repaints when rows arrive at an unchanged version (zero-row open guard)",
@@ -1756,11 +1683,45 @@ console.log("35. write-set D — via transits the MCP path, and no AI face ever 
   ok("unknown keys pass the schema and die in store.core() — the write still lands clean", junk.structuredContent.ok === true);
   // Passthrough must NOT let a caller pick the dispatch `type`: data_add_item carrying
   // type:"save_app" would be a data-plane → control-plane escape (adversarial D review).
-  await client.callTool({ name: "save_app", arguments: { command_id: randomUUID(), name: "victim-probe", html: "<p>ORIGINAL</p>" } });
-  const escape = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "via-e2e", fields: { t: 3 }, type: "save_app", name: "victim-probe", html: "<p>PWNED</p>" } });
+  await client.callTool({ name: "save_app", arguments: { command_id: randomUUID(), name: "victim-probe", ui: "<p>ORIGINAL</p>" } });
+  const escape = await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "via-e2e", fields: { t: 3 }, type: "save_app", name: "victim-probe", ui: "<p>PWNED</p>" } });
   const victim = (await client.callTool({ name: "get_app", arguments: { name: "victim-probe" } })).structuredContent;
   ok("a caller-supplied `type` cannot hijack the command — the item write stays an item write",
     escape.structuredContent.ok === true && victim.text.includes("ORIGINAL") && !victim.text.includes("PWNED"));
+}
+
+console.log("36. W-S confirmation — the whole two-phase flow over a real MCP transport");
+{
+  // The store owns the policy (test/confirmation.mjs pins it) and the runner owns the widget's
+  // side (runner-guard §11). What only THIS file can show is the round trip a host actually
+  // sees: schema validation of `request_state` on the way in, and the demand surviving the
+  // output schema and the text channel on the way back.
+  const mk = async (title) => (await client.callTool({ name: "data_add_item",
+    arguments: { command_id: randomUUID(), collection: "confirm-e2e", fields: { title } } })).structuredContent.id;
+
+  const agentGone = await client.callTool({ name: "data_delete_item", arguments: { command_id: randomUUID(), id: await mk("agent deletes") } });
+  ok("an AI delete still goes straight through (the conversation is its confirmation channel)",
+    agentGone.structuredContent.deleted === true);
+
+  const id = await mk("Buy oat milk");
+  const cid = randomUUID();
+  const demand = await client.callTool({ name: "data_delete_item", arguments: { command_id: cid, id, actor: "human", via: { app: "some-widget" } } });
+  const dsc = demand.structuredContent;
+  ok("a human delete comes back as a demand, NOT an error result (a host that drops errors would strand the flow)",
+    demand.isError !== true && dsc.ok === false && dsc.reason === "confirmation_required");
+  ok("…carrying the state, the expiry and the row's own words", typeof dsc.request_state === "string" && dsc.preview === "Buy oat milk" && typeof dsc.expires_at === "string");
+  ok("…and the text channel says the same thing (a model reading only text still knows what to ask)",
+    /confirm/i.test(demand.content[0].text) && demand.content[0].text.includes("Buy oat milk"));
+  ok("nothing was deleted", (await client.callTool({ name: "data_list", arguments: { collection: "confirm-e2e" } })).structuredContent.items.some((i) => i.id === id));
+
+  const done = await client.callTool({ name: "data_delete_item", arguments: { command_id: cid, id, actor: "human", via: { app: "some-widget" }, request_state: dsc.request_state } });
+  ok("the resend executes — the SAME command_id, because the first leg wrote no ledger event",
+    done.structuredContent.ok === true && done.structuredContent.deleted === true);
+  ok("row gone", (await client.callTool({ name: "data_list", arguments: { collection: "confirm-e2e" } })).structuredContent.items.every((i) => i.id !== id));
+
+  const stale = await client.callTool({ name: "data_delete_item", arguments: { command_id: randomUUID(), id: await mk("bystander"), actor: "human", via: { app: "some-widget" }, request_state: dsc.request_state } });
+  ok("a spent state cannot be pointed at another row, and the failure is a plain isError",
+    stale.isError === true && /confirmation_invalid/.test(stale.content[0].text));
 }
 
 await client.close();
@@ -1801,7 +1762,7 @@ ok("tokens: a non custom-property name throws (can't smuggle a selector)",
   tokenThrows({ color: "red" }) && tokenThrows({ "--A": "red" }) && tokenThrows({ "}body{color": "red" }));
 ok("tokens: a non-object throws", tokenThrows("--x:red") && tokenThrows(["--x"]));
 // createEngine opts over an in-memory transport pair — the hosted-embed path (no stdio, no http).
-const { InMemoryTransport } = await import("@modelcontextprotocol/sdk/inMemory.js");
+const { InMemoryTransport } = await import("@modelcontextprotocol/client");
 const store32 = barrel.openStore(DB);
 const eng32 = barrel.createEngine(store32, { hostLabel: "embed-test", instructions: "HOSTED INSTRUCTIONS ONLY" });
 const [ct32, st32] = InMemoryTransport.createLinkedPair();
@@ -1829,6 +1790,23 @@ const lc33 = await c33.callTool({ name: "list_apps", arguments: {} });
 ok("viewBase puts a real /view link on every listed app — and a bare engine prints none",
   /https:\/\/apps\.example\/u\/x\/view\//.test(lc33.content.find((c) => c.type === "text").text) &&
   !inst32.includes("/view/"));
+// …and the same fact reaches the WIDGET, which cannot derive it: it runs in an opaque origin, so
+// oma.viewBase would otherwise be the relative "/view/" and every in-widget link dead (lane-c
+// finding #8). It is what makes the system badge's "Open in browser" exist at all (D-13 ②) —
+// an engine with no viewer stamps nothing and the item is never drawn.
+{
+  const name33 = (await c33.callTool({ name: "list_apps", arguments: {} })).structuredContent.apps[0].name;
+  const doc33 = (await c33.readResource({ uri: `ui://open-mcp-apps/${name33}.html` })).contents[0].text;
+  const bare33 = (await c32.readResource({ uri: `ui://open-mcp-apps/${name33}.html` })).contents[0].text;
+  ok("the viewer base is stamped into a widget document when this engine HAS a viewer",
+    doc33.includes('window.__OMA_VIEW_BASE__="https://apps.example/u/x/view/"'),
+    doc33.slice(0, 400));
+  ok("…and into the universal loader, the other document a host mounts",
+    (await c33.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0].text
+      .includes('window.__OMA_VIEW_BASE__="https://apps.example/u/x/view/"'));
+  ok("🔴 an engine with NO viewer stamps no base at all — the item cannot be drawn dead",
+    !bare33.includes('data-oma="viewbase"') && !loader32.contents[0].text.includes('data-oma="viewbase"'));
+}
 // The local viewer's base is OVERRIDABLE, because a process behind a tunnel or a reverse proxy
 // cannot discover the address its reader actually uses — and a loopback link handed to a hosted
 // chat is dead every time. Read from the source: this is a module constant, not a tool surface.

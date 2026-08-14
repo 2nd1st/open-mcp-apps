@@ -7,6 +7,11 @@ dist/
 *.db
 *.db-wal
 *.db-shm
+# the store's confirmation signing key — never a repo artifact (gitignore has no
+# trailing comments: the first attempt put this after the pattern and matched nothing)
+*.confirm-key
+# edit telemetry sidecar (W-E, R1 tripwire) — operational metrics beside the DB, not code
+edit-telemetry.jsonl
 test/filestore-tmp/
 test/files/
 .DS_Store

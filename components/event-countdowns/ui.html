@@ -1,0 +1,951 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Event Countdowns</title>
+  <meta name="description" content="Live countdowns to the dates that matter — birthdays, deadlines, trips, launches.">
+  <meta name="oma-category" content="Planning">
+  <style>
+  * { box-sizing: border-box; }
+  :root {
+    --info: var(--color-text-info, var(--color-ring-primary));
+    --good: var(--color-text-success, var(--color-ring-primary));
+    --warn: var(--color-text-warning, var(--color-text-danger, var(--color-ring-primary)));
+    --bad: var(--color-text-danger, var(--color-ring-primary));
+    --ink-4: color-mix(in oklab, var(--color-text-primary) 4%, transparent);
+  }
+  body {
+    margin: 0;
+    padding: 14px;
+    overflow: hidden;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-text-md-size, 14px);
+  }
+  button, input { font: inherit; }
+  button { color: inherit; }
+  [hidden] { display: none !important; }
+  #app {
+    width: min(100%, 880px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+  }
+  .brand-mark {
+    position: relative;
+    width: 37px;
+    height: 37px;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in oklab, var(--info) 26%, transparent);
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--info) 17%, transparent), color-mix(in oklab, var(--good) 7%, transparent));
+    color: var(--info);
+  }
+  .brand-mark svg { position: absolute; inset: 8px; width: 20px; height: 20px; }
+  .brand-mark::after {
+    content: "";
+    position: absolute;
+    right: 6px;
+    top: 7px;
+    width: 5px;
+    height: 5px;
+    border-radius: var(--border-radius-full, 999px);
+    background: currentColor;
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--info) 12%, transparent);
+  }
+  /* House shell: mono kicker over the app name — the family marker every app carries. */
+  .kicker {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  h1 { margin: 0; font-size: 16px; line-height: 1.2; letter-spacing: -.01em; }
+  #summary { margin-top: 3px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); }
+  .top-actions { display: flex; gap: 8px; margin-left: auto; }
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    font-weight: 650;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
+  .btn.primary {
+    border-color: color-mix(in oklab, var(--info) 32%, transparent);
+    background: var(--info);
+    color: var(--color-text-inverse);
+    box-shadow: 0 4px 12px color-mix(in oklab, var(--info) 20%, transparent);
+  }
+  .btn.ghost { background: color-mix(in oklab, var(--color-background-primary) 88%, transparent); }
+  .btn:focus-visible, input:focus-visible, .chip:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+  #addPanel {
+    padding: 12px 16px 14px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--info) 5%, var(--color-background-secondary));
+  }
+  #addForm {
+    display: grid;
+    grid-template-columns: 1.2fr .78fr .72fr 1.25fr auto;
+    gap: 8px;
+    align-items: end;
+  }
+  label { display: grid; gap: 5px; min-width: 0; }
+  label span {
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  input {
+    width: 100%;
+    min-width: 0;
+    height: 36px;
+    padding: 8px 10px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+  }
+  input::placeholder { color: var(--color-text-tertiary); }
+  .content { padding: 14px; }
+  #hero {
+    --urgency: var(--info);
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    min-height: 174px;
+    padding: 20px;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--urgency) 25%, var(--color-border-secondary));
+    border-radius: var(--border-radius-lg);
+    background:
+      radial-gradient(circle at 88% 12%, color-mix(in oklab, var(--urgency) 18%, transparent) 0 1px, transparent 2px 100%),
+      linear-gradient(125deg, color-mix(in oklab, var(--urgency) 15%, var(--color-background-primary)), var(--color-background-primary) 62%);
+    box-shadow: inset 0 1px 0 color-mix(in oklab, var(--color-text-inverse) 12%, transparent);
+  }
+  #hero::before, #hero::after {
+    content: "";
+    position: absolute;
+    border: 1px solid color-mix(in oklab, var(--urgency) 15%, transparent);
+    border-radius: var(--border-radius-full, 999px);
+    pointer-events: none;
+  }
+  #hero::before { width: 190px; height: 190px; right: -68px; top: -92px; }
+  #hero::after { width: 126px; height: 126px; right: -35px; top: -61px; }
+  #hero[data-urgency="danger"], #hero[data-urgency="overdue"] { --urgency: var(--bad); }
+  #hero[data-urgency="warm"] { --urgency: var(--warn); }
+  #hero[data-urgency="calm"] { --urgency: var(--good); }
+  .hero-copy { position: relative; z-index: 1; min-width: 0; }
+  .eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 9px;
+    color: var(--urgency);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+  .pulse {
+    width: 7px;
+    height: 7px;
+    border-radius: var(--border-radius-full, 999px);
+    background: currentColor;
+    box-shadow: 0 0 0 4px color-mix(in oklab, currentColor 13%, transparent);
+  }
+  #heroTitle {
+    max-width: 540px;
+    margin: 0;
+    overflow-wrap: anywhere;
+    font-size: clamp(23px, 4vw, 34px);
+    line-height: 1.05;
+    letter-spacing: -.035em;
+  }
+  .hero-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 7px 11px;
+    margin-top: 11px;
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+  .category-pill {
+    --cat: var(--info);
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 8px;
+    border: 1px solid color-mix(in oklab, var(--cat) 24%, transparent);
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--cat) 10%, transparent);
+    color: var(--cat);
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .category-pill::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: var(--border-radius-full, 999px);
+    background: currentColor;
+  }
+  #heroNote {
+    max-width: 590px;
+    margin: 12px 0 15px;
+    color: var(--color-text-secondary);
+    line-height: 1.45;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+  }
+  .countdown {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    width: 142px;
+    min-height: 132px;
+    padding: 15px 12px;
+    border: 1px solid color-mix(in oklab, var(--urgency) 28%, transparent);
+    border-radius: var(--border-radius-lg);
+    background: color-mix(in oklab, var(--color-background-primary) 80%, transparent);
+    box-shadow: var(--shadow-sm);
+    text-align: center;
+  }
+  #heroNumber {
+    color: var(--urgency);
+    font: 750 46px/.95 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.06em;
+  }
+  #heroUnit {
+    margin-top: 8px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+  .ticks { display: flex; gap: 5px; margin-top: 13px; }
+  .ticks i {
+    width: 13px;
+    height: 3px;
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--urgency) 20%, transparent);
+  }
+  .ticks i:first-child { background: var(--urgency); }
+  .list-card {
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+  }
+  .list-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 49px;
+    padding: 8px 10px 8px 13px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--color-background-secondary);
+  }
+  .list-title { flex: 0 0 auto; font-size: 12px; font-weight: 750; }
+  #filters {
+    display: flex;
+    gap: 6px;
+    min-width: 0;
+    margin-left: auto;
+    overflow-x: auto;
+    scrollbar-width: none;
+  }
+  #filters::-webkit-scrollbar { display: none; }
+  .chip {
+    --cat: var(--color-text-secondary);
+    flex: 0 0 auto;
+    padding: 5px 9px;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-full, 999px);
+    background: transparent;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+  }
+  .chip[data-active="true"] {
+    border-color: color-mix(in oklab, var(--cat) 25%, transparent);
+    background: color-mix(in oklab, var(--cat) 11%, transparent);
+    color: var(--cat);
+  }
+  #eventList {
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+  .event-row {
+    --cat: var(--info);
+    display: grid;
+    grid-template-columns: 48px minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 72px;
+    padding: 10px 11px 10px 13px;
+    border-top: 1px solid var(--color-border-secondary);
+    background: var(--color-background-primary);
+  }
+  .event-row:first-child { border-top: 0; }
+  .date-tile {
+    position: relative;
+    display: grid;
+    place-content: center;
+    width: 46px;
+    height: 46px;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--cat) 24%, transparent);
+    border-radius: var(--border-radius-md);
+    background: color-mix(in oklab, var(--cat) 8%, transparent);
+    text-align: center;
+  }
+  .date-tile::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--cat);
+  }
+  .date-tile strong {
+    font: 750 18px/1 var(--font-mono);
+    font-variant-numeric: tabular-nums;
+  }
+  .date-tile span {
+    margin-top: 3px;
+    color: var(--cat);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .event-copy { min-width: 0; }
+  .event-title {
+    display: block;
+    overflow: hidden;
+    color: var(--color-text-primary);
+    font-weight: 680;
+    line-height: 1.3;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .event-meta {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    min-width: 0;
+    margin-top: 5px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+  }
+  .cat-dot {
+    width: 6px;
+    height: 6px;
+    flex: 0 0 auto;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--cat);
+  }
+  .event-note {
+    display: -webkit-box;
+    min-width: 0;
+    overflow: hidden;
+    line-height: 1.35;
+    white-space: normal;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+  }
+  .days-badge {
+    min-width: 84px;
+    padding: 6px 9px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    font: 700 11px/1 var(--font-sans);
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .days-badge.danger, .days-badge.overdue {
+    border-color: color-mix(in oklab, var(--bad) 25%, transparent);
+    background: color-mix(in oklab, var(--bad) 9%, transparent);
+    color: var(--bad);
+  }
+  .days-badge.warm {
+    border-color: color-mix(in oklab, var(--warn) 27%, transparent);
+    background: color-mix(in oklab, var(--warn) 10%, transparent);
+    color: var(--warn);
+  }
+  .delete {
+    width: 31px;
+    min-width: 31px;
+    height: 31px;
+    padding: 0;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-md);
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-size: 15px;
+    cursor: pointer;
+    opacity: 0;
+  }
+  .event-row:hover .delete, .delete:focus-visible { opacity: 1; }
+  .empty {
+    display: grid;
+    place-items: center;
+    min-height: 150px;
+    padding: 26px;
+    color: var(--color-text-secondary);
+    text-align: center;
+    line-height: 1.5;
+  }
+  .empty strong { display: block; color: var(--color-text-primary); }
+  @media (prefers-reduced-motion: no-preference) {
+    .btn, .chip, .event-row, .delete {
+      transition: transform 180ms cubic-bezier(.2,.8,.3,1), background 180ms, border-color 180ms, box-shadow 180ms, opacity 160ms;
+    }
+    .btn:hover, .chip:hover { transform: translateY(-1px); }
+    .btn:active, .chip:active, .delete:active { transform: scale(.97); }
+    .btn.primary:hover { box-shadow: 0 7px 18px color-mix(in oklab, var(--info) 24%, transparent); }
+    .event-row:hover { background: var(--ink-4); }
+    #addPanel:not([hidden]) { animation: reveal 220ms cubic-bezier(.2,.8,.3,1) both; transform-origin: top; }
+    #hero[data-urgency="danger"] .pulse, #hero[data-urgency="overdue"] .pulse { animation: urgency 1.8s ease-in-out infinite; }
+    #hero[data-urgency="danger"] .ticks i:first-child, #hero[data-urgency="overdue"] .ticks i:first-child { animation: tick 1.8s ease-in-out infinite; }
+    .btn.saved { animation: saved-pop 360ms cubic-bezier(.34,1.56,.64,1); }
+    @keyframes reveal { from { opacity: 0; transform: scaleY(.92); } to { opacity: 1; transform: scaleY(1); } }
+    @keyframes urgency { 50% { box-shadow: 0 0 0 8px color-mix(in oklab, currentColor 4%, transparent); } }
+    @keyframes tick { 50% { transform: scaleX(.55); opacity: .65; } }
+    @keyframes saved-pop { 45% { transform: scale(1.08) rotate(-1deg); } }
+  }
+  @media (max-width: 700px) {
+    #addForm { grid-template-columns: 1fr 1fr; }
+    #addForm label:first-child, #addForm label:nth-child(4) { grid-column: 1 / -1; }
+    #saveEvent { grid-column: 1 / -1; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 8px; }
+    #app { border-radius: var(--border-radius-md); }
+    .topbar { min-height: 60px; padding: 11px 12px; }
+    .brand-mark { width: 34px; height: 34px; }
+    .brand-mark svg { inset: 7px; }
+    #summary { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    #addToggle span { display: none; }
+    #addToggle { width: 36px; padding: 0; }
+    .content { padding: 10px; }
+    #hero { grid-template-columns: 1fr; gap: 14px; min-height: 0; padding: 17px; }
+    #heroTitle { font-size: 25px; }
+    .countdown {
+      grid-template-columns: auto 1fr auto;
+      justify-items: start;
+      align-items: center;
+      width: 100%;
+      min-height: 68px;
+      padding: 11px 14px;
+      text-align: left;
+    }
+    #heroNumber { font-size: 34px; }
+    #heroUnit { margin: 0 0 0 11px; }
+    .ticks { justify-self: end; margin: 0; }
+    .ticks i { width: 8px; }
+    .list-head { align-items: flex-start; flex-direction: column; }
+    #filters { width: 100%; margin: 0; }
+    #eventList { max-height: none; }
+    .event-row { grid-template-columns: 44px minmax(0, 1fr) auto; gap: 9px; padding-left: 10px; }
+    .date-tile { width: 42px; height: 42px; }
+    .days-badge { min-width: 70px; padding-inline: 7px; }
+    .delete { display: none; }
+  }
+</style>
+
+</head>
+<body>
+<main id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6.5 3.5v3M17.5 3.5v3M4 9h16M5.5 5.5h13A1.5 1.5 0 0 1 20 7v12a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V7a1.5 1.5 0 0 1 1.5-1.5Z"/>
+          <path d="M8 13h3v3H8z"/>
+        </svg>
+      </div>
+      <div>
+        <div class="kicker">Date watch</div>
+        <h1>Event countdowns</h1>
+        <div id="summary">Your important dates, in view</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="btn ghost" id="prepareButton" type="button">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 1.3 4.2L17.5 8.5l-4.2 1.3L12 14l-1.3-4.2-4.2-1.3 4.2-1.3L12 3Z"/><path d="m18.5 14 .7 2.3 2.3.7-2.3.7-.7 2.3-.7-2.3-2.3-.7 2.3-.7.7-2.3Z"/></svg>
+        Help me prepare
+      </button>
+      <button class="btn primary" id="addToggle" type="button" aria-expanded="false" aria-controls="addPanel">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span>Add date</span>
+      </button>
+    </div>
+  </header>
+
+  <section id="addPanel" hidden>
+    <form id="addForm">
+      <label><span>Event</span><input id="titleInput" maxlength="80" placeholder="Quarterly launch" autocomplete="off" required></label>
+      <label><span>Date</span><input id="dateInput" type="date" required></label>
+      <label><span>Category</span><input id="categoryInput" list="categoryOptions" maxlength="30" placeholder="Work" autocomplete="off" required></label>
+      <label><span>Note</span><input id="noteInput" maxlength="140" placeholder="Optional context" autocomplete="off"></label>
+      <button class="btn primary" id="saveEvent" type="submit">Save event</button>
+      <datalist id="categoryOptions"><option value="Work"><option value="Travel"><option value="Personal"><option value="Birthday"><option value="Deadline"></datalist>
+    </form>
+  </section>
+
+  <div class="content">
+    <section id="hero" data-urgency="calm" aria-live="polite">
+      <div class="hero-copy">
+        <div class="eyebrow"><span class="pulse"></span><span id="heroEyebrow">Coming up next</span></div>
+        <h2 id="heroTitle">A bright date on the horizon</h2>
+        <div class="hero-meta"><span id="heroDate"></span><span class="category-pill" id="heroCategory">Plans</span></div>
+        <p id="heroNote">Add an event and watch the days fall into place.</p>
+      </div>
+      <div class="countdown">
+        <strong id="heroNumber">—</strong>
+        <span id="heroUnit">days left</span>
+        <div class="ticks" aria-hidden="true"><i></i><i></i><i></i></div>
+      </div>
+    </section>
+
+    <section class="list-card">
+      <div class="list-head">
+        <span class="list-title">All dates</span>
+        <div id="filters" aria-label="Filter by category"></div>
+      </div>
+      <div id="eventList"></div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+  let latestState = { items: [] };
+  let activeCategory = "All";
+  let seedStarted = false;
+
+  const hero = document.getElementById("hero");
+  const heroTitle = document.getElementById("heroTitle");
+  const heroDate = document.getElementById("heroDate");
+  const heroCategory = document.getElementById("heroCategory");
+  const heroNote = document.getElementById("heroNote");
+  const heroNumber = document.getElementById("heroNumber");
+  const heroUnit = document.getElementById("heroUnit");
+  const prepareButton = document.getElementById("prepareButton");
+  const addToggle = document.getElementById("addToggle");
+  const addPanel = document.getElementById("addPanel");
+
+  const toneValues = [
+    "var(--info)",
+    "var(--good)",
+    "var(--warn)",
+    "color-mix(in oklab, var(--info) 58%, var(--bad))",
+    "color-mix(in oklab, var(--good) 58%, var(--info))"
+  ];
+
+  function hashText(value) {
+    let hash = 0;
+    for (const char of String(value)) hash = ((hash << 5) - hash + char.charCodeAt(0)) | 0;
+    return Math.abs(hash);
+  }
+
+  function toneFor(category) {
+    return toneValues[hashText(String(category).toLowerCase()) % toneValues.length];
+  }
+
+  function localDateParts(value) {
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value || ""));
+    if (!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(year, month - 1, day);
+    if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) return null;
+    return { year, month, day, date, stamp: Date.UTC(year, month - 1, day) };
+  }
+
+  function todayStamp() {
+    const now = new Date();
+    return Date.UTC(now.getFullYear(), now.getMonth(), now.getDate());
+  }
+
+  function daysUntil(value) {
+    const parts = localDateParts(value);
+    return parts ? Math.round((parts.stamp - todayStamp()) / 86400000) : null;
+  }
+
+  function categoryOf(item) {
+    return String(item.group || item.fields.category || "Uncategorised").trim() || "Uncategorised";
+  }
+
+  function locale() {
+    const value = oma.pref("locale", "auto");
+    return value === "auto" ? navigator.language : value;
+  }
+
+  function formatDate(value, long = false) {
+    const parts = localDateParts(value);
+    if (!parts) return "Date needed";
+    const preference = oma.pref("date_format", "auto");
+    if (!long && preference === "yyyy-mm-dd") return String(value);
+    if (!long && preference === "dd/mm/yyyy") return `${String(parts.day).padStart(2, "0")}/${String(parts.month).padStart(2, "0")}/${parts.year}`;
+    if (!long && preference === "mm/dd/yyyy") return `${String(parts.month).padStart(2, "0")}/${String(parts.day).padStart(2, "0")}/${parts.year}`;
+    const currentYear = new Date().getFullYear();
+    return new Intl.DateTimeFormat(locale(), long
+      ? { weekday: "long", day: "numeric", month: "long", year: parts.year === currentYear ? undefined : "numeric" }
+      : { day: "numeric", month: "short", year: parts.year === currentYear ? undefined : "numeric" }
+    ).format(parts.date);
+  }
+
+  function urgency(days) {
+    if (days === null) return "calm";
+    if (days < 0) return "overdue";
+    if (days <= 3) return "danger";
+    if (days <= 14) return "warm";
+    return "calm";
+  }
+
+  function countdownText(days) {
+    if (days === null) return "Date needed";
+    if (days < 0) return "Overdue";
+    return `${days} ${days === 1 ? "day" : "days"} left`;
+  }
+
+  function sortEvents(items) {
+    return [...items].sort((a, b) => {
+      const aDays = daysUntil(a.fields.target_date);
+      const bDays = daysUntil(b.fields.target_date);
+      const aRank = aDays === null ? 2 : aDays >= 0 ? 0 : 1;
+      const bRank = bDays === null ? 2 : bDays >= 0 ? 0 : 1;
+      if (aRank !== bRank) return aRank - bRank;
+      if (aDays !== bDays) {
+        if (aRank === 1) return bDays - aDays;
+        return (aDays ?? Infinity) - (bDays ?? Infinity);
+      }
+      return a.position - b.position;
+    });
+  }
+
+  function makeElement(tag, className, text) {
+    const element = document.createElement(tag);
+    if (className) element.className = className;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+
+  function paintHero(item) {
+    if (!item) {
+      hero.dataset.urgency = "calm";
+      heroTitle.textContent = "A bright date on the horizon";
+      heroDate.textContent = "";
+      heroCategory.textContent = "Plans";
+      heroCategory.style.setProperty("--cat", "var(--info)");
+      heroNote.textContent = "Add an event and watch the days fall into place.";
+      heroNumber.textContent = "—";
+      heroUnit.textContent = "days left";
+      prepareButton.hidden = true;
+      return;
+    }
+
+    const fields = item.fields;
+    const days = daysUntil(fields.target_date);
+    const category = categoryOf(item);
+    hero.dataset.urgency = urgency(days);
+    document.getElementById("heroEyebrow").textContent = days !== null && days < 0 ? "Needs attention" : "Coming up next";
+    heroTitle.textContent = fields.title || "Untitled event";
+    heroDate.textContent = formatDate(fields.target_date, true);
+    heroCategory.textContent = category;
+    heroCategory.style.setProperty("--cat", toneFor(category));
+    heroNote.textContent = fields.note || (days !== null && days < 0 ? "This date has passed — decide what comes next." : "A little preparation now makes the day feel closer.");
+    heroNumber.textContent = days === null ? "—" : String(Math.abs(days));
+    heroUnit.textContent = days === null ? "date needed" : days < 0 ? `${Math.abs(days) === 1 ? "day" : "days"} overdue` : `${days === 1 ? "day" : "days"} left`;
+    // Shown outside a chat host too: oma.sendMessage degrades to the clipboard there.
+    prepareButton.hidden = false;
+    prepareButton.onclick = () => {
+      const note = fields.note ? ` My note: ${fields.note}.` : "";
+      oma.sendMessage(`Help me prepare for "${fields.title || "this event"}" on ${formatDate(fields.target_date, true)}. It is ${countdownText(days).toLowerCase()}.${note} Please make a concise preparation plan with milestones and a practical checklist.`);
+    };
+  }
+
+  function paintFilters(items) {
+    const filters = document.getElementById("filters");
+    const categories = [...new Set(items.map(categoryOf))].sort((a, b) => a.localeCompare(b));
+    if (activeCategory !== "All" && !categories.includes(activeCategory)) activeCategory = "All";
+    filters.innerHTML = "";
+    for (const category of ["All", ...categories]) {
+      const count = category === "All" ? items.length : items.filter((item) => categoryOf(item) === category).length;
+      const button = makeElement("button", "chip", `${category} ${count}`);
+      button.type = "button";
+      button.dataset.active = String(category === activeCategory);
+      button.style.setProperty("--cat", category === "All" ? "var(--info)" : toneFor(category));
+      button.onclick = () => {
+        activeCategory = category;
+        render(latestState);
+      };
+      filters.appendChild(button);
+    }
+  }
+
+  function makeRow(item) {
+    const fields = item.fields;
+    const parts = localDateParts(fields.target_date);
+    const days = daysUntil(fields.target_date);
+    const category = categoryOf(item);
+    const row = makeElement("article", "event-row");
+    row.style.setProperty("--cat", toneFor(category));
+
+    const tile = makeElement("div", "date-tile");
+    const day = makeElement("strong", "", parts ? String(parts.day).padStart(2, "0") : "—");
+    const month = makeElement("span", "", parts
+      ? new Intl.DateTimeFormat(locale(), { month: "short" }).format(parts.date)
+      : "TBD");
+    tile.append(day, month);
+
+    const copy = makeElement("div", "event-copy");
+    const title = makeElement("span", "event-title", fields.title || "Untitled event");
+    const meta = makeElement("div", "event-meta");
+    const dot = makeElement("span", "cat-dot");
+    const categoryLabel = makeElement("span", "", category);
+    const note = makeElement("span", "event-note", fields.note ? `· ${fields.note}` : `· ${formatDate(fields.target_date)}`);
+    meta.append(dot, categoryLabel, note);
+    copy.append(title, meta);
+
+    const badge = makeElement("span", `days-badge ${urgency(days)}`, countdownText(days));
+
+    const remove = makeElement("button", "delete", "×");
+    remove.type = "button";
+    remove.title = `Delete ${fields.title || "event"}`;
+    remove.setAttribute("aria-label", `Delete ${fields.title || "event"}`);
+    remove.onclick = () => oma.deleteItem(item.id);
+
+    row.append(tile, copy, badge, remove);
+    return row;
+  }
+
+  function render(state) {
+    latestState = state;
+    const sorted = sortEvents(state.items);
+    const validCount = sorted.filter((item) => daysUntil(item.fields.target_date) !== null).length;
+    const upcomingCount = sorted.filter((item) => {
+      const days = daysUntil(item.fields.target_date);
+      return days !== null && days >= 0;
+    }).length;
+    const categoryCount = new Set(sorted.map(categoryOf)).size;
+    document.getElementById("summary").textContent = sorted.length
+      ? `${upcomingCount} upcoming · ${categoryCount} ${categoryCount === 1 ? "category" : "categories"}`
+      : "Your important dates, in view";
+
+    paintHero(sorted.find((item) => daysUntil(item.fields.target_date) !== null) || sorted[0]);
+    paintFilters(sorted);
+
+    const list = document.getElementById("eventList");
+    list.innerHTML = "";
+    const visible = activeCategory === "All" ? sorted : sorted.filter((item) => categoryOf(item) === activeCategory);
+    if (!visible.length) {
+      const empty = makeElement("div", "empty");
+      const message = makeElement("div");
+      const strong = makeElement("strong", "", validCount ? "Nothing in this category yet." : "No dates to count down to yet.");
+      const hint = makeElement("span", "", validCount ? "Choose another category or add a date." : "Add one above, or ask the AI to add your next deadline or trip.");
+      message.append(strong, hint);
+      empty.appendChild(message);
+      list.appendChild(empty);
+    } else {
+      for (const item of visible) list.appendChild(makeRow(item));
+    }
+  }
+
+  function isoFromNow(offsetDays) {
+    const date = new Date();
+    date.setHours(12, 0, 0, 0);
+    date.setDate(date.getDate() + offsetDays);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+  }
+
+  function seed() {
+    const samples = [
+      { group: "Work", fields: { title: "Product launch", target_date: isoFromNow(4), category: "Work", note: "Final checks, release notes, and team briefing" } },
+      { group: "Travel", fields: { title: "Weekend in Kyoto", target_date: isoFromNow(18), category: "Travel", note: "Book the last night and sketch a food list" } },
+      { group: "Personal", fields: { title: "Mum’s birthday", target_date: isoFromNow(52), category: "Personal", note: "Choose a gift and reserve lunch" } }
+    ];
+    for (const sample of samples) oma.addItem(sample);
+  }
+
+  const UI_COPY = {
+    "DATE WATCH": "日期倒数",
+    "Date watch": "日期倒数",
+    "Event countdowns": "日期倒数",
+    "A bright date on the horizon": "前方有值得期待的日子",
+    "Plans": "计划",
+    "Add an event and watch the days fall into place.": "添加一个日期，看着日子逐渐靠近。",
+    "Help me prepare": "帮我准备",
+    "Add date": "添加日期",
+    "Close": "关闭",
+    "Save event": "保存日期",
+    "Event": "事件",
+    "Date": "日期",
+    "Category": "分类",
+    "Note": "备注",
+    "Optional context": "可选备注",
+    "Quarterly launch": "季度发布",
+    "Coming up next": "即将到来",
+    "Needs attention": "需要关注",
+    "All dates": "全部日期",
+    "No dates to count down to yet.": "还没有要倒数的日期。",
+    "Nothing in this category yet.": "这个分类还没有日期。",
+    "Choose another category or add a date.": "换一个分类，或添加一个日期。",
+    "Add one above, or ask the AI to add your next deadline or trip.": "在上面添加一个，或让 AI 添加下一个截止日期或行程。",
+    "Date needed": "需要日期",
+    "Overdue": "已过期",
+    "day left": "天后",
+    "days left": "天后",
+    "day overdue": "天过期",
+    "days overdue": "天过期",
+    "Work": "工作",
+    "Travel": "旅行",
+    "Personal": "个人",
+    "Birthday": "生日",
+    "Deadline": "截止日期",
+    "All": "全部",
+    "Product launch": "产品发布",
+    "Weekend in Kyoto": "京都周末行",
+    "Mum’s birthday": "妈妈的生日",
+    "Final checks, release notes, and team briefing": "完成最终检查、发布说明和团队简报。",
+    "Book the last night and sketch a food list": "订好最后一晚住宿，并列一份美食清单。",
+    "Choose a gift and reserve lunch": "挑选礼物，并预订午餐。"
+  };
+  const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
+  const isZhUi = () => locale().toLowerCase().startsWith("zh");
+  const localizeText = (value) => {
+    const zh = isZhUi();
+    let next = (zh ? UI_COPY : UI_COPY_ZH)[value] || value;
+    if (zh) {
+      next = next.replace(/^(\d+) upcoming · (\d+) categor(?:y|ies)$/i, "$1 个即将到来 · $2 个分类");
+      next = next.replace(/^(\d+) day(?:s)? left$/i, "$1 天后");
+      next = next.replace(/^(\d+) day(?:s)? overdue$/i, "$1 天过期");
+      next = next.replace(/^Due in (\d+) days$/i, "还有 $1 天");
+      next = next.replace(/^(All|Work|Travel|Personal)\s+(\d+)$/i, (_, category, count) => `${UI_COPY[category] || category} ${count}`);
+      next = next.replace(/^·\s*(Book the last night and sketch a food list)$/i, "· 订好最后一晚住宿，并列一份美食清单。");
+      next = next.replace(/^·\s*(Choose a gift and reserve lunch)$/i, "· 挑选礼物，并预订午餐。");
+      next = next.replace(/^·\s*(Final checks, release notes, and team briefing)$/i, "· 完成最终检查、发布说明和团队简报。");
+      next = next.replace(/^Delete (.+)$/i, (_, name) => `删除 ${UI_COPY[name] || name}`);
+      next = next.replace(/^Filter by category$/i, "按分类筛选");
+    } else {
+      next = next.replace(/^删除 (.+)$/i, (_, name) => `Delete ${UI_COPY_ZH[name] || name}`);
+      next = next.replace(/^按分类筛选$/i, "Filter by category");
+    }
+    return next;
+  };
+  function applyUiLocale() {
+    const zh = isZhUi();
+    document.documentElement.lang = zh ? "zh-CN" : "en";
+    document.title = zh ? "日期倒数" : "Event Countdowns";
+    document.querySelectorAll("body *:not(script):not(style)").forEach((element) => {
+      for (const node of element.childNodes) {
+        if (node.nodeType !== Node.TEXT_NODE) continue;
+        const raw = node.nodeValue || "";
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        const translated = localizeText(trimmed);
+        if (translated !== trimmed) node.nodeValue = raw.replace(trimmed, translated);
+      }
+      for (const attribute of ["aria-label", "title", "placeholder"]) {
+        const value = element.getAttribute(attribute);
+        if (!value) continue;
+        const translated = localizeText(value);
+        if (translated !== value) element.setAttribute(attribute, translated);
+      }
+    });
+  }
+
+  oma.ready((state) => {
+    render(state);
+    applyUiLocale();
+    // App Store apps install EMPTY — sample data lives only in the oma-fixtures block (store preview).
+  });
+  oma.onChange((state) => { render(state); applyUiLocale(); });
+  oma.onPrefChange(() => { render(latestState); applyUiLocale(); });
+
+  addToggle.onclick = () => {
+    const opening = addPanel.hidden;
+    addPanel.hidden = !opening;
+    addToggle.setAttribute("aria-expanded", String(opening));
+    addToggle.querySelector("span").textContent = opening ? "Close" : "Add date";
+    if (opening) document.getElementById("titleInput").focus();
+  };
+
+  document.getElementById("addForm").onsubmit = (event) => {
+    event.preventDefault();
+    const titleInput = document.getElementById("titleInput");
+    const dateInput = document.getElementById("dateInput");
+    const categoryInput = document.getElementById("categoryInput");
+    const noteInput = document.getElementById("noteInput");
+    const title = titleInput.value.trim();
+    const target_date = dateInput.value;
+    const category = categoryInput.value.trim();
+    const note = noteInput.value.trim();
+    if (!title || !localDateParts(target_date) || !category) {
+      event.currentTarget.reportValidity();
+      return;
+    }
+    oma.addItem({ group: category, fields: { title, target_date, category, note } });
+    addToggle.classList.remove("saved");
+    void addToggle.offsetWidth;
+    addToggle.classList.add("saved");
+    setTimeout(() => addToggle.classList.remove("saved"), 450);
+    event.currentTarget.reset();
+    addPanel.hidden = true;
+    addToggle.setAttribute("aria-expanded", "false");
+    addToggle.querySelector("span").textContent = "Add date";
+  };
+
+  setInterval(() => render(latestState), 60000);
+</script>
+</body>
+</html>

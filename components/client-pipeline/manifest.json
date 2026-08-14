@@ -1,0 +1,24 @@
+{
+  "manifest_version": 2,
+  "uses_shared": ["locale", "date_format"],
+  "collections": {
+    "clients": {
+      "label_field": "name",
+      "fields": {
+        "name": { "type": "string", "required": true },
+        "company": { "type": "string" },
+        "contact": { "type": "string" },
+        "stage": { "type": "string", "required": true, "enum": ["lead", "proposal", "active", "overdue", "paid"] },
+        "amount": { "type": "number" },
+        "currency": { "type": "string" },
+        "quote_date": { "type": "string" },
+        "invoice_due": { "type": "string" },
+        "last_chased": { "type": "string" },
+        "next_step": { "type": "string" },
+        "notes": { "type": "string" }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app"
+}

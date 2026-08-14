@@ -1,0 +1,731 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="Turn meeting notes into a clear follow-up brief: what you own, what you are waiting on, and what is blocking the work.">
+<meta name="oma-category" content="Work">
+<title>Meeting Actions</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --accent: var(--color-text-info, var(--color-ring-primary));
+    --success: var(--color-text-success, var(--accent));
+    --warning: var(--color-text-warning, var(--accent));
+    --danger: var(--color-text-danger, var(--warning));
+    --accent-soft: color-mix(in oklab, var(--accent) 9%, var(--color-background-primary));
+    --success-soft: color-mix(in oklab, var(--success) 9%, var(--color-background-primary));
+    --warning-soft: color-mix(in oklab, var(--warning) 10%, var(--color-background-primary));
+    --danger-soft: color-mix(in oklab, var(--danger) 8%, var(--color-background-primary));
+    --ink-soft: color-mix(in oklab, var(--color-text-primary) 3%, var(--color-background-primary));
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    max-width: 860px;
+    margin-inline: auto;
+    padding: 16px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
+  }
+  button { font: inherit; }
+  button:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 2px; }
+
+  .app {
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg, 14px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .app-header {
+    display: flex;
+    min-height: 74px;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .app-mark {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--color-border-primary));
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .app-mark svg, .context-mark svg, .signal-icon svg, .status-chip svg, .complete-button svg {
+    width: 20px;
+    height: 20px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.65;
+  }
+  .identity { min-width: 0; }
+  .eyebrow, .brief-kicker, .lane-kicker, .signal-label, .client-name {
+    font-family: var(--font-mono);
+    font-weight: 700;
+    letter-spacing: .075em;
+    text-transform: uppercase;
+  }
+  .eyebrow {
+    margin-bottom: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 9.5px;
+    line-height: 1;
+  }
+  h1 { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.15; letter-spacing: -.025em; }
+  .source-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+    padding: 7px 10px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--ink-soft);
+    color: var(--color-text-secondary);
+    font-size: 10.5px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .source-badge::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--success);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--success) 13%, transparent);
+    content: "";
+  }
+
+  .brief {
+    display: grid;
+    grid-template-columns: minmax(0, 1.38fr) minmax(250px, .62fr);
+    gap: 20px;
+    align-items: stretch;
+    padding: 24px 24px 22px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background:
+      radial-gradient(circle at 92% 8%, color-mix(in oklab, var(--warning) 10%, transparent), transparent 34%),
+      linear-gradient(128deg, var(--accent-soft), var(--color-background-primary) 56%);
+  }
+  .brief-copy { align-self: center; min-width: 0; }
+  .brief-kicker { color: var(--accent); font-size: 9.5px; }
+  .brief h2 {
+    max-width: 520px;
+    margin: 8px 0 9px;
+    font-size: clamp(26px, 4.7vw, 39px);
+    font-weight: 740;
+    line-height: 1.02;
+    letter-spacing: -.055em;
+    text-wrap: balance;
+  }
+  .brief-copy p {
+    max-width: 560px;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 12.5px;
+    line-height: 1.55;
+  }
+  .ownership {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg, 14px);
+    background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
+    box-shadow: var(--shadow-sm);
+  }
+  .owner-stat {
+    display: grid;
+    min-width: 0;
+    align-content: center;
+    padding: 16px 14px;
+  }
+  .owner-stat + .owner-stat { border-left: 1px solid var(--color-border-secondary); }
+  .owner-label { color: var(--color-text-tertiary); font-size: 10px; font-weight: 700; }
+  .owner-number { margin: 7px 0 5px; font-size: 37px; font-weight: 740; line-height: .85; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+  .owner-stat.mine .owner-number { color: var(--accent); }
+  .owner-stat.theirs .owner-number { color: var(--warning); }
+  .owner-note { color: var(--color-text-secondary); font-size: 10.5px; line-height: 1.25; }
+
+  .signals {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 1px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--color-border-secondary);
+  }
+  .signal {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 9px;
+    min-width: 0;
+    padding: 13px 16px;
+    background: var(--color-background-primary);
+  }
+  .signal.blocked { background: var(--danger-soft); }
+  .signal-icon {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--accent-soft);
+    color: var(--accent);
+  }
+  .signal-icon svg { width: 16px; height: 16px; }
+  .signal.blocked .signal-icon { background: color-mix(in oklab, var(--danger) 11%, transparent); color: var(--danger); }
+  .signal.calendar .signal-icon { background: var(--success-soft); color: var(--success); }
+  .signal-copy { min-width: 0; }
+  .signal-label { margin-bottom: 3px; color: var(--color-text-tertiary); font-size: 8.5px; }
+  .signal strong { display: block; overflow-wrap: anywhere; font-size: 11.5px; line-height: 1.3; }
+  .signal span { display: block; margin-top: 2px; color: var(--color-text-secondary); font-size: 10px; line-height: 1.3; }
+
+  .error-strip {
+    margin: 14px 16px 0;
+    padding: 9px 11px;
+    border: 1px solid color-mix(in oklab, var(--danger) 30%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--danger-soft);
+    color: var(--danger);
+    font-size: 11px;
+  }
+  .error-strip[hidden] { display: none; }
+
+  .board {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+    padding: 16px;
+  }
+  .lane {
+    min-width: 0;
+    padding: 13px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg, 14px);
+    background: var(--ink-soft);
+  }
+  .lane.mine-lane { background: color-mix(in oklab, var(--accent) 4%, var(--color-background-primary)); }
+  .lane.waiting-lane { background: color-mix(in oklab, var(--warning) 5%, var(--color-background-primary)); }
+  .lane-head { display: flex; align-items: flex-start; gap: 9px; margin: 1px 2px 11px; }
+  .lane-heading { min-width: 0; flex: 1; }
+  .lane-kicker { margin-bottom: 3px; color: var(--color-text-tertiary); font-size: 8.5px; }
+  .lane-head h3 { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.2; letter-spacing: -.018em; }
+  .lane-head p { margin: 3px 0 0; color: var(--color-text-tertiary); font-size: 10.5px; line-height: 1.35; }
+  .lane-count {
+    display: grid;
+    min-width: 27px;
+    height: 27px;
+    place-items: center;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-primary);
+    color: var(--color-text-secondary);
+    font-size: 10.5px;
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+    box-shadow: inset 0 0 0 1px var(--color-border-secondary);
+  }
+  .cards { display: grid; gap: 9px; }
+  .action-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    min-width: 0;
+    padding: 12px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+  .action-card.blocker {
+    border-color: color-mix(in oklab, var(--danger) 38%, var(--color-border-primary));
+    background: linear-gradient(108deg, var(--danger-soft), var(--color-background-primary) 48%);
+  }
+  .action-card.blocker::before {
+    position: absolute;
+    top: 11px;
+    bottom: 11px;
+    left: -1px;
+    width: 3px;
+    border-radius: 0 var(--border-radius-full, 999px) var(--border-radius-full, 999px) 0;
+    background: var(--danger);
+    content: "";
+  }
+  .complete-button, .person-avatar {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    flex: none;
+    place-items: center;
+    border-radius: 50%;
+  }
+  .complete-button {
+    border: 1px solid color-mix(in oklab, var(--accent) 34%, var(--color-border-primary));
+    background: var(--accent-soft);
+    color: var(--accent);
+    cursor: pointer;
+    transition: transform var(--k-t-fast, 120ms), background var(--k-t-fast, 120ms);
+  }
+  .complete-button:hover { transform: scale(1.05); background: color-mix(in oklab, var(--accent) 15%, var(--color-background-primary)); }
+  .complete-button:active { transform: scale(.94); }
+  .complete-button:disabled { cursor: wait; opacity: .55; transform: none; }
+  .complete-button svg { width: 16px; height: 16px; }
+  .person-avatar {
+    background: var(--warning-soft);
+    color: var(--warning);
+    font-size: 9px;
+    font-weight: 780;
+    letter-spacing: .02em;
+  }
+  .action-card.blocker .person-avatar { background: color-mix(in oklab, var(--danger) 11%, transparent); color: var(--danger); }
+  .action-copy { min-width: 0; }
+  .client-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 4px; }
+  .client-name { color: var(--color-text-tertiary); font-size: 8px; overflow-wrap: anywhere; }
+  .blocker-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 1px 6px;
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+    color: var(--danger);
+    font-size: 8px;
+    font-weight: 760;
+    letter-spacing: .04em;
+    text-transform: uppercase;
+  }
+  .action-copy h4 { margin: 0; overflow-wrap: anywhere; font-size: 12.5px; font-weight: 690; line-height: 1.3; letter-spacing: -.008em; }
+  .action-owner { margin-top: 3px; color: var(--color-text-secondary); font-size: 10.5px; }
+  .action-note { margin: 8px 0 0; color: var(--color-text-tertiary); font-size: 10px; line-height: 1.35; }
+  .card-meta { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 9px; }
+  .status-chip {
+    display: inline-flex;
+    min-height: 23px;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 7px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--ink-soft);
+    color: var(--color-text-secondary);
+    font-size: 9px;
+    font-weight: 650;
+    line-height: 1;
+  }
+  .status-chip svg { width: 12px; height: 12px; }
+  .status-chip.booked { border-color: color-mix(in oklab, var(--success) 24%, var(--color-border-secondary)); background: var(--success-soft); color: var(--success); }
+  .status-chip.wait-age { border-color: color-mix(in oklab, var(--warning) 25%, var(--color-border-secondary)); background: var(--warning-soft); color: var(--warning); }
+  .status-chip.blocked { border-color: color-mix(in oklab, var(--danger) 28%, var(--color-border-secondary)); background: var(--danger-soft); color: var(--danger); }
+  .due-stack {
+    min-width: 60px;
+    padding-left: 8px;
+    border-left: 1px solid var(--color-border-secondary);
+    text-align: right;
+  }
+  .due-stack span { display: block; color: var(--color-text-tertiary); font-size: 8.5px; font-weight: 700; text-transform: uppercase; }
+  .due-stack strong { display: block; margin-top: 3px; color: var(--color-text-primary); font-size: 10.5px; line-height: 1.2; white-space: nowrap; }
+  .action-card.blocker .due-stack strong { color: var(--danger); }
+  .empty {
+    padding: 28px 14px;
+    border: 1px dashed var(--color-border-primary);
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--color-background-primary);
+    color: var(--color-text-tertiary);
+    text-align: center;
+    font-size: 11px;
+  }
+
+  .context-note {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 12px 17px 14px;
+    border-top: 1px solid var(--color-border-secondary);
+    color: var(--color-text-secondary);
+  }
+  .context-mark { display: grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; background: var(--accent-soft); color: var(--accent); }
+  .context-mark svg { width: 15px; height: 15px; }
+  .context-note strong { display: block; color: var(--color-text-primary); font-size: 10.5px; }
+  .context-note span { display: block; margin-top: 1px; font-size: 10px; line-height: 1.35; }
+
+  @media (max-width: 700px) {
+    .brief { grid-template-columns: 1fr; gap: 15px; }
+    .ownership { max-width: 360px; }
+    .board { grid-template-columns: 1fr; }
+  }
+
+  @media (max-width: 480px) {
+    body { padding: 8px; }
+    .app { border-radius: var(--border-radius-md, 10px); }
+    .app-header { min-height: 64px; padding: 11px 12px; }
+    .app-mark { width: 38px; height: 38px; }
+    .app-mark svg { width: 18px; height: 18px; }
+    h1 { font-size: 16px; }
+    .source-badge { padding: 6px 8px; font-size: 9.5px; }
+    .source-badge .wide { display: none; }
+    .brief { padding: 19px 14px 17px; }
+    .brief h2 { margin-top: 7px; font-size: clamp(26px, 9vw, 34px); }
+    .brief-copy p { font-size: 11.5px; }
+    .ownership { max-width: none; }
+    .owner-stat { padding: 13px 12px; }
+    .owner-number { font-size: 32px; }
+    .signals { grid-template-columns: 1fr; }
+    .signal { padding: 11px 13px; }
+    .board { gap: 11px; padding: 11px; }
+    .lane { padding: 10px; }
+    .action-card { grid-template-columns: auto minmax(0, 1fr); padding: 11px; }
+    .due-stack {
+      grid-column: 2;
+      display: flex;
+      min-width: 0;
+      align-items: baseline;
+      gap: 5px;
+      padding: 7px 0 0;
+      border-top: 1px solid var(--color-border-secondary);
+      border-left: 0;
+      text-align: left;
+    }
+    .due-stack span, .due-stack strong { display: inline; margin: 0; }
+    .context-note { padding-inline: 13px; }
+  }
+
+  @media (max-width: 370px) {
+    body { padding: 6px; }
+    .eyebrow { font-size: 8.5px; }
+    .source-badge { gap: 6px; padding-inline: 7px; }
+    .brief { padding-inline: 12px; }
+    .brief h2 { font-size: 27px; }
+    .owner-stat { padding-inline: 10px; }
+    .owner-note { font-size: 9.5px; }
+    .board { padding: 9px; }
+    .lane-head p { max-width: 220px; }
+    .action-card { gap: 9px; }
+  }
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="app-header">
+    <div class="app-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M6 4.5h12v15H6z"></path><path d="M9 8h6M9 11.5h3"></path><path d="m13.5 15 1.6 1.6 3-3.1"></path></svg>
+    </div>
+    <div class="identity"><div class="eyebrow" data-i18n="eyebrow">After the call</div><h1 data-i18n="appName">Meeting Actions</h1></div>
+    <div class="source-badge"><span data-i18n="sourceSynced">Context synced</span></div>
+  </header>
+
+  <section id="brief" class="brief" aria-label="Follow-up briefing" data-i18n-aria="briefAria"></section>
+  <section id="signals" class="signals" aria-label="Important follow-up signals" data-i18n-aria="signalsAria"></section>
+  <div id="error" class="error-strip" role="status" hidden></div>
+  <section id="board" class="board" aria-live="polite"></section>
+
+  <footer class="context-note">
+    <div class="context-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3 9.8 8.2 4.5 10.5l5.3 2.3L12 18l2.2-5.2 5.3-2.3-5.3-2.3L12 3Z"></path></svg></div>
+    <div><strong data-i18n="contextTitle">The promises keep their context.</strong><span data-i18n="contextBody">Owner, client, source note, and date stay attached after the meeting disappears from chat.</span></div>
+  </footer>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+  const now = new Date();
+  const TODAY = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const $ = (id) => document.getElementById(id);
+  const STR = {
+    en: {
+      documentTitle: "Meeting Actions",
+      eyebrow: "After the call",
+      appName: "Meeting Actions",
+      sourceSynced: "Context synced",
+      briefAria: "Follow-up briefing",
+      signalsAria: "Important follow-up signals",
+      contextTitle: "The promises keep their context.",
+      contextBody: "Owner, client, source note, and date stay attached after the meeting disappears from chat.",
+      noDate: "No date",
+      today: "Today",
+      tomorrow: "Tomorrow",
+      yesterday: "Yesterday",
+      overdueDays: "{count}d overdue",
+      waitingDaysOne: "1 day waiting",
+      waitingDaysMany: "{count} days waiting",
+      inCalendar: "In calendar",
+      needsDate: "Needs a date",
+      waitingOnPerson: "Waiting on {person}",
+      forPerson: "For {person}",
+      yourFollowup: "your follow-up",
+      noClient: "No client",
+      blockingWork: "Blocking work",
+      untitledAction: "Untitled action",
+      dependency: "Dependency",
+      due: "Due",
+      markComplete: "Mark {title} complete",
+      action: "action",
+      yourSide: "Your side",
+      theirSide: "Their side",
+      iOwn: "I own",
+      waitingOn: "Waiting on",
+      mineHelp: "Your commitments, already protected with dates.",
+      theirsHelp: "The person, age, and dependency stay visible.",
+      nothingMine: "Nothing is waiting on you.",
+      nothingTheirs: "Nothing is waiting on someone else.",
+      briefing: "Follow-up briefing · {date}",
+      callOver: "The call is over.",
+      promisesMovingOne: "1 promise is still moving.",
+      promisesMovingMany: "{count} promises are still moving.",
+      briefBody: "{mine} commitments belong to you. {waiting} handoffs belong to clients. {blockers}",
+      blockerBodyOne: "1 dependency is already blocking the work.",
+      blockerBodyMany: "{count} dependencies are already blocking the work.",
+      noBlockerBody: "Nothing is blocking the work right now.",
+      youOwn: "You own",
+      allScheduled: "All scheduled",
+      scheduled: "{count} scheduled",
+      blockerOne: "1 blocker",
+      blockerMany: "{count} blockers",
+      noBlockers: "No blockers",
+      nextFromYou: "Next from you",
+      noClientShort: "No client",
+      yourSideSignal: "Your side",
+      nothingOutstanding: "Nothing outstanding",
+      commitmentsClear: "Your commitments are clear",
+      blockingNow: "Blocking now",
+      oldestWait: "Oldest wait",
+      someone: "Someone",
+      theirSideSignal: "Their side",
+      noExternal: "No external handoffs are open",
+      calendarCoverage: "Calendar coverage",
+      commitmentsBooked: "{booked}/{total} commitments booked",
+      clientThreadOne: "1 client thread kept in context",
+      clientThreadMany: "{count} client threads kept in context",
+      updateFailed: "Could not update the action",
+      retryUpdate: "Could not update the action. Try again."
+    },
+    zh: {
+      documentTitle: "会后行动",
+      eyebrow: "通话之后",
+      appName: "会后行动",
+      sourceSynced: "上下文已同步",
+      briefAria: "跟进简报",
+      signalsAria: "重要跟进信号",
+      contextTitle: "每个承诺都保留上下文。",
+      contextBody: "负责人、客户、原始备注和日期会一直绑定；即使聊天结束，行动也不会丢失。",
+      noDate: "无日期",
+      today: "今天",
+      tomorrow: "明天",
+      yesterday: "昨天",
+      overdueDays: "逾期 {count} 天",
+      waitingDaysOne: "已等待 1 天",
+      waitingDaysMany: "已等待 {count} 天",
+      inCalendar: "已加入日历",
+      needsDate: "需要日期",
+      waitingOnPerson: "等待 {person}",
+      forPerson: "跟进 {person}",
+      yourFollowup: "你的跟进事项",
+      noClient: "未关联客户",
+      blockingWork: "正在阻塞",
+      untitledAction: "未命名行动",
+      dependency: "依赖项",
+      due: "到期",
+      markComplete: "将“{title}”标为完成",
+      action: "行动",
+      yourSide: "你的部分",
+      theirSide: "对方部分",
+      iOwn: "由我负责",
+      waitingOn: "等待对方",
+      mineHelp: "你的承诺已经安排好日期。",
+      theirsHelp: "负责人、等待时长和依赖关系都保持可见。",
+      nothingMine: "你目前没有待办承诺。",
+      nothingTheirs: "目前没有等待他人的事项。",
+      briefing: "跟进简报 · {date}",
+      callOver: "通话结束了。",
+      promisesMovingOne: "还有 1 个承诺在推进。",
+      promisesMovingMany: "还有 {count} 个承诺在推进。",
+      briefBody: "你负责 {mine} 项承诺，客户负责 {waiting} 项交接。{blockers}",
+      blockerBodyOne: "已有 1 个依赖项阻塞工作。",
+      blockerBodyMany: "已有 {count} 个依赖项阻塞工作。",
+      noBlockerBody: "当前没有阻塞项。",
+      youOwn: "你负责",
+      allScheduled: "全部已排期",
+      scheduled: "已排期 {count} 项",
+      blockerOne: "1 个阻塞项",
+      blockerMany: "{count} 个阻塞项",
+      noBlockers: "无阻塞",
+      nextFromYou: "你的下一步",
+      noClientShort: "未关联客户",
+      yourSideSignal: "你的部分",
+      nothingOutstanding: "暂无待办",
+      commitmentsClear: "你的承诺已经清楚",
+      blockingNow: "当前阻塞",
+      oldestWait: "等待最久",
+      someone: "对方",
+      theirSideSignal: "对方部分",
+      noExternal: "没有未完成的外部交接",
+      calendarCoverage: "日历覆盖",
+      commitmentsBooked: "{booked}/{total} 项承诺已排期",
+      clientThreadOne: "保留了 1 条客户上下文",
+      clientThreadMany: "保留了 {count} 条客户上下文",
+      updateFailed: "无法更新该行动",
+      retryUpdate: "行动未更新，请重试。"
+    }
+  };
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"})[char]);
+  const initials = (value) => String(value || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  const dateOnly = (value) => {
+    if (!value) return null;
+    if (value instanceof Date) return new Date(value.getFullYear(), value.getMonth(), value.getDate());
+    const match = String(value).slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3])) : null;
+  };
+  const dayDiff = (date, base = TODAY) => Math.round((dateOnly(date) - dateOnly(base)) / 86400000);
+  const locale = () => {
+    const preferred = oma.pref("locale", "auto");
+    return preferred === "auto" ? navigator.language : preferred;
+  };
+  const language = () => locale().toLowerCase().startsWith("zh") ? "zh" : "en";
+  const t = (key, vars = {}) => {
+    let value = STR[language()][key] ?? STR.en[key] ?? key;
+    for (const [name, replacement] of Object.entries(vars)) value = value.replaceAll(`{${name}}`, String(replacement));
+    return value;
+  };
+  const applyI18n = () => {
+    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+    document.title = t("documentTitle");
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  };
+  const waitingLabel = (count) => t(count === 1 ? "waitingDaysOne" : "waitingDaysMany", { count });
+  const formatDate = (value) => {
+    const date = dateOnly(value);
+    if (!date) return t("noDate");
+    const mode = oma.pref("date_format", "auto");
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    if (mode === "yyyy-mm-dd") return `${year}-${month}-${day}`;
+    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+    return new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(date);
+  };
+  const relativeDate = (value) => {
+    const date = dateOnly(value);
+    if (!date) return t("noDate");
+    const diff = dayDiff(date);
+    if (diff === 0) return t("today");
+    if (diff === 1) return t("tomorrow");
+    if (diff === -1) return t("yesterday");
+    if (diff > 1 && diff < 7) return new Intl.DateTimeFormat(locale(), { weekday: "long" }).format(date);
+    if (diff < 0) return t("overdueDays", { count: Math.abs(diff) });
+    return formatDate(value);
+  };
+  const waitingAge = (value) => {
+    const created = dateOnly(value);
+    return created ? Math.max(0, dayDiff(TODAY, created)) : 0;
+  };
+  const isBlocker = (item) => /\bblock(?:s|ed|ing)?\b|阻塞|卡住|依赖/i.test(String(item.fields.notes || ""));
+  const calendarIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 5h14v15H5zM8 3v4M16 3v4M5 9h14"></path><path d="m9 14 2 2 4-4"></path></svg>';
+  const clockIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="8.5"></circle><path d="M12 7.5V12l3 2"></path></svg>';
+  const checkIcon = '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6.5 12.5 3.3 3.3 7.7-8"></path></svg>';
+  let currentState = { items: [] };
+
+  function sortByDue(items) {
+    return items.slice().sort((a, b) => String(a.fields.due_date || "9999").localeCompare(String(b.fields.due_date || "9999")) || a.position - b.position);
+  }
+
+  function actionCard(item) {
+    const f = item.fields;
+    const waiting = f.owner === "them";
+    const blocker = isBlocker(item);
+    const note = String(f.notes || "");
+    const genericCalendarNote = /calendar follow-up created|已创建日历跟进/i.test(note);
+    const ownerLine = waiting
+      ? t("waitingOnPerson", { person: f.person || t("someone") })
+      : t("forPerson", { person: f.person || t("yourFollowup") });
+    const status = waiting
+      ? `<span class="status-chip wait-age">${clockIcon}${waitingLabel(waitingAge(f.created_date))}</span>`
+      : `<span class="status-chip booked">${calendarIcon}${f.status === "booked" ? t("inCalendar") : t("needsDate")}</span>`;
+    const lead = waiting
+      ? `<span class="person-avatar" aria-hidden="true">${escapeHtml(initials(f.person || f.client))}</span>`
+      : `<button class="complete-button" type="button" data-complete="${escapeHtml(item.id)}" aria-label="${escapeHtml(t("markComplete", { title: f.title || t("action") }))}">${checkIcon}</button>`;
+    return `<article class="action-card${blocker ? " blocker" : ""}">
+      ${lead}
+      <div class="action-copy">
+        <div class="client-row"><span class="client-name">${escapeHtml(f.client || t("noClient"))}</span>${blocker ? `<span class="blocker-badge">${t("blockingWork")}</span>` : ""}</div>
+        <h4>${escapeHtml(f.title || t("untitledAction"))}</h4>
+        <div class="action-owner">${escapeHtml(ownerLine)}</div>
+        ${note && !genericCalendarNote ? `<p class="action-note">${escapeHtml(note)}</p>` : ""}
+        <div class="card-meta">${status}${blocker ? `<span class="status-chip blocked">${t("dependency")}</span>` : ""}</div>
+      </div>
+      <div class="due-stack"><span>${t("due")}</span><strong>${escapeHtml(relativeDate(f.due_date))}</strong></div>
+    </article>`;
+  }
+
+  function signal(icon, className, label, title, note) {
+    return `<article class="signal ${className}"><div class="signal-icon" aria-hidden="true">${icon}</div><div class="signal-copy"><div class="signal-label">${escapeHtml(label)}</div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(note)}</span></div></article>`;
+  }
+
+  function lane(kind, items) {
+    const mine = kind === "mine";
+    return `<section class="lane ${mine ? "mine-lane" : "waiting-lane"}" aria-labelledby="${kind}-title">
+      <div class="lane-head"><div class="lane-heading"><div class="lane-kicker">${mine ? t("yourSide") : t("theirSide")}</div><h3 id="${kind}-title">${mine ? t("iOwn") : t("waitingOn")}</h3><p>${mine ? t("mineHelp") : t("theirsHelp")}</p></div><span class="lane-count">${items.length}</span></div>
+      <div class="cards">${items.map(actionCard).join("") || `<div class="empty">${mine ? t("nothingMine") : t("nothingTheirs")}</div>`}</div>
+    </section>`;
+  }
+
+  function render(state) {
+    currentState = state || currentState;
+    const active = (currentState.items || []).filter((item) => item.fields.status !== "done");
+    const mine = sortByDue(active.filter((item) => item.fields.owner === "me"));
+    const waiting = sortByDue(active.filter((item) => item.fields.owner === "them"));
+    const blockers = waiting.filter(isBlocker);
+    const booked = mine.filter((item) => item.fields.status === "booked");
+    const clients = new Set(active.map((item) => item.fields.client).filter(Boolean));
+    const nextMine = mine[0];
+    const nextBlocked = blockers[0] || waiting[0];
+
+    const blockerBody = blockers.length
+      ? t(blockers.length === 1 ? "blockerBodyOne" : "blockerBodyMany", { count: blockers.length })
+      : t("noBlockerBody");
+    const promisesMoving = t(active.length === 1 ? "promisesMovingOne" : "promisesMovingMany", { count: active.length });
+    $("brief").innerHTML = `<div class="brief-copy"><div class="brief-kicker">${escapeHtml(t("briefing", { date: formatDate(TODAY) }))}</div><h2>${t("callOver")}<br>${promisesMoving}</h2><p>${t("briefBody", { mine: mine.length, waiting: waiting.length, blockers: blockerBody })}</p></div><div class="ownership"><div class="owner-stat mine"><span class="owner-label">${t("youOwn")}</span><strong class="owner-number">${mine.length}</strong><span class="owner-note">${booked.length === mine.length && mine.length ? t("allScheduled") : t("scheduled", { count: booked.length })}</span></div><div class="owner-stat theirs"><span class="owner-label">${t("waitingOn")}</span><strong class="owner-number">${waiting.length}</strong><span class="owner-note">${blockers.length ? t(blockers.length === 1 ? "blockerOne" : "blockerMany", { count: blockers.length }) : t("noBlockers")}</span></div></div>`;
+
+    const userSignal = nextMine
+      ? signal(checkIcon, "next", t("nextFromYou"), nextMine.fields.title, `${nextMine.fields.client || t("noClientShort")} · ${relativeDate(nextMine.fields.due_date)}`)
+      : signal(checkIcon, "next", t("yourSideSignal"), t("nothingOutstanding"), t("commitmentsClear"));
+    const blockedSignal = nextBlocked
+      ? signal(clockIcon, blockers.length ? "blocked" : "waiting", blockers.length ? t("blockingNow") : t("oldestWait"), nextBlocked.fields.title, `${nextBlocked.fields.person || nextBlocked.fields.client || t("someone")} · ${waitingLabel(waitingAge(nextBlocked.fields.created_date))}`)
+      : signal(clockIcon, "waiting", t("theirSideSignal"), t("nothingOutstanding"), t("noExternal"));
+    const calendarSignal = signal(calendarIcon, "calendar", t("calendarCoverage"), t("commitmentsBooked", { booked: booked.length, total: mine.length || 0 }), t(clients.size === 1 ? "clientThreadOne" : "clientThreadMany", { count: clients.size }));
+    $("signals").innerHTML = userSignal + blockedSignal + calendarSignal;
+    $("board").innerHTML = lane("mine", mine) + lane("waiting", waiting);
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-complete]");
+    if (!button) return;
+    button.disabled = true;
+    $("error").hidden = true;
+    try {
+      const result = await oma.updateItem(button.dataset.complete, { status: "done" });
+      if (result && result.ok === false) throw new Error(result.error || t("updateFailed"));
+      const next = await oma.refresh();
+      if (next && Array.isArray(next.items)) render(next);
+      if (button.isConnected) button.disabled = false;
+    } catch (error) {
+      button.disabled = false;
+      $("error").textContent = error?.message || t("retryUpdate");
+      $("error").hidden = false;
+    }
+  });
+
+  oma.ready((state) => { applyI18n(); render(state); });
+  oma.onChange(render);
+  oma.onPrefChange(() => { applyI18n(); render(currentState); });
+</script>
+</body>
+</html>

@@ -6,16 +6,16 @@
 // SEPARATION OF CONCERNS (this is the whole security point):
 //   - store.mjs owns the REF INDEX (the `file` table): idempotency, OCC, quota, versioning, the ledger.
 //     It never touches file bytes and imports no fs beyond the existing mkdirSync.
-//   - THIS module owns the BYTES, behind a swappable FileBackend keyed by (app, sha256). It is the
-//     SOLE importer of node:fs for blobs. Content-addressing is PER-APP (files/<app>/<sha>.blob),
+//   - THIS module owns the BYTES: a local content-addressed folder keyed by (app, sha256). It is
+//     the SOLE importer of node:fs for blobs. Content-addressing is PER-APP (files/<app>/<sha>.blob),
 //     which keeps within-app dedup + is traversal-immune by construction (the on-disk name is a validated
 //     hex hash — user input NEVER becomes a path segment) AND eliminates the cross-app content-existence
 //     oracle a global CAS would need to hide.
 //   - makeFileChannel() orchestrates the two: blob-first, ref-second, so a crash between leaves a harmless
 //     orphan blob (swept later) rather than a dangling ref. Reads re-hash and fail closed (tamper/bit-rot).
 //
-// The local backend ships in OSS. A remote/SaaS backend implements the SAME 5-method interface over HTTPS
-// with ZERO change above the seam — that is what makes app files remote-reachable later.
+// (The "swappable remote backend" seam retired 2026-08-04, elegance A3: one implementation, one
+// instantiation, zero remote code — a future remote store is a future problem, added with its caller.)
 
 import { promises as fsp } from "node:fs";
 import { join, resolve, sep } from "node:path";
@@ -25,16 +25,9 @@ import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES } from "./store.mjs";
 const SHA_RE = /^[0-9a-f]{64}$/;
 const sha256hex = (buf) => createHash("sha256").update(buf).digest("hex");
 
-// ------------------------------------------------------------------ the swappable seam
-// FileBackend interface (documented, not enforced — plain JS). Every method is keyed by
-// (app, sha256) and is async, so a remote HTTP implementation fits unchanged:
-//   putBlob(app, sha, bytes) -> {size}   // content-idempotent: no-op if the blob already exists
-//   getBlob(app, sha)        -> Buffer | null
-//   hasBlob(app, sha)        -> boolean   // the sync-diff primitive (remote upload + within-app dedup)
-//   statBlob(app, sha)       -> {size} | null
-//   deleteBlob(app, sha)     -> void      // GC ONLY; refcounting is enforced ABOVE, in the ref index
-// The local backend also exposes an OPTIONAL async *enumerate() for orphan sweeping (fs-specific; a remote
-// backend sweeps server-side and omits it).
+// ------------------------------------------------------------------ the byte store
+// Every method is keyed by (app, sha256) and async. deleteBlob is GC ONLY; refcounting is
+// enforced ABOVE, in the ref index.
 
 export class LocalFileBackend {
   constructor(dataDir) {
@@ -199,15 +192,6 @@ export class LocalFileBackend {
   }
 }
 
-// ------------------------------------------------------------------ backend selection
-export function selectBackend({ dataDir }) {
-  const kind = process.env.OMA_FILE_BACKEND || "local";
-  if (kind === "local") return new LocalFileBackend(dataDir);
-  // The remote/SaaS backend implements the SAME FileBackend interface over HTTPS. Deferred in OSS; the
-  // seam is here so it drops in with no change to the channel, the engine tools, or the widget API.
-  throw new Error(`OMA_FILE_BACKEND="${kind}" is not implemented yet (OSS ships "local" only).`);
-}
-
 // ------------------------------------------------------------------ the orchestrating channel
 // Wires the ref index (store) to the byte backend. This is what the engine's file_* tools call.
 export function makeFileChannel({ store, backend }) {
@@ -261,8 +245,12 @@ export function makeFileChannel({ store, backend }) {
   function list(app, prefix) { return { files: store.listFiles(app, prefix), usage: store.fileUsage(app) }; }
   function usage(app) { return store.fileUsage(app); }
 
-  async function del(app, path, { command_id, expected_version } = {}) {
-    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), app, path, expected_version });
+  // `actor` / `via` / `request_state` ride through because the confirmation gate lives in the
+  // store and reads all three. Dropping them here is what made delete_file "classified but not
+  // protected": the table said a file delete needs the user's yes, and the only channel to the
+  // store could not express who was asking (codex review).
+  async function del(app, path, { command_id, expected_version, actor, via, request_state } = {}) {
+    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), app, path, expected_version, actor, via, request_state });
     if (r.ok && r.freed_sha && store.blobRefcount(app, r.freed_sha) === 0) await backend.deleteBlob(app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS });
     return r;
   }
@@ -287,7 +275,6 @@ export function makeFileChannel({ store, backend }) {
 
   async function beginUpload(app) {
     if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
-    if (typeof backend.openStaging !== "function") return { ok: false, error: "backend_no_staging" };
     for (const [id, u] of uploads) if (Date.now() - u.touched > UPLOAD_TTL_MS) dropUpload(u, id); // lazy expiry
     if (uploads.size >= MAX_ACTIVE_UPLOADS) return { ok: false, error: "too_many_uploads" };
     const stagingId = await backend.openStaging();
@@ -339,7 +326,7 @@ export function makeFileChannel({ store, backend }) {
     } finally { u.busy = false; }
   }
 
-  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version, expected_sha256 } = {}) {
+  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version } = {}) {
     // Idempotency FIRST, before the upload is even looked up. A successful commit CONSUMES its
     // upload, so the retry that arrives after a lost response finds no upload — and used to be told
     // "start again with file_write_begin", inducing a full re-upload of a file that was already
@@ -370,14 +357,6 @@ export function makeFileChannel({ store, backend }) {
     try {
       const st = await backend.statStaging(u.stagingId);
       if (!st || st.size !== u.bytes) { dropUpload(u, String(upload_id)); return { ok: false, error: "upload_expired" }; }
-      // Loss-free precheck (programmatic callers): hash.copy() answers "are these the bytes you
-      // meant" WITHOUT consuming the running hash or the upload — a mismatch leaves everything
-      // standing, so the caller can abort deliberately instead of discovering corruption later.
-      if (expected_sha256 != null) {
-        const have = u.hash.copy().digest("hex");
-        if (have !== String(expected_sha256).toLowerCase())
-          return { ok: false, error: "sha256_mismatch", actual: have, staged_bytes: u.bytes };
-      }
       const sha = u.hash.digest("hex");
       const had = await backend.hasBlob(u.app, sha);
       try { if (!had) await backend.linkStaging(u.stagingId, u.app, sha); }
@@ -404,18 +383,14 @@ export function makeFileChannel({ store, backend }) {
     } finally { u.busy = false; }
   }
 
-  async function abortUpload(upload_id) {
-    const u = uploads.get(String(upload_id));
-    if (u && u.busy) return { ok: false, error: "upload_busy" };   // never yank staging out from under an in-flight append/commit
-    if (u) dropUpload(u, String(upload_id));
-    return { ok: true };
-  }
+  // abortUpload retired with the file_write_abort seat (elegance A12): abandoned staging expires
+  // via the idle TTL and sweepTmp — the sweep below is the one owner of cleanup.
 
   // Unlink any stored blob with no ref row (the harmless orphans blob-first/ref-second can leave, plus any
-  // left by an interrupted write). Startup + periodic. No-op on backends without enumerate().
+  // left by an interrupted write). Startup + periodic.
   async function sweepOrphans() {
     let swept = 0;
-    if (typeof backend.enumerate === "function") {
+    {
       for await (const { app, sha } of backend.enumerate()) {
         // AGE GUARD: a refcount-0 read can race a writer about to commit a ref for this sha; that
         // writer always (re)writes the blob with a fresh mtime, so only OLD unreferenced blobs are
@@ -426,11 +401,11 @@ export function makeFileChannel({ store, backend }) {
     // Plain putBlob temp files: 5-min grace. Chunked ".upload" staging: the contractual idle TTL
     // plus slack — other processes over the same store run this sweep too and must never destroy a
     // mid-flight upload inside its promised window.
-    if (typeof backend.sweepTmp === "function") await backend.sweepTmp(5 * 60 * 1000, UPLOAD_TTL_MS + 5 * 60 * 1000).catch(() => {});
+    await backend.sweepTmp(5 * 60 * 1000, UPLOAD_TTL_MS + 5 * 60 * 1000).catch(() => {});
     return { swept };
   }
 
-  return { put, get, stat, list, usage, del, sweepOrphans, beginUpload, appendUpload, commitUpload, abortUpload };
+  return { put, get, stat, list, usage, del, sweepOrphans, beginUpload, appendUpload, commitUpload };
 }
 
 // Convenience wiring for the engine: pick the backend from the store's own data dir + build the channel.
@@ -443,7 +418,7 @@ const channelByStore = new WeakMap();
 export function openFileChannel(store) {
   let ch = channelByStore.get(store);
   if (!ch) {
-    ch = makeFileChannel({ store, backend: selectBackend({ dataDir: store.dataDir }) });
+    ch = makeFileChannel({ store, backend: new LocalFileBackend(store.dataDir) });
     channelByStore.set(store, ch);
     ch.sweepOrphans().catch(() => {});   // fire-and-forget crash recovery, once per store/process
   }

@@ -1,0 +1,3140 @@
+<!--
+Job Kit · App Store app self-check
+[✓] Self-contained HTML, one module script, window.oma only, no network or external assets.
+[✓] Four strict collections live in manifest.json; sample jobs, tools, actions and updates live only in fixtures.json.
+[✓] Every live number is derived from the current rows. Dates store facts; freshness and due language are computed at render time.
+[✓] The app is deliberately natural-height: there is no fixed height, max-height, or internal vertical scrolling.
+[✓] Desktop and mobile are separately composed: paired command cards become a single phone-first field flow below 720px.
+[✓] Empty state can ask the AI for real setup data or paste many real tools without inventing rows.
+[✓] All writes go through data_* tools and refresh the four collections; fixture previews are read from oma.state.
+[✓] Host tokens and the injected k-* kit provide all color, typography, controls, focus and theme behavior.
+-->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Kit · Field Crew Board</title>
+<meta name="description" content="A phone-first field board for tool locations, check-outs, live jobs, next actions, issues, and clear site handovers.">
+<meta name="oma-category" content="Work">
+
+<style>
+  :root {
+    --site-accent: var(--color-text-info, var(--k-accent));
+    --site-warning: var(--color-text-warning, var(--k-warn));
+    --site-good: var(--color-text-success, var(--k-ok));
+    --site-bad: var(--color-text-danger, var(--k-bad));
+    --site-info: var(--site-accent);
+    --site-on-accent: var(--color-background-primary);
+  }
+
+  body {
+    max-width: 960px;
+    margin-inline: auto;
+    background: transparent;
+    color: var(--color-text-primary);
+  }
+
+  button,
+  input,
+  select,
+  textarea {
+    font: inherit;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  .site-app {
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 22px;
+    background:
+      linear-gradient(90deg, color-mix(in oklab, var(--color-text-primary) 3%, transparent) 1px, transparent 1px) 0 0 / 36px 36px,
+      linear-gradient(color-mix(in oklab, var(--color-text-primary) 3%, transparent) 1px, transparent 1px) 0 0 / 36px 36px,
+      var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .masthead {
+    position: relative;
+    color: var(--color-text-primary);
+    border-bottom: 1px solid var(--color-border-primary);
+    background:
+      linear-gradient(116deg, color-mix(in oklab, var(--site-accent) 10%, transparent), transparent 52%),
+      var(--color-background-primary);
+  }
+
+  .masthead::after {
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    width: 112px;
+    height: 4px;
+    border-radius: 4px 0 0 0;
+    background: var(--site-accent);
+    content: "";
+  }
+
+  .app-bar {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 17px 19px 15px;
+  }
+
+  .app-mark {
+    display: grid;
+    width: 46px;
+    height: 46px;
+    flex: none;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--site-accent) 72%, transparent);
+    border-radius: 13px;
+    color: var(--site-on-accent);
+    background: var(--site-accent);
+    box-shadow: 0 8px 24px color-mix(in oklab, var(--site-accent) 18%, transparent);
+  }
+
+  .app-mark svg {
+    width: 28px;
+    height: 28px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.65;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .eyebrow,
+  .section-kicker,
+  .tool-code,
+  .job-code,
+  .route-label,
+  .metric-label {
+    font-family: var(--font-mono);
+    text-transform: uppercase;
+  }
+
+  .eyebrow {
+    margin: 0 0 2px;
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-weight: 760;
+    letter-spacing: .11em;
+  }
+
+  .identity h1 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 760;
+    line-height: 1.12;
+    letter-spacing: -.02em;
+  }
+
+  .shift-live {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 7px;
+    margin-left: 8px;
+    padding: 4px 10px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-full, 999px);
+    color: var(--color-text-secondary);
+    background: color-mix(in oklab, var(--color-background-primary) 78%, transparent);
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  .live-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--site-good);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--site-good) 14%, transparent);
+  }
+
+  .bar-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .masthead .k-btn {
+    min-height: 38px;
+    white-space: nowrap;
+  }
+
+  .masthead .k-btn.sec {
+    border-color: var(--color-border-primary);
+    color: var(--color-text-primary);
+    background: color-mix(in oklab, var(--color-background-primary) 78%, transparent);
+  }
+
+  .masthead .k-btn.sec:hover {
+    color: var(--color-text-primary);
+    background: var(--color-background-secondary);
+  }
+
+  .update-button {
+    color: var(--site-on-accent);
+    background: var(--site-accent);
+  }
+
+  .shift-overview {
+    display: grid;
+    grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(112px, .75fr));
+    gap: 1px;
+    padding: 0;
+    border-top: 1px solid var(--color-border-secondary);
+    background: var(--color-border-secondary);
+  }
+
+  .overview-cell {
+    min-width: 0;
+    padding: 14px 17px 15px;
+    background: color-mix(in oklab, var(--site-accent) 3%, var(--color-background-secondary));
+  }
+
+  .overview-main {
+    display: flex;
+    align-items: baseline;
+    gap: 9px;
+  }
+
+  .overview-main strong {
+    color: var(--site-accent);
+    font-size: 35px;
+    font-weight: 780;
+    line-height: 1;
+    letter-spacing: -.04em;
+  }
+
+  .overview-main span {
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+
+  .metric-value {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 17px;
+    font-weight: 730;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .metric-label {
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 720;
+    letter-spacing: .08em;
+  }
+
+  #tool-coverage {
+    color: var(--site-good);
+  }
+
+  #open-action-count {
+    color: var(--site-accent);
+  }
+
+  #issue-count {
+    color: var(--site-bad);
+  }
+
+  .status-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 14px 16px 0;
+    padding: 9px 11px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 12px;
+    background: var(--color-background-secondary);
+    font-size: 12px;
+  }
+
+  .status-strip[data-tone="ok"] {
+    border-color: color-mix(in oklab, var(--site-good) 30%, var(--color-border-secondary));
+    color: var(--site-good);
+    background: color-mix(in oklab, var(--site-good) 8%, var(--color-background-primary));
+  }
+
+  .status-strip[data-tone="bad"] {
+    border-color: color-mix(in oklab, var(--site-bad) 30%, var(--color-border-secondary));
+    color: var(--site-bad);
+    background: color-mix(in oklab, var(--site-bad) 8%, var(--color-background-primary));
+  }
+
+  .mobile-page-nav {
+    display: none;
+  }
+
+  .content {
+    display: grid;
+    gap: 24px;
+    padding: 18px;
+  }
+
+  .section-head {
+    display: flex;
+    align-items: end;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .section-head > div:first-child {
+    min-width: 0;
+  }
+
+  .section-kicker {
+    margin: 0 0 4px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 760;
+    letter-spacing: .09em;
+  }
+
+  .section-head h2,
+  .finder-title,
+  .job-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 740;
+    line-height: 1.18;
+    letter-spacing: -.025em;
+  }
+
+  .section-copy {
+    max-width: 42em;
+    margin: 4px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 12.5px;
+    line-height: 1.5;
+  }
+
+  .command-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.28fr) minmax(300px, .72fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .finder-card,
+  .today-card,
+  .section-panel,
+  .empty-state {
+    border: 1px solid var(--color-border-primary);
+    border-radius: 18px;
+    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .finder-card {
+    position: relative;
+    overflow: hidden;
+    padding: 17px;
+  }
+
+  .finder-card::before {
+    position: absolute;
+    top: 0;
+    right: 0;
+    left: 0;
+    height: 5px;
+    background: var(--site-accent);
+    content: "";
+  }
+
+  .finder-card.issue::before {
+    background: var(--site-bad);
+  }
+
+  .finder-head {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    margin-top: 3px;
+  }
+
+  .finder-head .k-badge {
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .tool-search {
+    display: flex;
+    gap: 8px;
+    margin-top: 15px;
+  }
+
+  .search-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .search-wrap .k-icon {
+    position: absolute;
+    top: 50%;
+    left: 11px;
+    color: var(--color-text-tertiary);
+    translate: 0 -50%;
+    pointer-events: none;
+  }
+
+  .search-wrap .k-field {
+    width: 100%;
+    min-height: 42px;
+    padding-left: 36px;
+    background: var(--color-background-secondary);
+  }
+
+  .found-tool {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: start;
+    margin-top: 15px;
+    padding: 16px;
+    border: 1px solid color-mix(in oklab, var(--site-accent) 42%, var(--color-border-secondary));
+    border-radius: 16px;
+    background:
+      linear-gradient(135deg, color-mix(in oklab, var(--site-accent) 14%, transparent), transparent 62%),
+      var(--color-background-primary);
+  }
+
+  .issue .found-tool {
+    border-color: color-mix(in oklab, var(--site-bad) 38%, var(--color-border-secondary));
+    background:
+      linear-gradient(135deg, color-mix(in oklab, var(--site-bad) 11%, transparent), transparent 62%),
+      var(--color-background-primary);
+  }
+
+  .found-kicker {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin: 0 0 5px;
+    color: var(--site-good);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .issue .found-kicker {
+    color: var(--site-bad);
+  }
+
+  .found-kicker::before {
+    width: 8px;
+    height: 8px;
+    border: 2px solid currentColor;
+    border-radius: 50%;
+    content: "";
+  }
+
+  .tool-name {
+    margin: 0;
+    font-size: clamp(25px, 4vw, 39px);
+    font-weight: 790;
+    line-height: 1.02;
+    letter-spacing: -.045em;
+  }
+
+  .tool-code {
+    margin: 7px 0 0;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 720;
+    letter-spacing: .08em;
+  }
+
+  .finder-status {
+    display: grid;
+    gap: 6px;
+    justify-items: end;
+  }
+
+  .status-badge {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 10px;
+    border-radius: var(--border-radius-full, 999px);
+    font-size: 11px;
+    font-weight: 720;
+    white-space: nowrap;
+  }
+
+  .status-badge::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: currentColor;
+    content: "";
+  }
+
+  .status-available,
+  .status-on_site,
+  .status-done {
+    color: var(--site-good);
+    background: color-mix(in oklab, var(--site-good) 11%, transparent);
+  }
+
+  .status-checked_out,
+  .status-open,
+  .status-active,
+  .status-upcoming {
+    color: var(--site-info);
+    background: color-mix(in oklab, var(--site-info) 11%, transparent);
+  }
+
+  .status-missing,
+  .status-blocked {
+    color: var(--site-bad);
+    background: color-mix(in oklab, var(--site-bad) 11%, transparent);
+  }
+
+  .status-service,
+  .status-paused {
+    color: var(--site-warning);
+    background: color-mix(in oklab, var(--site-warning) 13%, transparent);
+  }
+
+  .route-map {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0;
+    margin-top: 17px;
+  }
+
+  .route-stop {
+    position: relative;
+    min-width: 0;
+    padding-top: 25px;
+  }
+
+  .route-stop::before {
+    position: absolute;
+    top: 7px;
+    left: 0;
+    width: 12px;
+    height: 12px;
+    border: 3px solid var(--color-background-primary);
+    border-radius: 50%;
+    background: var(--color-border-primary);
+    box-shadow: 0 0 0 1px var(--color-border-primary);
+    content: "";
+    z-index: 1;
+  }
+
+  .route-stop::after {
+    position: absolute;
+    top: 12px;
+    right: 0;
+    left: 12px;
+    height: 2px;
+    background: var(--color-border-primary);
+    content: "";
+  }
+
+  .route-stop:last-child::after {
+    display: none;
+  }
+
+  .route-stop.done::before,
+  .route-stop.current::before {
+    background: var(--site-accent);
+    box-shadow: 0 0 0 1px var(--site-accent), 0 0 0 5px color-mix(in oklab, var(--site-accent) 13%, transparent);
+  }
+
+  .route-stop.done::after {
+    background: var(--site-accent);
+  }
+
+  .route-label {
+    display: block;
+    overflow-wrap: anywhere;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 740;
+    letter-spacing: .05em;
+  }
+
+  .route-value {
+    display: block;
+    overflow-wrap: anywhere;
+    margin-top: 3px;
+    font-size: 12px;
+    font-weight: 660;
+    line-height: 1.3;
+  }
+
+  .tool-facts {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .fact {
+    min-width: 0;
+    padding: 10px 11px;
+    border-radius: 11px;
+    background: var(--color-background-secondary);
+  }
+
+  .fact-label {
+    display: block;
+    margin-bottom: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  .fact-value {
+    display: block;
+    overflow-wrap: anywhere;
+    font-size: 12px;
+    font-weight: 640;
+    line-height: 1.38;
+  }
+
+  .finder-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 13px;
+  }
+
+  .editor-panel {
+    margin-top: 12px;
+    padding-top: 12px;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .editor-panel > summary {
+    display: none;
+  }
+
+  .editor-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .field-block {
+    display: grid;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .field-block.wide {
+    grid-column: 1 / -1;
+  }
+
+  .field-block label {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 620;
+  }
+
+  .field-block .k-field {
+    width: 100%;
+    min-height: 40px;
+    background: var(--color-background-primary);
+  }
+
+  .field-block textarea.k-field,
+  textarea.k-field {
+    min-height: 82px;
+    resize: vertical;
+    line-height: 1.45;
+  }
+
+  .editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .today-card {
+    display: flex;
+    flex-direction: column;
+    padding: 17px;
+  }
+
+  .today-top {
+    display: flex;
+    gap: 12px;
+    align-items: start;
+  }
+
+  .today-top > div:first-child {
+    min-width: 0;
+  }
+
+  .job-site {
+    margin: 0 0 4px;
+    color: var(--site-info);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 780;
+    letter-spacing: .09em;
+    text-transform: uppercase;
+  }
+
+  .job-address {
+    margin: 5px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+
+  .progress-ring {
+    --progress: 0;
+    position: relative;
+    display: grid;
+    width: 70px;
+    aspect-ratio: 1;
+    flex: none;
+    place-items: center;
+    border-radius: 50%;
+    background: conic-gradient(var(--site-accent) var(--progress), var(--color-background-tertiary) 0);
+  }
+
+  .progress-ring::before {
+    position: absolute;
+    inset: 7px;
+    border-radius: 50%;
+    background: var(--color-background-primary);
+    content: "";
+  }
+
+  .progress-ring strong {
+    position: relative;
+    font-size: 15px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .job-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 14px;
+  }
+
+  .job-summary .fact {
+    background: color-mix(in oklab, var(--site-info) 6%, var(--color-background-secondary));
+  }
+
+  .next-move {
+    margin-top: 13px;
+    padding: 12px;
+    border-left: 3px solid var(--site-accent);
+    border-radius: 0 10px 10px 0;
+    background: color-mix(in oklab, var(--site-accent) 8%, var(--color-background-secondary));
+  }
+
+  .next-move span {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 760;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .next-move strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.42;
+  }
+
+  .action-list {
+    display: grid;
+    gap: 7px;
+    margin-top: 13px;
+  }
+
+  .action-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 9px;
+    align-items: center;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .action-row:last-child {
+    border-bottom: none;
+  }
+
+  .action-state {
+    display: grid;
+    width: 25px;
+    height: 25px;
+    place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 8px;
+    color: var(--color-text-tertiary);
+    background: transparent;
+  }
+
+  button.action-state {
+    cursor: pointer;
+  }
+
+  button.action-state:hover {
+    border-color: var(--site-good);
+    color: var(--site-good);
+    background: color-mix(in oklab, var(--site-good) 8%, transparent);
+  }
+
+  .action-state.blocked {
+    border-color: color-mix(in oklab, var(--site-bad) 40%, var(--color-border-primary));
+    color: var(--site-bad);
+  }
+
+  .action-state.done {
+    border-color: color-mix(in oklab, var(--site-good) 40%, var(--color-border-primary));
+    color: var(--site-good);
+    background: color-mix(in oklab, var(--site-good) 9%, transparent);
+  }
+
+  .action-copy {
+    min-width: 0;
+  }
+
+  .action-copy strong {
+    display: block;
+    font-size: 12.5px;
+    line-height: 1.35;
+  }
+
+  .action-copy span {
+    display: block;
+    margin-top: 2px;
+    overflow-wrap: anywhere;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    line-height: 1.35;
+  }
+
+  .crew-row {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin-top: auto;
+    padding-top: 14px;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .crew-avatars {
+    display: flex;
+  }
+
+  .crew-avatar {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    place-items: center;
+    margin-left: -5px;
+    border: 2px solid var(--color-background-primary);
+    border-radius: 50%;
+    color: var(--site-on-accent);
+    background: var(--site-accent);
+    font-size: 10px;
+    font-weight: 760;
+  }
+
+  .crew-avatar:first-child {
+    margin-left: 0;
+  }
+
+  .crew-label {
+    min-width: 0;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .section-panel {
+    padding: 17px;
+  }
+
+  .job-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .job-card {
+    position: relative;
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 14px;
+    color: inherit;
+    text-align: left;
+    background: var(--color-background-primary);
+    cursor: pointer;
+    transition: transform var(--k-t) var(--k-ease), border-color var(--k-t), box-shadow var(--k-t);
+  }
+
+  .job-card:hover {
+    border-color: color-mix(in oklab, var(--site-info) 36%, var(--color-border-primary));
+    box-shadow: var(--shadow-sm);
+    transform: translateY(-1px);
+  }
+
+  .job-card:active {
+    transform: scale(.985);
+  }
+
+  .job-card.selected {
+    border-color: color-mix(in oklab, var(--site-accent) 58%, var(--color-border-primary));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--site-accent) 10%, transparent);
+  }
+
+  .job-card.selected::before {
+    position: absolute;
+    top: 0;
+    right: 16px;
+    width: 34px;
+    height: 5px;
+    border-radius: 0 0 5px 5px;
+    background: var(--site-accent);
+    content: "";
+  }
+
+  .job-card-head {
+    display: flex;
+    gap: 10px;
+    align-items: start;
+  }
+
+  .job-card-head > div {
+    min-width: 0;
+  }
+
+  .job-code {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .08em;
+  }
+
+  .job-card h3 {
+    margin: 0;
+    font-size: 15px;
+    line-height: 1.25;
+  }
+
+  .job-card-address {
+    margin-top: 3px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+  }
+
+  .job-progress-track {
+    height: 6px;
+    overflow: hidden;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-tertiary);
+  }
+
+  .job-progress-fill {
+    height: 100%;
+    border-radius: inherit;
+    background: var(--site-accent);
+  }
+
+  .job-card-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 6px;
+  }
+
+  .job-stat {
+    min-width: 0;
+  }
+
+  .job-stat strong {
+    display: block;
+    font-size: 13px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .job-stat span {
+    display: block;
+    margin-top: 1px;
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+  }
+
+  .job-freshness {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+  }
+
+  .job-freshness.stale {
+    color: var(--site-warning);
+  }
+
+  .job-freshness::before {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    content: "";
+  }
+
+  .tool-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    justify-content: flex-end;
+    margin-left: auto;
+  }
+
+  .tool-controls .k-chip {
+    min-height: 30px;
+  }
+
+  .tool-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .tool-card {
+    position: relative;
+    display: grid;
+    min-width: 0;
+    gap: 10px;
+    padding: 13px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: 14px;
+    background: var(--color-background-primary);
+    transition: border-color var(--k-t), box-shadow var(--k-t), transform var(--k-t) var(--k-ease);
+  }
+
+  .tool-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .tool-card.selected {
+    border-color: color-mix(in oklab, var(--site-accent) 62%, var(--color-border-primary));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--site-accent) 9%, transparent);
+  }
+
+  .tool-card.issue {
+    border-color: color-mix(in oklab, var(--site-bad) 32%, var(--color-border-primary));
+  }
+
+  .tool-card.issue::before {
+    position: absolute;
+    top: 12px;
+    left: 0;
+    width: 4px;
+    height: 28px;
+    border-radius: 0 4px 4px 0;
+    background: var(--site-bad);
+    content: "";
+  }
+
+  .tool-card-head {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+  }
+
+  .tool-card-head > div {
+    min-width: 0;
+  }
+
+  .tool-card .tool-code {
+    margin: 0 0 4px;
+  }
+
+  .tool-card h3 {
+    margin: 0;
+    font-size: 14px;
+    line-height: 1.28;
+  }
+
+  .tool-card .status-badge {
+    min-height: 24px;
+    margin-left: auto;
+    padding: 3px 7px;
+    font-size: 9.5px;
+  }
+
+  .tool-location {
+    display: flex;
+    gap: 7px;
+    min-width: 0;
+    color: var(--color-text-secondary);
+    font-size: 11.5px;
+    line-height: 1.4;
+  }
+
+  .tool-location .k-icon {
+    margin-top: 1px;
+    color: var(--site-info);
+  }
+
+  .tool-location span {
+    overflow-wrap: anywhere;
+  }
+
+  .tool-note {
+    overflow-wrap: anywhere;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    line-height: 1.45;
+  }
+
+  .tool-card-foot {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    padding-top: 9px;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .tool-holder {
+    min-width: 0;
+    flex: 1;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  .locate-button {
+    flex: none;
+    min-height: 31px;
+    padding: 4px 9px;
+  }
+
+  .empty-grid {
+    padding: 24px 12px;
+    color: var(--color-text-tertiary);
+    text-align: center;
+  }
+
+  .field-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.2fr) minmax(280px, .8fr);
+    gap: 14px;
+    align-items: start;
+  }
+
+  .update-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .update-row {
+    display: grid;
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 11px;
+    align-items: start;
+    padding: 13px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: 14px;
+    background: var(--color-background-primary);
+  }
+
+  .update-avatar {
+    display: grid;
+    width: 42px;
+    height: 42px;
+    place-items: center;
+    border-radius: 13px;
+    color: var(--site-accent);
+    background: color-mix(in oklab, var(--site-accent) 12%, var(--color-background-secondary));
+    font-size: 12px;
+    font-weight: 780;
+  }
+
+  .update-row.blocker .update-avatar {
+    color: var(--site-on-accent);
+    background: var(--site-bad);
+  }
+
+  .update-copy {
+    min-width: 0;
+  }
+
+  .update-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 8px;
+    align-items: center;
+  }
+
+  .update-head strong {
+    font-size: 12.5px;
+  }
+
+  .update-time {
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .update-message {
+    margin: 6px 0 0;
+    overflow-wrap: anywhere;
+    color: var(--color-text-secondary);
+    font-size: 12.5px;
+    line-height: 1.52;
+  }
+
+  .update-kind {
+    margin-left: auto;
+  }
+
+  .composer {
+    position: sticky;
+    top: 12px;
+    padding: 15px;
+    border: 1px solid color-mix(in oklab, var(--site-accent) 28%, var(--color-border-primary));
+    border-radius: 16px;
+    background:
+      linear-gradient(145deg, color-mix(in oklab, var(--site-accent) 9%, transparent), transparent 55%),
+      var(--color-background-primary);
+  }
+
+  .composer h3 {
+    margin: 0;
+    font-size: 16px;
+  }
+
+  .composer-copy {
+    margin: 4px 0 13px;
+    color: var(--color-text-secondary);
+    font-size: 11.5px;
+    line-height: 1.45;
+  }
+
+  .composer .field-block + .field-block {
+    margin-top: 9px;
+  }
+
+  .composer-actions {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: 10px;
+  }
+
+  .composer-actions .k-btn {
+    min-height: 40px;
+    justify-content: center;
+  }
+
+  .empty-state {
+    padding: 24px;
+  }
+
+  .empty-hero {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    gap: 16px;
+    align-items: center;
+  }
+
+  .empty-icon {
+    display: grid;
+    width: 64px;
+    height: 64px;
+    place-items: center;
+    border-radius: 18px;
+    color: var(--site-on-accent);
+    background: var(--site-accent);
+  }
+
+  .empty-icon svg {
+    width: 36px;
+    height: 36px;
+    fill: none;
+    stroke: currentColor;
+    stroke-width: 1.5;
+  }
+
+  .empty-state h2 {
+    margin: 0;
+    font-size: 22px;
+  }
+
+  .empty-state p {
+    max-width: 46em;
+    margin: 6px 0 0;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 16px;
+  }
+
+  .bulk-tools {
+    margin-top: 18px;
+    padding-top: 16px;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+
+  .bulk-tools summary {
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 680;
+  }
+
+  .bulk-tools textarea {
+    width: 100%;
+    margin-top: 10px;
+  }
+
+  .bulk-help {
+    margin: 6px 0 10px;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+  }
+
+  .app-foot {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    justify-content: space-between;
+    padding: 0 18px 18px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+
+  body[data-density="compact"] .content {
+    gap: 16px;
+    padding: 13px;
+  }
+
+  body[data-density="compact"] .section-panel,
+  body[data-density="compact"] .finder-card,
+  body[data-density="compact"] .today-card {
+    padding: 13px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .live-dot {
+      animation: site-pulse 2.2s ease-in-out infinite;
+    }
+
+    .found-kicker::before {
+      animation: finder-ring 2.4s ease-out infinite;
+    }
+
+    @keyframes site-pulse {
+      50% { opacity: .55; transform: scale(.84); }
+    }
+
+    @keyframes finder-ring {
+      0%, 55% { box-shadow: 0 0 0 0 color-mix(in oklab, currentColor 30%, transparent); }
+      100% { box-shadow: 0 0 0 8px transparent; }
+    }
+  }
+
+  @media (max-width: 820px) {
+    .app-bar {
+      flex-wrap: wrap;
+    }
+
+    .shift-live {
+      order: 3;
+      margin-left: 58px;
+    }
+
+    .bar-actions {
+      margin-left: auto;
+    }
+
+    .shift-overview {
+      grid-template-columns: minmax(200px, 1.2fr) repeat(3, minmax(0, .8fr));
+    }
+
+    .command-grid,
+    .field-layout {
+      grid-template-columns: 1fr;
+    }
+
+    .composer {
+      position: static;
+    }
+
+    .tool-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
+
+  @media (max-width: 680px) {
+    body {
+      padding: 8px;
+    }
+
+    .site-app {
+      border-radius: 18px;
+    }
+
+    .app-bar {
+      padding: 14px;
+    }
+
+    .app-mark {
+      width: 42px;
+      height: 42px;
+    }
+
+    .identity h1 {
+      font-size: 18px;
+    }
+
+    .shift-live {
+      order: initial;
+      margin-left: auto;
+    }
+
+    .bar-actions {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .bar-actions .k-btn {
+      flex: 1;
+      justify-content: center;
+    }
+
+    .shift-overview {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .mobile-page-nav {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 5px;
+      margin: 10px 8px 0;
+      padding: 5px;
+      border: 1px solid var(--color-border-primary);
+      border-radius: 14px;
+      background: color-mix(in oklab, var(--color-background-secondary) 88%, transparent);
+    }
+
+    .mobile-page-tab {
+      min-width: 0;
+      min-height: 38px;
+      padding: 7px 5px;
+      border: 0;
+      border-radius: 10px;
+      color: var(--color-text-tertiary);
+      background: transparent;
+      font-size: 11px;
+      font-weight: 720;
+      line-height: 1.1;
+      cursor: pointer;
+    }
+
+    .mobile-page-tab[aria-selected="true"] {
+      color: var(--color-text-primary);
+      background: var(--color-background-primary);
+      box-shadow: inset 0 0 0 1px var(--color-border-primary), var(--shadow-xs, 0 3px 10px color-mix(in oklab, black 8%, transparent));
+    }
+
+    .mobile-page-tab:focus-visible {
+      outline: 2px solid var(--site-accent);
+      outline-offset: 2px;
+    }
+
+    .content > [data-mobile-page][data-mobile-active="false"] {
+      display: none !important;
+    }
+
+    .overview-cell {
+      padding: 12px 14px;
+    }
+
+    .overview-primary {
+      grid-column: 1 / -1;
+    }
+
+    .content {
+      gap: 18px;
+      padding: 12px;
+    }
+
+    .section-head {
+      display: grid;
+      align-items: start;
+    }
+
+    .tool-controls {
+      justify-content: flex-start;
+      margin-left: 0;
+    }
+
+    .found-tool {
+      grid-template-columns: 1fr;
+    }
+
+    .finder-status {
+      justify-items: start;
+    }
+
+    .route-map {
+      gap: 8px;
+    }
+
+    .job-grid,
+    .tool-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .job-card {
+      gap: 10px;
+    }
+
+    .job-card-stats {
+      max-width: 300px;
+    }
+
+    .tool-card {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .tool-card-foot {
+      min-height: 38px;
+    }
+
+    .editor-grid,
+    .composer-actions {
+      grid-template-columns: 1fr;
+    }
+
+    .field-block.wide {
+      grid-column: auto;
+    }
+
+    .empty-state {
+      padding: 18px;
+    }
+
+    .empty-hero {
+      grid-template-columns: 1fr;
+    }
+
+    .app-foot {
+      padding: 0 12px 14px;
+    }
+  }
+
+  @media (max-width: 390px) {
+    .shift-live {
+      width: 100%;
+      justify-content: center;
+      margin-left: 0;
+    }
+
+    .overview-main strong {
+      font-size: 31px;
+    }
+
+    .finder-card,
+    .today-card,
+    .section-panel {
+      border-radius: 15px;
+      padding: 13px;
+    }
+
+    .tool-search {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+
+    .tool-search .k-btn {
+      justify-content: center;
+    }
+
+    .tool-facts,
+    .job-summary {
+      grid-template-columns: 1fr;
+    }
+
+    .route-value {
+      font-size: 10.5px;
+    }
+
+    .action-row {
+      grid-template-columns: auto minmax(0, 1fr);
+    }
+
+    .action-row > .k-badge {
+      grid-column: 2;
+      justify-self: start;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="site-app">
+  <section class="masthead" aria-labelledby="app-title">
+    <header class="app-bar">
+      <div class="app-mark" aria-hidden="true">
+        <svg viewBox="0 0 32 32">
+          <path d="M5 16h22M16 5v22"/>
+          <circle cx="16" cy="16" r="6"/>
+          <path d="M8 24l3-3m13 3-3-3M8 8l3 3m13-3-3 3"/>
+        </svg>
+      </div>
+      <div class="identity">
+        <p class="eyebrow" data-i18n="eyebrow">Field crew · live</p>
+        <h1 id="app-title" data-i18n="appName">Job Kit</h1>
+      </div>
+      <div class="shift-live">
+        <span class="live-dot" aria-hidden="true"></span>
+        <span id="shift-date">Wednesday shift</span>
+      </div>
+      <div class="bar-actions">
+        <button class="k-btn sec" id="handover-button" type="button">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v8H8l-4 3v-3H2zM5 6h6M5 8.5h4"/></svg>
+          <span data-i18n="askHandover">Ask for handover</span>
+        </button>
+        <button class="k-btn update-button" id="update-button" type="button">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10v8H7l-3.5 3v-3H3zM6 6.5h4M8 4.5v4"/></svg>
+          <span data-i18n="addUpdate">Add site update</span>
+        </button>
+      </div>
+    </header>
+
+    <div class="shift-overview" aria-label="Shift overview">
+      <div class="overview-cell overview-primary">
+        <div class="overview-main">
+          <strong id="active-job-count">0</strong>
+          <span id="active-job-label">jobs moving</span>
+        </div>
+      </div>
+      <div class="overview-cell">
+        <span class="metric-value" id="tool-coverage">0/0</span>
+        <span class="metric-label" data-i18n="toolCoverage">tools accounted</span>
+      </div>
+      <div class="overview-cell">
+        <span class="metric-value" id="open-action-count">0</span>
+        <span class="metric-label" data-i18n="openActions">open actions</span>
+      </div>
+      <div class="overview-cell">
+        <span class="metric-value" id="issue-count">0</span>
+        <span class="metric-label" data-i18n="issuesFlagged">issues flagged</span>
+      </div>
+    </div>
+  </section>
+
+  <nav class="mobile-page-nav" aria-label="Job Kit pages" role="tablist">
+    <button class="mobile-page-tab" id="mobile-tab-overview" type="button" role="tab" aria-controls="mobile-page-overview" aria-selected="true" data-mobile-page-target="overview" data-i18n="pageOverview">Overview</button>
+    <button class="mobile-page-tab" id="mobile-tab-jobs" type="button" role="tab" aria-controls="mobile-page-jobs" aria-selected="false" data-mobile-page-target="jobs" data-i18n="pageJobs">Jobs</button>
+    <button class="mobile-page-tab" id="mobile-tab-tools" type="button" role="tab" aria-controls="mobile-page-tools" aria-selected="false" data-mobile-page-target="tools" data-i18n="pageTools">Tools</button>
+    <button class="mobile-page-tab" id="mobile-tab-updates" type="button" role="tab" aria-controls="mobile-page-updates" aria-selected="false" data-mobile-page-target="updates" data-i18n="pageUpdates">Handover</button>
+  </nav>
+
+  <div class="status-strip" id="status-strip" role="status" aria-live="polite" hidden>
+    <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6"/><path d="M8 5v3.5M8 11h.01"/></svg>
+    <span id="status-message"></span>
+  </div>
+
+  <section class="empty-state" id="empty-state" hidden>
+    <div class="empty-hero">
+      <div class="empty-icon" aria-hidden="true">
+        <svg viewBox="0 0 48 48"><path d="M8 24h32M24 8v32"/><circle cx="24" cy="24" r="9"/><path d="M12 36l5-5m19 5-5-5"/></svg>
+      </div>
+      <div>
+        <p class="section-kicker" data-i18n="emptyKicker">Start with the real crew</p>
+        <h2 data-i18n="emptyTitle">Make every tool and job findable</h2>
+        <p data-i18n="emptyBody">Ask the AI to collect your current jobs, crew, tools and next actions. Nothing is invented, and the first useful view appears as soon as the first rows are saved.</p>
+      </div>
+    </div>
+    <div class="empty-actions">
+      <button class="k-btn" id="setup-button" type="button" data-i18n="askSetup">Ask AI to set it up</button>
+    </div>
+    <details class="bulk-tools">
+      <summary data-i18n="pasteTools">Or paste tools in bulk</summary>
+      <textarea class="k-field" id="bulk-tool-input" data-i18n-placeholder="bulkPlaceholder" placeholder="Green-beam laser level | TL-014 | Preston workshop | available"></textarea>
+      <p class="bulk-help" data-i18n="bulkHelp">One per line: tool | code | location | available / checked_out / on_site / missing / service</p>
+      <button class="k-btn" id="bulk-tool-button" type="button" data-i18n="addTools">Add these tools</button>
+    </details>
+  </section>
+
+  <div class="content" id="app-content">
+    <section class="command-grid" id="mobile-page-overview" role="tabpanel" aria-labelledby="mobile-tab-overview" data-mobile-page="overview" data-mobile-active="true" aria-hidden="false">
+      <article class="finder-card" id="finder-card">
+        <div class="finder-head">
+          <div>
+            <p class="section-kicker" data-i18n="toolLocator">Tool locator</p>
+            <h2 class="finder-title" data-i18n="finderQuestion">Where's the laser level?</h2>
+          </div>
+          <span class="k-badge info" id="search-result-count">0 tools</span>
+        </div>
+
+        <form class="tool-search" id="tool-search-form" role="search">
+          <label class="search-wrap">
+            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.5 10.5L14 14"/></svg>
+            <input class="k-field" id="tool-search-input" type="search" autocomplete="off" data-i18n-placeholder="searchPlaceholder" placeholder="Search tool, code, person, or site…">
+            <span hidden data-i18n="searchLabel">Search tools</span>
+          </label>
+          <button class="k-btn sec" id="clear-search" type="button" data-i18n="clearSearch">Show all</button>
+        </form>
+
+        <div id="finder-empty" class="empty-grid" hidden data-i18n="noToolMatch">No tool matches that search.</div>
+
+        <div id="finder-result">
+          <div class="found-tool">
+            <div>
+              <p class="found-kicker" id="found-kicker">Found now</p>
+              <h3 class="tool-name" id="finder-tool-name">—</h3>
+              <p class="tool-code" id="finder-tool-code">—</p>
+            </div>
+            <div class="finder-status">
+              <span class="status-badge" id="finder-status">—</span>
+              <span class="k-badge" id="finder-job">—</span>
+            </div>
+          </div>
+
+          <div class="route-map" aria-label="Last known route">
+            <div class="route-stop done">
+              <span class="route-label" data-i18n="homeBase">Home base</span>
+              <span class="route-value" id="route-home">Workshop</span>
+            </div>
+            <div class="route-stop done">
+              <span class="route-label" data-i18n="checkedTo">Checked to</span>
+              <span class="route-value" id="route-holder">Crew</span>
+            </div>
+            <div class="route-stop current">
+              <span class="route-label" data-i18n="nowAt">Now at</span>
+              <span class="route-value" id="route-site">Site</span>
+            </div>
+          </div>
+
+          <div class="tool-facts">
+            <div class="fact">
+              <span class="fact-label" data-i18n="lastKnownLocation">Last known location</span>
+              <span class="fact-value" id="finder-location">—</span>
+            </div>
+            <div class="fact">
+              <span class="fact-label" data-i18n="kitContents">Kit contents</span>
+              <span class="fact-value" id="finder-kit">—</span>
+            </div>
+            <div class="fact">
+              <span class="fact-label" data-i18n="lastUpdate">Last update</span>
+              <span class="fact-value" id="finder-updated">—</span>
+            </div>
+            <div class="fact">
+              <span class="fact-label" data-i18n="fieldNote">Field note</span>
+              <span class="fact-value" id="finder-note">—</span>
+            </div>
+          </div>
+
+          <div class="finder-actions">
+            <button class="k-btn" id="update-tool-button" type="button" data-i18n="updateLocation">Update location</button>
+            <button class="k-btn sec" id="ask-holder-button" type="button" data-i18n="askHolder">Ask about this tool</button>
+          </div>
+
+          <details class="editor-panel" id="tool-editor">
+            <summary>Tool editor</summary>
+            <form id="tool-editor-form">
+              <div class="editor-grid">
+                <div class="field-block">
+                  <label for="tool-status-select" data-i18n="status">Status</label>
+                  <select class="k-field" id="tool-status-select" required>
+                    <option value="available" data-i18n="statusAvailable">Available</option>
+                    <option value="checked_out" data-i18n="statusCheckedOut">Checked out</option>
+                    <option value="on_site" data-i18n="statusOnSite">On site</option>
+                    <option value="missing" data-i18n="statusMissing">Missing</option>
+                    <option value="service" data-i18n="statusService">In service</option>
+                  </select>
+                </div>
+                <div class="field-block">
+                  <label for="tool-job-select" data-i18n="job">Job</label>
+                  <select class="k-field" id="tool-job-select"></select>
+                </div>
+                <div class="field-block wide">
+                  <label for="tool-location-input" data-i18n="location">Location</label>
+                  <input class="k-field" id="tool-location-input" required>
+                </div>
+                <div class="field-block">
+                  <label for="tool-holder-input" data-i18n="holder">With</label>
+                  <input class="k-field" id="tool-holder-input">
+                </div>
+                <div class="field-block">
+                  <label for="tool-note-input" data-i18n="note">Note</label>
+                  <input class="k-field" id="tool-note-input">
+                </div>
+              </div>
+              <div class="editor-actions">
+                <button class="k-btn" id="save-tool-button" type="submit" data-i18n="saveTool">Save tool update</button>
+                <button class="k-btn ghost" id="cancel-tool-button" type="button" data-i18n="cancel">Cancel</button>
+              </div>
+            </form>
+          </details>
+        </div>
+      </article>
+
+      <article class="today-card" id="today-card">
+        <div class="today-top">
+          <div>
+            <p class="job-site" id="today-job-site">Carlton · today</p>
+            <h2 class="job-title" id="today-job-title">—</h2>
+            <p class="job-address" id="today-job-address">—</p>
+          </div>
+          <div class="progress-ring" id="today-progress" aria-label="Job progress">
+            <strong id="today-progress-value">0%</strong>
+          </div>
+        </div>
+
+        <div class="job-summary">
+          <div class="fact">
+            <span class="fact-label" data-i18n="stillOpen">Still open</span>
+            <span class="fact-value" id="today-open-count">0 actions</span>
+          </div>
+          <div class="fact">
+            <span class="fact-label" data-i18n="gearOnJob">Gear on this job</span>
+            <span class="fact-value" id="today-tool-count">0 tools</span>
+          </div>
+        </div>
+
+        <div class="next-move">
+          <span data-i18n="nextMove">Next move</span>
+          <strong id="today-next-action">—</strong>
+        </div>
+
+        <div class="action-list" id="today-actions"></div>
+
+        <div class="crew-row">
+          <div class="crew-avatars" id="today-crew-avatars"></div>
+          <div class="crew-label" id="today-crew-label">—</div>
+        </div>
+      </article>
+    </section>
+
+    <section class="section-panel" id="mobile-page-jobs" role="tabpanel" aria-labelledby="mobile-tab-jobs jobs-title" data-mobile-page="jobs" data-mobile-active="false" aria-hidden="false">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker" data-i18n="jobsKicker">The day's run</p>
+          <h2 id="jobs-title" data-i18n="jobsTitle">Jobs in motion</h2>
+          <p class="section-copy" data-i18n="jobsCopy">Tap a site to bring its actions, crew and handover into the command card above.</p>
+        </div>
+      </div>
+      <div class="job-grid k-stagger" id="job-grid"></div>
+    </section>
+
+    <section class="section-panel" id="mobile-page-tools" role="tabpanel" aria-labelledby="mobile-tab-tools tools-title" data-mobile-page="tools" data-mobile-active="false" aria-hidden="false">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker" data-i18n="toolsKicker">One shared tool room</p>
+          <h2 id="tools-title" data-i18n="toolsTitle">Every tool has a last known place</h2>
+          <p class="section-copy" data-i18n="toolsCopy">Checked out, on site, missing, in service or back at the workshop—without searching yesterday's group chat.</p>
+        </div>
+        <div class="tool-controls" aria-label="Tool filters">
+          <button class="k-chip on" type="button" data-tool-filter="all" data-i18n="filterAll">All</button>
+          <button class="k-chip" type="button" data-tool-filter="checked_out" data-i18n="filterCheckedOut">Checked out</button>
+          <button class="k-chip" type="button" data-tool-filter="on_site" data-i18n="filterOnSite">On site</button>
+          <button class="k-chip" type="button" data-tool-filter="issues" data-i18n="filterIssues">Issues</button>
+          <button class="k-chip" type="button" data-tool-filter="available" data-i18n="filterAvailable">Available</button>
+        </div>
+      </div>
+      <div class="tool-grid k-stagger" id="tool-grid"></div>
+      <div class="empty-grid" id="tool-grid-empty" hidden data-i18n="noToolsInView">No tools in this view.</div>
+    </section>
+
+    <section class="section-panel" id="mobile-page-updates" role="tabpanel" aria-labelledby="mobile-tab-updates updates-title" data-mobile-page="updates" data-mobile-active="false" aria-hidden="false">
+      <div class="section-head">
+        <div>
+          <p class="section-kicker" data-i18n="updatesKicker">Field wire</p>
+          <h2 id="updates-title" data-i18n="updatesTitle">The handover sounds like the crew</h2>
+          <p class="section-copy" data-i18n="updatesCopy">Short, attributed updates preserve the detail that disappears between vans, sites and shifts.</p>
+        </div>
+        <span class="k-badge info" id="update-total">0 updates</span>
+      </div>
+      <div class="field-layout">
+        <div class="update-list k-stagger" id="update-list"></div>
+        <form class="composer" id="update-form">
+          <p class="section-kicker" data-i18n="leaveHandover">Leave a clean handover</p>
+          <h3 id="composer-title">Carlton update</h3>
+          <p class="composer-copy" data-i18n="composerCopy">Write it here, or ask the AI to collect the details one question at a time.</p>
+          <div class="field-block">
+            <label for="update-job-select" data-i18n="job">Job</label>
+            <select class="k-field" id="update-job-select" required></select>
+          </div>
+          <div class="field-block">
+            <label for="update-author-input" data-i18n="yourName">Your name</label>
+            <input class="k-field" id="update-author-input" value="Ben" required>
+          </div>
+          <div class="field-block">
+            <label for="update-message-input" data-i18n="whatChanged">What changed?</label>
+            <textarea class="k-field" id="update-message-input" required data-i18n-placeholder="updatePlaceholder" placeholder="North wall done. Waiting on the electrician before the bathroom nib."></textarea>
+          </div>
+          <div class="composer-actions">
+            <button class="k-btn" id="save-update-button" type="submit" data-i18n="saveUpdate">Save update</button>
+            <button class="k-btn sec" id="ai-update-button" type="button">
+              <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 3h11v8H8l-3.5 2.5V11h-2zM5.5 6h5M5.5 8h3.5"/></svg>
+              <span data-i18n="talkItThrough">Ask me step by step</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+  </div>
+
+  <footer class="app-foot">
+    <span id="refresh-note">Live from 4 collections</span>
+    <span data-i18n="naturalHeight">Natural-height field board · no hidden inner scroll</span>
+  </footer>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+  const JOBS = "job-kit-jobs";
+  const TOOLS = "job-kit-tools";
+  const ACTIONS = "job-kit-actions";
+  const UPDATES = "job-kit-updates";
+  const COLLECTIONS = [JOBS, TOOLS, ACTIONS, UPDATES];
+  const TOOL_STATUSES = ["available", "checked_out", "on_site", "missing", "service"];
+  const ISSUE_STATUSES = new Set(["missing", "service"]);
+
+  const STR = {
+    en: {
+      documentTitle: "Job Kit · Field Crew Board",
+      eyebrow: "Field crew · live",
+      appName: "Job Kit",
+      askHandover: "Ask for handover",
+      addUpdate: "Add site update",
+      pageOverview: "Overview",
+      pageJobs: "Jobs",
+      pageTools: "Tools",
+      pageUpdates: "Handover",
+      jobsMoving: "jobs moving",
+      oneJobMoving: "job moving",
+      toolCoverage: "tools accounted",
+      openActions: "open actions",
+      issuesFlagged: "issues flagged",
+      emptyKicker: "Start with the real crew",
+      emptyTitle: "Make every tool and job findable",
+      emptyBody: "Ask the AI to collect your current jobs, crew, tools and next actions. Nothing is invented, and the first useful view appears as soon as the first rows are saved.",
+      askSetup: "Ask AI to set it up",
+      pasteTools: "Or paste tools in bulk",
+      bulkHelp: "One per line: tool | code | location | available / checked_out / on_site / missing / service",
+      bulkPlaceholder: "Green-beam laser level | TL-014 | Preston workshop | available",
+      addTools: "Add these tools",
+      toolLocator: "Tool locator",
+      finderQuestion: "Where's the laser level?",
+      searchPlaceholder: "Search tool, code, person, or site…",
+      searchLabel: "Search tools",
+      clearSearch: "Show all",
+      noToolMatch: "No tool matches that search.",
+      foundNow: "Found now",
+      attentionNeeded: "Attention needed",
+      homeBase: "Home base",
+      checkedTo: "Checked to",
+      nowAt: "Now at",
+      workshop: "Preston workshop",
+      unassigned: "Unassigned",
+      noJob: "No job",
+      lastKnownLocation: "Last known location",
+      kitContents: "Kit contents",
+      lastUpdate: "Last update",
+      fieldNote: "Field note",
+      noDetail: "No detail added",
+      updateLocation: "Update location",
+      askHolder: "Ask about this tool",
+      status: "Status",
+      job: "Job",
+      location: "Location",
+      holder: "With",
+      note: "Note",
+      saveTool: "Save tool update",
+      saving: "Saving…",
+      cancel: "Cancel",
+      statusAvailable: "Available",
+      statusCheckedOut: "Checked out",
+      statusOnSite: "On site",
+      statusMissing: "Missing",
+      statusService: "In service",
+      statusOpen: "Open",
+      statusBlocked: "Blocked",
+      statusDone: "Done",
+      statusActive: "Active",
+      statusUpcoming: "Upcoming",
+      statusPaused: "Paused",
+      stillOpen: "Still open",
+      gearOnJob: "Gear on this job",
+      actionsCount: "{count} actions",
+      oneAction: "1 action",
+      toolsCount: "{count} tools",
+      oneTool: "1 tool",
+      nextMove: "Next move",
+      noNextMove: "No next move written yet",
+      crewLine: "{crew} · {count} on crew",
+      oneCrew: "{crew} · 1 on crew",
+      markDone: "Mark {title} done",
+      blocked: "Blocked",
+      dueToday: "due today",
+      overdue: "{count}d overdue",
+      dueIn: "due in {count}d",
+      noActions: "No open actions for this job.",
+      jobsKicker: "The day's run",
+      jobsTitle: "Jobs in motion",
+      jobsCopy: "Tap a site to bring its actions, crew and handover into the command card above.",
+      jobProgress: "{count}% complete",
+      actionStat: "actions",
+      toolStat: "tools",
+      issueStat: "issues",
+      freshUpdate: "Updated {time}",
+      needsUpdate: "Needs a fresh site update",
+      toolsKicker: "One shared tool room",
+      toolsTitle: "Every tool has a last known place",
+      toolsCopy: "Checked out, on site, missing, in service or back at the workshop—without searching yesterday's group chat.",
+      filterAll: "All",
+      filterCheckedOut: "Checked out",
+      filterOnSite: "On site",
+      filterIssues: "Issues",
+      filterAvailable: "Available",
+      noToolsInView: "No tools in this view.",
+      locate: "Locate",
+      withPerson: "With {name}",
+      noHolder: "No holder",
+      updatesKicker: "Field wire",
+      updatesTitle: "The handover sounds like the crew",
+      updatesCopy: "Short, attributed updates preserve the detail that disappears between vans, sites and shifts.",
+      updatesCount: "{count} updates",
+      oneUpdate: "1 update",
+      sourceText: "Text",
+      sourcePhoto: "Photo",
+      kindProgress: "Progress",
+      kindBlocker: "Blocker",
+      kindTool: "Tool",
+      kindDelivery: "Delivery",
+      kindGeneral: "Update",
+      leaveHandover: "Leave a clean handover",
+      composerTitle: "{site} update",
+      composerCopy: "Write it here, or ask the AI to collect the details one question at a time.",
+      yourName: "Your name",
+      whatChanged: "What changed?",
+      updatePlaceholder: "North wall done. Waiting on the electrician before the bathroom nib.",
+      saveUpdate: "Save update",
+      talkItThrough: "Ask me step by step",
+      noUpdates: "Site updates will appear here as the crew records them.",
+      refreshed: "Live from 4 collections · refreshed {time}",
+      naturalHeight: "Natural-height field board · no hidden inner scroll",
+      readFailed: "Could not refresh the field board: {message}",
+      toolSaved: "{name} now shows its latest status and location.",
+      toolSaveFailed: "The tool update was not saved: {message}",
+      actionSaved: "Action marked done. The job counts are current.",
+      actionSaveFailed: "The action was not updated: {message}",
+      updateSaved: "Field update saved to {site}.",
+      updateSaveFailed: "The field update was not saved: {message}",
+      importEmpty: "Paste at least one tool line first.",
+      importLimit: "Add at most 30 tools at a time.",
+      importDone: "Added {count} tools.",
+      importPartial: "Added {count} tools, then stopped: {message}",
+      setupPrompt: "Help me set up Job Kit with real data only. Ask for my active jobs, site names and addresses, crew, current next actions, then my tools with codes, status, holder, last known location and any missing or service issues. Write jobs to job-kit-jobs, tools to job-kit-tools, actions to job-kit-actions, and later handovers to job-kit-updates. Do not invent jobs, people, tools or locations.",
+      handoverPrompt: "Give me a clean handover for {site}. Open actions: {actions}. Tool issues: {issues}. Latest field updates: {updates}. Separate what is done, what is blocked, what the next crew needs, and which tools must move. Do not mark anything complete unless I confirm it.",
+      updatePrompt: "I'm at {site}. Ask me one short text question at a time to capture a field update: what changed, what is blocked, what tool moved, and what the next crew needs. When I finish, summarize it and ask before writing it to job-kit-updates with the exact current time and my name.",
+      toolPrompt: "Help me follow up on {tool} ({code}). It is currently {status}, last known at {location}, with {holder}. Ask what I want to confirm or change; do not update its location or status until I explicitly tell you.",
+      unknownError: "Unknown error"
+    },
+    zh: {
+      documentTitle: "工地工具箱 · 现场班组看板",
+      eyebrow: "现场班组 · 实时",
+      appName: "工地工具箱",
+      askHandover: "整理交接",
+      addUpdate: "添加现场更新",
+      pageOverview: "现场总览",
+      pageJobs: "工地",
+      pageTools: "工具",
+      pageUpdates: "交接",
+      jobsMoving: "个工地推进中",
+      oneJobMoving: "个工地推进中",
+      toolCoverage: "件工具已定位",
+      openActions: "项未完成",
+      issuesFlagged: "个问题已标记",
+      emptyKicker: "从真实班组开始",
+      emptyTitle: "让每件工具、每个工地都找得到",
+      emptyBody: "让 AI 收集正在进行的工地、班组、工具和下一步。这里不会编造内容，第一批真实记录保存后就立刻可用。",
+      askSetup: "让 AI 帮我建档",
+      pasteTools: "或批量粘贴工具",
+      bulkHelp: "每行：工具 | 编号 | 位置 | 可用 / 已领用 / 在工地 / 缺失 / 维修",
+      bulkPlaceholder: "绿光激光水平仪 | TL-014 | Preston 仓库 | 已领用",
+      addTools: "加入这些工具",
+      toolLocator: "工具定位",
+      finderQuestion: "激光水平仪在哪？",
+      searchPlaceholder: "搜索工具、编号、人员或工地…",
+      searchLabel: "搜索工具",
+      clearSearch: "显示全部",
+      noToolMatch: "没有匹配的工具。",
+      foundNow: "已经找到",
+      attentionNeeded: "需要处理",
+      homeBase: "出发点",
+      checkedTo: "领用人",
+      nowAt: "当前位置",
+      workshop: "Preston 仓库",
+      unassigned: "未分配",
+      noJob: "未关联工地",
+      lastKnownLocation: "最后已知位置",
+      kitContents: "随箱配件",
+      lastUpdate: "最近更新",
+      fieldNote: "现场备注",
+      noDetail: "尚无详情",
+      updateLocation: "更新位置",
+      askHolder: "询问这件工具",
+      status: "状态",
+      job: "工地",
+      location: "位置",
+      holder: "领用人",
+      note: "备注",
+      saveTool: "保存工具更新",
+      saving: "保存中…",
+      cancel: "取消",
+      statusAvailable: "可用",
+      statusCheckedOut: "已领用",
+      statusOnSite: "在工地",
+      statusMissing: "缺失",
+      statusService: "维修中",
+      statusOpen: "待处理",
+      statusBlocked: "被阻塞",
+      statusDone: "已完成",
+      statusActive: "进行中",
+      statusUpcoming: "即将开始",
+      statusPaused: "已暂停",
+      stillOpen: "仍未完成",
+      gearOnJob: "工地工具",
+      actionsCount: "{count} 项任务",
+      oneAction: "1 项任务",
+      toolsCount: "{count} 件工具",
+      oneTool: "1 件工具",
+      nextMove: "下一步",
+      noNextMove: "还没有写下一步",
+      crewLine: "{crew} · 共 {count} 人",
+      oneCrew: "{crew} · 共 1 人",
+      markDone: "将“{title}”标为完成",
+      blocked: "受阻",
+      dueToday: "今天到期",
+      overdue: "逾期 {count} 天",
+      dueIn: "{count} 天后到期",
+      noActions: "这个工地没有未完成事项。",
+      jobsKicker: "今天的路线",
+      jobsTitle: "正在推进的工地",
+      jobsCopy: "点一个工地，上方就会切换到它的任务、班组和交接信息。",
+      jobProgress: "完成 {count}%",
+      actionStat: "任务",
+      toolStat: "工具",
+      issueStat: "问题",
+      freshUpdate: "更新于 {time}",
+      needsUpdate: "需要新的现场更新",
+      toolsKicker: "共享工具间",
+      toolsTitle: "每件工具都有最后已知位置",
+      toolsCopy: "已领用、在工地、缺失、维修或回到仓库——不必再翻昨天的群聊。",
+      filterAll: "全部",
+      filterCheckedOut: "已领用",
+      filterOnSite: "在工地",
+      filterIssues: "有问题",
+      filterAvailable: "可用",
+      noToolsInView: "这个视图里没有工具。",
+      locate: "定位",
+      withPerson: "由 {name} 领用",
+      noHolder: "无人领用",
+      updatesKicker: "现场频道",
+      updatesTitle: "交接保留班组自己的说法",
+      updatesCopy: "简短、注明人员的现场更新，留住车辆、工地和班次切换时最容易丢失的细节。",
+      updatesCount: "{count} 条更新",
+      oneUpdate: "1 条更新",
+      sourceText: "文字",
+      sourcePhoto: "照片",
+      kindProgress: "进度",
+      kindBlocker: "阻塞",
+      kindTool: "工具",
+      kindDelivery: "到货",
+      kindGeneral: "更新",
+      leaveHandover: "留下一份清楚的交接",
+      composerTitle: "{site} 更新",
+      composerCopy: "可以直接写，也可以让 AI 一次问一个文字问题，把现场细节逐项补齐。",
+      yourName: "你的名字",
+      whatChanged: "发生了什么？",
+      updatePlaceholder: "北墙已完成。卫生间矮墙等电工完成预埋后继续。",
+      saveUpdate: "保存更新",
+      talkItThrough: "让 AI 逐项提问",
+      noUpdates: "班组记录后，现场更新会出现在这里。",
+      refreshed: "来自 4 份实时数据 · {time} 刷新",
+      naturalHeight: "自然高度现场看板 · 没有隐藏的内部滚动",
+      readFailed: "现场看板刷新失败：{message}",
+      toolSaved: "{name} 已显示最新状态和位置。",
+      toolSaveFailed: "工具更新没有保存：{message}",
+      actionSaved: "任务已标为完成，工地统计已更新。",
+      actionSaveFailed: "任务没有更新：{message}",
+      updateSaved: "现场更新已保存到 {site}。",
+      updateSaveFailed: "现场更新没有保存：{message}",
+      importEmpty: "请先粘贴至少一行工具。",
+      importLimit: "一次最多加入 30 件工具。",
+      importDone: "已加入 {count} 件工具。",
+      importPartial: "已加入 {count} 件工具，随后停止：{message}",
+      setupPrompt: "请只用真实资料帮我建立 Job Kit。先问清正在进行的工地、地址、班组和下一步，再收集工具编号、状态、领用人、最后已知位置，以及缺失或维修问题。工地写入 job-kit-jobs，工具写入 job-kit-tools，任务写入 job-kit-actions，之后的交接写入 job-kit-updates。不要编造工地、人员、工具或位置。",
+      handoverPrompt: "请整理 {site} 的清楚交接。未完成事项：{actions}。工具问题：{issues}。最近现场更新：{updates}。分别说明已完成、被阻塞、下一班需要什么、哪些工具要移动。除非我确认，不要把任何事项标成完成。",
+      updatePrompt: "我现在在 {site}。请一次只问一个简短的文字问题，帮我记录现场更新：发生了什么、哪里受阻、哪件工具移动了、下一班需要知道什么。全部问完后先总结，并在写入 job-kit-updates 前询问确认，使用准确的当前时间和我的名字。",
+      toolPrompt: "请帮我跟进 {tool}（{code}）。目前状态是 {status}，最后已知位置为 {location}，领用人是 {holder}。先问我想确认或修改什么；除非我明确说明，不要更新位置或状态。",
+      unknownError: "未知错误"
+    }
+  };
+
+  let model = { jobs: [], tools: [], actions: [], updates: [] };
+  let hostState = { items: [] };
+  let refreshTask = null;
+  let refreshQueued = false;
+  let fixturePreview = false;
+  let selectedJobId = "";
+  let selectedToolId = "";
+  let toolFilter = "all";
+  let toolQuery = "";
+  let activeMobilePage = "overview";
+  let statusState = null;
+  let statusTimer = 0;
+  const mobilePageMedia = window.matchMedia("(max-width: 680px)");
+  const MOBILE_PAGES = new Set(["overview", "jobs", "tools", "updates"]);
+
+  const byPosition = (a, b) => (Number(a.position) || 0) - (Number(b.position) || 0);
+  const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const today = () => { const now = clockNow(); return new Date(now.getFullYear(), now.getMonth(), now.getDate()); };
+  const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
+
+  function locale() {
+    const pref = String(oma.pref("locale", "auto") || "auto");
+    const value = pref === "auto" ? (navigator.language || "en-US") : pref;
+    try {
+      new Intl.DateTimeFormat(value);
+      return value;
+    } catch {
+      return navigator.language || "en-US";
+    }
+  }
+
+  function language() {
+    return locale().toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+
+  function t(key, vars = {}) {
+    let value = STR[language()][key] ?? STR.en[key] ?? key;
+    for (const [name, replacement] of Object.entries(vars)) value = value.replaceAll(`{${name}}`, String(replacement));
+    return value;
+  }
+
+  function numberText(value) {
+    return new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(Number(value) || 0);
+  }
+
+  function validDate(value) {
+    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
+  }
+
+  function formatDate(iso, options = { month: "short", day: "numeric" }) {
+    if (!validDate(String(iso).slice(0, 10))) return String(iso || "");
+    const dateIso = String(iso).slice(0, 10);
+    const mode = oma.pref("date_format", "auto");
+    const [year, month, day] = dateIso.split("-");
+    if (mode === "yyyy-mm-dd") return dateIso;
+    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+    return new Intl.DateTimeFormat(locale(), options).format(dateOnly(dateIso));
+  }
+
+  function formatTimestamp(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value || "");
+    const datePart = formatDate(`${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`);
+    const timePart = new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(date);
+    return `${datePart} · ${timePart}`;
+  }
+
+  function clockNow() {
+    if (!fixturePreview) return new Date();
+    const timestamps = [
+      ...model.tools.map((item) => field(item, "updated_at")),
+      ...model.actions.map((item) => field(item, "updated_at")),
+      ...model.updates.map((item) => field(item, "created_at"))
+    ].map((value) => new Date(value).getTime()).filter(Number.isFinite);
+    return timestamps.length ? new Date(Math.max(...timestamps)) : new Date();
+  }
+
+  function formatShiftDate() {
+    return new Intl.DateTimeFormat(locale(), { weekday: "long", month: "short", day: "numeric" }).format(clockNow());
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function icon(path) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("class", "k-icon");
+    svg.setAttribute("viewBox", "0 0 16 16");
+    svg.setAttribute("aria-hidden", "true");
+    const shape = document.createElementNS("http://www.w3.org/2000/svg", "path");
+    shape.setAttribute("d", path);
+    svg.append(shape);
+    return svg;
+  }
+
+  function initials(name) {
+    return String(name || "?").split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join("").toUpperCase();
+  }
+
+  function field(item, key, fallback = "") {
+    const value = item?.fields?.[key];
+    return value === undefined || value === null ? fallback : value;
+  }
+
+  function safeArray(value) {
+    if (Array.isArray(value)) return value.map(String).filter(Boolean);
+    if (typeof value !== "string") return [];
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String).filter(Boolean);
+    } catch {
+      return value.split(/[,，、]/).map((part) => part.trim()).filter(Boolean);
+    }
+    return [];
+  }
+
+  function safeError(error) {
+    return String(error?.message || error || t("unknownError"));
+  }
+
+  function toolFailure(response, fallback) {
+    const payload = response?.structuredContent || response;
+    if (!response || response.isError || response.ok === false || payload?.ok === false) {
+      const message = payload?.note || payload?.reason || response?.note || response?.reason || response?.content?.[0]?.text || fallback;
+      throw new Error(message);
+    }
+    return payload || {};
+  }
+
+  async function readCollection(collection) {
+    const response = await oma.callTool("data_list", { collection, limit: 500 });
+    toolFailure(response, collection);
+    const items = response?.structuredContent?.items;
+    if (!Array.isArray(items)) throw new Error(`${collection} returned invalid data.`);
+    return items;
+  }
+
+  async function dataWrite(tool, args) {
+    const response = await oma.callTool(tool, {
+      command_id: crypto.randomUUID(),
+      actor: "human",
+      ...args
+    });
+    return toolFailure(response, `${tool} failed.`);
+  }
+
+  function fixtureRows(items) {
+    return {
+      jobs: items.filter((item) => item.collection === JOBS),
+      tools: items.filter((item) => item.collection === TOOLS),
+      actions: items.filter((item) => item.collection === ACTIONS),
+      updates: items.filter((item) => item.collection === UPDATES)
+    };
+  }
+
+  function hasFixtureRows(rows) {
+    return rows.jobs.length || rows.tools.length || rows.actions.length || rows.updates.length;
+  }
+
+  function refreshCollections(state = hostState) {
+    hostState = state || hostState;
+    refreshQueued = true;
+    if (refreshTask) return refreshTask;
+
+    refreshTask = (async () => {
+      while (refreshQueued) {
+        refreshQueued = false;
+        const preview = fixtureRows(hostState.items || []);
+        if (hasFixtureRows(preview)) {
+          fixturePreview = true;
+          model = preview;
+          render();
+          continue;
+        }
+
+        fixturePreview = false;
+        const [jobs, tools, actions, updates] = await Promise.all(COLLECTIONS.map(readCollection));
+        model = { jobs, tools, actions, updates };
+        render();
+      }
+    })().finally(() => {
+      refreshTask = null;
+    });
+    return refreshTask;
+  }
+
+  function requestRefresh(state) {
+    void refreshCollections(state).catch((error) => {
+      showStatus(t("readFailed", { message: safeError(error) }), "bad", true);
+    });
+  }
+
+  function showStatus(message, tone = "ok", persistent = false) {
+    statusState = { message, tone };
+    applyStatus();
+    clearTimeout(statusTimer);
+    if (!persistent) {
+      statusTimer = setTimeout(() => {
+        statusState = null;
+        applyStatus();
+      }, 4200);
+    }
+  }
+
+  function applyStatus() {
+    const strip = document.getElementById("status-strip");
+    strip.hidden = !statusState;
+    if (!statusState) return;
+    strip.dataset.tone = statusState.tone;
+    document.getElementById("status-message").textContent = statusState.message;
+  }
+
+  function sortedJobs() {
+    const order = { active: 0, upcoming: 1, paused: 2, done: 3 };
+    return [...model.jobs].filter((item) => field(item, "title")).sort((a, b) => {
+      const statusDiff = (order[field(a, "status")] ?? 9) - (order[field(b, "status")] ?? 9);
+      return statusDiff || byPosition(a, b);
+    });
+  }
+
+  function sortedTools() {
+    return [...model.tools].filter((item) => field(item, "name")).sort((a, b) => byPosition(a, b) || String(field(a, "name")).localeCompare(String(field(b, "name"))));
+  }
+
+  function sortedUpdates() {
+    return [...model.updates].filter((item) => field(item, "message")).sort((a, b) => {
+      const left = new Date(field(a, "created_at")).getTime() || 0;
+      const right = new Date(field(b, "created_at")).getTime() || 0;
+      return right - left || byPosition(a, b);
+    });
+  }
+
+  function jobById(id) {
+    return model.jobs.find((item) => item.id === id) || null;
+  }
+
+  function jobLabel(id) {
+    const job = jobById(id);
+    return job ? String(field(job, "site") || field(job, "title")) : t("noJob");
+  }
+
+  function statusLabel(status) {
+    const key = {
+      available: "statusAvailable",
+      checked_out: "statusCheckedOut",
+      on_site: "statusOnSite",
+      missing: "statusMissing",
+      service: "statusService",
+      open: "statusOpen",
+      blocked: "statusBlocked",
+      done: "statusDone",
+      active: "statusActive",
+      upcoming: "statusUpcoming",
+      paused: "statusPaused"
+    }[status];
+    return key ? t(key) : String(status || "—");
+  }
+
+  function statusBadge(status) {
+    return el("span", `status-badge status-${status}`, statusLabel(status));
+  }
+
+  function issueTools() {
+    return model.tools.filter((item) => ISSUE_STATUSES.has(field(item, "status")));
+  }
+
+  function openActions(jobId = "") {
+    return model.actions.filter((item) => (!jobId || field(item, "job_id") === jobId) && field(item, "status") !== "done");
+  }
+
+  function jobTools(jobId) {
+    return model.tools.filter((item) => field(item, "job_id") === jobId);
+  }
+
+  function jobIssues(jobId) {
+    return jobTools(jobId).filter((item) => ISSUE_STATUSES.has(field(item, "status")));
+  }
+
+  function latestJobUpdate(jobId) {
+    return sortedUpdates().find((item) => field(item, "job_id") === jobId) || null;
+  }
+
+  function ensureSelections() {
+    const jobs = sortedJobs();
+    if (!jobs.some((item) => item.id === selectedJobId)) {
+      selectedJobId = jobs.find((item) => String(field(item, "site")).toLowerCase().includes("carlton"))?.id || jobs[0]?.id || "";
+    }
+
+    const tools = sortedTools();
+    if (!tools.some((item) => item.id === selectedToolId)) {
+      selectedToolId = tools.find((item) => field(item, "code") === "TL-014")?.id
+        || tools.find((item) => /laser level/i.test(field(item, "name")))?.id
+        || tools[0]?.id
+        || "";
+    }
+  }
+
+  function applyI18n() {
+    const lang = language();
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    document.title = t("documentTitle");
+    document.body.dataset.density = oma.pref("density", "comfortable");
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+    document.getElementById("shift-date").textContent = formatShiftDate();
+  }
+
+  function applyMobilePage() {
+    const mobile = mobilePageMedia.matches;
+    for (const panel of document.querySelectorAll("[data-mobile-page]")) {
+      const active = panel.dataset.mobilePage === activeMobilePage;
+      panel.dataset.mobileActive = String(active);
+      panel.setAttribute("aria-hidden", String(mobile && !active));
+    }
+    for (const button of document.querySelectorAll("[data-mobile-page-target]")) {
+      const active = button.dataset.mobilePageTarget === activeMobilePage;
+      button.setAttribute("aria-selected", String(active));
+      button.tabIndex = active ? 0 : -1;
+    }
+  }
+
+  function setMobilePage(page) {
+    if (!MOBILE_PAGES.has(page)) return;
+    activeMobilePage = page;
+    applyMobilePage();
+  }
+
+  function renderOverview() {
+    const activeJobs = model.jobs.filter((item) => ["active", "upcoming"].includes(field(item, "status"))).length;
+    const issues = issueTools().length;
+    const accounted = Math.max(0, model.tools.length - issues);
+    document.getElementById("active-job-count").textContent = numberText(activeJobs);
+    document.getElementById("active-job-label").textContent = t(activeJobs === 1 ? "oneJobMoving" : "jobsMoving");
+    document.getElementById("tool-coverage").textContent = `${numberText(accounted)}/${numberText(model.tools.length)}`;
+    document.getElementById("open-action-count").textContent = numberText(openActions().length);
+    document.getElementById("issue-count").textContent = numberText(issues);
+  }
+
+  function matchingTools() {
+    const query = toolQuery.trim().toLowerCase();
+    return sortedTools().filter((item) => {
+      const status = field(item, "status");
+      if (!oma.pref("show_available_tools", true) && status === "available") return false;
+      if (toolFilter === "issues" && !ISSUE_STATUSES.has(status)) return false;
+      if (!["all", "issues"].includes(toolFilter) && status !== toolFilter) return false;
+      if (!query) return true;
+      const job = jobById(field(item, "job_id"));
+      const haystack = [
+        field(item, "name"),
+        field(item, "code"),
+        field(item, "category"),
+        field(item, "location"),
+        field(item, "holder"),
+        field(item, "note"),
+        field(job, "title"),
+        field(job, "site")
+      ].join(" ").toLowerCase();
+      return haystack.includes(query);
+    });
+  }
+
+  function renderFinder() {
+    const visible = matchingTools();
+    const selectedIsVisible = visible.some((item) => item.id === selectedToolId);
+    if (!selectedIsVisible && visible.length) selectedToolId = visible[0].id;
+    const tool = visible.find((item) => item.id === selectedToolId) || null;
+    const empty = document.getElementById("finder-empty");
+    const result = document.getElementById("finder-result");
+    document.getElementById("search-result-count").textContent = t(visible.length === 1 ? "oneTool" : "toolsCount", { count: numberText(visible.length) });
+    empty.hidden = Boolean(tool);
+    result.hidden = !tool;
+    if (!tool) return;
+
+    const status = field(tool, "status", "available");
+    const issue = ISSUE_STATUSES.has(status);
+    const job = jobById(field(tool, "job_id"));
+    document.getElementById("finder-card").classList.toggle("issue", issue);
+    document.getElementById("found-kicker").textContent = t(issue ? "attentionNeeded" : "foundNow");
+    document.getElementById("finder-tool-name").textContent = field(tool, "name", "—");
+    document.getElementById("finder-tool-code").textContent = [field(tool, "code"), field(tool, "category")].filter(Boolean).join(" · ") || "—";
+    const badgeRoot = document.getElementById("finder-status");
+    badgeRoot.className = `status-badge status-${status}`;
+    badgeRoot.textContent = statusLabel(status);
+    document.getElementById("finder-job").textContent = jobLabel(field(tool, "job_id"));
+    document.getElementById("route-home").textContent = t("workshop");
+    document.getElementById("route-holder").textContent = field(tool, "holder") || statusLabel(status);
+    document.getElementById("route-site").textContent = field(job, "site") || String(field(tool, "location")).split("·")[0].trim() || t("unassigned");
+    document.getElementById("finder-location").textContent = field(tool, "location") || t("noDetail");
+    document.getElementById("finder-kit").textContent = field(tool, "kit") || t("noDetail");
+    document.getElementById("finder-updated").textContent = formatTimestamp(field(tool, "updated_at")) || t("noDetail");
+    document.getElementById("finder-note").textContent = field(tool, "note") || t("noDetail");
+    populateToolEditor(tool);
+  }
+
+  function populateJobSelect(select, includeNone = false) {
+    const current = select.value;
+    select.innerHTML = "";
+    if (includeNone) select.append(new Option(t("noJob"), ""));
+    for (const job of sortedJobs()) select.append(new Option(`${field(job, "site")} · ${field(job, "title")}`, job.id));
+    if ([...select.options].some((option) => option.value === current)) select.value = current;
+  }
+
+  function populateToolEditor(tool) {
+    const editor = document.getElementById("tool-editor");
+    if (!editor.open) return;
+    document.getElementById("tool-status-select").value = field(tool, "status", "available");
+    const jobSelect = document.getElementById("tool-job-select");
+    populateJobSelect(jobSelect, true);
+    jobSelect.value = field(tool, "job_id");
+    document.getElementById("tool-location-input").value = field(tool, "location");
+    document.getElementById("tool-holder-input").value = field(tool, "holder");
+    document.getElementById("tool-note-input").value = field(tool, "note");
+  }
+
+  function dueLabel(action) {
+    const due = field(action, "due_date");
+    if (!validDate(due)) return "";
+    const days = daysUntil(due);
+    if (days === 0) return t("dueToday");
+    if (days < 0) return t("overdue", { count: numberText(Math.abs(days)) });
+    return t("dueIn", { count: numberText(days) });
+  }
+
+  function countLabel(count, oneKey, manyKey) {
+    return t(count === 1 ? oneKey : manyKey, { count: numberText(count) });
+  }
+
+  function renderTodayJob() {
+    const job = jobById(selectedJobId);
+    const card = document.getElementById("today-card");
+    card.hidden = !job;
+    if (!job) return;
+
+    const progress = clamp(field(job, "progress"), 0, 100);
+    const actions = model.actions.filter((item) => field(item, "job_id") === job.id).sort(byPosition);
+    const pending = actions.filter((item) => field(item, "status") !== "done");
+    const tools = jobTools(job.id);
+    document.getElementById("today-job-site").textContent = `${field(job, "site")} · ${statusLabel(field(job, "status"))}`;
+    document.getElementById("today-job-title").textContent = field(job, "title", "—");
+    document.getElementById("today-job-address").textContent = field(job, "address", "—");
+    document.getElementById("today-progress").style.setProperty("--progress", `${progress}%`);
+    document.getElementById("today-progress-value").textContent = `${numberText(progress)}%`;
+    document.getElementById("today-open-count").textContent = countLabel(pending.length, "oneAction", "actionsCount");
+    document.getElementById("today-tool-count").textContent = countLabel(tools.length, "oneTool", "toolsCount");
+    document.getElementById("today-next-action").textContent = field(job, "next_action") || t("noNextMove");
+
+    const actionRoot = document.getElementById("today-actions");
+    actionRoot.innerHTML = "";
+    if (!actions.length) {
+      actionRoot.append(el("div", "empty-grid", t("noActions")));
+    } else {
+      for (const action of actions) {
+        const status = field(action, "status", "open");
+        const row = el("div", "action-row");
+        let state;
+        if (status === "done") {
+          state = el("span", "action-state done", "✓");
+        } else {
+          state = el("button", `action-state ${status === "blocked" ? "blocked" : ""}`, status === "blocked" ? "!" : "");
+          state.type = "button";
+          state.setAttribute("aria-label", t("markDone", { title: field(action, "title") }));
+          state.onclick = () => markActionDone(action, state);
+        }
+        const copy = el("div", "action-copy");
+        copy.append(el("strong", "", field(action, "title", "—")));
+        const meta = [field(action, "owner"), field(action, "note"), dueLabel(action)].filter(Boolean).join(" · ");
+        copy.append(el("span", "", meta));
+        row.append(state, copy, statusBadge(status));
+        actionRoot.append(row);
+      }
+    }
+
+    const crew = safeArray(field(job, "crew"));
+    const avatars = document.getElementById("today-crew-avatars");
+    avatars.innerHTML = "";
+    for (const person of crew.slice(0, 5)) avatars.append(el("span", "crew-avatar", initials(person)));
+    document.getElementById("today-crew-label").textContent = t(crew.length === 1 ? "oneCrew" : "crewLine", {
+      crew: crew.join(", ") || t("unassigned"),
+      count: numberText(crew.length)
+    });
+  }
+
+  function hoursSince(value) {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return Infinity;
+    return Math.max(0, (clockNow().getTime() - date.getTime()) / 3600000);
+  }
+
+  function renderJobs() {
+    const root = document.getElementById("job-grid");
+    root.innerHTML = "";
+    const jobs = sortedJobs();
+    if (!jobs.length) {
+      root.append(el("div", "empty-grid", t("emptyTitle")));
+      return;
+    }
+    const staleHours = clamp(oma.pref("stale_update_hours", 6), 1, 24);
+    jobs.forEach((job, index) => {
+      const actions = openActions(job.id);
+      const tools = jobTools(job.id);
+      const issues = jobIssues(job.id);
+      const latest = latestJobUpdate(job.id);
+      const progress = clamp(field(job, "progress"), 0, 100);
+      const stale = !latest || hoursSince(field(latest, "created_at")) > staleHours;
+      const button = el("button", `job-card${job.id === selectedJobId ? " selected" : ""}`);
+      button.type = "button";
+      button.style.setProperty("--i", String(index));
+      button.onclick = () => {
+        selectedJobId = job.id;
+        renderTodayJob();
+        renderJobs();
+        renderComposer();
+      };
+
+      const head = el("div", "job-card-head");
+      const copy = el("div");
+      copy.append(el("span", "job-code", `${field(job, "site")} · ${statusLabel(field(job, "status"))}`));
+      copy.append(el("h3", "", field(job, "title", "—")));
+      copy.append(el("div", "job-card-address", field(job, "address", "")));
+      head.append(copy, statusBadge(field(job, "status", "active")));
+
+      const track = el("div", "job-progress-track");
+      const fill = el("div", "job-progress-fill");
+      fill.style.width = `${progress}%`;
+      track.setAttribute("aria-label", t("jobProgress", { count: numberText(progress) }));
+      track.append(fill);
+
+      const stats = el("div", "job-card-stats");
+      for (const [count, label] of [[actions.length, t("actionStat")], [tools.length, t("toolStat")], [issues.length, t("issueStat")]]) {
+        const stat = el("div", "job-stat");
+        stat.append(el("strong", "", numberText(count)), el("span", "", label));
+        stats.append(stat);
+      }
+
+      const freshness = el("div", `job-freshness${stale ? " stale" : ""}`, stale ? t("needsUpdate") : t("freshUpdate", { time: formatTimestamp(field(latest, "created_at")) }));
+      button.append(head, track, stats, freshness);
+      root.append(button);
+    });
+  }
+
+  function renderTools() {
+    const root = document.getElementById("tool-grid");
+    const empty = document.getElementById("tool-grid-empty");
+    const tools = matchingTools();
+    root.innerHTML = "";
+    empty.hidden = tools.length > 0;
+    tools.forEach((tool, index) => {
+      const status = field(tool, "status", "available");
+      const issue = ISSUE_STATUSES.has(status);
+      const card = el("article", `tool-card${issue ? " issue" : ""}${tool.id === selectedToolId ? " selected" : ""}`);
+      card.style.setProperty("--i", String(index));
+      const head = el("div", "tool-card-head");
+      const copy = el("div");
+      copy.append(el("span", "tool-code", [field(tool, "code"), field(tool, "category")].filter(Boolean).join(" · ")));
+      copy.append(el("h3", "", field(tool, "name", "—")));
+      head.append(copy, statusBadge(status));
+
+      const location = el("div", "tool-location");
+      location.append(icon("M8 14s4-3.8 4-7A4 4 0 104 7c0 3.2 4 7 4 7zM8 8.5a1.5 1.5 0 110-3 1.5 1.5 0 010 3z"), el("span", "", field(tool, "location") || t("noDetail")));
+      const note = el("div", "tool-note", field(tool, "note") || field(tool, "kit") || t("noDetail"));
+      const foot = el("div", "tool-card-foot");
+      const holder = el("div", "tool-holder", field(tool, "holder") ? t("withPerson", { name: field(tool, "holder") }) : t("noHolder"));
+      const locate = el("button", "k-btn ghost locate-button", t("locate"));
+      locate.type = "button";
+      locate.onclick = () => {
+        selectedToolId = tool.id;
+        toolQuery = "";
+        document.getElementById("tool-search-input").value = "";
+        renderFinder();
+        renderTools();
+      };
+      foot.append(holder, locate);
+      card.append(head, location, note, foot);
+      root.append(card);
+    });
+
+    for (const button of document.querySelectorAll("[data-tool-filter]")) button.classList.toggle("on", button.dataset.toolFilter === toolFilter);
+  }
+
+  function updateKindLabel(kind) {
+    const key = {
+      progress: "kindProgress",
+      blocker: "kindBlocker",
+      tool: "kindTool",
+      delivery: "kindDelivery",
+      general: "kindGeneral"
+    }[kind] || "kindGeneral";
+    return t(key);
+  }
+
+  function updateSourceLabel(source) {
+    return t({ text: "sourceText", photo: "sourcePhoto" }[source] || "sourceText");
+  }
+
+  function renderUpdates() {
+    const root = document.getElementById("update-list");
+    const updates = sortedUpdates();
+    root.innerHTML = "";
+    document.getElementById("update-total").textContent = t(updates.length === 1 ? "oneUpdate" : "updatesCount", { count: numberText(updates.length) });
+    if (!updates.length) {
+      root.append(el("div", "empty-grid", t("noUpdates")));
+      return;
+    }
+
+    updates.slice(0, 8).forEach((update, index) => {
+      const kind = field(update, "kind", "general");
+      const source = field(update, "source", "text");
+      const row = el("article", `update-row${kind === "blocker" ? " blocker" : ""}`);
+      row.style.setProperty("--i", String(index));
+      row.append(el("div", "update-avatar", initials(field(update, "author"))));
+      const copy = el("div", "update-copy");
+      const head = el("div", "update-head");
+      head.append(el("strong", "", field(update, "author", "—")));
+      head.append(el("span", "k-badge info", jobLabel(field(update, "job_id"))));
+      head.append(el("span", "update-time", formatTimestamp(field(update, "created_at"))));
+      head.append(el("span", `k-badge update-kind${kind === "blocker" ? " bad" : ""}`, `${updateSourceLabel(source)} · ${updateKindLabel(kind)}`));
+      copy.append(head, el("p", "update-message", field(update, "message", "—")));
+      row.append(copy);
+      root.append(row);
+    });
+  }
+
+  function renderComposer() {
+    const jobSelect = document.getElementById("update-job-select");
+    populateJobSelect(jobSelect);
+    if ([...jobSelect.options].some((option) => option.value === selectedJobId)) jobSelect.value = selectedJobId;
+    const job = jobById(jobSelect.value || selectedJobId);
+    document.getElementById("composer-title").textContent = t("composerTitle", { site: field(job, "site") || t("job") });
+  }
+
+  function renderFooter() {
+    document.getElementById("refresh-note").textContent = t("refreshed", {
+      time: new Intl.DateTimeFormat(locale(), { hour: "numeric", minute: "2-digit" }).format(clockNow())
+    });
+  }
+
+  function render() {
+    applyI18n();
+    applyMobilePage();
+    ensureSelections();
+    const hasData = model.jobs.length || model.tools.length || model.actions.length || model.updates.length;
+    document.getElementById("empty-state").hidden = Boolean(hasData);
+    document.getElementById("app-content").hidden = !hasData;
+    if (!hasData) {
+      renderFooter();
+      return;
+    }
+    renderOverview();
+    renderFinder();
+    renderTodayJob();
+    renderJobs();
+    renderTools();
+    renderUpdates();
+    renderComposer();
+    renderFooter();
+    applyStatus();
+  }
+
+  async function markActionDone(action, button) {
+    button.disabled = true;
+    try {
+      await dataWrite("data_update_item", {
+        id: action.id,
+        expected_version: action.version,
+        fields: {
+          status: "done",
+          updated_at: new Date().toISOString()
+        }
+      });
+      await refreshCollections();
+      showStatus(t("actionSaved"));
+    } catch (error) {
+      showStatus(t("actionSaveFailed", { message: safeError(error) }), "bad", true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function openToolEditor() {
+    const tool = model.tools.find((item) => item.id === selectedToolId);
+    if (!tool) return;
+    const editor = document.getElementById("tool-editor");
+    editor.open = true;
+    populateToolEditor(tool);
+    document.getElementById("tool-location-input").focus();
+  }
+
+  function closeToolEditor() {
+    document.getElementById("tool-editor").open = false;
+  }
+
+  async function saveTool(event) {
+    event.preventDefault();
+    const tool = model.tools.find((item) => item.id === selectedToolId);
+    if (!tool) return;
+    const button = document.getElementById("save-tool-button");
+    button.disabled = true;
+    button.textContent = t("saving");
+    try {
+      await dataWrite("data_update_item", {
+        id: tool.id,
+        expected_version: tool.version,
+        fields: {
+          status: document.getElementById("tool-status-select").value,
+          job_id: document.getElementById("tool-job-select").value,
+          location: document.getElementById("tool-location-input").value.trim(),
+          holder: document.getElementById("tool-holder-input").value.trim(),
+          note: document.getElementById("tool-note-input").value.trim(),
+          updated_at: new Date().toISOString()
+        }
+      });
+      closeToolEditor();
+      await refreshCollections();
+      showStatus(t("toolSaved", { name: field(tool, "name") }));
+    } catch (error) {
+      showStatus(t("toolSaveFailed", { message: safeError(error) }), "bad", true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+      button.textContent = t("saveTool");
+    }
+  }
+
+  async function saveFieldUpdate(event) {
+    event.preventDefault();
+    const jobId = document.getElementById("update-job-select").value;
+    const author = document.getElementById("update-author-input").value.trim();
+    const message = document.getElementById("update-message-input").value.trim();
+    if (!jobId || !author || !message) return;
+    const button = document.getElementById("save-update-button");
+    button.disabled = true;
+    button.textContent = t("saving");
+    try {
+      await dataWrite("data_add_item", {
+        collection: UPDATES,
+        group: jobId,
+        fields: {
+          job_id: jobId,
+          author,
+          message,
+          created_at: new Date().toISOString(),
+          source: "text",
+          kind: "general"
+        }
+      });
+      document.getElementById("update-message-input").value = "";
+      selectedJobId = jobId;
+      await refreshCollections();
+      showStatus(t("updateSaved", { site: jobLabel(jobId) }));
+    } catch (error) {
+      showStatus(t("updateSaveFailed", { message: safeError(error) }), "bad", true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+      button.textContent = t("saveUpdate");
+    }
+  }
+
+  async function importTools() {
+    const input = document.getElementById("bulk-tool-input");
+    const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) {
+      showStatus(t("importEmpty"), "bad");
+      return;
+    }
+    if (lines.length > 30) {
+      showStatus(t("importLimit"), "bad");
+      return;
+    }
+
+    const button = document.getElementById("bulk-tool-button");
+    button.disabled = true;
+    let added = 0;
+    try {
+      for (const line of lines) {
+        const [name, code = "", location = "", rawStatus = "available"] = line.split("|").map((part) => part.trim());
+        if (!name) continue;
+        const localizedStatuses = {
+          "可用": "available",
+          "已领用": "checked_out",
+          "在工地": "on_site",
+          "缺失": "missing",
+          "维修": "service",
+          "维修中": "service"
+        };
+        const normalizedStatus = localizedStatuses[rawStatus] || rawStatus;
+        const status = TOOL_STATUSES.includes(normalizedStatus) ? normalizedStatus : "available";
+        await dataWrite("data_add_item", {
+          collection: TOOLS,
+          group: "Tools",
+          fields: {
+            name,
+            code,
+            category: language() === "zh" ? "工具" : "Tools",
+            status,
+            location,
+            holder: "",
+            job_id: "",
+            kit: "",
+            updated_at: new Date().toISOString(),
+            note: ""
+          }
+        });
+        added++;
+      }
+      input.value = "";
+      await refreshCollections();
+      showStatus(t("importDone", { count: numberText(added) }));
+    } catch (error) {
+      showStatus(t("importPartial", { count: numberText(added), message: safeError(error) }), "bad", true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function selectedJobSummary() {
+    const job = jobById(selectedJobId);
+    if (!job) return null;
+    const actions = openActions(job.id).map((item) => `${field(item, "title")}${field(item, "status") === "blocked" ? ` (${t("blocked")}: ${field(item, "note")})` : ""}`).join("; ") || t("noActions");
+    const issues = jobIssues(job.id).map((item) => `${field(item, "name")}: ${statusLabel(field(item, "status"))} · ${field(item, "location")}`).join("; ") || "none";
+    const updates = sortedUpdates().filter((item) => field(item, "job_id") === job.id).slice(0, 3).map((item) => `${field(item, "author")}: ${field(item, "message")}`).join("; ") || "none";
+    return { job, actions, issues, updates };
+  }
+
+  document.getElementById("tool-search-input").oninput = (event) => {
+    toolQuery = event.currentTarget.value;
+    renderFinder();
+    renderTools();
+  };
+
+  document.getElementById("tool-search-form").onsubmit = (event) => {
+    event.preventDefault();
+    renderFinder();
+    renderTools();
+  };
+
+  document.getElementById("clear-search").onclick = () => {
+    toolQuery = "";
+    toolFilter = "all";
+    document.getElementById("tool-search-input").value = "";
+    renderFinder();
+    renderTools();
+  };
+
+  for (const button of document.querySelectorAll("[data-tool-filter]")) {
+    button.onclick = () => {
+      toolFilter = button.dataset.toolFilter;
+      renderFinder();
+      renderTools();
+    };
+  }
+
+  for (const button of document.querySelectorAll("[data-mobile-page-target]")) {
+    button.onclick = () => setMobilePage(button.dataset.mobilePageTarget);
+  }
+
+  if (typeof mobilePageMedia.addEventListener === "function") {
+    mobilePageMedia.addEventListener("change", applyMobilePage);
+  } else {
+    mobilePageMedia.addListener(applyMobilePage);
+  }
+
+  document.getElementById("update-tool-button").onclick = openToolEditor;
+  document.getElementById("cancel-tool-button").onclick = closeToolEditor;
+  document.getElementById("tool-editor-form").onsubmit = saveTool;
+  document.getElementById("update-form").onsubmit = saveFieldUpdate;
+  document.getElementById("update-job-select").onchange = (event) => {
+    selectedJobId = event.currentTarget.value;
+    renderTodayJob();
+    renderJobs();
+    renderComposer();
+  };
+
+  document.getElementById("setup-button").onclick = () => oma.sendMessage(t("setupPrompt"));
+  document.getElementById("bulk-tool-button").onclick = importTools;
+
+  document.getElementById("handover-button").onclick = () => {
+    const summary = selectedJobSummary();
+    if (!summary) return;
+    oma.sendMessage(t("handoverPrompt", {
+      site: field(summary.job, "site"),
+      actions: summary.actions,
+      issues: summary.issues,
+      updates: summary.updates
+    }));
+  };
+
+  function sendUpdatePrompt() {
+    const job = jobById(selectedJobId);
+    if (!job) return;
+    oma.sendMessage(t("updatePrompt", { site: field(job, "site") || field(job, "title") }));
+  }
+
+  document.getElementById("update-button").onclick = sendUpdatePrompt;
+  document.getElementById("ai-update-button").onclick = sendUpdatePrompt;
+  document.getElementById("ask-holder-button").onclick = () => {
+    const tool = model.tools.find((item) => item.id === selectedToolId);
+    if (!tool) return;
+    oma.sendMessage(t("toolPrompt", {
+      tool: field(tool, "name"),
+      code: field(tool, "code") || "—",
+      status: statusLabel(field(tool, "status")),
+      location: field(tool, "location") || t("noDetail"),
+      holder: field(tool, "holder") || t("noHolder")
+    }));
+  };
+
+  oma.ready(requestRefresh);
+  oma.onChange(requestRefresh);
+  oma.onPrefChange(render);
+  setInterval(() => {
+    if (!document.hidden) requestRefresh(hostState);
+  }, 30000);
+  setInterval(() => {
+    document.getElementById("shift-date").textContent = formatShiftDate();
+    renderFooter();
+  }, 60000);
+</script>
+</body>
+</html>

@@ -21,7 +21,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
-import { openStore, renameLegacyTables, SCHEMA_VERSION } from "../src/store.mjs";
+import { openStore, SCHEMA_VERSION } from "../src/store.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TMP = join(ROOT, "test", "tmp-install-paths");
@@ -47,27 +47,23 @@ const sha = (p) => createHash("sha256").update(readFileSync(p)).digest("hex");
 const uv = (p) => { const d = new Database(p, { readonly: true }); const v = d.pragma("user_version", { simple: true }); d.close(); return v; };
 const tables = (p) => { const d = new Database(p, { readonly: true }); const t = d.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all().map((r) => r.name); d.close(); return t; };
 
-// A v3 store: the era before the component → app rename, with one app and three items in it.
-// Built by taking a REAL current store and renaming it BACKWARDS, rather than by hand-writing the
-// old DDL. A hand-written fixture drifts — the first attempt at this file omitted a column the
-// engine needs and failed the fixture instead of the code — and the only thing v3 means for the
-// code under test is the naming, which is exactly what the reverse rename reproduces.
-const makeV3 = (p) => {
+// A v5 store: the shape one rung down — html column, no revision manifest. Built by taking a real
+// current store and reversing the v6 step, then stamping user_version=5; that rung is exactly the
+// reverse of this construction. (v4, the last RELEASED shape, is drilled in ledger-smoke §7b.)
+const makeV5 = (p) => {
   rm(p);
   openStore(p).close();                                  // a real store at the current schema
   const d = new Database(p);
   const now = new Date().toISOString();
+  d.exec("ALTER TABLE app RENAME COLUMN ui TO html");
+  d.exec("ALTER TABLE app_history RENAME COLUMN ui TO html");
+  d.exec("ALTER TABLE app_history DROP COLUMN manifest");
   d.prepare(`INSERT INTO app (name,version,html,description,author,kind,visibility,updated_at)
              VALUES (?,?,?,?,?,?,?,?)`).run("my-tracker", 1, "<html>three years of it</html>", "", "human", "app", "listed", now);
   const ins = d.prepare(`INSERT INTO item (id,collection,grp,position,fields,version,created_at,updated_at)
                          VALUES (?,?,?,?,?,?,?,?)`);
   for (let i = 1; i <= 3; i++) ins.run("i" + i, "my-tracker", "", i, JSON.stringify({ t: "row" + i }), 1, now, now);
-  d.exec("ALTER TABLE app RENAME TO component");
-  d.exec("ALTER TABLE app_history RENAME TO component_history");
-  d.exec("ALTER TABLE file RENAME COLUMN app TO component");
-  d.exec("DROP INDEX IF EXISTS idx_file_app");
-  d.exec("CREATE INDEX IF NOT EXISTS idx_file_component ON file(component)");
-  d.pragma("user_version = 3");
+  d.pragma("user_version = 5");
   d.close();
   return p;
 };
@@ -78,22 +74,21 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
 // climb ran and the command then printed "nothing written". A dry run that cannot be undone is
 // the worst kind of lie a --dry-run flag can tell.
 {
-  const db = makeV3(join(TMP, "dry-v3.db"));
+  const db = makeV5(join(TMP, "dry-v5.db"));
   const before = { uv: uv(db), sha: sha(db) };
   let out = "", code = 0;
   try {
-    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks.html"), "--dry-run"],
+    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html"), "--dry-run"],
       { env: { ...process.env, OMA_DB: db }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { code = e.status; out = (e.stdout || "") + (e.stderr || ""); }
 
-  ok("an old store is left at its own schema version", uv(db) === 3, `user_version is ${uv(db)}, was ${before.uv}`);
+  ok("an old store is left at its own schema version", uv(db) === 5, `user_version is ${uv(db)}, was ${before.uv}`);
   ok("not one byte of it changed", sha(db) === before.sha);
-  ok("it still has its v3 tables", tables(db).includes("component"), tables(db).join(","));
   ok("and it SAYS it cannot do this, instead of doing it silently", code === 1 && /read-only open/.test(out), out.trim().slice(0, 160));
 
   // The other half of the same bug: with no store at all, a dry run used to CREATE one.
   const fresh = join(TMP, "nowhere", "store.db");
-  const o2 = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks.html"), "--dry-run"],
+  const o2 = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html"), "--dry-run"],
     { env: { ...process.env, OMA_DB: fresh }, encoding: "utf8" });
   ok("with no store at all, a dry run creates none", !existsSync(fresh));
   ok("and says so rather than implying it looked", /nothing written/.test(o2) && /no store exists yet/.test(o2), o2.trim());
@@ -101,14 +96,14 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
   // --list is the SAME defect through a second entrance, and takes the same door. Shipping the
   // dry-run fix alone would have put a release note in front of users that says "a dry run no
   // longer migrates your store" while `--list` still did.
-  const listDb = makeV3(join(TMP, "list-v3.db"));
+  const listDb = makeV5(join(TMP, "list-v5.db"));
   const listBefore = sha(listDb);
   let listOut = "", listCode = 0;
   try {
     listOut = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), "--list"],
       { env: { ...process.env, OMA_DB: listDb }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { listCode = e.status; listOut = (e.stdout || "") + (e.stderr || ""); }
-  ok("--list leaves an old store at its own schema version", uv(listDb) === 3, `user_version is ${uv(listDb)}`);
+  ok("--list leaves an old store at its own schema version", uv(listDb) === 5, `user_version is ${uv(listDb)}`);
   ok("--list changes not one byte of it", sha(listDb) === listBefore);
   ok("…and says so instead of migrating to answer", listCode === 1 && /read-only open/.test(listOut), listOut.trim().slice(0, 140));
 
@@ -118,84 +113,37 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
   ok("--list on a machine with no store creates none", !existsSync(listFresh));
   ok("…and still answers the question it was asked", /no apps installed/.test(lo), lo.trim());
 
-  // Regression: the ordinary install must still migrate. A fix that froze the ladder would pass
-  // every assertion above and break the product.
-  execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks.html")],
+  // Regression: the ordinary install must still climb the ladder (v5 → v6 here). A fix
+  // that froze the door would pass every assertion above and break the product.
+  execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html")],
     { env: { ...process.env, OMA_DB: db }, encoding: "utf8" });
   ok("a REAL install still migrates the same store", uv(db) === SCHEMA_VERSION, `user_version is ${uv(db)}`);
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
-console.log("\n2. W-1 — the v3→v4 window is all-or-nothing, and its wreckage repairs itself");
+console.log("\n2. anything older than v4 refuses through the INSTALLER too, naming the way forward");
+// (W-1's v3→v4 atomicity/wreckage drills retired 2026-08-04 with the pre-v4 ladder itself,
+// elegance A1 — the states they manufactured can no longer be produced or repaired, only refused.
+// The door's own semantics — fresh/v4/v5/v6 open, older refuses untouched — are pinned in
+// ledger-smoke §7b/§8. What this section keeps is the INSTALLER's behavior at that refusal.)
 {
-  // 2a. An interrupted migration leaves the store fully v3 — table shape AND version, not one
-  // without the other. The half state (v4 tables stamped v3) is what an older build turns into a
-  // store neither build will open, so the fix is that it cannot exist, not that it is survivable.
-  const db = makeV3(join(TMP, "atomic.db"));
-  const d = new Database(db);
-  d.exec(`CREATE TRIGGER boom BEFORE UPDATE ON component WHEN NEW.author = 'library'
-          BEGIN SELECT RAISE(ABORT, 'injected mid-climb failure'); END;`);
-  d.pragma("user_version = 1");                    // climb 1→4 so a migration step runs and throws
-  d.prepare("UPDATE component SET author = 'gallery'").run();
+  const oldDb = join(TMP, "ancient.db");
+  rm(oldDb);
+  const d = new Database(oldDb);
+  d.exec("CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+  d.pragma("user_version = 2");
   d.close();
-
-  let threw = false;
-  try { openStore(db).close(); } catch { threw = true; }
-  ok("an interrupted migration throws", threw);
-  ok("…and leaves the v3 table names, not the v4 ones", tables(db).includes("component") && !tables(db).includes("app"), tables(db).join(","));
-  ok("…and leaves user_version where it was", uv(db) === 1, `user_version is ${uv(db)}`);
-
-  const d2 = new Database(db); d2.exec("DROP TRIGGER boom"); d2.close();
-  openStore(db).close();
-  ok("removing the cause lets the same store migrate cleanly", uv(db) === SCHEMA_VERSION && tables(db).includes("app"));
-
-  // 2b. The wreckage that already exists in the wild: v4 tables plus the empty v3 tables an older
-  // build re-created beside them. One side is empty, so which is residue is a fact, not a guess.
-  const wreck = makeV3(join(TMP, "wreck.db"));
-  const w = new Database(wreck);
-  renameLegacyTables(w);                          // half migration: tables renamed…
-  w.pragma("user_version = 3");                   // …version never stamped
-  // …and then an older build opens it: its CREATE TABLE IF NOT EXISTS re-makes the v3 tables
-  // (empty) beside the v4 ones before it dies on an index. Only existence and emptiness matter to
-  // the code under test, so these stand in for that pass without re-stating the whole v3 DDL.
-  w.exec("CREATE TABLE component (name TEXT PRIMARY KEY, html TEXT)");
-  w.exec("CREATE TABLE component_history (name TEXT, version INTEGER)");
-  w.close();
-  ok("the wreck really has both table sets before we start",
-    tables(wreck).includes("app") && tables(wreck).includes("component"), tables(wreck).join(","));
-
-  // Caught, not left to throw: a regression here is the ORIGINAL defect coming back, and this
-  // suite has to report that as one red line rather than die on a stack trace mid-run.
-  let app = null, wreckErr = "";
-  try { const s = openStore(wreck); app = s.getApp("my-tracker"); s.close(); }
-  catch (e) { wreckErr = e.message; }
-  ok("0.4.2 opens it instead of refusing forever", !!app, wreckErr);
-  ok("the user's app came back intact", app?.html === "<html>three years of it</html>");
-  ok("the empty residue is gone", !tables(wreck).includes("component"), tables(wreck).join(","));
-  ok("and the store finished its migration", uv(wreck) === SCHEMA_VERSION);
-  let reopened = true;
-  try { openStore(wreck).close(); } catch { reopened = false; }
-  ok("reopening changes nothing", reopened && uv(wreck) === SCHEMA_VERSION && !tables(wreck).includes("component"));
-
-  // 2c. Two POPULATED sides stay a refusal — that one really is ambiguous — but the refusal now
-  // carries the way out, and the section it names has to exist.
-  const ambig = makeV3(join(TMP, "ambiguous.db"));
-  const a = new Database(ambig);
-  a.exec("CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER, html TEXT, description TEXT, author TEXT, updated_at TEXT)");
-  a.prepare("INSERT INTO app (name,version,html,description,author,updated_at) VALUES (?,?,?,?,?,?)")
-    .run("other-side", 1, "<p>b</p>", "", "human", new Date().toISOString());
-  a.close();
-  let msg = "";
-  try { openStore(ambig).close(); } catch (e) { msg = e.message; }
-  ok("two populated sides are still refused", /BOTH hold rows/.test(msg), msg.slice(0, 120));
-  const anchor = 'A store that neither build will open';
-  ok("the refusal names a recovery procedure", msg.includes(anchor), msg);
-  ok("…and that section actually exists in KNOWN-ISSUES.md",
-    readFileSync(join(ROOT, "KNOWN-ISSUES.md"), "utf8").includes(`## ${anchor}`),
-    "the error points at a section that is not there — a pointer that lies is worse than none");
+  const before = sha(oldDb);
+  let out = "", code = 0;
+  try {
+    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html")],
+      { env: { ...process.env, OMA_DB: oldDb }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  } catch (e) { code = e.status; out = (e.stdout || "") + (e.stderr || ""); }
+  ok("a pre-v4 store fails the install with a non-zero exit", code !== 0, `exit ${code}`);
+  ok("…naming the recovery path instead of guessing at history", /migrates v4/.test(out), out.trim().slice(0, 200));
+  ok("…and not one byte of the store changed", sha(oldDb) === before);
 }
 
-// ══════════════════════════════════════════════════════════════════════════════════════════════
 console.log("\n3. W-2 — a re-install keeps what the user put in the entry, and `unchanged` means it");
 {
   const HOME = join(TMP, "home2");

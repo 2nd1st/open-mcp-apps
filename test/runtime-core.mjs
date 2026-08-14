@@ -152,7 +152,6 @@ ok("an unknown shape walks — being safe beats being clever", decideChanges(nul
 
 console.log("6. viaOf — the frozen object form");
 ok("app form", viaOf("my-app").app === "my-app" && viaOf("my-app").function === undefined);
-ok("function form", viaOf("my-app", "tick").function === "tick");
 ok("invalid names stamp nothing (a write never fails over its shadow)",
   viaOf("BAD NAME!") === undefined && viaOf("") === undefined && viaOf(null) === undefined);
 
@@ -206,7 +205,7 @@ console.log("7. themeVars — the user theme layer (tokens, never a stylesheet)"
 
 console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app");
 {
-  // The embedder (settings' Installed grid, the hosted /library composer) fetches ONE snapshot
+  // The embedder (settings' Installed grid, the hosted store composer) fetches ONE snapshot
   // covering every collection and hands each preview only its own share. That slice is a security
   // boundary — a preview of the shopping list must not contain the medication log — and it is also
   // the thing that decides whether a preview has any data at all. Both halves are pinned here
@@ -260,6 +259,22 @@ console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app"
     && childPreviewSnapshot(rows, { app: "notes", declaration: "nope", tier: "local" }).collection === "notes");
   ok("junk rows are dropped, not carried into a sandbox",
     childPreviewSnapshot([null, { collection: "notes" }, "x"], { app: "notes", declaration: null, tier: "local" }).items.length === 1);
+
+  // A FIXTURE row is allowed to omit `collection` — app_store_preview's schema says so in as many
+  // words, and 13 of the 21 shipped store entries take it up. Reading the key raw made
+  // `has(undefined)` false for every one of them, so those previews rendered their empty state on
+  // every host (measured 2026-08-14 on /view/app-store: study-cards, whose rows happen to name the
+  // app itself, was the only live card on the shelf). An unstamped row belongs to the collection
+  // this snapshot binds to — including when a single declared collection moved that binding off
+  // the app's name.
+  const bare = [{ fields: { t: "unstamped" } }, { collection: "medication-log", fields: { t: "SECRET" } }];
+  const fx = childPreviewSnapshot(bare, { app: "habit-streaks", declaration: null, tier: "local" });
+  ok("a fixture row with no collection binds to the app's own collection, not to nothing",
+    fx.items.length === 1 && fx.items[0].fields.t === "unstamped", JSON.stringify(fx.items));
+  ok("…and it follows the binding when a single declared collection moves it off the app name",
+    childPreviewSnapshot(bare, { app: "builder-progress", declaration: decl("build-progress"), tier: "local" }).items.length === 1);
+  ok("…while the slice still keeps another app's rows out",
+    !fx.items.some((r) => r.collection === "medication-log"));
 
   // 🔴 THE TIER GATE. A manifest is written BY the app, so honouring it for an UNREVIEWED
   // app (share-install, T19 P-c) would let that app name its way into rows the parent has already

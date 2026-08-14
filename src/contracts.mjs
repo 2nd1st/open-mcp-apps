@@ -94,13 +94,13 @@ const snapshotSchema = {
 // Per-app file metadata (the ref index shape; bytes never ride here — see file_read's data_base64).
 const fileMetaShape = z.object({
   app: z.string(), path: z.string(), sha256: z.string(), size: z.number(),
-  mime: z.string(), version: z.number(), backend: z.string(),
+  mime: z.string(), version: z.number(),
   created_at: z.string(), updated_at: z.string(),
 });
 // The pinned caps shape (see CAP_NAMES/TIER_CAPS below) — served by app_html to the
-// loader/runner and by app_permissions to the settings Permissions pane.
+// loader/runner (and, through it, to the settings Permissions pane).
 const capsShape = z.object({
-  call_tools: z.array(z.string()), send_message: z.boolean(), update_context: z.boolean(),
+  call_tools: z.array(z.string()), send_message: z.boolean(),
   delete_items: z.enum(["allow", "confirm", "deny"]),
   cross_collection_read: z.boolean(), cross_collection_write: z.boolean(),
   settings_write: z.boolean(), read_source: z.boolean(),
@@ -129,7 +129,7 @@ const RESERVED_APP_NAMES = new Set([
 // places need it for unrelated reasons and a drifting copy would be silent: seed.mjs decides what
 // to install, and engine.mjs uses "owns an app that is not one of these" as the signal that a
 // user is past onboarding (see buildInstructions).
-const SEEDED_APPS = new Set(["settings", "dashboard", "library"]);
+const SEEDED_APPS = new Set(["settings", "dashboard", "app-store"]);
 
 // The SHARED preference catalog (P4 code/UI split): the ENGINE owns what shared prefs exist,
 // their types/defaults/labels; the settings app only RENDERS what ui_prefs_schema
@@ -147,6 +147,8 @@ const SHARED_PREFS = [
     options: ["comfortable", "compact"], desc: "Compact means tighter spacing and rows." },
   { key: "confirm_delete", type: "boolean", label: "Confirm before delete", default: true,
     desc: "Apps ask before deleting anything." },
+  { key: "system_badge", type: "enum", label: "Widget refresh button", default: "hover",
+    options: ["hover", "always"], desc: "The small ↻ in a widget's corner (D-13): appears on hover by default, or stays visible." },
   { key: "proactivity", type: "enum", label: "AI proactivity", default: "on-request",
     options: [{ value: "proactive", label: "Proactive — act when it fits" }, { value: "on-request", label: "On request — only when asked" }],
     desc: "Whether the AI opens or builds apps on its own when they fit, or only when you ask. Usually set during onboarding; takes effect after restarting the chat app." },
@@ -161,7 +163,7 @@ const SHARED_PREFS = [
 // seed path and privileged installers write the store DIRECTLY (store.execute), so they are exempt
 // by construction — this lock lives at the tool boundary, not in the store. "dashboard" is
 // deliberately NOT here (it's the user's editable personal launcher); user apps stay editable too.
-const LOCKED_APPS = new Set(["settings", "library"]);
+const LOCKED_APPS = new Set(["settings", "app-store"]);
 
 // The 9 scenario-taxonomy category slugs (authoritative source: the shared
 // scenario-taxonomy doc, verified 2026-07-22; shared contract per
@@ -207,15 +209,17 @@ const defaultCollectionFor = (comp) => {
 // ------------------------------------------------------------------ trust tiers & caps
 // docs/security-model.md §2.3 step 1 + §3: app_html returns {html, author, tier, caps}.
 // The ENGINE is the single reader of security:*/policy:* when building caps; the RUNNER
-// (wrapLoader's runner branch) enforces them. No install-tier column exists yet, so every
+// (src/runner.mjs makeGuard, reached through oma.embed) enforces them. No install-tier column
+// exists yet, so every
 // non-local author resolves to the STRICTEST tier ("unreviewed"). Exported: /view (http.mjs)
 // applies the same tier gate.
 const tierOf = (author) =>
-  // "library" = install_from_library provenance. OSS library content is FIRST-PARTY (we author
-  // every entry — the same files the seed path installs as local), so it runs DIRECT like any
-  // locally-authored app (Leo 2026-07-24: no review exists in OSS because there is nothing
-  // to review; the runner + review flow arrive together with the SaaS user-publishing pipeline).
-  // The author stamp still tracks provenance + drives library update detection.
+  // "library" = install_from_app_store provenance (the stamp is a persisted store value and
+  // keeps its v0.4 spelling — the App Store rename did not migrate it). OSS App Store content is
+  // FIRST-PARTY (we author every entry — the same files the seed path installs as local), so it
+  // runs DIRECT like any locally-authored app (Leo 2026-07-24: no review exists in OSS because
+  // there is nothing to review; the runner + review flow arrive together with the SaaS
+  // user-publishing pipeline). The author stamp still tracks provenance + drives update detection.
   author === "agent" || author === "human" || author === "seed" || author === "library" ? "local"
   : "unreviewed";
 // Fail-closed placeholder for DIRECT render paths (docs/security-model.md §2.3): any surface
@@ -226,38 +230,32 @@ const tierOf = (author) =>
 // non-local tier, which reaches the runner the same way the open_app path does.
 const RUNNER_REQUIRED_HTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Sandboxed runner required</title></head><body style="font-family:system-ui;max-width:560px;margin:40px auto;color-scheme:light dark"><h3>App not rendered</h3><p>This app requires sandboxed runner mode, which isn't available on this path yet. Open it with <code>open_app</code> instead — the universal loader runs non-local apps behind a sandboxed runner.</p></body></html>`;
 // Pinned caps shape — the runner builds against these exact field names:
-//   { call_tools: string[] (["*"] = wildcard sentinel), send_message: bool, update_context: bool,
+//   { call_tools: string[] (["*"] = wildcard sentinel), send_message: bool,
 //     delete_items: "allow"|"confirm"|"deny", cross_collection_read: bool,
 //     cross_collection_write: bool, settings_write: bool, read_source: bool }
 // CONTRACT: these snake_case names are also the ONLY cap suffixes computeCaps reads from
 // policy keys — security:<app>:<cap> / policy:defaults:<tier>:<cap>. A key with any
 // other suffix (e.g. dotted "sendMessage") is stored but never consulted; security_set flags
 // such keys with a warning at write time.
-const CAP_NAMES = ["call_tools", "send_message", "update_context", "delete_items",
+// (`update_context` retired 2026-08-06: it was the ONE cap with no enforcement point anywhere in
+// the runner — the method it guarded left the runtime in the elegance-A10 cut — yet it was still
+// settable via security_set and still drew a switch in the Permissions pane. A switch that can be
+// set and never takes effect is worse than no switch. Legacy security:<app>:update_context rows
+// fall out of this list, so computeCaps never looks them up: read past in silence, no migration.)
+const CAP_NAMES = ["call_tools", "send_message", "delete_items",
   "cross_collection_read", "cross_collection_write", "settings_write", "read_source",
   "file_read", "file_write"];
 const TIER_CAPS = {
   // local-authored runs DIRECT (co-equal with the AI) — anything stricter would be theater.
-  local: { call_tools: ["*"], send_message: true, update_context: true, delete_items: "allow",
+  local: { call_tools: ["*"], send_message: true, delete_items: "allow",
     cross_collection_read: true, cross_collection_write: true, settings_write: true, read_source: true,
     file_read: true, file_write: true },
-  // library-reviewed: DORMANT until the SaaS user-publishing pipeline lands (third-party
-  // content + actual review). Preset pinned NOW so the runner can build against it; OSS
-  // library installs are first-party and run local/direct instead (see tierOf). When SaaS
-  // review arrives: reviewed content renders sandboxed and NEVER promotes to local —
-  // curation filters intent, the runner caps blast radius. Own-collection data ops flow
-  // through the runner's bridge methods
-  // (always on); call_tools gates only the generic passthrough. data_collections is deliberately
-  // NOT in call_tools: collection discovery IS a cross-collection read and the runner refuses it
-  // while cross_collection_read is false — listing it here would advertise a cap that can never
-  // execute. A reviewed meta-app that truly needs discovery gets an explicit
-  // security:<name>:* overlay (cross_collection_read + call_tools), not a preset grant.
-  "library-reviewed": { call_tools: ["data_list"], send_message: false,
-    update_context: false, delete_items: "confirm", cross_collection_read: false,
-    cross_collection_write: false, settings_write: false, read_source: false,
-    file_read: true, file_write: false },
+  // ("library-reviewed" — the DORMANT middle tier for a review pipeline that does not exist —
+  // retired 2026-08-04, elegance A4. tierOf could never return it; OSS App Store installs are
+  // first-party and run local. When the SaaS publishing pipeline lands, the tier arrives WITH
+  // its reviewers — designed then, against the pipeline that actually ships.)
   // unreviewed / pasted: assume hostile.
-  unreviewed: { call_tools: [], send_message: false, update_context: false, delete_items: "deny",
+  unreviewed: { call_tools: [], send_message: false, delete_items: "deny",
     cross_collection_read: false, cross_collection_write: false, settings_write: false, read_source: false,
     file_read: false, file_write: false },
 };
@@ -282,6 +280,14 @@ function coerceCap(cap, v) {
   if (s === "false" || s === "deny") return false;
   return undefined;
 }
+/** What a policy value may be, in one sentence — for security_set's refusal. It lives HERE,
+ *  touching coerceCap, because the sentence and the decision must not drift: coerceCap rules,
+ *  this only explains the ruling. (Falling back to the tier default was the old behaviour and it
+ *  failed OPEN — local's preset is everything allowed — so a typo'd value now gets refused.) */
+const capValueHelp = (cap) =>
+  cap === "call_tools" ? `"*" for all tools, a JSON array (["data_list"]), or a comma-separated tool list ("" = none)`
+  : cap === "delete_items" ? `allow | confirm | deny (true/false also accepted)`
+  : `allow | deny (true/false also accepted)`;
 
 
 // ────────────────────────────────────────────────────────── one budget, one builder, one envelope
@@ -414,7 +420,7 @@ export {
   itemShape, snapshotSchema, ackSchema, fileMetaShape, capsShape,
   RESERVED_APP_NAMES, SEEDED_APPS, SHARED_PREFS, LOCKED_APPS, SCENE_CATEGORIES,
   tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor,
-  CAP_NAMES, TIER_CAPS, coerceCap,
+  CAP_NAMES, TIER_CAPS, coerceCap, capValueHelp,
   cmdArgs,
   RESULT_BUDGET, EOT, sizeOf, textWindow, answer, toMcp,
 };

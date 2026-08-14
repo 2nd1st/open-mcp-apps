@@ -1,0 +1,260 @@
+{
+  "items": [
+    {
+      "id": "f8d6c971-04f2-40c7-a78f-87b6ce3dc701",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 1,
+      "fields": {
+        "name": "Amlodipine",
+        "slots": [
+          "morning"
+        ],
+        "dose": "5 mg · 1 tablet",
+        "pills_left": 18,
+        "daily_use": 1,
+        "note": "After breakfast"
+      },
+      "version": 1
+    },
+    {
+      "id": "0c7f63db-35c6-4d25-b77c-c7db2ab4cf02",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 2,
+      "fields": {
+        "name": "Metformin",
+        "slots": [
+          "morning",
+          "evening"
+        ],
+        "dose": "500 mg · 1 tablet",
+        "pills_left": 10,
+        "daily_use": 2,
+        "note": "Take with food"
+      },
+      "version": 1
+    },
+    {
+      "id": "59a2c1d0-c19d-4d20-a410-bb99acb5b703",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 3,
+      "fields": {
+        "name": "Levothyroxine",
+        "slots": [
+          "morning"
+        ],
+        "dose": "50 mcg · 1 tablet",
+        "pills_left": 42,
+        "daily_use": 1,
+        "note": "Before breakfast"
+      },
+      "version": 1
+    },
+    {
+      "id": "aa0eeb9e-ef8e-45bb-99c0-589e783b8101",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 1,
+      "fields": {
+        "med": "Amlodipine",
+        "date": "2026-07-26",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "852bd27c-7684-4d70-8eeb-610486c3a102",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 2,
+      "fields": {
+        "med": "Metformin",
+        "date": "2026-07-26",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "d65a893c-f75c-47af-95fc-6b4dcde4df03",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 3,
+      "fields": {
+        "med": "Amlodipine",
+        "date": "2026-07-27",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "e85a2e92-60a9-4fbf-882e-406973623704",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 4,
+      "fields": {
+        "med": "Levothyroxine",
+        "date": "2026-07-27",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "941b3e78-d003-476a-8445-f61c548a9201",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-14",
+        "systolic": 132,
+        "diastolic": 78,
+        "pulse": 72
+      },
+      "version": 1
+    },
+    {
+      "id": "fb7c19f7-1ca0-4017-8bfa-eb90309a6202",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-15",
+        "systolic": 129,
+        "diastolic": 76,
+        "pulse": 70
+      },
+      "version": 1
+    },
+    {
+      "id": "026f7c49-9823-4b20-b9f6-f434e3571303",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 3,
+      "fields": {
+        "date": "2026-07-16",
+        "systolic": 134,
+        "diastolic": 79,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "5ed44671-25f2-4cb4-9b63-e04ac7463404",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 4,
+      "fields": {
+        "date": "2026-07-17",
+        "systolic": 131,
+        "diastolic": 77,
+        "pulse": 71
+      },
+      "version": 1
+    },
+    {
+      "id": "b7b09513-ad8a-4923-984d-8b6075429505",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 5,
+      "fields": {
+        "date": "2026-07-19",
+        "systolic": 136,
+        "diastolic": 81,
+        "pulse": 73
+      },
+      "version": 1
+    },
+    {
+      "id": "171cf088-f11e-4e46-a6ec-6cb408005906",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 6,
+      "fields": {
+        "date": "2026-07-20",
+        "systolic": 133,
+        "diastolic": 80,
+        "pulse": 72
+      },
+      "version": 1
+    },
+    {
+      "id": "1af5b3fc-9018-4321-8bd2-b9a8a49e6707",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 7,
+      "fields": {
+        "date": "2026-07-21",
+        "systolic": 137,
+        "diastolic": 82,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "73963d1c-395c-4ac2-bb9e-18cc60014808",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 8,
+      "fields": {
+        "date": "2026-07-22",
+        "systolic": 135,
+        "diastolic": 79,
+        "pulse": 71
+      },
+      "version": 1
+    },
+    {
+      "id": "6b741934-05e6-4bca-95fd-d30d68d9c909",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 9,
+      "fields": {
+        "date": "2026-07-24",
+        "systolic": 139,
+        "diastolic": 83,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "9b80d825-992d-4848-ab9a-306468465610",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 10,
+      "fields": {
+        "date": "2026-07-25",
+        "systolic": 136,
+        "diastolic": 81,
+        "pulse": 73
+      },
+      "version": 1
+    },
+    {
+      "id": "57bebc0b-45ce-42f8-a8b8-ec6b3b73c411",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 11,
+      "fields": {
+        "date": "2026-07-26",
+        "systolic": 138,
+        "diastolic": 82,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "942a352e-33ec-4125-be3d-d6c06467d512",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 12,
+      "fields": {
+        "date": "2026-07-27",
+        "systolic": 140,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    }
+  ]
+}

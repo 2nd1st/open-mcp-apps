@@ -20,6 +20,7 @@
 import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
+import { CONFIRMATION_CLASSES } from "../src/confirmation.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -27,6 +28,9 @@ const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 // refactor needs no edit here — and so the intended destination is documented in the rule itself.
 const TOOL_REGISTRATION_ALLOWED = [
   "src/engine.mjs",     // today: everything. Roadmap: split into src/tools/*.mjs
+  "src/mcp-apps.mjs",   // DEFINES registerAppTool/registerAppResource (the MCP Apps seam) — a
+                        // helper's own body necessarily contains the call it wraps. It registers
+                        // nothing itself: no tool name appears in this file.
   /^src\/tools\/[a-z-]+\.mjs$/,
 ];
 
@@ -43,10 +47,13 @@ const FLAGS = {
   OMA_BUILD_FILE:     { kind: "build",    why: "path to the same SHA, for images that resolve it at build time — discoverable via `docker inspect`, unlike a value injected inline in CMD" },
   OMA_DB:             { kind: "product",  why: "database location override (tests, multi-tenant hosts)" },
   OMA_HOST:           { kind: "product",  why: "host label when clientInfo.name is unavailable" },
-  OMA_FILE_BACKEND:   { kind: "product",  why: "swappable file-plane backend" },
+  // OMA_FILE_BACKEND retired 2026-08-04 (elegance A3): one local backend, one instantiation —
+  // the remote seam went with it and returns with its first real caller.
   OMA_DYNAMIC_TOOLS:  { kind: "product",  why: "opt-in per-app open_<name> tools; DEFAULT OFF because every save_app would invalidate the whole conversation's prompt cache" },
-  OMA_QUERY:          { kind: "construction", removeBy: "2026-09-15",
-                        why: "gates EXECUTION of data_query, never its registration — a tool that appears mid-life invalidates every cached tool list, so the seat ships from day one and the flag decides whether calling it works. Off until a live-model eval shows models reach for it instead of pulling rows; the fallback (read and count) is always available, which is what makes the flag safe to leave off" },
+  OMA_FUNCTIONS:      { kind: "product",  why: "kill-switch (OMA_FUNCTIONS=0) for the call_function seat on the LOCAL entrypoints, where it defaults ON. Read only by server.mjs/http.mjs on purpose: createEngine itself defaults the seat OFF, so an embedding/hosted consumer never inherits same-process execution — a multi-tenant plane opts in explicitly or not at all (functions.mjs header, §2.5-D)" },
+  // OMA_QUERY retired 2026-08-04 with the dormant data_query seat (elegance review A5): the
+  // 145K-token aggregate incident stays real, and the seat returns SLIM (count/sum/group_by,
+  // the measured primitive) the day it actually ships — not as a disabled placeholder.
   // OMA_PROBE / OMA_PROBE_OUT retired 2026-07-27 with src/tools/probe.mjs, exactly as their entry
   // demanded: both readings landed in the host matrix (E1b — audience ignored by every measured
   // host; E6 — the ui-extension predicate held at n=4; §15c — the delivery cut measured on the
@@ -144,15 +151,16 @@ console.log("3. one answer to \"what does this app open on\"");
   const dir = join(ROOT, "components");
   const disagree = [];
   let checked = 0;
-  for (const f of readdirSync(dir).filter((f) => f.endsWith(".html")).sort()) {
-    const name = f.slice(0, -5);
-    const src = readFileSync(join(dir, f), "utf-8");
-    const m = src.match(/<script[^>]*id=["']oma-manifest["'][^>]*>([\s\S]*?)<\/script>/);
-    const manifest = m ? m[1].trim() : null;
+  for (const name of readdirSync(dir).filter((n) => existsSync(join(dir, n, "ui.html"))).sort()) {
+    // v6 entry layout: the declaration is the entry's manifest.json (the manifest slot), no
+    // longer a block inside the document.
+    let manifest = null;
+    try { manifest = readFileSync(join(dir, name, "manifest.json"), "utf-8"); } catch { /* none declared */ }
     // Both sides get the SAME app, expressed the way each one receives it: the server reads
     // a stored row, the preview reads the parsed declaration handed back by app_html.
     let declaration = null;
     try { declaration = manifest ? JSON.parse(manifest) : null; } catch { declaration = null; }
+    manifest = declaration ? JSON.stringify(declaration) : null;
     // "seed" is what the shipped set actually is; tierOf maps it to the local tier, which is the
     // gate BOTH sides put on honouring a manifest. Passing a bogus author here would silently test
     // the untrusted branch on both sides and agree for the wrong reason.
@@ -272,34 +280,52 @@ console.log("3. one answer to \"what does this app open on\"");
   }
 }
 
-// ── destructive actions in shipped apps must honour confirm_delete ────────────────────────────
-// `confirm_delete` is a SHARED preference: the user sets it once and every app obeys. Most did.
-// settings.html did not — its "Reset all" deleted an entire section of stored values on ONE click
-// and flashed "Saved", while the delete-app button 600 lines down the SAME FILE asked twice. The
-// button's own title said "Delete every stored value in this section", so it knew what it was.
+// ── the destructive actions the ENGINE does not confirm must still be gated by the app ────────
+// Originally this covered every destructive call in every shipped app, because `confirm_delete`
+// was a preference each app had to remember to read — and settings.html's "Reset all" proved what
+// forgetting cost: an entire section of stored values gone on ONE click, flashing "Saved", while
+// the delete-app button 600 lines down the same file asked twice.
 //
-// This walks every shipped app, finds the calls that destroy data, and requires each to sit behind
-// the pref — or to be listed below WITH A REASON. Entries are keyed by a snippet of the line, not
-// a line number: when the excused code changes the entry goes stale and this goes red, instead of
-// silently excusing whatever moved into that position.
+// W-S moved that job into the engine: an item or file delete is now refused until the user
+// answers a prompt the SHELL renders, and the guide tells authors — in as many words — not to
+// build their own ("a second one just double-asks"). So those verbs left this detector. They had
+// to: a test that requires the gate the doctrine forbids means the doctrine cannot be followed,
+// and the eleven apps still carrying an arm-then-delete are now the ones that are wrong.
+// (Removing those arms is W1's job, together with the inverse assertion — no app gates an item
+// delete itself. Until then a pref-on user is asked twice; the redundant question is the app's.)
+//
+// What is left is the part the engine deliberately does NOT confirm: the app-lifecycle verbs.
+// They are exempt in CONFIRMATION_CLASSES because they lose nothing recoverable — delete_app is
+// a tombstone, archive is a visibility flip — so the guard here is against a stray click, not
+// against data loss, and the app-side arm is the ONLY thing standing there.
 {
-  const DESTRUCTIVE = /oma\.deleteItem\s*\(|["']data_delete_item["']|["']delete_app["']|["']archive_app["']|oma\.files\s*\.\s*delete\s*\(/;
+  // Item and file deletes are ABSENT on purpose, and the assertion below makes that a fact the
+  // machine holds rather than a comment: if the engine ever stops confirming them, this detector
+  // has to come back, and the test says so instead of trusting whoever reads this next.
+  ok("the item/file deletes really did move to the engine's gate (else this detector must return)",
+    CONFIRMATION_CLASSES.delete_item?.confirm === true && CONFIRMATION_CLASSES.delete_file?.confirm === true);
+  ok("…and the app-lifecycle verbs really are the engine's exemptions (else they belong there, not here)",
+    CONFIRMATION_CLASSES.delete_app?.confirm === false && CONFIRMATION_CLASSES.archive_app?.confirm === false);
+  const DESTRUCTIVE = /["']delete_app["']|["']archive_app["']/;
   const GATE = /confirmDeleteOn\s*\(\)|oma\.pref\s*\(\s*["']confirm_delete["']/;
+  // The second, STRONGER gate (W1): a call that carries a `request_state` is the second leg of the
+  // engine's own two-step — the engine issued that state after showing a disposition plan, binds
+  // it to the world the plan described, and demands it from every actor regardless of the
+  // preference. A stray click cannot produce one. So an engine-confirmed call counts as confirmed;
+  // it is read off the call LINE, never the window, because a nearby mention proves nothing.
+  const ENGINE_CONFIRMED = /request_state/;
   const WINDOW = 20;                     // lines above the call the gate may live in
-  const UNGATED_BY_DESIGN = [
-    ["companion.html", 'oma.callTool("data_delete_item"',
-      "the gate is at the SOLE caller — deleteKnowledge() is called once, from a handler that arms first. A line window cannot see across a function boundary; this is the limit of the detector, not a hole in the app"],
-    ["dashboard.html", "one unpin collapses them all",
-      "unpin is a TOGGLE: the inverse is the same button, one click later. A confirm dance here would cost more than the mistake it prevents"],
-    ["settings.html", "await oma.deleteItem(id); flashSaved();",
-      "one preference back to its documented default, with the value on screen and re-settable in a keystroke. Confirming every pref reset trains people to click through the confirmation that matters"],
-    ["settings.html", "dashboard_poll_seconds",
-      "a MIGRATION, not a user action: the value is copied to its new home two lines above. Nothing is lost and nobody asked for it"],
-  ];
+  // UNGATED_BY_DESIGN is empty, and that is the honest state: all four entries excused ITEM
+  // deletes (companion's single-caller gate, dashboard's unpin toggle, settings' pref reset and
+  // its poll-seconds migration), and item deletes are the engine's job now. Kept as an empty
+  // table rather than deleted because the mechanism — excuse by line SNIPPET, so a moved or
+  // rewritten line goes stale instead of staying quietly excused — is what makes this detector
+  // trustworthy, and the next lifecycle verb will want it.
+  const UNGATED_BY_DESIGN = [];
 
   const sites = [];
-  for (const f of readdirSync(join(ROOT, "components")).filter((x) => x.endsWith(".html"))) {
-    const lines = readFileSync(join(ROOT, "components", f), "utf-8").split("\n");
+  for (const f of readdirSync(join(ROOT, "components")).filter((x) => existsSync(join(ROOT, "components", x, "ui.html")))) {
+    const lines = readFileSync(join(ROOT, "components", f, "ui.html"), "utf-8").split("\n");
     lines.forEach((ln, i) => {
       if (!DESTRUCTIVE.test(ln)) return;
       // Comments STRIPPED first. Found the hard way: the fix for "Reset all" carries a comment
@@ -308,13 +334,13 @@ console.log("3. one answer to \"what does this app open on\"");
       // not a rule.
       const win = lines.slice(Math.max(0, i - WINDOW), i).join("\n")
         .replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/.*$/gm, "$1");
-      const gated = GATE.test(win);
+      const gated = GATE.test(win) || ENGINE_CONFIRMED.test(ln);
       sites.push({ file: f, line: i + 1, text: ln, gated });
     });
   }
   const gated = sites.filter((x) => x.gated);
-  ok(`detector is non-vacuous: ${sites.length} destructive call site(s) across the shipped apps, ${gated.length} of them gated`,
-    sites.length > 10 && gated.length > 5,
+  ok(`detector is non-vacuous: ${sites.length} lifecycle call site(s) across the shipped apps, ${gated.length} of them gated`,
+    sites.length >= 1 && gated.length >= 1,
     "the DESTRUCTIVE/GATE patterns stopped matching — everything below is vacuous until they do");
 
   const excused = (s) => UNGATED_BY_DESIGN.find(([f, snip]) => f === s.file && s.text.includes(snip));

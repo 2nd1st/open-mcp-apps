@@ -15,14 +15,15 @@
 // treat a tunnel URL as a secret while it's up.
 
 import http from "node:http";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { createMcpHandler, InMemoryTransport, CLIENT_INFO_META_KEY } from "@modelcontextprotocol/server";
+import { toNodeHandler } from "@modelcontextprotocol/node";
+import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { openStore } from "./store.mjs";
-import { createEngine, tierOf, defaultCollectionFor } from "./engine.mjs";
+import { createEngine, hostContext, tierOf, defaultCollectionFor } from "./engine.mjs";
 import { wrapApp, wrapLoader } from "./shell.mjs";
+import { RUNNER_CSP_POLICY } from "./runner.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -40,6 +41,7 @@ let PORT = Number(process.env.PORT || 8787);
 // by the operator who does know. Trailing slashes are trimmed where it is used.
 let VIEW_BASE = null;
 let viewerClient = null;
+let mcpNode = null;   // the /mcp request handler, built in startViewer once the store exists
 let started = null;
 
 const json = (res, code, body) => { res.writeHead(code, { "content-type": "application/json" }).end(JSON.stringify(body)); };
@@ -47,14 +49,19 @@ const html = (res, code, body, headers) => { res.writeHead(code, { "content-type
 
 // /view CSP (docs/security-model.md §5 v0.2) — closes the browser viewer's network-egress gap
 // (threat H): no host iframe CSP exists in a plain tab, so the response header is the boundary.
-// Deviation from the doc's literal string, stated honestly: connect-src 'self' instead of 'none'.
-// The doc's string was written for the runner srcdoc (no /rpc fetch exists there); /view serves
-// the STANDALONE shell whose entire data path is fetch("/rpc") on this same origin — 'none'
-// would kill the browser viewer outright. Everything else stays the doc's strict policy.
-// frame-src 'none' is safe for settings' Library preview: about:srcdoc frames are exempt from
-// frame-src and inherit this policy instead (verified in Chrome — the srcdoc child renders,
+// DERIVED from the runner's policy, one delta, spelled as a replace so the two can never drift
+// apart again (W4 — this used to be a hand-retyped copy, and it HAD drifted: it silently lost
+// `form-action 'none'`, the one outbound shape that does not fall back to default-src).
+// The delta, stated honestly: connect-src 'self' instead of 'none'. The runner srcdoc has no
+// /rpc fetch; /view serves the STANDALONE shell whose entire data path is fetch("/rpc") on this
+// same origin — 'none' would kill the browser viewer outright.
+// frame-src 'none' is safe for the settings app's thumbnail grid: about:srcdoc frames are exempt
+// from frame-src and inherit this policy instead (verified in Chrome — the srcdoc child renders,
 // its inline scripts/styles ride on 'unsafe-inline', and external egress stays blocked).
-const VIEW_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'none'";
+const VIEW_CSP = RUNNER_CSP_POLICY.replace("connect-src 'none'", "connect-src 'self'");
+// The index page carries no scripts and no frames — it gets the same wall minus nothing it
+// needs: inline styles and data: glyphs only.
+const INDEX_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'";
 const readBody = (req) => new Promise((resolve, reject) => {
   let data = "";
   req.on("data", (c) => { data += c; if (data.length > 2_000_000) { reject(new Error("body too large")); req.destroy(); } });
@@ -80,15 +87,14 @@ const readBody = (req) => new Promise((resolve, reject) => {
 // A WEB PAGE IS NOT A LOCAL PROCESS. It cannot read the file, but it can absolutely reach the
 // port, and every dev server, docs site and localhost app the user has open is such a page.
 //
-// Two independent locks now, deliberately (either alone would close today's exploit; the pair
-// survives one of them being wrong):
-//   1. HERE — the loopback allowance is narrowed to OUR OWN PORT, not any port. Every loopback
-//      spelling still passes (localhost / 127.0.0.1 / [::1] are the same server, and pinning the
-//      spelling would break the ordinary `localhost:PORT` visit — see the note at the /view
-//      route), but a different port is a different application and gets no say here.
-//   2. requireBrowserWriteHeader() below — a custom request header on browser-initiated writes,
-//      which no simple request can set. That one does not depend on this function parsing
-//      Origin correctly at all.
+// The fix: the loopback allowance is narrowed to OUR OWN PORT, not any port. Every loopback
+// spelling still passes (localhost / 127.0.0.1 / [::1] are the same server, and pinning the
+// spelling would break the ordinary `localhost:PORT` visit — see the note at the /view route),
+// but a different port is a different application and gets no say here.
+// (A second belt — the x-oma-viewer custom header forcing a CORS preflight on browser writes —
+// rode alongside this from 2026-07-31 to 2026-08-04. Retired, elegance C1: this exact-origin
+// gate independently closes the measured exploit, and the header's only remaining job was
+// insuring against a bug in the four lines above — one invariant, one belt.)
 const LOOPBACK_HOSTS = new Set(["localhost", "127.0.0.1", "[::1]", "::1"]);
 const portOf = (u) => u.port || (u.protocol === "https:" ? "443" : "80");
 const originAllowed = (origin) => {
@@ -102,29 +108,6 @@ const originAllowed = (origin) => {
   return false;
 };
 
-// Lock 2: force a CORS preflight on anything a browser initiates against the tool surface.
-//
-// The exploit that got in was a *simple request* — the browser sends it without asking us first,
-// so no CORS decision of ours is ever consulted; we only see it after it has already arrived, and
-// by then the write has a body. A request carrying a header outside the CORS-safelisted set can
-// no longer be simple: the browser must preflight it, we answer no `Access-Control-Allow-Origin`
-// (we set no CORS headers anywhere — see the note on Mcp-Method/Mcp-Name), and the browser drops
-// it before our handler exists. The header's VALUE is worthless as a secret and is not treated as
-// one; what protects us is that a cross-origin page cannot get the header sent at all.
-//
-// Scope is deliberately narrow, and each exclusion is load-bearing:
-//   · POST only — GET /view and the /events SSE stream stay untouched. EventSource CANNOT set
-//     request headers, so requiring one there would break realtime for good.
-//   · Origin present only — curl, MCP clients and tunnel ingress send none and are unaffected.
-//     That keeps this a browser-shaped lock, which is the only shape the threat has.
-const BROWSER_WRITE_HEADER = "x-oma-viewer";
-const browserWriteAllowed = (req) =>
-  !req.headers.origin || req.method !== "POST" || req.headers[BROWSER_WRITE_HEADER] != null;
-
-// SEP-2575's per-request identity key, namespaced exactly as the 2026-07-28 spec writes it.
-// One named constant because it is the single string the dual-era read below depends on: if the
-// final spec text spells it differently, this is the one line that changes.
-const CLIENT_INFO_META = "io.modelcontextprotocol/clientInfo";
 
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
@@ -132,63 +115,34 @@ const server = http.createServer(async (req, res) => {
     if (!originAllowed(req.headers.origin)) {
       return json(res, 403, { isError: true, content: [{ type: "text", text: "forbidden origin" }] });
     }
-    // Distinct message on purpose: a stripped header and a wrong origin are different failures and
-    // land on different people. If a reverse proxy ever drops `x-oma-viewer`, the viewer breaks —
-    // and this line is what makes that five seconds to diagnose instead of an afternoon.
-    if (!browserWriteAllowed(req)) {
-      return json(res, 403, { isError: true, content: [{ type: "text",
-        text: `browser writes must send the ${BROWSER_WRITE_HEADER} header (forces a CORS preflight)` }] });
-    }
-    // ---- MCP over Streamable HTTP (stateless: a fresh engine per request; the tool list
-    // is rebuilt from the live registry every time, so new apps appear immediately) ----
+    // ---- MCP over Streamable HTTP ----
+    // Served by the SDK's per-request entry (built in startViewer): a fresh engine per request,
+    // so the tool list is rebuilt from the live registry every time and new apps appear
+    // immediately. The entry owns the era decision (SEP-2575) — a 2026-07-28 envelope claim gets
+    // the modern wire (per-request `_meta`, `server/discover`, `Mcp-Method`/`Mcp-Name` header
+    // validation → -32020), everything else falls back to old-school stateless legacy serving —
+    // and the SAME factory backs both, so the two eras can never drift apart.
     if (url.pathname === "/mcp") {
-      const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
       const body = req.method === "POST" ? JSON.parse((await readBody(req)) || "null") : undefined;
-      // Host label is REQUEST-SCOPED (no cross-client globals — stateless requests must not
-      // inherit another client's identity). TWO PROTOCOL ERAS answer "who is calling", and this
-      // reads both, first hit wins:
-      //   · ≤ 2026-06-18 — `initialize` carries clientInfo once, when the connection opens.
-      //   · 2026-07-28 + — `initialize`/`initialized` are DELETED (SEP-2575); every request
-      //     carries `_meta["io.modelcontextprotocol/clientInfo"]` instead. It is a SHOULD, so it
-      //     can still be absent, and the fallbacks below stay load-bearing.
-      // Reading both costs one branch, and means the migration does not have to touch this line.
-      //
-      // The new era is not merely a replacement, it is a REPAIR — and the repair lands before the
-      // migration does: this transport is stateless, so a tool call is its OWN HTTP request with
-      // no initialize in it, which is why nearly every remote call today falls through to the
-      // User-Agent token (test/http-smoke.mjs pins exactly that fallback). A per-request
-      // clientInfo names THE CALL rather than whichever connection happened to open first — also
-      // the shape that answers "one claude.ai user presents three clientInfo names" (measured;
-      // see the note in src/store.mjs where the per-host watermark died of it).
-      //
-      // ⚠️ MEASURED, and it changes how to read the first bullet: the `initialize` branch is
-      // UNREACHABLE on this wire today. A handshake is its own HTTP request and writes nothing, so
-      // its label can only reach the ledger batched with a call — and the transport refuses that
-      // (`-32600 Only one initialization request is allowed`; pinned in test/http-smoke.mjs). It is
-      // kept because it is the old era's sole possible carrier and costs one ternary, NOT because
-      // it is known to fire. Do not read this loop as two working paths: one works, one is a
-      // placeholder honest enough to say so.
-      //
-      // Chain: either era's clientInfo → User-Agent product token → generic "remote-http".
+      // Host-label FALLBACK, request-scoped (no cross-client globals — stateless requests must
+      // not inherit another client's identity). The most specific claim — this call's own
+      // clientInfo in the 2026-07-28 `_meta` envelope — is read per call inside the engine
+      // (perCallHost, engine.mjs); this feeds hostContext the tail of the chain:
+      //   · a claimless `_meta` clientInfo in the single body message (measured: ChatGPT sent
+      //     the per-request form before the spec landed, without the protocolVersion claim);
+      //   · else the User-Agent product token (what nearly every remote call resolves to today —
+      //     test/http-smoke.mjs pins exactly that fallback); else generic "remote-http".
+      // ONE message, no batch walk, no `initialize` arm (elegance A6): this wire accepts a single
+      // JSON-RPC message per request — a batched initialize is refused by the transport (pinned in
+      // http-smoke) — so states the old loop handled could never arrive here.
       // Provenance annotation for the ledger, not a security property.
-      let hostLabel = null;
-      for (const msg of Array.isArray(body) ? body : body ? [body] : []) {
-        if (!msg) continue;
-        // New era first: in a message carrying both, the per-request value is the more specific
-        // claim — it describes this call, not the session that opened the connection.
-        const ci = msg.params?._meta?.[CLIENT_INFO_META]
-          || (msg.method === "initialize" ? msg.params?.clientInfo : null);
-        if (ci && typeof ci.name === "string" && ci.name) { hostLabel = ci.name; break; }
-      }
-      if (!hostLabel) {
-        const ua = String(req.headers["user-agent"] || "").trim();
-        hostLabel = ua ? "http:" + ua.split(/[\s/]/)[0].toLowerCase().slice(0, 32) : "remote-http";
-      }
-      const engine = createEngine(store, { hostLabel, viewBase: VIEW_BASE });
-      await engine.connect(transport);
-      await transport.handleRequest(req, res, body);
-      res.on("close", () => { transport.close(); engine.close?.(); });
-      return;
+      const ci = body?.params?._meta?.[CLIENT_INFO_META_KEY];
+      const ua = String(req.headers["user-agent"] || "").trim();
+      const hostLabel = (ci && typeof ci.name === "string" && ci.name)
+        || (ua ? "http:" + ua.split(/[\s/]/)[0].toLowerCase().slice(0, 32) : "remote-http");
+      // hostContext.run scopes the fallback to THIS dispatch: everything the handler awaits —
+      // factory, era routing, tool handlers — runs inside, and a concurrent request gets its own.
+      return hostContext.run({ fallback: hostLabel }, () => mcpNode(req, res, body));
     }
 
     // ---- plain RPC for the standalone shell ----
@@ -215,8 +169,18 @@ const server = http.createServer(async (req, res) => {
       if (name.startsWith("_")) {
         return json(res, 200, { isError: true, content: [{ type: "text", text: `unknown internal method "${name}"` }] });
       }
-      const result = await viewerClient.callTool({ name, arguments: args || {} });
-      return json(res, 200, result);
+      // /rpc's contract is the CallToolResult envelope, always. The v2 client THROWS on JSON-RPC
+      // errors (unknown/disabled tool = -32602) where v1 answered in-band — without this catch the
+      // outer handler turns a retired tool name in stale app code into a bare HTTP 500, and the
+      // shell runtime surfaces "HTTP 500" with the useful message discarded.
+      try {
+        const result = await viewerClient.callTool({ name, arguments: args || {} });
+        return json(res, 200, result);
+      } catch (e) {
+        if (e instanceof ProtocolError)
+          return json(res, 200, { isError: true, content: [{ type: "text", text: e.message }] });
+        throw e; // transport/internal failures keep their 500 — those are OUR bugs, not the caller's
+      }
     }
 
     // ---- SSE change feed (fable A2 tier 2): pushes the global ledger seq the moment anything
@@ -261,20 +225,19 @@ const server = http.createServer(async (req, res) => {
       //
       // No CSP change: about:srcdoc frames are exempt from frame-src and inherit this policy, so
       // the runner's child renders under the same wall the direct path uses (see VIEW_CSP above —
-      // settings' Library preview has relied on exactly this since it shipped).
+      // settings' App Store preview has relied on exactly this since it shipped).
       if (tierOf(comp.author) !== "local")
         return html(res, 200, wrapLoader({
           standalone: { endpoint: "/rpc", collection, app: view[1],
             ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         }), { "content-security-policy": VIEW_CSP });
-      return html(res, 200, wrapApp(comp.html, {
+      return html(res, 200, wrapApp(comp.ui, {
         // viewBase reaches the RUNTIME only when the operator set one. App→app links
         // default to a relative "/view/", which is correct for a plain local server and wrong behind
         // a path-prefixed proxy — where OMA_VIEW_BASE is exactly the operator saying what the prefix
         // is. Passing it unconditionally would turn every in-app link absolute (127.0.0.1), which
         // silently breaks the ordinary `localhost:PORT` visit: different origin, same server.
         standalone: { endpoint: "/rpc", collection, app: view[1], ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
-        version: comp.version,   // render-health identity (auto-revert reports)
       }), { "content-security-policy": VIEW_CSP });
     }
 
@@ -289,14 +252,14 @@ const server = http.createServer(async (req, res) => {
     if (url.pathname === "/" && req.method === "GET") {
       const comps = store.listApps();
       const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-      const SYSTEM_ORDER = ["dashboard", "library", "settings"];
+      const SYSTEM_ORDER = ["dashboard", "app-store", "settings"];
       const system = SYSTEM_ORDER.map((n) => comps.find((c) => c.name === n)).filter(Boolean);
       const apps = comps.filter((c) => !SYSTEM_ORDER.includes(c.name));
-      const sysIcon = { dashboard: "M3 3h7v7H3zM12 3h7v4h-7zM12 9h7v10h-7zM3 12h7v8H3z", library: "M4 5h16v14H4zM4 15l4-4 3 3 5-5 4 4", settings: "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 12h2m12 0h2M12 4v2m0 12v2" };
+      const sysIcon = { dashboard: "M3 3h7v7H3zM12 3h7v4h-7zM12 9h7v10h-7zM3 12h7v8H3z", "app-store": "M4 5h16v14H4zM4 15l4-4 3 3 5-5 4 4", settings: "M12 8a4 4 0 1 1 0 8 4 4 0 0 1 0-8zM4 12h2m12 0h2M12 4v2m0 12v2" };
       const card = (c, big) => `<a class="card${big ? " big" : ""}" href="/view/${esc(c.name)}">
         ${big ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${sysIcon[c.name] || sysIcon.dashboard}"/></svg>` : ""}
         <span class="n">${esc(c.name)}</span><span class="v">v${c.version}</span>
-        <span class="d">${esc(c.description || (c.author === "library" ? "library app" : "app"))}</span></a>`;
+        <span class="d">${esc(c.description || (c.author === "library" ? "App Store app" : "app"))}</span></a>`;
       return html(res, 200, `<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>open-mcp-apps</title><style>
   :root{color-scheme:light dark}
   body{margin:0;padding:48px 20px;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",system-ui,sans-serif;background:Canvas;color:CanvasText}
@@ -321,9 +284,9 @@ const server = http.createServer(async (req, res) => {
   ${system.length ? `<h2>System</h2><div class="grid">${system.map((c) => card(c, true)).join("")}</div>` : ""}
   <h2>Apps · ${apps.length}</h2>
   ${apps.length ? `<div class="grid">${apps.map((c) => card(c, false)).join("")}</div>`
-    : `<div class="empty">No apps yet. Ask your AI in chat to build one — or open the <a href="/view/library">library</a> and install a ready-made app.</div>`}
+    : `<div class="empty">No apps yet. Ask your AI in chat to build one — or open the <a href="/view/app-store">App Store</a> and install a ready-made app.</div>`}
   <p class="foot">MCP endpoint: <code>POST /mcp</code> · store: shared with every chat host on this machine</p>
-</div></body></html>`);
+</div></body></html>`, { "content-security-policy": INDEX_CSP });
     }
 
     res.writeHead(404).end("not found");
@@ -340,21 +303,32 @@ const server = http.createServer(async (req, res) => {
  *
  * @param opts.store  the caller's store. Omit ONLY when this process has no other one (the
  *                    standalone `node src/http.mjs` path) — see the note at the top.
- * @param opts.port   overrides PORT.
  */
-export async function startViewer({ store: ownStore, port } = {}) {
-  if (started) return started;
+export async function startViewer({ store: ownStore } = {}) {
   try {
     store = ownStore || openStore();
-    PORT = port ?? Number(process.env.PORT || 8787);
+    PORT = Number(process.env.PORT || 8787);
     VIEW_BASE = process.env.OMA_VIEW_BASE || `http://127.0.0.1:${PORT}`;
 
     // The resident in-process MCP client for /rpc (the browser viewer's backend).
+    // Legacy wire on purpose: InMemoryTransport is not era-classifying, and an internal
+    // same-process client gains nothing from the per-request envelope.
     const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
-    const viewerEngine = createEngine(store, { hostLabel: "browser-viewer", viewBase: VIEW_BASE });
+    // Local-product entrypoints opt INTO the function pillar (see server.mjs / createEngine docs);
+    // OMA_FUNCTIONS=0 is the kill-switch for both the viewer's /rpc engine and /mcp.
+    const functions = process.env.OMA_FUNCTIONS !== "0";
+    const viewerEngine = createEngine(store, { hostLabel: "browser-viewer", viewBase: VIEW_BASE, functions });
     await viewerEngine.connect(serverTransport);
     viewerClient = new Client({ name: "browser-viewer", version: "0.1.0" });
     await viewerClient.connect(clientTransport);
+
+    // The /mcp entry (see the route above for what it serves). Built here because it closes over
+    // the store; ONE handler for the process, engines minted per request by the factory.
+    mcpNode = toNodeHandler(
+      createMcpHandler(() => createEngine(store, { viewBase: VIEW_BASE, functions }),
+        { onerror: (e) => note(`mcp: ${e && e.message || e}`) }),
+      { onerror: (e) => note(`mcp: ${e && e.message || e}`) },
+    );
 
     // Bind to loopback ONLY. Both /rpc and /mcp are unauthenticated; a default (all-interfaces)
     // bind would let anyone on the LAN read and write your data. Remote hosts (ChatGPT/claude.ai)

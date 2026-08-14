@@ -19,8 +19,9 @@
 //
 // WHAT AN APP MUST BE. One self-contained html document, ≤200,000 bytes, no network requests.
 // Bundle whatever you like into it; the engine injects the kit CSS, the host's design tokens and
-// `window.oma`, and renders it in a sandboxed iframe. Declare your collection in an
-// `#oma-manifest` block. The full contract: `node -e 'import("./src/guide.mjs").then(m =>
+// `window.oma`, and renders it in a sandboxed iframe. Declarations (collection, settings, kind)
+// are the separate manifest slot — a legacy in-document `#oma-manifest` block is extracted and
+// stripped on install. The full contract: `node -e 'import("./src/guide.mjs").then(m =>
 // console.log(m.GUIDE))'`, or ask the AI for get_app_guide.
 //
 // PROVENANCE, AND WHY THE DEFAULT IS "TRUSTED". An app's author decides whether it runs
@@ -39,7 +40,7 @@ import { basename, extname, resolve } from "node:path";
 import { randomUUID } from "node:crypto";
 import { openStore, MAX_APP_HTML } from "./src/store.mjs";
 import { tierOf, TIER_CAPS, RESERVED_APP_NAMES, LOCKED_APPS } from "./src/contracts.mjs";
-import { readDeclaration } from "./src/manifest-block.mjs";
+import { readDeclaration, stripDeclarationBlock } from "./src/manifest-block.mjs";
 import { OMA_REFERENCE_RE } from "./src/tools/apps.mjs";
 
 // Same shape the store enforces — stated here so the CLI can explain a bad name before the write.
@@ -93,7 +94,7 @@ if (flag("list")) {
     const w = Math.max(...rows.map((r) => r.name.length));
     for (const r of rows) {
       const tier = tierOf(r.author);
-      console.log(`  ${r.name.padEnd(w)}  v${String(r.version).padEnd(4)} ${String(r.html_size).padStart(7)}B  ` +
+      console.log(`  ${r.name.padEnd(w)}  v${String(r.version).padEnd(4)} ${String(r.ui_size).padStart(7)}B  ` +
         `by ${r.author.padEnd(7)} ${tier === "local" ? "direct" : tier}`);
     }
     console.log(`\n${rows.length} app(s). "direct" = holds the real window.oma; anything else runs behind the sandboxed runner.`);
@@ -128,11 +129,19 @@ if (html.length > MAX_APP_HTML)
 const warn = [];
 if (!OMA_REFERENCE_RE.test(html))
   warn.push("this document never references `window.oma`, so it cannot read or write any data. If that is intended, it is a static page, not an app.");
+// v6 (W-N): the declaration is a separate slot, not an in-document block. This door is the one
+// HUMAN ingress, so a legacy block is EXTRACTED here as a convenience — parsed, lifted into the
+// manifest slot, stripped from the document — instead of the loud refusal the tool face gives a
+// model (a human re-running a CLI is cheaper than a human editing bytes out of a file).
 const decl = readDeclaration(html);
-if (decl.state === "absent")
-  warn.push("no #oma-manifest block: the app will bind to a collection named after itself and declare no fields. Add one to name your collection.");
-else if (decl.state === "bad")
-  warn.push(`the #oma-manifest block could not be read (${decl.error}${decl.detail ? ": " + decl.detail : ""}) — the install below will REJECT it.`);
+if (decl.state === "bad")
+  die(`the #oma-manifest block could not be read (${decl.error}${decl.detail ? ": " + decl.detail : ""}) — fix it (or delete it and re-run).`);
+const manifest = decl.state === "present" ? decl.value : null;
+const ui = decl.state === "present" || decl.state === "empty" ? stripDeclarationBlock(html).html : html;
+if (decl.state === "present")
+  warn.push("legacy #oma-manifest block found — extracted into the manifest slot and stripped from the document (v6 stores them separately).");
+else if (decl.state === "absent")
+  warn.push("no declaration: the app will bind to a collection named after itself and declare no fields. Ship a manifest to name your collection.");
 
 const actor = flag("sandboxed") ? "guest" : "human";
 const tier = tierOf(actor);
@@ -141,14 +150,14 @@ const existing = store ? store.getApp(name) : null;   // null store = dry run wi
 
 console.log(`  file      ${path}`);
 console.log(`  name      ${name}`);
-console.log(`  size      ${html.length.toLocaleString()} B` + (existing ? `  (replacing ${existing.html.length.toLocaleString()} B at v${existing.version})` : ""));
+console.log(`  size      ${html.length.toLocaleString()} B` + (existing ? `  (replacing ${existing.ui.length.toLocaleString()} B at v${existing.version})` : ""));
 console.log(`  runs as   ${actor} → tier ${tier}` + (tier === "local"
   ? "  (DIRECT: the real window.oma, every capability)"
   : `  (SANDBOXED: call_tools ${JSON.stringify(caps.call_tools)}, cross-collection ${caps.cross_collection_read ? "read" : "no reads"}, delete_items "${caps.delete_items}")`));
 for (const w of warn) console.log(`  ⚠ ${w}`);
 
 if (existing && !flag("update")) {
-  console.error(`\n✗ "${name}" already exists (v${existing.version}, ${existing.html.length.toLocaleString()} B, by ${existing.author}). ` +
+  console.error(`\n✗ "${name}" already exists (v${existing.version}, ${existing.ui.length.toLocaleString()} B, by ${existing.author}). ` +
     `Pass --update to replace it, or --name to install alongside it. Its history is kept either way.`);
   store.close();
   process.exit(1);
@@ -160,11 +169,8 @@ if (DRY) {
 }
 
 // ── write ─────────────────────────────────────────────────────────────────────────────────────
-// declaration_policy stays STRICT: this is an authoring path, not a rescue path. Someone who wrote
-// a malformed declaration must hear about it — silently clearing it would be the worst outcome
-// here, where there is no conversation in which to notice.
 const r = store.execute({
-  type: "save_app", command_id: randomUUID(), name, html,
+  type: "save_app", command_id: randomUUID(), name, ui, manifest,
   description: val("description") || "", actor, host: "install-app",
   ...(existing ? { expected_version: existing.version } : {}),
 });

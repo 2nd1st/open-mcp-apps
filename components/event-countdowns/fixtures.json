@@ -1,0 +1,40 @@
+{
+  "items": [
+    {
+      "id": "1fb8b880-fc83-4098-9416-10d8554ad0e1",
+      "group": "Personal",
+      "position": 1,
+      "fields": {
+        "title": "Mum’s birthday",
+        "target_date": "2026-09-13",
+        "category": "Personal",
+        "note": "Choose a gift and reserve lunch"
+      },
+      "version": 1
+    },
+    {
+      "id": "4f8b67ae-3f8d-4ebf-9ae0-7b61365f5f8f",
+      "group": "Travel",
+      "position": 1,
+      "fields": {
+        "title": "Weekend in Kyoto",
+        "target_date": "2026-08-10",
+        "category": "Travel",
+        "note": "Book the last night and sketch a food list"
+      },
+      "version": 1
+    },
+    {
+      "id": "6a3041c2-02fd-4c51-9584-95604d473838",
+      "group": "Work",
+      "position": 1,
+      "fields": {
+        "title": "Product launch",
+        "target_date": "2026-07-27",
+        "category": "Work",
+        "note": "Final checks, release notes, and team briefing"
+      },
+      "version": 1
+    }
+  ]
+}

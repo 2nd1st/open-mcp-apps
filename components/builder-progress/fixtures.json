@@ -1,0 +1,124 @@
+{
+  "items": [
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "expense-tracker",
+        "step": "Interpret the expense workflow",
+        "status": "done",
+        "detail": "Captured amount, category, merchant, date, notes, and recurring expense expectations.",
+        "source": "claude.ai",
+        "at": "2026-07-26T20:06:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "expense-tracker",
+        "step": "Shape the expenses collection",
+        "status": "done",
+        "detail": "Defined a strict ledger schema without storing derived totals or relative dates.",
+        "source": "claude.ai",
+        "at": "2026-07-26T20:11:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "expense-tracker",
+        "step": "Assemble the monthly overview",
+        "status": "done",
+        "detail": "Connected totals, category breakdown, and the transaction ledger to collection state.",
+        "source": "claude.ai",
+        "at": "2026-07-26T20:18:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "expense-tracker",
+        "step": "Verify import and empty states",
+        "status": "done",
+        "detail": "Checked first-run guidance and CSV-shaped paste flows against the app contract.",
+        "source": "claude.ai",
+        "at": "2026-07-26T20:24:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "expense-tracker",
+        "step": "Polish the transaction editor",
+        "status": "doing",
+        "detail": "Tightening validation, keyboard flow, and compact mobile spacing before the render pass.",
+        "source": "claude.ai",
+        "at": "2026-07-26T21:31:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "team-standup board",
+        "step": "Read the standup brief",
+        "status": "done",
+        "detail": "Mapped yesterday, today, blockers, owner, and team filtering into a scan-first board.",
+        "source": "claude-code",
+        "at": "2026-07-26T20:35:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "team-standup board",
+        "step": "Build update lanes",
+        "status": "done",
+        "detail": "Rendered member updates as dense lanes with blocker emphasis and owner identity.",
+        "source": "claude-code",
+        "at": "2026-07-26T20:43:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "team-standup board",
+        "step": "Add the update composer",
+        "status": "done",
+        "detail": "Connected the composer to oma.addItem and kept all optimistic state out of the widget.",
+        "source": "claude-code",
+        "at": "2026-07-26T20:51:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "team-standup board",
+        "step": "Pass responsive review",
+        "status": "done",
+        "detail": "Verified the board at desktop and 500px, then saved the final app revision.",
+        "source": "claude-code",
+        "at": "2026-07-26T21:02:00+10:00"
+      }
+    },
+    {
+      "collection": "build-progress",
+      "group": "",
+      "fields": {
+        "target": "api-monitor",
+        "step": "Save the monitoring dashboard",
+        "status": "fail",
+        "detail": "The strict manifest rejected endpoint_interval as an undeclared field; schema revision required.",
+        "source": "codex",
+        "at": "2026-07-26T21:27:00+10:00"
+      }
+    }
+  ]
+}

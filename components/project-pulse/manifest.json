@@ -1,0 +1,55 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "stale_days",
+      "type": "number",
+      "label": "Flag as stale after",
+      "description": "Tasks in Doing fade and show a clock after this many days without an update.",
+      "default": 7,
+      "min": 1,
+      "max": 30,
+      "step": 1
+    },
+    {
+      "key": "show_notes",
+      "type": "boolean",
+      "label": "Show task notes",
+      "description": "Show task context inside board cards.",
+      "default": true
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density"
+  ],
+  "collections": {
+    "project-tasks": {
+      "label_field": "title",
+      "strict": true,
+      "fields": {
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "note": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string"
+        },
+        "done_at": {
+          "type": "string"
+        },
+        "updated_at": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "dev-artifacts"
+  }
+}

@@ -1,12 +1,12 @@
 {
   "name": "open-mcp-apps",
-  "version": "0.4.2",
+  "version": "0.5.0",
   "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node test/invariants.mjs && node test/doc-facts.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/migration-drill.mjs && node test/install-paths.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs && node test/host-matrix-smoke.mjs",
+    "test": "node test/invariants.mjs && node test/doc-facts.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/confirmation.mjs && node test/functions.mjs && node test/notify-bridge.mjs && node test/edit-range.mjs && node test/promote-app.mjs && node test/install-paths.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs && node test/host-matrix-smoke.mjs",
     "build": "node build.mjs",
     "prepare": "node build.mjs --optional",
     "seed": "node seed.mjs",
@@ -61,8 +61,10 @@
     "TRADEMARKS.md"
   ],
   "dependencies": {
+    "@modelcontextprotocol/client": "^2.0.0",
     "@modelcontextprotocol/ext-apps": "^1.7.4",
-    "@modelcontextprotocol/sdk": "^1.30.0",
+    "@modelcontextprotocol/node": "^2.0.0",
+    "@modelcontextprotocol/server": "^2.0.0",
     "better-sqlite3": "^13.0.1",
     "zod": "^4.4.3"
   },

@@ -3,9 +3,9 @@
 // test/http-smoke.mjs — proves the HTTP entry: /mcp (real Streamable HTTP MCP client),
 // /rpc (standalone shell backend), /view (browser viewer), and host identification
 // (clientInfo.name → ledger host column). Run: node test/http-smoke.mjs
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
@@ -22,15 +22,17 @@ const DB = join(ROOT, "test", "http-smoke.db");
 const PORT = Number(process.env.OMA_TEST_PORT) || 18931;
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
-{ // seed
+{ // seed — v6 layout: components/<name>/ui.html (+ manifest.json as the manifest slot)
   const store = openStore(DB);
-  for (const file of readdirSync(join(ROOT, "components")).filter((f) => f.endsWith(".html"))) {
-    store.execute({ type: "save_app", command_id: "seed-" + file, name: basename(file, ".html"),
-      html: readFileSync(join(ROOT, "components", file), "utf-8"), actor: "seed" });
+  for (const name of readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")))) {
+    let manifest = null;
+    try { manifest = JSON.parse(readFileSync(join(ROOT, "components", name, "manifest.json"), "utf-8")); } catch { /* none */ }
+    store.execute({ type: "save_app", command_id: "seed-" + name, name,
+      ui: readFileSync(join(ROOT, "components", name, "ui.html"), "utf-8"), manifest, actor: "seed" });
   }
   // a NON-local fixture (author not in {agent,human,seed}) — proves /view fails closed for it
   store.execute({ type: "save_app", command_id: "seed-nonlocal", name: "nonlocal-fixture",
-    html: "<!DOCTYPE html><html><body><div id='x'>nonlocal</div></body></html>", actor: "library-test" });
+    ui: "<!DOCTYPE html><html><body><div id='x'>nonlocal</div></body></html>", actor: "library-test" });
   store.close();
 }
 
@@ -79,23 +81,31 @@ try {
   // The assertion above is not just a fallback check, it is the DEFECT: this transport is
   // stateless, so a tool call is its own HTTP request with no `initialize` in it, and the label
   // degrades to a User-Agent token for every remote call. MCP 2026-07-28 deletes `initialize`
-  // (SEP-2575) and puts clientInfo in EVERY request's `_meta`, which fixes it. The SDK we ship
-  // against is v1 and cannot send that key, so this speaks the wire directly — the only way to
-  // exercise the era we do not have a client for yet.
+  // (SEP-2575) and puts clientInfo in EVERY request's `_meta`, which fixes it. This speaks the
+  // wire directly to control the envelope byte-for-byte: era classification hangs on exactly one
+  // key (the reserved protocolVersion claim — SDK: `hasEnvelopeClaim`), and the two requests
+  // below sit one on each side of that line. A clientInfo WITHOUT the claim is still legacy.
   const newEraId = randomUUID();
   const newEra = await fetch(`${BASE}/mcp`, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    headers: {
+      "content-type": "application/json", accept: "application/json, text/event-stream",
+      "mcp-protocol-version": "2026-07-28", "mcp-method": "tools/call", "mcp-name": "data_add_item",
+    },
     body: JSON.stringify({
       jsonrpc: "2.0", id: 1, method: "tools/call",
       params: {
         name: "data_add_item",
         arguments: { command_id: newEraId, collection: "kanban", fields: { title: "from the new era" } },
-        _meta: { "io.modelcontextprotocol/clientInfo": { name: "new-era-host", version: "1.0.0" } },
+        _meta: {
+          "io.modelcontextprotocol/protocolVersion": "2026-07-28",
+          "io.modelcontextprotocol/clientCapabilities": {},
+          "io.modelcontextprotocol/clientInfo": { name: "new-era-host", version: "1.0.0" },
+        },
       },
     }),
   });
-  ok("a request carrying only a per-request _meta clientInfo is served (no initialize anywhere)", newEra.ok);
+  ok("a MODERN envelope (protocolVersion claim + capabilities + clientInfo) is served", newEra.ok);
   // Drain the body BEFORE looking at the ledger. `await fetch()` resolves on HEADERS, and this
   // endpoint answers as an SSE stream — so without this the tool call may still be running when we
   // read, and the assertion below becomes a coin flip. (It was: it flaked twice, and passed every
@@ -106,10 +116,37 @@ try {
     const labelled = ro.prepare("SELECT host FROM change_event WHERE json_extract(payload,'$.collection') = 'kanban' ORDER BY seq DESC LIMIT 1").get();
     ro.close();
     // The whole point in one line: the event names the CALLER, not the user agent of whatever
-    // process happened to open the socket.
-    ok("...and it labels THE CALL — `new-era-host`, not the UA fallback the initialize era leaves",
+    // process happened to open the socket. With the claim present this exercises perCallHost's
+    // envelope read (`ctx.mcpReq.envelope`), not the raw-body-scan fallback.
+    ok("...and the MODERN path labels THE CALL — `new-era-host` via the envelope, not the UA fallback",
       labelled && labelled.host === "new-era-host");
-    console.log("DEBUG last kanban host=", JSON.stringify(labelled));
+  }
+  // The same clientInfo WITHOUT the protocolVersion claim: the SDK deliberately classifies this
+  // as legacy, so the label can only arrive through http.mjs's raw-body scan feeding the ALS
+  // fallback. That fallback carried this whole test until 2026-08-04 while the assertion above
+  // CLAIMED to cover the modern path — panel round 4 (out7) caught the coverage hole. Both paths
+  // now pinned separately.
+  const legacyId = randomUUID();
+  const legacyEra = await fetch(`${BASE}/mcp`, {
+    method: "POST",
+    headers: { "content-type": "application/json", accept: "application/json, text/event-stream" },
+    body: JSON.stringify({
+      jsonrpc: "2.0", id: 1, method: "tools/call",
+      params: {
+        name: "data_add_item",
+        arguments: { command_id: legacyId, collection: "kanban", fields: { title: "clientInfo without claim" } },
+        _meta: { "io.modelcontextprotocol/clientInfo": { name: "claimless-host", version: "1.0.0" } },
+      },
+    }),
+  });
+  ok("a clientInfo WITHOUT the claim is still served (legacy era)", legacyEra.ok);
+  await legacyEra.text();
+  {
+    const ro = new Database(DB, { readonly: true });
+    const labelled = ro.prepare("SELECT host FROM change_event WHERE json_extract(payload,'$.collection') = 'kanban' ORDER BY seq DESC LIMIT 1").get();
+    ro.close();
+    ok("...and the LEGACY fallback (body scan → ALS) still delivers that label to the ledger",
+      labelled && labelled.host === "claimless-host");
   }
 
   // Why the OLD era's half of that read cannot be exercised here, pinned as the fact it rests on.
@@ -133,7 +170,7 @@ try {
 
   console.log("2. just-saved app opens immediately via the universal opener");
   const mkHtml = `<!DOCTYPE html><html><body><div id="x"></div><script type="module">oma.ready(s=>{document.getElementById("x").textContent=s.items.length});</script></body></html>`;
-  await client.callTool({ name: "save_app", arguments: { name: "counter", html: mkHtml } });
+  await client.callTool({ name: "save_app", arguments: { name: "counter", ui: mkHtml } });
   const client2 = new Client({ name: "second-host", version: "1.0.0" });
   await client2.connect(new StreamableHTTPClientTransport(new URL(`${BASE}/mcp`)));
   const openCounter = await client2.callTool({ name: "open_app", arguments: { app: "counter" } });
@@ -151,6 +188,15 @@ try {
   const rpcAck = await rpcWrite.json();
   const rpcChg = await client.callTool({ name: "data_changes", arguments: { collection: "kanban", since: rpcAck.structuredContent.seq - 1 } });
   ok("rpc identifies as browser-viewer — on the event it wrote", rpcChg.structuredContent.events[0]?.host === "browser-viewer");
+  // An unknown tool name (stale app code calling a retired tool) must come back as the documented
+  // envelope, not a bare 500. The v2 client throws -32602 where v1 answered in-band; /rpc catches
+  // ProtocolError and restores the contract — panel round 4 (out7) found the regression.
+  const rpcMissing = await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "ordinary_missing_tool", arguments: {} }) });
+  const rpcMissingBody = await rpcMissing.json();
+  ok("rpc answers an unknown tool with 200 + isError envelope (not HTTP 500)",
+    rpcMissing.status === 200 && rpcMissingBody.isError === true
+    && /not found/i.test(rpcMissingBody.content?.[0]?.text || ""));
 
   console.log("4. /view — browser viewer page");
   const viewResp = await fetch(`${BASE}/view/dashboard`);
@@ -236,7 +282,7 @@ try {
 
     const on = await spawnStdio(V_ON, {});
     ok("with no flag set, the stdio server has bound a viewer", (await service(V_ON)) === "open-mcp-apps");
-    const saved = await on.callTool({ name: "save_app", arguments: { name: "link-probe", html: APP } });
+    const saved = await on.callTool({ name: "save_app", arguments: { name: "link-probe", ui: APP } });
     ok("...and what a save hands back carries a URL a person can click",
       String(saved.content?.[0]?.text || "").includes(`http://127.0.0.1:${V_ON}/view/link-probe`));
     const opened = await on.callTool({ name: "open_app", arguments: { app: "link-probe" } });
@@ -247,7 +293,7 @@ try {
     // whose machine cannot spare a port.
     const off = await spawnStdio(V_OFF, { OMA_VIEWER: "0" });
     ok("OMA_VIEWER=0 binds no port at all", (await service(V_OFF)) === null);
-    const savedOff = await off.callTool({ name: "save_app", arguments: { name: "link-probe", html: APP } });
+    const savedOff = await off.callTool({ name: "save_app", arguments: { name: "link-probe", ui: APP } });
     ok("...and no URL is invented for a viewer that is not running",
       !String(savedOff.content?.[0]?.text || "").includes("/view/link-probe"));
 
@@ -345,8 +391,9 @@ try {
     ok("_undo_last reverses the aggregate's last event", un.structuredContent?.ok === true && un.structuredContent.deleted === true);
     const bad = await post("_nonexistent", {});
     ok("an unknown internal method answers isError, never falls through to tool dispatch", bad.isError === true);
-    const viaMcp = await client.callTool({ name: "_undo_last", arguments: { target: "x" } });
-    ok("internal methods are NOT MCP tools — /mcp refuses them as unknown", viaMcp.isError === true && /not found|unknown/i.test(viaMcp.content?.[0]?.text || ""));
+    // v2 client semantics: an unknown tool is a JSON-RPC error and callTool THROWS.
+    const viaMcp = await client.callTool({ name: "_undo_last", arguments: { target: "x" } }).catch((e) => e);
+    ok("internal methods are NOT MCP tools — /mcp refuses them as unknown", viaMcp instanceof Error && /not found|unknown/i.test(viaMcp.message));
   }
 
   console.log("9. Origin validation — the DNS-rebinding door (MCP transports MUST)");
@@ -355,7 +402,8 @@ try {
   // no Origin → allow (curl, MCP clients, tunnel ingress send none); THIS viewer's own loopback
   // origin → allow (the standalone shell's own fetches); OMA_VIEW_BASE's origin → allow (the
   // shell served through a tunnel fetches /rpc with the tunnel's Origin); anything else → 403.
-  // Browser-initiated POSTs additionally need `x-oma-viewer` (lock 2 — forces a preflight).
+  // (The x-oma-viewer second belt retired 2026-08-04, elegance C1 — the exact-port origin
+  // gate below independently closes the measured exploit, and it is asserted as such.)
   //
   // 🔴 This section used to assert `/rpc serves 127.0.0.1 on ANY port` as a FEATURE. That green
   // line was the vulnerability written down as a promise: a page on localhost:3000 could POST a
@@ -363,12 +411,9 @@ try {
   // the hole. It is inverted below, and the exploit itself is now a test.
   {
     const rpcBody = JSON.stringify({ name: "data_list", arguments: { collection: "kanban" } });
-    // The default `post` speaks as the legitimate viewer does: same-origin fetches carry the
-    // custom header. Cases that deliberately omit it pass `{ viewerHeader: false }`.
-    const post = (path, origin, body = rpcBody, { viewerHeader = true, contentType = "application/json" } = {}) => fetch(`${BASE}${path}`, {
+    const post = (path, origin, body = rpcBody, { contentType = "application/json" } = {}) => fetch(`${BASE}${path}`, {
       method: "POST",
       headers: { "content-type": contentType, ...(origin ? { origin } : {}),
-        ...(viewerHeader ? { "x-oma-viewer": "1" } : {}),
         ...(path === "/mcp" ? { accept: "application/json, text/event-stream" } : {}) },
       body,
     });
@@ -386,26 +431,21 @@ try {
     const selfOrigin4 = await post("/rpc", `http://127.0.0.1:${PORT}`);
     ok("…and the 127.0.0.1 spelling of the same port (same server, pinning the spelling would break the ordinary visit)", selfOrigin4.status === 200);
 
-    // LOCK 1 — a different loopback port is a different application, and gets no say here.
+    // THE lock — a different loopback port is a different application, and gets no say here.
     const loopbackOtherPort = await post("/rpc", "http://127.0.0.1:3000");
     ok("/rpc 403s a loopback origin on ANOTHER port (a web page is not a local process)",
       loopbackOtherPort.status === 403);
     const loopbackOtherPortName = await post("/rpc", "http://localhost:3000");
     ok("…the localhost spelling of that other port too", loopbackOtherPortName.status === 403);
 
-    // LOCK 2 — the exact shape Leo landed a write with: a CORS *simple request*. text/plain +
-    // no custom header means the browser never asks us anything; it just arrives. Both locks
-    // are asserted independently so that neither one alone can carry a false green.
-    const simpleReq = await post("/rpc", "http://localhost:3000", rpcBody, { viewerHeader: false, contentType: "text/plain" });
+    // The exact shape the measured exploit had: a CORS *simple request* — text/plain, no
+    // preflight, foreign loopback port. The origin gate alone must stop it (the second belt
+    // that used to also catch it is gone, so this line now carries the whole claim).
+    const simpleReq = await post("/rpc", "http://localhost:3000", rpcBody, { contentType: "text/plain" });
     ok("/rpc 403s the simple-request exploit (text/plain, no preflight, foreign local port)", simpleReq.status === 403);
-    const selfNoHeader = await post("/rpc", `http://localhost:${PORT}`, rpcBody, { viewerHeader: false });
-    ok("/rpc 403s a browser POST with no x-oma-viewer header even from its OWN origin (lock 2 stands alone)",
-      selfNoHeader.status === 403);
-    const mcpNoHeader = await post("/mcp", `http://localhost:${PORT}`, mcpBody, { viewerHeader: false });
-    ok("/mcp is behind the same header lock (it is the same tool surface)", mcpNoHeader.status === 403);
-    // …and the lock must not spill onto callers that were never the threat.
-    const noOriginNoHeader = await post("/rpc", null, rpcBody, { viewerHeader: false });
-    ok("a header-less, Origin-less POST still works (curl and MCP clients are not browsers)", noOriginNoHeader.status === 200);
+    // …and the gate must not spill onto callers that were never the threat.
+    const noOriginPlain = await post("/rpc", null, rpcBody);
+    ok("a header-less, Origin-less POST still works (curl and MCP clients are not browsers)", noOriginPlain.status === 200);
     const evilView = await fetch(`${BASE}/view/dashboard`, { headers: { origin: "http://evil.example" } });
     ok("a foreign-Origin GET is refused too (no cross-origin reads of app source)", evilView.status === 403);
   }
@@ -427,9 +467,8 @@ try {
         proc2.stderr.on("data", (d) => { if (String(d).includes("listening")) { clearTimeout(t); resolve(); } });
         proc2.on("exit", () => reject(new Error("tunnel-config server exited early")));
       });
-      const post2 = (origin, viewerHeader = true) => fetch(`http://127.0.0.1:${PORT2}/rpc`, {
-        method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}),
-          ...(viewerHeader ? { "x-oma-viewer": "1" } : {}) },
+      const post2 = (origin) => fetch(`http://127.0.0.1:${PORT2}/rpc`, {
+        method: "POST", headers: { "content-type": "application/json", ...(origin ? { origin } : {}) },
         body: JSON.stringify({ name: "data_list", arguments: { collection: "kanban" } }),
       });
       const tunnelOk = await post2("https://tunnel-fixture.example");
@@ -442,9 +481,6 @@ try {
       const tunnelPortIsNotOurs = new URL("https://tunnel-fixture.example").port !== String(PORT2);
       ok("…and that origin is NOT on our port — so it passes on the operator's say-so, not by loopback luck",
         tunnelPortIsNotOurs && tunnelOk.status === 200);
-      const tunnelNoHeader = await post2("https://tunnel-fixture.example", false);
-      ok("the tunneled viewer is still behind lock 2 (declaring an origin does not exempt a browser)",
-        tunnelNoHeader.status === 403);
     } finally {
       proc2.kill();
     }

@@ -21,8 +21,8 @@
 // review the diff, then re-bless with UPDATE_GOLDEN=1 in the SAME commit as the change.
 // Run: node test/tool-surface.mjs   ·   bless: UPDATE_GOLDEN=1 node test/tool-surface.mjs
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -140,12 +140,16 @@ const canon = (v) =>
 
 // DEFAULT env on purpose: no OMA_DYNAMIC_TOOLS, empty registry. This is the surface a new user
 // actually pays for. (server-smoke covers the opt-in dynamic-tool path separately.)
-const client = new Client({ name: "surface", version: "1.0.0" });
-await client.connect(new StdioClientTransport({
+// LEGACY era on purpose too: it is the wire every shipped host (claude.ai / ChatGPT / Claude
+// Desktop) speaks today, so the golden pins the bytes THOSE models actually see. The 2026-07-28
+// face gets its own pinned connection in §2 for the vocabulary the legacy wire cannot carry.
+const stdioParams = () => ({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
   env: { ...process.env, OMA_DB: DB, OMA_HOST: "surface", OMA_DYNAMIC_TOOLS: "" },
-}));
+});
+const client = new Client({ name: "surface", version: "1.0.0" });
+await client.connect(new StdioClientTransport(stdioParams()));
 
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name);
@@ -161,19 +165,31 @@ ok(`surface is ${wireBytes} B ≈ ${Math.round(wireBytes / 4)} tk (cap ${SURFACE
   wireBytes <= SURFACE_BYTES_CAP,
   "the resident per-conversation cost grew — shrink it, or raise the cap WITH a reason in the commit message");
 
-console.log("2. dialect + caching hints (src/cache-hints.mjs)");
+console.log("2. dialect + caching hints (src/cache-hints.mjs) — on the 2026-07-28 wire");
 {
-  const raw = JSON.stringify(await client.request({ method: "tools/list", params: {} },
-    (await import("@modelcontextprotocol/sdk/types.js")).ListToolsResultSchema));
+  // Cache fields are 2026-07-28 vocabulary and the SDK emits them on modern-era responses only,
+  // so this section speaks that era — a pinned connection, no probe-and-fallback: if the server
+  // stops offering 2026-07-28 via server/discover, connect() throws and this test reds.
+  const modern = new Client({ name: "surface", version: "1.0.0" },
+    { versionNegotiation: { mode: { pin: "2026-07-28" } } });
+  await modern.connect(new StdioClientTransport(stdioParams()));
+  const list = await modern.listTools();
+  const raw = JSON.stringify(list);
   ok("no $schema survives — every tool schema reads identically under either dialect",
     !raw.includes("$schema"),
     "if a schema gained definitions/$ref/tuple-items, its declaration is KEPT on purpose — see cache-hints.mjs");
-  const hints = JSON.parse(raw);
-  ok(`ttlMs present (${hints.ttlMs})`, typeof hints.ttlMs === "number" && hints.ttlMs >= 0);
+  ok("modern list carries no `execution` — Tasks vocabulary left the core schema (SEP-2663)",
+    !raw.includes('"execution"'));
+  ok(`ttlMs present (${list.ttlMs})`, typeof list.ttlMs === "number" && list.ttlMs >= 0);
   // The default configuration registers no per-app tools, so this list is identical for every
   // tenant and may be shared. It becomes "private" the moment OMA_DYNAMIC_TOOLS puts a tenant's own
   // app names in it — declaring THAT public would leak them through a shared cache.
-  ok('cacheScope is "public" with dynamic tools off', hints.cacheScope === "public", hints.cacheScope);
+  ok('cacheScope is "public" with dynamic tools off', list.cacheScope === "public", list.cacheScope);
+  // The eras must agree on the tools themselves: the golden below is pinned on the legacy wire,
+  // and this line is what entitles it to stand for both.
+  ok("modern-era tools[] byte-identical to the legacy-era list",
+    JSON.stringify(canon(list.tools)) === JSON.stringify(canon(tools)));
+  await modern.close();
 }
 
 console.log("2b. idempotentHint is a claim about effects, and it has to be true");
@@ -185,7 +201,6 @@ console.log("2b. idempotentHint is a claim about effects, and it has to be true"
 //
 // Naturally idempotent without a key — each needs a reason, so the exemption cannot grow silently.
 const NATURALLY_IDEMPOTENT = {
-  file_write_abort: "aborting an already-aborted upload changes nothing; the second call just reports it is gone",
 };
 {
   const claimed = tools.filter((t) => t.annotations?.idempotentHint === true && t.annotations?.readOnlyHint !== true);

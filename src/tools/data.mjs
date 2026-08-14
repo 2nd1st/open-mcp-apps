@@ -99,6 +99,9 @@ export function register(ctx) {
         results: z.array(z.object({ id: z.string().optional(), seq: z.number().optional() })).optional(),
         failed_index: z.number().optional(),
         reason: z.string().optional(),
+        request_state: z.string().optional(),
+        expires_at: z.string().optional(),
+        preview: z.string().optional(),
         note: z.string().optional(),
         eot: z.string().optional(),
       },
@@ -114,6 +117,18 @@ export function register(ctx) {
         ...c, command_id: `${base}:${i}`, actor: c.actor || a.actor || "agent", host,
       }));
       const r = store.executeBatch(commands);
+      // A confirmation demand inside a batch is not a batch failure — it is the same two-phase
+      // flow, reported with the index so the caller knows WHICH command to confirm. Handing it
+      // back as a plain isError while dropping the state told the caller to "resend with a
+      // request_state" it had never been given (codex review): an instruction that cannot be
+      // followed is worse than a refusal. Nothing was applied — the batch is all-or-nothing —
+      // so re-sending the whole batch with the state attached to that one command is the retry.
+      if (!r.ok && r.failure && r.failure.confirmation_required) {
+        const f = r.failure;
+        const note = `Command ${r.index} needs the user's confirmation — deleting "${f.preview}". NOTHING was applied. Confirm with the user, then re-send the WHOLE batch with request_state on that command (expires ${f.expires_at}).`;
+        return toMcp(answer.ack({ ok: false, reason: "confirmation_required", failed_index: r.index,
+          request_state: f.request_state, expires_at: f.expires_at, preview: f.preview, note }, note));
+      }
       if (!r.ok) {
         const why = r.error === "batch_failed"
           ? `Command ${r.index} failed (${failNote(r.failure)}) — NOTHING was applied. Fix that one and resend the whole batch.`
@@ -220,75 +235,6 @@ export function register(ctx) {
         : `Collection "${a.collection}" — ${events.length} of ${d.total} change(s) since ${d.since}${remaining > 0 ? `; continue with since=${next_since}` : ""} (now ${d.latest_seq}).`;
       return toMcp(answer.page(bodyOf(events), { returned: events.length, total: d.total,
         text: head + (events.length ? "\n" + events.map(line).join("\n") : "") }));
-    },
-  );
-
-  // ── data_query ─────────────────────────────────────────────────────────────────────────────────
-  // The BOUNDARY, written here so the next person inherits it rather than rediscovering it: this is
-  // an aggregate over ONE collection with the same filter grammar as `match`, and it stops there.
-  // No OR, no joins, no expression trees, no HAVING, no sorting language. Every one of those is a
-  // step toward being a query language, and a query language is a thing a model writes wrongly, a
-  // thing we have to keep compatible forever, and a thing that makes the store's typed-commands
-  // invariant a fiction. A caller who needs two filters runs two calls; one who needs a join has
-  // modelled two collections that should be one.
-  //
-  // Behind OMA_QUERY while it earns its place. The SEAT is registered either way (a tool that
-  // appears mid-life invalidates every cached tool list), and calling it with the flag off says so.
-  const QUERY_ON = process.env.OMA_QUERY === "1";
-  server.registerTool(
-    "data_query",
-    {
-      title: "Aggregate without reading the rows",
-      annotations: RO,
-      description: "Count, sum, min, max or average a collection's items — optionally grouped by a field — WITHOUT the rows travelling anywhere. Use it for \"how much did I spend per category\", \"how many are still open\", \"what is the largest\": the answer comes back with `matched`, the number of rows it was computed over, so it can be checked. `match` takes exactly data_list's filter grammar. One collection, AND-ed filters, no joins — read the rows with data_list if you need something this cannot express.",
-      inputSchema: {
-        collection: z.string(),
-        group: z.string().optional().describe("restrict to one group/lane before aggregating"),
-        match: z.record(z.string(), z.any()).optional().describe("same filter grammar as data_list's match"),
-        group_by: z.string().optional().describe("field to bucket by, e.g. \"category\" — biggest bucket first"),
-        metrics: z.array(z.object({
-          op: z.enum(["count", "sum", "min", "max", "avg"]),
-          field: z.string().optional().describe("required for everything except count"),
-        })).optional().describe("default [{op:\"count\"}]"),
-      },
-      outputSchema: {
-        collection: z.string(),
-        group: z.string().optional(),
-        scanned: z.number().describe("rows looked at"),
-        matched: z.number().describe("rows the numbers were computed over — the audit trail of the answer"),
-        groups: z.array(z.record(z.string(), z.any())),
-        returned: z.number().optional(),
-        total: z.number().optional().describe("buckets that exist; if greater than returned, the smallest were omitted"),
-        note: z.string().optional(),
-        eot: z.string().optional(),
-      },
-    },
-    async (a) => {
-      if (!QUERY_ON) return fail("data_query is not enabled on this engine (set OMA_QUERY=1). Read the rows with data_list and count them yourself, or ask the operator to enable it.");
-      const r = store.aggregate(a.collection, { group: a.group, match: a.match, group_by: a.group_by, metrics: a.metrics });
-      if (r.error) return fail(r.error === "unknown_operator" ? `Unknown filter operator(s): ${r.detail}. Valid: eq, ne, lt, lte, gt, gte, contains, prefix, exists.`
-        : r.error === "unknown_metric" ? `Unknown metric "${r.detail}". Valid: count, sum, min, max, avg.`
-        : r.error === "metric_needs_field" ? `The "${r.detail}" metric needs a field.`
-        : `Query failed: ${r.error}.`);
-      // High-cardinality group_by is the one unbounded thing here. The groups are a RANKING
-      // (biggest first), so when they exceed the budget it is the tail that goes, and the envelope
-      // says so. Derived from RESULT_BUDGET — not a second threshold.
-      let groups = r.groups;
-      let body = { collection: r.collection, ...(r.group ? { group: r.group } : {}), scanned: r.scanned, matched: r.matched, groups };
-      if (sizeOf(body) > RESULT_BUDGET) {
-        let keep = groups.length;
-        while (keep > 1 && sizeOf({ ...body, groups: groups.slice(0, keep) }) > RESULT_BUDGET) keep = Math.ceil(keep / 2);
-        groups = groups.slice(0, keep);
-        body = { ...body, groups, note: `${r.groups.length - keep} smaller bucket(s) omitted to fit the result budget — narrow with match, or bucket by a coarser field.` };
-      }
-      // The text says the same thing as the structured half, because a host may hand the model either
-      // one and never both.
-      const label = (g) => (a.group_by ? `${g[a.group_by] || "(none)"}: ` : "") +
-        Object.entries(g).filter(([k]) => k !== a.group_by).map(([k, v]) => `${k}=${typeof v === "number" ? Math.round(v * 100) / 100 : v}`).join(" ");
-      const text = `${r.matched} of ${r.scanned} row(s) in "${r.collection}"${a.group ? ` group "${a.group}"` : ""}` +
-        (a.match ? " matched the filter" : "") + `:\n` + (groups.map((g) => "  " + label(g)).join("\n") || "  (nothing matched)") +
-        (body.note ? `\n${body.note}` : "");
-      return toMcp(answer.page(body, { returned: groups.length, total: r.groups.length, text }));
     },
   );
 
@@ -403,12 +349,19 @@ export function register(ctx) {
     {
       title: "Delete item",
       annotations: DESTRUCTIVE,
-      description: "Delete an item permanently.",
-      inputSchema: z.object({ ...cmdArgs, id: z.string(), expected_version: z.number().optional() }).passthrough(),
-      outputSchema: ackSchema,
+      description: "Delete an item permanently. May return reason:\"confirmation_required\" with a request_state — show the user what is named in `note`, then re-send the same call with request_state attached.",
+      inputSchema: z.object({ ...cmdArgs, id: z.string(), expected_version: z.number().optional(), request_state: z.string().optional(), require_confirmation: z.boolean().optional() }).passthrough(),
+      outputSchema: { ...ackSchema, request_state: z.string().optional(), expires_at: z.string().optional(), preview: z.string().optional() },
     },
     async (a) => {
       const r = run(a, "delete_item");
+      // Not isError, same doctrine as a conflict: the demand IS the useful payload — a host that
+      // discards errored results would strand the confirmation flow on its first leg.
+      if (r.confirmation_required) {
+        const note = `Confirmation required — deleting "${r.preview}". Confirm with the user, then re-send with request_state (expires ${r.expires_at}).`;
+        return toMcp(answer.ack({ ok: false, reason: "confirmation_required", id: r.id, collection: r.collection,
+          request_state: r.request_state, expires_at: r.expires_at, preview: r.preview, note }, note));
+      }
       return r.ok ? toAck(r, r.idempotent ? "Already deleted." : "Deleted.") : r.conflict ? toConflict(r, failNote(r)) : toFail(r);
     },
   );

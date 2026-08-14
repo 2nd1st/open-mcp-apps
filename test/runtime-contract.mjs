@@ -22,8 +22,7 @@
 // both mounted through /view), not inferred from source — and re-verified as the thing that made
 // the crude extraction trustworthy in the first place. Direct mode's extra three are real and
 // intended: embed (a sandboxed child may not embed further), viewBase (a sandboxed child has no
-// navigation), isControlPlaneTool (for embedders building their own bridge, so they gate on the
-// single source of truth instead of hand-maintaining a denylist).
+// navigation), openLink (a URL is an outbound channel a sandboxed child must not hold).
 //
 // Run: node test/runtime-contract.mjs
 import { readFileSync } from "node:fs";
@@ -38,10 +37,14 @@ const ok = (name, cond, note) => (cond
   ? (pass++, console.log("  ✓ " + name))
   : (fail++, console.log("  ✗ " + name + (note ? "\n      " + note : ""))));
 
-// Measured in Chrome, 2026-07-27, engine at the commit that added this file.
-const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem", "files", "host",
+// Measured in Chrome 2026-07-27; re-cut 2026-08-04 (elegance A10): callFunction (no server
+// seat then), updateContext (returns with R2's bridge), host and isControlPlaneTool
+// (zero consumers) left the surface; bind moved to the internal __OMA_BIND__ loader hook.
+// callFunction RETURNED 2026-08-05 exactly on A10's condition — W3 shipped the server seat —
+// in both runtimes (the bridge's rides the generic callTool door, so the guard shaping fires).
+const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem", "files",
   "moveItem", "onChange", "onPrefChange", "pref", "readCollection", "ready", "refresh",
-  "sendMessage", "setPref", "standalone", "state", "toolInput", "updateContext", "updateItem"];
+  "sendMessage", "setPref", "standalone", "state", "toolInput", "updateItem"];
 // openLink is DIRECT-ONLY on purpose, and it is a security decision rather than an oversight: a
 // URL is an outbound channel (the data rides in the query string), so handing a host-mediated
 // link opener to a SANDBOXED child would punch a hole through the very property measured in
@@ -51,7 +54,7 @@ const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem
 // runtime reads and writes. Its one caller is the universal loader, applying a binding the SERVER
 // computed; a sandboxed child that could call it could point itself at another app's rows, which is
 // precisely the boundary the guard's allowlist exists to hold.
-const DIRECT_ONLY = ["bind", "embed", "isControlPlaneTool", "openLink", "viewBase"];
+const DIRECT_ONLY = ["embed", "openLink", "viewBase"];
 
 const doc = readFileSync(join(ROOT, "RUNTIME.md"), "utf-8");
 const runtimeSrc = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
@@ -135,17 +138,14 @@ console.log("\n2. every name the runtimes expose is documented (no undocumented 
       found.length === expected.length,
       `found ${found.length} (${found.slice().sort().join(" ")}), documented ${expected.length}`);
   }
-  // The measurement this static scan stands in for. Chrome's Object.keys reported 23 direct / 20
-  // bridge on the engine as it was BEFORE oma.contract was added — the very reading that produced
-  // this file. Both surfaces gained exactly that one name, so the live numbers +1 are what the
-  // extractor must produce today. A static extractor that agrees with a running one is the only
-  // reason to trust the extractor at all, so the agreement is asserted rather than assumed.
-  // 23 measured in Chrome, +1 oma.contract, +1 openLink (added 2026-07-28 — the direct channel
-  // that exists because sendMessage is a proposal, not an authorization), +1 bind (added
-  // 2026-07-29 — the loader hands over a binding the server computed, because one generic document
-  // serving every app cannot be baked with one).
-  ok("direct surface = Chrome's 23 + oma.contract + openLink + bind", direct.length === 23 + 3, `got ${direct.length}`);
-  ok("bridge surface = Chrome's 20 + oma.contract", bridge.length === 20 + 1, `got ${bridge.length}`);
+  // The measurement this static scan stands in for: Chrome's Object.keys read 23 direct / 20
+  // bridge (2026-07-27, pre-contract). Ledger since: +contract, +openLink, +bind (2026-07-2x);
+  // then the 2026-08-04 elegance cut removed callFunction, updateContext, host, isControlPlaneTool
+  // and moved bind internal — direct 26→21, bridge 21→18; W3 (2026-08-05) returned callFunction
+  // with its server seat — 22/19. A static extractor that agrees with the
+  // ledger of a running one is the only reason to trust the extractor, so it is asserted.
+  ok("direct surface = the measured ledger (22 after W3's callFunction return)", direct.length === 22, `got ${direct.length}`);
+  ok("bridge surface = the measured ledger (19 after W3's callFunction return)", bridge.length === 19, `got ${bridge.length}`);
 }
 
 console.log("\n3. the document and the code agree on the version");

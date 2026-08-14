@@ -1,0 +1,1308 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Bill Calendar</title>
+  <meta name="description" content="Monthly calendar of recurring bills — due dates, amounts, paid vs unpaid at a glance.">
+  <meta name="oma-category" content="Money">
+  <style>
+  * { box-sizing: border-box; }
+  :root {
+    --info: var(--color-text-info, var(--color-ring-primary));
+    --success: var(--color-text-success, var(--color-ring-primary));
+    --warning: var(--color-text-warning, var(--color-text-danger, var(--color-ring-primary)));
+    --danger: var(--color-text-danger, var(--color-ring-primary));
+  }
+  html, body { margin: 0; overflow: visible; }
+  body {
+    padding: 14px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: var(--font-text-sm-size);
+  }
+  button, input, select { font: inherit; }
+  button { color: inherit; }
+  button:focus-visible, input:focus-visible, select:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+  .shell {
+    width: min(1120px, 100%);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+  }
+  .brand-mark {
+    display: grid;
+    width: 37px;
+    height: 37px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(145deg,
+      color-mix(in oklab, var(--warning) 14%, var(--color-background-primary)),
+      color-mix(in oklab, var(--info) 7%, var(--color-background-primary)));
+    color: var(--warning);
+  }
+  .brand-mark svg { width: 20px; height: 20px; }
+  .identity { min-width: 0; }
+  .kicker {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+  }
+  .summary {
+    margin-top: 3px;
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+  .top-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-left: auto;
+  }
+  .button {
+    display: inline-flex;
+    min-height: 36px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    font-weight: 650;
+    line-height: 1;
+  }
+  .button svg { width: 16px; height: 16px; flex: 0 0 auto; }
+  .button.ghost {
+    background: var(--color-background-primary);
+    box-shadow: none;
+  }
+  .button.primary {
+    border-color: var(--color-background-inverse);
+    background: var(--color-background-inverse);
+    color: var(--color-text-inverse);
+  }
+  .overview-band {
+    display: grid;
+    grid-template-columns: minmax(230px, .92fr) minmax(0, 1.6fr);
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--warning) 5%, var(--color-background-secondary));
+    font-variant-numeric: tabular-nums;
+  }
+  .due-overview {
+    min-width: 0;
+  }
+  .metric-label {
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size);
+    font-weight: 600;
+  }
+  .metric-value {
+    margin-top: 2px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--color-text-primary);
+    font-size: clamp(24px, 4vw, 34px);
+    font-weight: 780;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.045em;
+    white-space: nowrap;
+  }
+  .metric-note {
+    margin-top: 4px;
+    color: var(--color-text-tertiary);
+    font-size: var(--font-text-sm-size);
+  }
+  .overview-stats {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: center;
+    gap: 12px;
+  }
+  .overview-stat {
+    min-width: 0;
+    padding-left: 12px;
+    border-left: 1px solid var(--color-border-secondary);
+  }
+  .overview-stat strong {
+    display: block;
+    margin-top: 3px;
+    overflow: hidden;
+    font-size: 16px;
+    line-height: 1.2;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .streak-stat {
+    display: grid;
+    grid-template-columns: 34px minmax(0, 1fr);
+    align-items: center;
+    gap: 8px;
+  }
+  .streak-icon {
+    display: grid;
+    width: 34px;
+    height: 34px;
+    place-items: center;
+    border-radius: var(--border-radius-md);
+    color: var(--success);
+    background: color-mix(in oklab, var(--success) 12%, var(--color-background-secondary));
+  }
+  .streak-icon svg { width: 19px; height: 19px; }
+  .composer {
+    display: none;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--color-background-secondary);
+  }
+  .composer.open { display: block; }
+  .composer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .composer-head strong { font-size: 15px; }
+  .icon-button {
+    display: inline-grid;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    place-items: center;
+    border: 0;
+    border-radius: var(--border-radius-sm);
+    background: transparent;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+  .bill-form {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.5fr) 100px 74px 140px 124px auto auto;
+    align-items: end;
+    gap: 8px;
+  }
+  .field { display: grid; gap: 5px; min-width: 0; }
+  .field label {
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 650;
+  }
+  .field input, .field select {
+    width: 100%;
+    min-height: 36px;
+    padding: 8px 9px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+  }
+  .autopay {
+    display: flex;
+    min-height: 36px;
+    align-items: center;
+    gap: 7px;
+    padding: 0 6px;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+  }
+  .autopay input { accent-color: var(--color-ring-primary); }
+  .form-error {
+    min-height: 16px;
+    margin-top: 7px;
+    color: var(--color-text-danger);
+    font-size: 12px;
+  }
+  .toolbar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 13px 18px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .month-nav {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+  }
+  .nav-button {
+    display: grid;
+    width: 30px;
+    height: 30px;
+    padding: 0;
+    place-items: center;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm);
+    background: var(--color-background-primary);
+    cursor: pointer;
+  }
+  .nav-button svg { width: 15px; height: 15px; }
+  .month-title {
+    min-width: 146px;
+    margin: 0 3px;
+    font-size: 16px;
+    font-weight: 750;
+    letter-spacing: -.015em;
+    text-align: center;
+  }
+  .today-button {
+    padding: 6px 9px;
+    border: 0;
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in oklab, var(--info) 9%, transparent);
+    color: var(--info);
+    cursor: pointer;
+    font-weight: 650;
+  }
+  .legend {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-left: auto;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+  .legend-item { display: inline-flex; align-items: center; gap: 5px; }
+  .legend-dot { width: 7px; height: 7px; border-radius: var(--border-radius-full); }
+  .legend-item.upcoming .legend-dot { background: var(--info); }
+  .legend-item.overdue .legend-dot { background: var(--danger); }
+  .legend-item.paid .legend-dot { background: var(--success); }
+  .schedule-area {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 238px;
+    min-height: 0;
+  }
+  .calendar-scroll {
+    overflow-x: visible;
+    overflow-y: visible;
+    overscroll-behavior: auto;
+    border-right: 1px solid var(--color-border-secondary);
+    scrollbar-color: var(--color-border-primary) transparent;
+  }
+  .calendar-inner { min-width: 0; }
+  .mobile-agenda { display: none; }
+  .agenda-list { display: grid; gap: 8px; padding: 10px; }
+  .agenda-day {
+    display: grid;
+    grid-template-columns: 46px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    width: 100%;
+    min-width: 0;
+    padding: 11px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-md);
+    background: var(--color-background-primary);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    text-align: left;
+  }
+  .agenda-date {
+    display: grid;
+    align-content: center;
+    min-height: 44px;
+    border-right: 1px solid var(--color-border-secondary);
+  }
+  .agenda-date strong { font-size: 19px; line-height: 1; font-variant-numeric: tabular-nums; }
+  .agenda-date span { margin-top: 4px; color: var(--color-text-tertiary); font-size: 9px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+  .agenda-copy { min-width: 0; }
+  .agenda-copy strong { display: block; overflow-wrap: anywhere; font-size: 12.5px; }
+  .agenda-copy span { display: block; margin-top: 3px; color: var(--color-text-secondary); font-size: 10px; }
+  .agenda-amount { color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11px; font-weight: 700; white-space: nowrap; }
+  .agenda-day.upcoming { border-left: 3px solid var(--info); }
+  .agenda-day.overdue { border-left: 3px solid var(--danger); }
+  .agenda-day.paid { border-left: 3px solid var(--success); }
+  .agenda-day.paid .agenda-copy strong { color: var(--color-text-secondary); text-decoration: line-through; }
+  .agenda-day[aria-pressed="true"] { box-shadow: 0 0 0 2px color-mix(in oklab, var(--info) 12%, transparent); }
+  .weekdays, .calendar {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+  }
+  .weekdays {
+    position: sticky;
+    z-index: 4;
+    top: 0;
+    border-bottom: 1px solid var(--color-border-primary);
+    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
+    backdrop-filter: blur(8px);
+  }
+  .weekday {
+    padding: 8px 9px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .day {
+    position: relative;
+    min-width: 0;
+    min-height: 108px;
+    padding: 7px;
+    border-right: 1px solid var(--color-border-secondary);
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--color-background-primary);
+  }
+  .day:nth-child(7n) { border-right: 0; }
+  .day.outside { background: color-mix(in oklab, var(--color-background-secondary) 66%, transparent); }
+  .day.today {
+    background:
+      linear-gradient(145deg,
+        color-mix(in oklab, var(--info) 9%, transparent),
+        var(--color-background-primary) 58%);
+  }
+  .day.today::before {
+    content: "";
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 2px;
+    background: var(--info);
+  }
+  .day-head {
+    display: flex;
+    height: 22px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 5px;
+  }
+  .date-number {
+    display: grid;
+    width: 23px;
+    height: 23px;
+    place-items: center;
+    border-radius: var(--border-radius-full);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+  }
+  .outside .date-number { color: var(--color-text-tertiary); }
+  .today .date-number { background: var(--info); color: var(--color-text-inverse); }
+  .day-total {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bills {
+    display: grid;
+    gap: 4px;
+    margin-top: 5px;
+  }
+  .bill {
+    position: relative;
+    min-width: 0;
+    border-radius: var(--border-radius-sm);
+  }
+  .bill-main {
+    display: grid;
+    width: 100%;
+    min-width: 0;
+    grid-template-columns: 5px minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 5px;
+    padding: 5px 6px 5px 5px;
+    border: 1px solid transparent;
+    border-radius: var(--border-radius-sm);
+    background: color-mix(in oklab, var(--bill-color) 9%, transparent);
+    color: var(--color-text-primary);
+    cursor: pointer;
+    text-align: left;
+  }
+  .bill-main::before {
+    content: "";
+    width: 4px;
+    height: 14px;
+    border-radius: var(--border-radius-full);
+    background: var(--bill-color);
+  }
+  .bill.upcoming { --bill-color: var(--info); }
+  .bill.overdue { --bill-color: var(--danger); }
+  .bill.paid { --bill-color: var(--success); }
+  .bill.paid .bill-name { color: var(--color-text-secondary); text-decoration: line-through; }
+  .bill-name {
+    min-width: 0;
+    overflow: hidden;
+    font-size: 10px;
+    font-weight: 680;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .bill-amount {
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .bill-main[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--bill-color) 46%, transparent);
+    box-shadow: 0 0 0 2px color-mix(in oklab, var(--bill-color) 11%, transparent);
+  }
+  .preview {
+    position: relative;
+    min-width: 0;
+    padding: 16px;
+    background:
+      linear-gradient(160deg,
+        color-mix(in oklab, var(--preview-color, var(--info)) 7%, transparent),
+        var(--color-background-secondary) 56%);
+  }
+  .preview-placeholder {
+    display: grid;
+    min-height: 168px;
+    place-content: center;
+    gap: 9px;
+    color: var(--color-text-tertiary);
+    text-align: center;
+  }
+  .preview-placeholder svg { width: 29px; height: 29px; margin: 0 auto; opacity: .72; }
+  .preview-placeholder strong { color: var(--color-text-secondary); font-size: 13px; }
+  .preview-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 7px;
+    border-radius: var(--border-radius-full);
+    background: color-mix(in oklab, var(--preview-color) 11%, transparent);
+    color: var(--preview-color);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+  .preview-status::before {
+    content: "";
+    width: 6px;
+    height: 6px;
+    border-radius: var(--border-radius-full);
+    background: currentColor;
+  }
+  .preview h2 {
+    margin: 14px 0 3px;
+    overflow-wrap: anywhere;
+    font-size: 18px;
+    letter-spacing: -.025em;
+  }
+  .preview-amount {
+    color: var(--color-text-secondary);
+    font-size: 21px;
+    font-weight: 760;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.025em;
+  }
+  .preview-meta {
+    display: grid;
+    gap: 8px;
+    margin: 16px 0;
+    padding: 12px 0;
+    border-top: 1px solid var(--color-border-secondary);
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .meta-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+  .meta-row span:last-child {
+    color: var(--color-text-primary);
+    font-weight: 650;
+    text-align: right;
+  }
+  .preview-actions { display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+  .preview-actions .button { min-height: 34px; padding: 7px 9px; box-shadow: none; font-size: 12px; }
+  .delete-button {
+    border-color: color-mix(in oklab, var(--danger) 28%, var(--color-border-secondary));
+    color: var(--danger);
+    background: color-mix(in oklab, var(--danger) 6%, transparent);
+  }
+  .empty-calendar {
+    grid-column: 1 / -1;
+    display: grid;
+    min-height: 220px;
+    place-content: center;
+    gap: 7px;
+    padding: 30px;
+    color: var(--color-text-secondary);
+    text-align: center;
+  }
+  .empty-calendar strong { color: var(--color-text-primary); font-size: 15px; }
+  .empty-calendar small { color: var(--color-text-tertiary); }
+  .compact .day { min-height: 91px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .button, .nav-button, .today-button, .icon-button, .bill-main {
+      transition: transform 160ms cubic-bezier(.2,.8,.3,1), box-shadow 180ms ease,
+        background-color 180ms ease, border-color 180ms ease;
+    }
+    .button:hover, .nav-button:hover, .today-button:hover, .bill-main:hover { transform: translateY(-1px); }
+    .button:active, .nav-button:active, .today-button:active, .bill-main:active { transform: scale(.97); }
+    .icon-button:hover { transform: rotate(4deg) scale(1.05); background: color-mix(in oklab, var(--color-text-primary) 5%, transparent); }
+    .bill-main:hover { box-shadow: 0 3px 10px color-mix(in oklab, var(--bill-color) 13%, transparent); }
+    .composer.open { animation: reveal 240ms cubic-bezier(.2,.8,.3,1) both; }
+    .bill.is-new { animation: bill-pop 360ms cubic-bezier(.34,1.56,.64,1) both; }
+    .bill.celebrate .bill-main { animation: paid-pop 480ms cubic-bezier(.34,1.56,.64,1); }
+    @keyframes reveal { from { opacity: 0; transform: translateY(-7px); } }
+    @keyframes bill-pop { from { opacity: 0; transform: scale(.88); } }
+    @keyframes paid-pop { 50% { transform: scale(1.055); box-shadow: 0 0 0 5px color-mix(in oklab, var(--success) 15%, transparent); } }
+  }
+  @media (max-width: 900px) {
+    .bill-form { grid-template-columns: 1.4fr 90px 70px 1fr; }
+    .bill-form .field.frequency { grid-column: 1 / 3; }
+    .schedule-area { grid-template-columns: 1fr; }
+    .preview { order: -1; min-height: 0; border-bottom: 1px solid var(--color-border-secondary); }
+    .preview-placeholder { min-height: 68px; grid-template-columns: auto 1fr; align-items: center; text-align: left; }
+    .preview-placeholder svg { width: 24px; height: 24px; }
+    .preview-placeholder small { grid-column: 2; }
+    .preview-meta { grid-template-columns: repeat(3, 1fr); }
+    .meta-row { display: grid; gap: 3px; }
+    .meta-row span:last-child { text-align: left; }
+    .calendar-scroll { border-right: 0; }
+  }
+  @media (max-width: 640px) {
+    body { padding: 8px; }
+    .topbar { gap: 10px; padding: 12px; }
+    .top-actions { gap: 6px; }
+    .top-actions .button { width: 36px; padding: 8px; }
+    .top-actions .button span { display: none; }
+    .overview-band { grid-template-columns: 1fr; padding: 12px; }
+    .overview-stats { gap: 8px; }
+    .overview-stat { padding-left: 8px; }
+    .streak-stat { grid-template-columns: 1fr; gap: 4px; }
+    .streak-icon { display: none; }
+    .composer { padding: 13px; }
+    .bill-form { grid-template-columns: 1fr 90px; }
+    .bill-form .field.name, .bill-form .field.date, .bill-form .field.frequency { grid-column: 1 / -1; }
+    .bill-form .field.frequency { grid-column: 1; }
+    .bill-form .autopay { justify-content: flex-end; }
+    .toolbar { flex-wrap: wrap; padding: 11px 12px; }
+    .month-nav { width: 100%; justify-content: space-between; }
+    .month-title { flex: 1; min-width: 0; }
+    .legend { width: 100%; justify-content: space-between; margin-left: 0; }
+    .calendar-scroll { overflow: visible; }
+    .calendar-inner { display: none; }
+    .mobile-agenda { display: block; }
+    .preview { padding: 13px; }
+    .preview h2 { margin-top: 10px; }
+    .preview-meta { margin: 11px 0; }
+  }
+  @media (max-width: 370px) {
+    .overview-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px 0; }
+    .overview-stat { padding: 2px 10px; }
+    .overview-stat:nth-child(odd) { border-left: 0; }
+    .streak-stat { display: block; }
+  }
+</style>
+</head>
+<body>
+<main id="app" class="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21Z"/><path d="M9.5 8h5M9.5 12h5M9.5 16H13"/>
+        </svg>
+      </div>
+      <div class="identity">
+        <div class="kicker" data-i18n="kicker">BILLS DUE</div>
+        <h1 data-i18n="appName">Bill calendar</h1>
+        <div class="summary" data-i18n="summary">Know what lands next.</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="button ghost" id="summarize" type="button" aria-label="Summarize what’s due with AI" data-i18n-aria="summarizeAria">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M4 5h16M4 10h10M4 15h13M4 20h7"/><path d="m18 13 1 2.2L21.5 16 19 16.8 18 19l-1-2.2-2.5-.8 2.5-.8Z"/>
+        </svg>
+        <span data-i18n="summarize">Summarize what’s due</span>
+      </button>
+      <button class="button primary" id="addToggle" type="button" aria-expanded="false" aria-controls="composer" aria-label="Add bill" data-i18n-aria="addBill">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+        <span data-i18n="addBill">Add bill</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview-band" aria-label="Bill overview" data-i18n-aria="billOverview">
+    <div class="due-overview">
+      <div class="metric-label" data-i18n="upcoming7Days">Upcoming 7 days</div>
+      <div class="metric-value" id="upcomingTotal">—</div>
+      <div class="metric-note" id="upcomingNote" data-i18n="checking">Checking your calendar…</div>
+    </div>
+    <div class="overview-stats">
+      <div class="overview-stat streak-stat">
+        <div class="streak-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 12.5 10 16l8-9"/><path d="M12 2.8a9.2 9.2 0 1 1-6.5 2.7"/>
+          </svg>
+        </div>
+        <div>
+          <span class="metric-label" data-i18n="onTimeStreak">On-time streak</span>
+          <strong id="streakValue">—</strong>
+        </div>
+      </div>
+      <div class="overview-stat"><span class="metric-label" data-i18n="upcoming">Upcoming</span><strong id="upcomingCount">0</strong></div>
+      <div class="overview-stat"><span class="metric-label" data-i18n="overdue">Overdue</span><strong id="overdueCount">0</strong></div>
+      <div class="overview-stat"><span class="metric-label" data-i18n="paid">Paid</span><strong id="paidCount">0</strong></div>
+    </div>
+  </section>
+
+  <section class="composer" id="composer" aria-hidden="true">
+    <div class="composer-head">
+      <strong data-i18n="addBillTitle">Add a bill</strong>
+      <button class="icon-button" id="closeComposer" type="button" aria-label="Close add bill form" data-i18n-aria="closeAddBill">×</button>
+    </div>
+    <form class="bill-form" id="billForm">
+      <div class="field name"><label for="billName" data-i18n="billName">Bill name</label><input id="billName" autocomplete="off" placeholder="Electricity" data-i18n-placeholder="billPlaceholder" required></div>
+      <div class="field"><label for="billAmount" data-i18n="amount">Amount</label><input id="billAmount" inputmode="decimal" type="number" min="0.01" step="0.01" placeholder="0.00" required></div>
+      <div class="field"><label for="billCurrency" data-i18n="currency">Currency</label><input id="billCurrency" maxlength="3" autocomplete="off" required></div>
+      <div class="field date"><label for="billDate" data-i18n="dueDate">Due date</label><input id="billDate" type="date" required></div>
+      <div class="field frequency"><label for="billFrequency" data-i18n="repeats">Repeats</label>
+        <select id="billFrequency">
+          <option value="monthly" data-i18n="monthly">Monthly</option><option value="weekly" data-i18n="weekly">Weekly</option>
+          <option value="quarterly" data-i18n="quarterly">Quarterly</option><option value="annual" data-i18n="annual">Annual</option><option value="one-off" data-i18n="oneOff">One-off</option>
+        </select>
+      </div>
+      <label class="autopay"><input id="billAutopay" type="checkbox"> <span data-i18n="autopay">Autopay</span></label>
+      <button class="button primary" type="submit" data-i18n="saveBill">Save bill</button>
+    </form>
+    <div class="form-error" id="formError" role="status"></div>
+  </section>
+
+  <section class="toolbar">
+    <div class="month-nav">
+      <button class="nav-button" id="prevMonth" type="button" aria-label="Previous month" data-i18n-aria="previousMonth">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </button>
+      <div class="month-title" id="monthTitle"></div>
+      <button class="nav-button" id="nextMonth" type="button" aria-label="Next month" data-i18n-aria="nextMonth">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m9 18 6-6-6-6"/></svg>
+      </button>
+      <button class="today-button" id="today" type="button" data-i18n="today">Today</button>
+    </div>
+    <div class="legend" aria-label="Payment status legend" data-i18n-aria="statusLegend">
+      <span class="legend-item upcoming"><span class="legend-dot"></span><span data-i18n="upcoming">Upcoming</span></span>
+      <span class="legend-item overdue"><span class="legend-dot"></span><span data-i18n="overdue">Overdue</span></span>
+      <span class="legend-item paid"><span class="legend-dot"></span><span data-i18n="paid">Paid</span></span>
+    </div>
+  </section>
+
+  <section class="schedule-area">
+    <div class="calendar-scroll" id="calendarScroll">
+      <div class="calendar-inner">
+        <div class="weekdays" id="weekdays"></div>
+        <div class="calendar" id="calendar"></div>
+      </div>
+      <div class="mobile-agenda" id="mobileAgenda" aria-live="polite"></div>
+    </div>
+    <aside class="preview" id="preview" aria-live="polite"></aside>
+  </section>
+</main>
+
+<script type="module">
+  const $ = (id) => document.getElementById(id);
+  const STR = {
+    en: {
+      documentTitle: "Bill Calendar",
+      kicker: "BILLS DUE",
+      appName: "Bill calendar",
+      summary: "Know what lands next.",
+      summarize: "Summarize what’s due",
+      summarizeAria: "Summarize what’s due with AI",
+      addBill: "Add bill",
+      billOverview: "Bill overview",
+      upcoming7Days: "Upcoming 7 days",
+      checking: "Checking your calendar…",
+      onTimeStreak: "On-time streak",
+      upcoming: "Upcoming",
+      overdue: "Overdue",
+      paid: "Paid",
+      addBillTitle: "Add a bill",
+      closeAddBill: "Close add bill form",
+      billName: "Bill name",
+      billPlaceholder: "Electricity",
+      amount: "Amount",
+      currency: "Currency",
+      dueDate: "Due date",
+      repeats: "Repeats",
+      monthly: "Monthly",
+      weekly: "Weekly",
+      quarterly: "Quarterly",
+      annual: "Annual",
+      oneOff: "One-off",
+      autopay: "Autopay",
+      saveBill: "Save bill",
+      previousMonth: "Previous month",
+      nextMonth: "Next month",
+      today: "Today",
+      statusLegend: "Payment status legend",
+      noDate: "No date",
+      unnamedBill: "Unnamed bill",
+      selectBill: "Select a bill",
+      selectBillHelp: "Payment details and quick actions appear here.",
+      due: "Due",
+      paidLabel: "Paid",
+      on: "On",
+      off: "Off",
+      notPaid: "Not paid",
+      markPaid: "Mark paid",
+      markUnpaid: "Mark unpaid",
+      delete: "Delete",
+      noBillsTitle: "No bills on the calendar yet.",
+      noBillsBody: "Add one above, or ask the AI to populate your recurring bills.",
+      noBillsPrompt: "Try: “Add my monthly household bills to bill-calendar.”",
+      dueSoonOne: "1 bill due soon",
+      dueSoonMany: "{count} bills due soon",
+      noneElseDue: "Nothing else due in the next seven days",
+      clearSevenDays: "Clear for the next seven days",
+      formError: "Add a name, valid amount, three-letter currency, and due date.",
+      agendaEmpty: "No bills in this month.",
+      summarizePrompt: "Summarize what's due from my bill calendar and flag anything unusual, such as a high amount, duplicate-looking charge, missed payment, or bills bunching together. Upcoming: {upcoming}. Overdue: {overdue}.",
+      none: "none"
+    },
+    zh: {
+      documentTitle: "账单日历",
+      kicker: "近期账单",
+      appName: "账单日历",
+      summary: "下一笔什么时候来，一眼看清。",
+      summarize: "让 AI 总结",
+      summarizeAria: "让 AI 总结近期账单",
+      addBill: "添加账单",
+      billOverview: "账单概览",
+      upcoming7Days: "未来 7 天",
+      checking: "正在检查账单…",
+      onTimeStreak: "按时支付",
+      upcoming: "待支付",
+      overdue: "已逾期",
+      paid: "已支付",
+      addBillTitle: "添加账单",
+      closeAddBill: "关闭添加账单表单",
+      billName: "账单名称",
+      billPlaceholder: "电费",
+      amount: "金额",
+      currency: "币种",
+      dueDate: "到期日",
+      repeats: "重复周期",
+      monthly: "每月",
+      weekly: "每周",
+      quarterly: "每季度",
+      annual: "每年",
+      oneOff: "一次性",
+      autopay: "自动扣款",
+      saveBill: "保存账单",
+      previousMonth: "上个月",
+      nextMonth: "下个月",
+      today: "今天",
+      statusLegend: "支付状态图例",
+      noDate: "无日期",
+      unnamedBill: "未命名账单",
+      selectBill: "点选一笔账单",
+      selectBillHelp: "这里会显示付款详情和快捷操作。",
+      due: "到期",
+      paidLabel: "支付日",
+      on: "已开启",
+      off: "未开启",
+      notPaid: "尚未支付",
+      markPaid: "标为已付",
+      markUnpaid: "标为未付",
+      delete: "删除",
+      noBillsTitle: "这个月还没有账单。",
+      noBillsBody: "可以在上方添加，或让 AI 导入周期性账单。",
+      noBillsPrompt: "试试说：“把每月家庭账单加入账单日历。”",
+      dueSoonOne: "近期有 1 笔账单",
+      dueSoonMany: "近期有 {count} 笔账单",
+      noneElseDue: "未来七天没有其他账单",
+      clearSevenDays: "未来七天暂无账单",
+      formError: "请填写名称、有效金额、三位币种代码和到期日。",
+      agendaEmpty: "这个月没有账单。",
+      summarizePrompt: "请总结我的账单日历，并标记异常情况，例如金额过高、疑似重复、漏付或多笔账单集中到期。待支付：{upcoming}。已逾期：{overdue}。",
+      none: "无"
+    }
+  };
+  const validStatuses = new Set(["upcoming", "overdue", "paid"]);
+  const statusColor = { upcoming: "var(--info)", overdue: "var(--danger)", paid: "var(--success)" };
+  let currentState = { items: [] };
+  let previewClockDate = null;
+  const clockNow = () => previewClockDate ? new Date(previewClockDate) : new Date();
+  let viewMonth = clockNow();
+  viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1, 12);
+  let pinnedId = "";
+  let lastPreviewId = "";
+  let seeding = false;
+  let renderedOnce = false;
+  let knownIds = new Set();
+  let celebrateId = "";
+
+  const pad = (n) => String(n).padStart(2, "0");
+  const toISO = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const parseDate = (value) => {
+    const match = String(value || "").match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return match ? new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]), 12) : null;
+  };
+  // `preview_date` is a STORE-PREVIEW device: fixtures.json pins one "today" so the sample month
+  // reads the same for every visitor. It is not a declared field (manifest.json declares no
+  // collections at all), so the store accepts the key on a REAL bill too — and reading it off any
+  // row meant one stray field on one live row silently moved this app's whole clock, backdating
+  // "overdue", "paid" and the calendar itself with nothing on screen to say so.
+  // So gate it the way elder-days gates its snapshot clock: honour the key only on a row that IS
+  // the fixture row, matched against the content fixtures.json ships (ids differ between the two
+  // preview paths — the guard mints fx-N, the standalone stub keeps the file's uuids — so identity
+  // has to come from the fields). A real bill never matches, and the preview is unchanged.
+  const PREVIEW_ROW = { name: "Rent", amount: 1850, due_date: "2026-08-01", paid_date: "2026-07-31" };
+  const isPreviewRow = (fields) => !!fields
+    && String(fields.name || "") === PREVIEW_ROW.name
+    && Number(fields.amount) === PREVIEW_ROW.amount
+    && String(fields.due_date || "") === PREVIEW_ROW.due_date
+    && String(fields.paid_date || "") === PREVIEW_ROW.paid_date;
+  const previewDateOf = (items) => {
+    for (const item of items || []) {
+      if (!isPreviewRow(item?.fields)) continue;
+      const date = parseDate(item.fields.preview_date);
+      if (date) return date;
+    }
+    return null;
+  };
+  const addDays = (date, count) => {
+    const next = new Date(date);
+    next.setDate(next.getDate() + count);
+    return next;
+  };
+  const dayDiff = (a, b) => Math.round((a - b) / 86400000);
+  const locale = () => {
+    const pref = oma.pref("locale", "auto");
+    return pref === "auto" ? navigator.language : pref;
+  };
+  const language = () => locale().toLowerCase().startsWith("zh") ? "zh" : "en";
+  const t = (key, vars = {}) => {
+    let value = STR[language()][key] ?? STR.en[key] ?? key;
+    for (const [name, replacement] of Object.entries(vars)) value = value.replaceAll(`{${name}}`, String(replacement));
+    return value;
+  };
+  const applyI18n = () => {
+    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+    document.title = t("documentTitle");
+    for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+    for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+    for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+  };
+  const statusOf = (item) => validStatuses.has(item.group) ? item.group : "upcoming";
+  const frequencyLabel = (value) => t({ monthly: "monthly", weekly: "weekly", quarterly: "quarterly", annual: "annual", "one-off": "oneOff" }[value] || "oneOff");
+  const safeCurrency = (value) => String(value || oma.pref("currency", "USD")).trim().toUpperCase().slice(0, 3) || "USD";
+  const amountOf = (item) => Math.max(0, Number(item.fields.amount) || 0);
+  const money = (amount, currency, compact = false) => {
+    try {
+      return new Intl.NumberFormat(locale(), {
+        style: "currency", currency: safeCurrency(currency),
+        notation: compact && amount >= 1000 ? "compact" : "standard",
+        maximumFractionDigits: compact && amount >= 1000 ? 1 : 2
+      }).format(amount);
+    } catch {
+      return `${safeCurrency(currency)} ${amount.toFixed(2)}`;
+    }
+  };
+  const displayDate = (value) => {
+    const date = parseDate(value);
+    if (!date) return t("noDate");
+    const preference = oma.pref("date_format", "auto");
+    if (preference === "yyyy-mm-dd") return toISO(date);
+    if (preference === "dd/mm/yyyy") return `${pad(date.getDate())}/${pad(date.getMonth() + 1)}/${date.getFullYear()}`;
+    if (preference === "mm/dd/yyyy") return `${pad(date.getMonth() + 1)}/${pad(date.getDate())}/${date.getFullYear()}`;
+    return new Intl.DateTimeFormat(locale(), { day: "numeric", month: "short", year: "numeric" }).format(date);
+  };
+  const multiTotal = (items, compact = false) => {
+    const sums = new Map();
+    for (const item of items) {
+      const currency = safeCurrency(item.fields.currency);
+      sums.set(currency, (sums.get(currency) || 0) + amountOf(item));
+    }
+    if (!sums.size) return money(0, oma.pref("currency", "USD"));
+    return [...sums.entries()].map(([currency, amount]) => money(amount, currency, compact)).join(" + ");
+  };
+  const escapeSummary = (item) => `${item.fields.name || t("unnamedBill")} (${money(amountOf(item), item.fields.currency)}, ${t("due")} ${displayDate(item.fields.due_date)})`;
+
+  function weekOrder() {
+    const start = oma.pref("week_start", "monday");
+    const offset = start === "sunday" ? 0 : start === "saturday" ? 6 : 1;
+    return Array.from({ length: 7 }, (_, index) => (offset + index) % 7);
+  }
+
+  function onTimeStreak(items) {
+    const paid = items.filter((item) => statusOf(item) === "paid" && parseDate(item.fields.paid_date) && parseDate(item.fields.due_date))
+      .sort((a, b) => String(b.fields.due_date).localeCompare(String(a.fields.due_date)));
+    let streak = 0;
+    for (const item of paid) {
+      if (parseDate(item.fields.paid_date) <= parseDate(item.fields.due_date)) streak++;
+      else break;
+    }
+    return streak;
+  }
+
+  function renderPreview(item) {
+    const preview = $("preview");
+    if (!item) {
+      preview.style.removeProperty("--preview-color");
+      preview.innerHTML = `
+        <div class="preview-placeholder">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="17" rx="3"/><path d="M8 2v4M16 2v4M3 9h18"/><path d="M8 13h3M8 17h6"/>
+          </svg>
+          <strong>${t("selectBill")}</strong>
+          <small>${t("selectBillHelp")}</small>
+        </div>`;
+      return;
+    }
+    const status = statusOf(item);
+    const fields = item.fields;
+    const isPaid = status === "paid";
+    const autoText = fields.autopay ? t("on") : t("off");
+    const paymentText = isPaid && fields.paid_date ? displayDate(fields.paid_date) : t("notPaid");
+    preview.style.setProperty("--preview-color", statusColor[status]);
+    preview.innerHTML = `
+      <span class="preview-status">${t(status)}</span>
+      <h2></h2>
+      <div class="preview-amount"></div>
+      <div class="preview-meta">
+        <div class="meta-row"><span>${t("due")}</span><span data-meta="due"></span></div>
+        <div class="meta-row"><span>${t("repeats")}</span><span data-meta="frequency"></span></div>
+        <div class="meta-row"><span>${t("autopay")}</span><span data-meta="autopay"></span></div>
+        <div class="meta-row"><span>${t("paidLabel")}</span><span data-meta="paid"></span></div>
+      </div>
+      <div class="preview-actions">
+        <button class="button primary" data-action="toggle-paid" type="button">${isPaid ? t("markUnpaid") : t("markPaid")}</button>
+        <button class="button delete-button" data-action="delete" type="button">${t("delete")}</button>
+      </div>`;
+    preview.querySelector("h2").textContent = fields.name || t("unnamedBill");
+    preview.querySelector(".preview-amount").textContent = money(amountOf(item), fields.currency);
+    preview.querySelector('[data-meta="due"]').textContent = displayDate(fields.due_date);
+    preview.querySelector('[data-meta="frequency"]').textContent = frequencyLabel(fields.frequency);
+    preview.querySelector('[data-meta="autopay"]').textContent = autoText;
+    preview.querySelector('[data-meta="paid"]').textContent = paymentText;
+    preview.querySelector('[data-action="toggle-paid"]').onclick = async () => {
+      celebrateId = item.id;
+      if (isPaid) {
+        await oma.updateItem(item.id, { paid_date: "" });
+        const due = parseDate(fields.due_date);
+        const now = clockNow();
+        const nextStatus = due && due < new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12) ? "overdue" : "upcoming";
+        await oma.moveItem(item.id, nextStatus);
+      } else {
+        await oma.updateItem(item.id, { paid_date: toISO(clockNow()) });
+        await oma.moveItem(item.id, "paid");
+      }
+      setTimeout(() => {
+        document.querySelectorAll(".celebrate").forEach((node) => node.classList.remove("celebrate"));
+        celebrateId = "";
+      }, 800);
+    };
+    const remove = preview.querySelector('[data-action="delete"]');
+    remove.onclick = () => {
+      pinnedId = "";
+      lastPreviewId = "";
+      oma.deleteItem(item.id);
+    };
+  }
+
+  function render(state) {
+    currentState = state;
+    const app = $("app");
+    app.classList.toggle("compact", oma.pref("density", "comfortable") === "compact");
+    const today = clockNow();
+    const todayDate = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+    const items = state.items.filter((item) => parseDate(item.fields.due_date));
+    const upcomingSeven = items.filter((item) => {
+      const diff = dayDiff(parseDate(item.fields.due_date), todayDate);
+      return statusOf(item) === "upcoming" && diff >= 0 && diff < 7;
+    });
+    $("upcomingTotal").textContent = multiTotal(upcomingSeven, true);
+    const overdue = items.filter((item) => statusOf(item) === "overdue");
+    $("upcomingNote").textContent = upcomingSeven.length
+      ? t(upcomingSeven.length === 1 ? "dueSoonOne" : "dueSoonMany", { count: upcomingSeven.length })
+      : overdue.length ? t("noneElseDue") : t("clearSevenDays");
+    const streak = onTimeStreak(items);
+    // The label ("On-time streak") carries the meaning; the value stays a bare number so the
+    // narrow stat column can never ellipsize it into nonsense ("2 in…", live-test 2026-07-28).
+    $("streakValue").textContent = String(streak);
+    $("upcomingCount").textContent = items.filter((item) => statusOf(item) === "upcoming").length;
+    $("overdueCount").textContent = overdue.length;
+    $("paidCount").textContent = items.filter((item) => statusOf(item) === "paid").length;
+
+    $("monthTitle").textContent = new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric" }).format(viewMonth);
+    const orderedDays = weekOrder();
+    const dayFormatter = new Intl.DateTimeFormat(locale(), { weekday: "short" });
+    $("weekdays").innerHTML = "";
+    for (const weekday of orderedDays) {
+      const reference = new Date(2024, 0, 7 + weekday, 12);
+      const label = document.createElement("div");
+      label.className = "weekday";
+      label.textContent = dayFormatter.format(reference);
+      $("weekdays").appendChild(label);
+    }
+
+    const first = new Date(viewMonth.getFullYear(), viewMonth.getMonth(), 1, 12);
+    const offset = (first.getDay() - orderedDays[0] + 7) % 7;
+    const gridStart = addDays(first, -offset);
+    const byDate = new Map();
+    for (const item of items) {
+      const key = item.fields.due_date;
+      if (!byDate.has(key)) byDate.set(key, []);
+      byDate.get(key).push(item);
+    }
+    for (const dateItems of byDate.values()) {
+      dateItems.sort((a, b) => statusOf(a).localeCompare(statusOf(b)) || amountOf(b) - amountOf(a) || a.position - b.position);
+    }
+
+    const calendar = $("calendar");
+    calendar.innerHTML = "";
+    for (let index = 0; index < 42; index++) {
+      const date = addDays(gridStart, index);
+      const key = toISO(date);
+      const dayItems = byDate.get(key) || [];
+      const day = document.createElement("section");
+      day.className = "day";
+      if (date.getMonth() !== viewMonth.getMonth()) day.classList.add("outside");
+      if (key === toISO(todayDate)) day.classList.add("today");
+      day.setAttribute("aria-label", displayDate(key));
+      const head = document.createElement("div");
+      head.className = "day-head";
+      const number = document.createElement("span");
+      number.className = "date-number";
+      number.textContent = date.getDate();
+      head.appendChild(number);
+      if (dayItems.length) {
+        const total = document.createElement("span");
+        total.className = "day-total";
+        total.textContent = multiTotal(dayItems, true);
+        total.title = total.textContent;
+        head.appendChild(total);
+      }
+      const bills = document.createElement("div");
+      bills.className = "bills";
+      for (const item of dayItems) {
+        const status = statusOf(item);
+        const card = document.createElement("article");
+        card.className = `bill ${status}`;
+        if (renderedOnce && !knownIds.has(item.id)) card.classList.add("is-new");
+        if (celebrateId === item.id) card.classList.add("celebrate");
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = "bill-main";
+        button.setAttribute("aria-pressed", String(pinnedId === item.id));
+        button.setAttribute("aria-label", `${item.fields.name || t("unnamedBill")}, ${money(amountOf(item), item.fields.currency)}, ${t(status)}`);
+        const name = document.createElement("span");
+        name.className = "bill-name";
+        name.textContent = item.fields.name || t("unnamedBill");
+        const amount = document.createElement("span");
+        amount.className = "bill-amount";
+        amount.textContent = money(amountOf(item), item.fields.currency, true);
+        button.append(name, amount);
+        button.onpointerenter = () => {
+          if (!pinnedId) {
+            lastPreviewId = item.id;
+            renderPreview(item);
+          }
+        };
+        button.onfocus = () => {
+          if (!pinnedId) {
+            lastPreviewId = item.id;
+            renderPreview(item);
+          }
+        };
+        button.onclick = () => {
+          pinnedId = pinnedId === item.id ? "" : item.id;
+          lastPreviewId = item.id;
+          render(currentState);
+        };
+        card.appendChild(button);
+        bills.appendChild(card);
+      }
+      day.append(head, bills);
+      calendar.appendChild(day);
+    }
+    if (!items.length) {
+      calendar.innerHTML = `<div class="empty-calendar"><strong>${t("noBillsTitle")}</strong><span>${t("noBillsBody")}</span><small>${t("noBillsPrompt")}</small></div>`;
+    }
+    const monthItems = items
+      .filter((item) => {
+        const date = parseDate(item.fields.due_date);
+        return date && date.getFullYear() === viewMonth.getFullYear() && date.getMonth() === viewMonth.getMonth();
+      })
+      .sort((a, b) => String(a.fields.due_date).localeCompare(String(b.fields.due_date)) || a.position - b.position);
+    const agenda = $("mobileAgenda");
+    agenda.innerHTML = "";
+    if (!monthItems.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty-calendar";
+      empty.textContent = t("agendaEmpty");
+      agenda.appendChild(empty);
+    } else {
+      const list = document.createElement("div");
+      list.className = "agenda-list";
+      const weekday = new Intl.DateTimeFormat(locale(), { weekday: "short" });
+      for (const item of monthItems) {
+        const date = parseDate(item.fields.due_date);
+        const status = statusOf(item);
+        const button = document.createElement("button");
+        button.type = "button";
+        button.className = `agenda-day ${status}`;
+        button.setAttribute("aria-pressed", String(pinnedId === item.id));
+        button.setAttribute("aria-label", `${item.fields.name || t("unnamedBill")}, ${money(amountOf(item), item.fields.currency)}, ${t(status)}`);
+        button.innerHTML = `<span class="agenda-date"><strong>${date.getDate()}</strong><span>${weekday.format(date)}</span></span><span class="agenda-copy"><strong></strong><span>${t(status)} · ${frequencyLabel(item.fields.frequency)}</span></span><span class="agenda-amount"></span>`;
+        button.querySelector(".agenda-copy strong").textContent = item.fields.name || t("unnamedBill");
+        button.querySelector(".agenda-amount").textContent = money(amountOf(item), item.fields.currency, true);
+        button.onfocus = () => { if (!pinnedId) { lastPreviewId = item.id; renderPreview(item); } };
+        button.onclick = () => {
+          pinnedId = pinnedId === item.id ? "" : item.id;
+          lastPreviewId = item.id;
+          render(currentState);
+        };
+        list.appendChild(button);
+      }
+      agenda.appendChild(list);
+    }
+    const previewItem = state.items.find((item) => item.id === (pinnedId || lastPreviewId));
+    renderPreview(previewItem);
+    renderedOnce = true;
+    knownIds = new Set(state.items.map((item) => item.id));
+  }
+
+  async function seed() {
+    if (seeding) return;
+    seeding = true;
+    const now = clockNow();
+    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 12);
+    const baseCurrency = safeCurrency(oma.pref("currency", "USD"));
+    const samples = [
+      { group: "paid", fields: { name: "Rent", amount: 1850, currency: baseCurrency, due_date: toISO(addDays(today, -15)), frequency: "monthly", autopay: true, paid_date: toISO(addDays(today, -16)) } },
+      { group: "paid", fields: { name: "Home internet", amount: 79.99, currency: baseCurrency, due_date: toISO(addDays(today, -7)), frequency: "monthly", autopay: true, paid_date: toISO(addDays(today, -7)) } },
+      { group: "overdue", fields: { name: "Gym membership", amount: 34.5, currency: baseCurrency, due_date: toISO(addDays(today, -1)), frequency: "monthly", autopay: false, paid_date: "" } },
+      { group: "upcoming", fields: { name: "Electricity", amount: 126.4, currency: baseCurrency, due_date: toISO(addDays(today, 2)), frequency: "quarterly", autopay: false, paid_date: "" } },
+      { group: "upcoming", fields: { name: "Car insurance", amount: 92.75, currency: baseCurrency, due_date: toISO(addDays(today, 5)), frequency: "monthly", autopay: true, paid_date: "" } },
+      { group: "upcoming", fields: { name: "Cloud storage", amount: 34.5, currency: baseCurrency, due_date: toISO(addDays(today, 4)), frequency: "monthly", autopay: true, paid_date: "" } }
+    ];
+    for (const sample of samples) await oma.addItem(sample);
+    seeding = false;
+  }
+
+  function setComposer(open) {
+    $("composer").classList.toggle("open", open);
+    $("composer").setAttribute("aria-hidden", String(!open));
+    $("addToggle").setAttribute("aria-expanded", String(open));
+    if (open) {
+      $("billCurrency").value = safeCurrency(oma.pref("currency", "USD"));
+      $("billDate").value = toISO(addDays(clockNow(), 1));
+      $("billName").focus();
+    }
+  }
+
+  $("addToggle").onclick = () => setComposer(!$("composer").classList.contains("open"));
+  $("closeComposer").onclick = () => setComposer(false);
+  $("prevMonth").onclick = () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() - 1, 1, 12); pinnedId = ""; render(currentState); };
+  $("nextMonth").onclick = () => { viewMonth = new Date(viewMonth.getFullYear(), viewMonth.getMonth() + 1, 1, 12); pinnedId = ""; render(currentState); };
+  $("today").onclick = () => {
+    const now = clockNow();
+    viewMonth = new Date(now.getFullYear(), now.getMonth(), 1, 12);
+    render(currentState);
+  };
+  $("billCurrency").oninput = (event) => { event.target.value = event.target.value.toUpperCase().replace(/[^A-Z]/g, "").slice(0, 3); };
+  $("billForm").onsubmit = async (event) => {
+    event.preventDefault();
+    const name = $("billName").value.trim();
+    const amount = Number($("billAmount").value);
+    const currency = safeCurrency($("billCurrency").value);
+    const dueDate = $("billDate").value;
+    if (!name || !Number.isFinite(amount) || amount <= 0 || !parseDate(dueDate) || currency.length !== 3) {
+      $("formError").textContent = t("formError");
+      return;
+    }
+    const today = clockNow();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+    const group = parseDate(dueDate) < start ? "overdue" : "upcoming";
+    await oma.addItem({
+      group,
+      fields: {
+        name, amount: Math.round(amount * 100) / 100, currency, due_date: dueDate,
+        frequency: $("billFrequency").value, autopay: $("billAutopay").checked, paid_date: ""
+      }
+    });
+    viewMonth = new Date(parseDate(dueDate).getFullYear(), parseDate(dueDate).getMonth(), 1, 12);
+    $("billForm").reset();
+    $("formError").textContent = "";
+    setComposer(false);
+  };
+  // oma.sendMessage falls back to the clipboard in standalone mode, so this stays visible.
+  $("summarize").onclick = () => {
+    const today = clockNow();
+    const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
+    const upcoming = currentState.items.filter((item) => {
+      const due = parseDate(item.fields.due_date);
+      return due && statusOf(item) === "upcoming" && dayDiff(due, start) >= 0;
+    }).sort((a, b) => String(a.fields.due_date).localeCompare(String(b.fields.due_date)));
+    const overdue = currentState.items.filter((item) => statusOf(item) === "overdue")
+      .sort((a, b) => String(a.fields.due_date).localeCompare(String(b.fields.due_date)));
+    const upcomingText = upcoming.length ? upcoming.slice(0, 12).map(escapeSummary).join("; ") : t("none");
+    const overdueText = overdue.length ? overdue.map(escapeSummary).join("; ") : t("none");
+    oma.sendMessage(t("summarizePrompt", { upcoming: upcomingText, overdue: overdueText }));
+  };
+
+  oma.ready((state) => {
+    previewClockDate = previewDateOf(state.items);
+    if (previewClockDate) {
+      viewMonth = new Date(
+        previewClockDate.getFullYear(),
+        previewClockDate.getMonth(),
+        1,
+        12,
+      );
+    }
+    applyI18n();
+    render(state);
+    // App Store apps install EMPTY — sample data lives only in the oma-fixtures block (store preview).
+  });
+  oma.onChange(render);
+  oma.onPrefChange(() => { applyI18n(); render(currentState); });
+</script>
+</body>
+</html>

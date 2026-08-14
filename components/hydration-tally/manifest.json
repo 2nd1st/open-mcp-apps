@@ -1,0 +1,19 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "daily_target_ml",
+      "type": "number",
+      "label": "Daily hydration target (mL)",
+      "description": "The amount shown as your daily goal.",
+      "default": 2000,
+      "min": 500,
+      "max": 6000,
+      "step": 250
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "confirm_delete"
+  ]
+}

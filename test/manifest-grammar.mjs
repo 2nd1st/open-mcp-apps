@@ -84,17 +84,18 @@ ok("a `<!--<script>` sequence has nothing to confuse — the block ends at the f
 ok("...and the JSON that runs past its own </script> simply fails to parse, loudly",
   readDeclaration(`${DECLARATION_OPEN}{"n":"</script>"}</script>`).error === "manifest_bad_json");
 
-console.log("\n4. real apps — the corpus is not the only input that matters");
+console.log("\n4. real apps — the shipped corpus is BLOCK-FREE (W-N), and its manifests parse");
+// The grammar above is the MIGRATION's reader now: no shipped document may carry a block (the
+// v6 save guard would refuse it), and every shipped declaration is a manifest.json sibling.
 for (const name of ["dashboard", "bill-calendar", "keep-in-touch", "settings"]) {
-  const html = readFileSync(join(ROOT, "components", `${name}.html`), "utf8");
-  const r = readDeclaration(html);
-  const expectPresent = name !== "settings";           // settings.html ships no block
-  ok(`${name}.html → ${r.state}`, expectPresent ? r.state === "present" : r.state === "absent", r.error || "");
+  const ui = readFileSync(join(ROOT, "components", name, "ui.html"), "utf8");
+  const r = readDeclaration(ui);
+  ok(`${name}/ui.html carries no declaration block`, r.state === "absent", r.state);
 }
-// Five of the nine shipped blocks declare no `settings` key at all — which is exactly the case a
+// Five of the shipped manifests declare no `settings` key at all — which is exactly the case a
 // consumer-side `Array.isArray(m.settings)` gate used to drop on the floor.
 const noSettings = ["bill-calendar", "habit-streaks", "keep-in-touch", "savings-goals", "spending-journal"]
-  .filter((n) => { const r = readDeclaration(readFileSync(join(ROOT, "components", `${n}.html`), "utf8")); return r.state === "present" && r.value.settings === undefined; });
+  .filter((n) => { const m = JSON.parse(readFileSync(join(ROOT, "components", n, "manifest.json"), "utf8")); return m.settings === undefined; });
 ok("a declaration with no `settings` key is still a declaration (5 shipped apps rely on it)", noSettings.length === 5, `saw ${noSettings.length}`);
 
 console.log("\n5. bounds");

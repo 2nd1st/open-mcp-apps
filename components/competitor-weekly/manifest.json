@@ -1,0 +1,76 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "weeks_shown",
+      "type": "number",
+      "label": "Weeks shown in history",
+      "default": 4,
+      "min": 1,
+      "max": 12,
+      "step": 1
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "confirm_delete",
+    "density"
+  ],
+  "collections": {
+    "competitor-watchlist": {
+      "label_field": "handle",
+      "fields": {
+        "handle": {
+          "type": "string",
+          "required": true
+        },
+        "name": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "competitor-reports": {
+      "label_field": "handle",
+      "fields": {
+        "week_start": {
+          "type": "string",
+          "required": true
+        },
+        "handle": {
+          "type": "string",
+          "required": true
+        },
+        "posts_count": {
+          "type": "number"
+        },
+        "engagement": {
+          "type": "string"
+        },
+        "top_post": {
+          "type": "string"
+        },
+        "top_post_stats": {
+          "type": "string"
+        },
+        "themes": {
+          "type": "string"
+        },
+        "formats": {
+          "type": "string"
+        },
+        "change_note": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app"
+}

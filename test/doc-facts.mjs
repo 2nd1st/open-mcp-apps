@@ -61,6 +61,32 @@ const ok = (name, cond, note) => (cond
   : (fail++, console.log("  ✗ " + name + (note ? "\n      " + note : ""))));
 const empty = (v) => v == null || String(v).trim() === "" || String(v).trim() === "—";
 
+// ---------------------------------------------------------------------------- 0. CONFIG INTACT
+//
+// A key that goes missing must not quietly take its whole class with it. `mustMention` was dropped
+// from the config by a merge; the loop reads `CFG.mustMention || []`, so it iterated zero times,
+// this file went from 38 assertions to 30 with ZERO failures, and v0.4.2 shipped with four checks
+// switched off. Nothing was broken — only unwatched, which is why nobody could have noticed.
+//
+// The rule is "the KEY must exist", not "the key must have content": `[]` is a legitimate way to
+// say "this repo does not configure that class", and the class then says so out loud. An ABSENT
+// key says nothing at all, and that is the difference between a decision and an accident.
+//
+// `ledger` is the one legal omission, because its absence is ANNOUNCED — section 3 prints
+// "(no ledger configured for this repo — skipped)". That is the whole test for whether a key may
+// be optional: does anyone find out?
+const REQUIRED_KEYS = ["docsDir", "archiveDir", "activeIndex", "extraDocs",
+  "derived", "mustMention", "deepCounts", "multiHome", "deadNames", "foreign"];
+console.log("0. CONFIG INTACT — a dropped key must not silently disable its class");
+{
+  const missing = REQUIRED_KEYS.filter((k) => !(k in CFG));
+  ok(`config declares every class the runner knows about (${REQUIRED_KEYS.length})`,
+    missing.length === 0,
+    `missing: ${missing.join(", ")}\n` +
+    `      An absent key disables that class SILENTLY — a merge probably dropped it.\n` +
+    `      If the class genuinely does not apply here, declare it empty ([] / {}) rather than removing it.`);
+}
+
 /** Every markdown file under docsDir, plus the named extras. Split into active and archived. */
 function docFiles() {
   const all = [];

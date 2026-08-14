@@ -1,5 +1,34 @@
 # Known issues
 
+## ChatGPT web (connector channel): widget loses its DATA after a page refresh
+
+**Symptom.** Over a remote MCP connector on chatgpt.com (both the chat and work surfaces),
+an app opened with `open_app` renders and loads its data correctly on first open. After a
+browser page refresh the widget's UI comes back but its data never loads — the app sits empty.
+Any write from the widget (adding an item) immediately restores the full, correct data set.
+
+**Cause (family, not yet isolated).** This is the refresh-replay family measured 2026-07-29:
+on refresh, ChatGPT web re-mounts the widget and replays the turn's *first* call envelope
+verbatim, and bridge reads issued by the remounted widget do not complete. A write triggers
+the runtime's re-walk, which is why one add repairs the view. First measured 2026-08-05 over
+a tunnel connector against a staging store; the local desktop (`-mcp`) channel does not show
+this shape. Deeper wire isolation pending.
+
+**Workaround.** Add or change any item from the widget (or ask the AI to), and the data
+reappears. Avoid relying on page refresh to re-sync a ChatGPT web widget.
+
+**Engine-side mitigation shipped (W1, awaiting live re-test on this host).** The write getting
+through — and its re-walk reading everything back — proves the bridge is NOT blocked after
+refresh; nothing ever *asked* again, because the replayed envelope carries no binding and every
+mount-walk trigger no-ops. The runtime now asks again, twice over: a post-mount retry ladder
+that rebinds from the identity note the first mount wrote down (`setWidgetState`) and kicks the
+walk that binding should have kicked, and a corner refresh badge (hover-revealed on every
+widget; a `system_badge` preference can pin it visible) that goes FORCED visible ("↻ Load
+data") when the ladder ends with no data ever loaded — one tap runs the same recover-and-walk,
+and the tap is also a user gesture for hosts that gate tool calls on one. On a healthy host the
+ladder is never noticed and the badge stays out of the way. If both fail on this host under
+live re-test, this entry degrades back to host-side-only.
+
 ## Claude Desktop 1.24012.9 / Claude Code: `open_app` chat widgets hang at "Loading app…"
 
 **Symptom.** In Claude Desktop's chat surface (and Claude Code), opening an app through the
@@ -39,7 +68,9 @@ regardless, so the current build's policy ignores the documented flag for adds (
 surfaces gate widget calls behind per-call permission dialogs the codex surface may never
 show — see openai/openai-apps-sdk-examples#163). The proxy policy is not in the open-source
 codex CLI. Upstream: [openai/codex#28912](https://github.com/openai/codex/issues/28912),
-related [#30092](https://github.com/openai/codex/issues/30092). Deletes untested.
+related [#30092](https://github.com/openai/codex/issues/30092). Deletes pass (confirmed
+2026-08-05 on the wire: widget `data_delete_item` reaches the server and commits, including
+the two-phase confirmation round trip — so the block is specifically on adds).
 
 **Scope.** Codex / ChatGPT desktop only. Claude hosts' widget→server loop works (via the
 direct-embed path — see the entry above). AI-side data operations work on every host.

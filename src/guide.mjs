@@ -182,8 +182,6 @@ render the truth? Every "N days left", every recurring item, every "overdue" fla
                             // cannot speak with the user's authority). Word it as a proposal and
                             // never render "sent!" as if it happened. Can your app just DO the
                             // thing? Do that — oma.openLink(url) opens a URL without the AI.
-  oma.updateContext(text) // silently updates the AI's context (no chat message; the AI
-                            // sees it next turn; each call REPLACES the previous context).
 
 This is how an app closes the loop without typing: let the user act in the UI, then
 offer one button that reports the outcome, e.g.
@@ -213,24 +211,21 @@ Standard shared keys — use these, do NOT invent near-duplicates:
 
 Example: const l = oma.pref("locale","auto");
          const fmt = new Intl.DateTimeFormat(l === "auto" ? navigator.language : l);
-         // Delete honoring confirm_delete — inline, NEVER confirm() (see Sandbox limits):
-         btn.onclick = () => {
-           if (oma.pref("confirm_delete", true) && btn.dataset.armed !== "1") {
-             btn.dataset.armed = "1"; btn.textContent = "Sure?";
-             setTimeout(() => { if (btn.dataset.armed) { btn.dataset.armed = ""; btn.textContent = "×"; } }, 3000);
-             return;
-           }
-           oma.deleteItem(id);
-         };
 
-### Declaring what your app is (the engine reads this on save)
+Deletes: just call oma.deleteItem(id). confirm_delete is ENFORCED BY THE ENGINE — when it is
+on, the shell shows its own confirmation and your await resolves after the user answers (or
+with ok:false if they cancel). Do NOT build your own confirm step; a second one just
+double-asks. (And NEVER confirm() — see Sandbox limits.)
 
-Everything an app says about ITSELF goes in ONE block inside its own document. The engine reads
-that block when you save and stores what it finds — the document is the only place you declare, and
-\`save_app\` takes no manifest or scene parameters.
+### Declaring what your app is (the manifest slot)
 
-  <script type="application/json" id="oma-manifest">
-  { "manifest_version": 2,
+An app is TWO slots, saved together as one version: \`ui\` (the document) and \`manifest\` (what the
+app says about itself). The manifest is a plain JSON object passed to \`save_app\` — it does NOT
+live inside the html (a document carrying an old-style \`#oma-manifest\` script block is refused,
+loudly, with the fix in the message):
+
+  save_app { "name": "pomodoro", "ui": "<!DOCTYPE html>…", "manifest": {
+    "manifest_version": 2,
     "settings": [
       { "key": "work_minutes", "type": "number", "label": "Work session (minutes)",
         "default": 25, "min": 5, "max": 120, "step": 5 },
@@ -238,8 +233,7 @@ that block when you save and stores what it finds — the document is the only p
     ],
     "uses_shared": ["confirm_delete"],
     "collections": { "trips": { "label_field": "title" } },
-    "kind": "app" }
-  </script>
+    "kind": "app" } }
 
 Keys, all optional — declare what you use:
 
@@ -252,33 +246,33 @@ Keys, all optional — declare what you use:
   \`{ "trips": { "fields": { "title": {"type":"string","required":true} }, "strict": true } }\`.
   \`label_field\` says which field names a row, so summaries stop guessing.
 - \`kind\` — \`app\` (a person opens it and comes back), \`visual\` (opened once, looked at, done).
-- \`scene\` — Library filing: \`{ "category_id": "local-tools" }\`.
+  A visual that turns out to be a keeper upgrades in place: \`promote_app {name}\` flips this key
+  in the stored manifest and saves a new version — nothing re-transmitted, history kept.
+- \`scene\` — App Store filing: \`{ "category_id": "local-tools" }\`.
 
-Rules, because the engine enforces them:
+Slot rules, because the engine enforces them:
 
-- **Write the opening tag exactly as shown** — same attributes, same order, double quotes. The engine
-  finds your declaration by looking for that exact line, so any other spelling is a rejected save with
-  the correct line in the message. A near miss is never silently ignored: a declaration that quietly
-  does nothing would be the worst outcome for you.
-- **Exactly one block.** Two is a rejected save, not a tiebreak.
-- **Write \`<\\/script>\`** if a string in your JSON needs those characters — the same rule as any inline
-  script. A literal \`</script>\` ends the block early and the JSON then fails to parse.
-- **No block = keep** whatever was declared before. An **empty block** (\`{}\` or whitespace) = clear
-  it, including its Library filing (\`scene\`) and \`kind\`. So editing an app without touching its
-  block never loses its declaration, and clearing is something you say.
-- Bad JSON is refused with the parser's position, so fix it and save again.
+- **Omitted = kept.** A \`save_app\` without \`manifest\` keeps the declaration exactly as it was;
+  an \`edit_app\` never touches it. Same for \`ui\` — a manifest-only save re-declares without
+  re-sending the document.
+- **\`manifest: null\` = cleared**, including the App Store filing (\`scene\`) and \`kind\` (back to
+  \`app\`). Clearing is something you SAY — \`manifest: {}\` is refused as ambiguous.
+- **An object = the whole declaration.** There is no key-merge: read it first
+  (\`get_app {name, slot: "manifest"}\`), change what you mean, send it back whole — a key you
+  drop is a key you deleted (kind flips have \`promote_app\` so you never hand-carry the rest).
+- Every save snapshots BOTH slots as one version: restore and undo bring back the pair.
 
 ## Security & capabilities
 
 Short notes — this guide is your contract, not a sandbox:
 
-- oma.sendMessage proposes and oma.updateContext steers the AI silently. Call BOTH only on an
-  explicit user click — never from load, a timer, an observer, or a data change.
+- oma.sendMessage proposes. Call it only on an explicit user click — never from load,
+  a timer, an observer, or a data change.
 - Reserved settings keys are off-limits: oma.setPref rejects keys starting with
   "security_" or "_", and the store rejects security:* / policy:* on the data_* path.
   oma.callTool is an unscoped escape hatch that is not yet capability-gated (the v0.2
   runner caps close it) — treat every reserved namespace as off-limits regardless.
-- Stay inside window.oma. Apps shared through a future library run sandboxed with
+- Stay inside window.oma. Apps shared through a future app store run sandboxed with
   filtered capabilities: cross-collection reads/writes and arbitrary oma.callTool are
   denied when packaged, so build against your own bound collection only.
 
@@ -295,9 +289,8 @@ Apps run unchanged across hosts; use these only to fine-tune (e.g. hide a
 
 The widget runs inside the host's sandboxed iframe:
 - confirm() / alert() / prompt() are BLOCKED — they return false / do nothing, with no error.
-  NEVER gate an action on confirm(). For a destructive action honoring confirm_delete, do an
-  inline two-step confirm (button → "Sure?" → act; revert after ~3s, shown above) — or delete
-  and offer an undo.
+  NEVER gate an action on confirm(). Deletes need no gate of yours at all: the engine enforces
+  confirm_delete and the shell renders the confirmation (see Example above).
 - target="_blank" and window.open() are BLOCKED (no allow-popups) — an external link may not
   open on click. Show the URL as selectable text so the user can copy it; adding
   <a href target="_blank" rel="noopener"> is fine, but never make click-to-open the ONLY way to
@@ -448,8 +441,8 @@ the skeleton, each addition is an \`edit_app\` of a few lines that the user can 
 2. **Seed the data** if the app starts with content: \`data_batch\` first (see "Seeding data").
    The app is then written against real rows instead of guessing at a shape.
 3. **Write the skeleton** — the app bar, one \`render(state)\` that draws the collection, and the
-   single most important interaction. Save it with \`save_app {name, html, description}\` and
-   open it with \`open_app {app}\`; it renders immediately after saving.
+   single most important interaction. Save it with \`save_app {name, ui, manifest, description}\`
+   and open it with \`open_app {app}\`; it renders immediately after saving.
 4. **Grow it** with \`edit_app {app, expected_version, edits: [{old_string, new_string}]}\`
    — exact-match replacements, no whole-source round trip. One feature per call, each one openable.
    This is the MAIN path, not a repair tool. Say what you added and let the user steer the next one.
@@ -462,6 +455,12 @@ the skeleton, each addition is an \`edit_app\` of a few lines that the user can 
    a big change costs. (Measured: an author whose real change was 2.9KB sent 13KB, because 78% of it
    was surrounding context it did not need to touch.) If a short anchor is ambiguous, make it unique
    by extending it a line at a time — not by pasting the whole block around it.
+   **When you DID read (get_app), edit by RANGE instead of anchor**: the window comes back
+   stamped \`{offset, returned, hash}\` — echo them as \`{offset, length: returned, expect_hash:
+   hash, new_string}\` and NO anchor text travels at all. The hash means a mis-copied offset is
+   a clean error, never a silent mis-splice. Mark stable regions \`data-oma-node="name"\`
+   (unique per document) and \`get_app {name, node}\` jumps straight to that element's window —
+   read one node, replace one node, whole-document arithmetic never enters.
 5. **Full rewrites are the exception**: get_app (windowed — note its version) →
    save_app WITH expected_version (an overwrite without it is refused: a save that never read
    the current source is how a live app gets eaten). Every save keeps history.
@@ -530,7 +529,7 @@ const CHAPTERS = {
     // meets it exactly where it applies — after the workflow, before the save.
     "Before you save: read their sentence back") +
     `\n## More chapters\n\nget_app_guide {topic: "style"} — design tokens, house style, app shell, first-screen layout.\n` +
-    `{topic: "embed"} — putting one app inside another. {topic: "functions"} — exposing callable functions (not yet shipped).\n`,
+    `{topic: "embed"} — putting one app inside another. {topic: "functions"} — exposing callable functions (data-in/data-out, no UI).\n`,
   style: () => PREAMBLE + pick(...STYLE_TITLES) +
     `\n## Related\n\nget_app_guide {topic: "basics"} for the API contract and a working template.\n`,
   embed: () => PREAMBLE + `## Embedding one app inside another
@@ -557,10 +556,45 @@ for embed, remember several apps can read the SAME collection; that is still the
 
 get_app_guide {topic: "basics"} for the API contract.
 `,
-  functions: () => PREAMBLE + `## Exposing callable functions\n\n` +
-    `Not available yet — declared functions (callable without rendering the UI) ship behind a flag with the\n` +
-    `function pillar. Today an app's logic runs when the app is open; data written by anyone is visible to everyone.\n` +
-    `\nget_app_guide {topic: "basics"} for what you can build now.\n`,
+  functions: () => PREAMBLE + `## Exposing callable functions
+
+A function is your app acting WITHOUT its UI on screen: data in, data out, running engine-side —
+so it works from a bare chat ("RSVP yes for Sam") with no widget mounted. Two rules are absolute:
+a function never touches UI (widgets react to its writes through the normal data loop), and its
+body is SYNCHRONOUS — no await, no timers, no network. The store is synchronous, so nothing a
+function is for needs async; a returned Promise is an error.
+
+Declare the signature in \`manifest.functions\`, carry the body in your document, and the two must match —
+a save with a declared function and no body block (or a body block you forgot to declare) is
+refused with a message saying which. Params reuse the field grammar (type: string|number|boolean|
+object|array, required, enum).
+
+manifest: \`{"functions": {"rsvp": {"description": "record one RSVP", "params": {"name": {"type": "string", "required": true}, "coming": {"type": "boolean", "required": true}}}}\`
+
+In your document:
+\`\`\`html
+<script type="text/oma-function" data-fn="rsvp">
+const existing = api.list({ match: { name: args.name } })[0];
+if (existing) api.update({ id: existing.id, fields: { coming: args.coming } });
+else api.add({ fields: { name: args.name, coming: args.coming } });
+return { total: api.count() };
+</script>
+\`\`\`
+
+The body sees exactly two names: \`args\` (validated against your params) and \`api\`:
+\`api.list({collection?, group?, match?, limit?})\` · \`api.count(collection?)\` ·
+\`api.add({collection?, group?, fields, position?})\` → \`{id, seq}\` ·
+\`api.update({collection?, id, fields})\`. Collections reachable: the app's own binding plus what
+its manifest declares — nothing else, never settings. There is deliberately NO api.delete
+(destructive verbs keep the engine's confirmation door). Budgets per call: 2s wall time,
+100 writes, 200 reads, 32KB returned. Whatever you \`return\` (JSON-serializable) is the reply.
+
+Calling: the AI calls \`call_function {app, function, args, command_id}\`; your own widget calls
+\`oma.callFunction("rsvp", {...})\` — same dispatcher, and a widget can only reach its OWN app's
+functions. Every write a function makes is stamped \`via: {app, function}\` in the ledger.
+
+get_app_guide {topic: "basics"} for the API contract.
+`,
 };
 
 export function guideChapter(topic) {

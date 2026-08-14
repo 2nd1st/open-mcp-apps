@@ -1,0 +1,244 @@
+{
+  "items": [
+    {
+      "id": "0d85495e-cdea-405d-b84b-579520021156",
+      "group": "Spanish · Exchange Semester",
+      "position": 1,
+      "fields": {
+        "front": "por si acaso",
+        "back": "just in case",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.35,
+        "interval_days": 1,
+        "last_review": "2026-07-26",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "e6957fa7-4674-4514-b37b-e993f35c6bb0",
+      "group": "Spanish · Exchange Semester",
+      "position": 2,
+      "fields": {
+        "front": "llevar + time + gerund",
+        "back": "to have been doing something for a length of time",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.45,
+        "interval_days": 3,
+        "last_review": "2026-07-24",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "d5cf110c-3537-4712-8fcf-4f03bc349fa8",
+      "group": "Spanish · Exchange Semester",
+      "position": 3,
+      "fields": {
+        "front": "darse cuenta de",
+        "back": "to realize; to become aware of",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.3,
+        "interval_days": 2,
+        "last_review": "2026-07-23",
+        "lapses": 3
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "24a8aef8-c96d-408d-bbc3-0e44cedbbf64",
+      "group": "Spanish · Exchange Semester",
+      "position": 4,
+      "fields": {
+        "front": "acabar de + infinitive",
+        "back": "to have just done something",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.65,
+        "interval_days": 7,
+        "last_review": "2026-07-27",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "b9d49d56-4180-4559-9fbb-45d688a9b7f3",
+      "group": "Spanish · Exchange Semester",
+      "position": 5,
+      "fields": {
+        "front": "No me di cuenta de que…",
+        "back": "I did not realize that…",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.7,
+        "interval_days": 14,
+        "last_review": "2026-07-25",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "2a05d96f-690d-42a7-bac1-98938718721b",
+      "group": "Spanish · Exchange Semester",
+      "position": 6,
+      "fields": {
+        "front": "Quisiera reservar una mesa para dos.",
+        "back": "I would like to reserve a table for two.",
+        "deck": "Spanish · Exchange Semester",
+        "ease": 2.8,
+        "interval_days": 42,
+        "last_review": "2026-06-27",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "ce0da47b-c21a-4918-b1f5-18831640cc60",
+      "group": "Molecular Biology · Friday Midterm",
+      "position": 1,
+      "fields": {
+        "front": "What does the sodium-potassium pump move per ATP?",
+        "back": "3 Na+ out of the cell and 2 K+ into the cell.",
+        "deck": "Molecular Biology · Friday Midterm",
+        "ease": 2.5,
+        "interval_days": 3,
+        "last_review": "2026-07-24",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "2ad32711-1213-4cc0-a0e8-8b490933cf1a",
+      "group": "Molecular Biology · Friday Midterm",
+      "position": 2,
+      "fields": {
+        "front": "What is helicase doing at the replication fork?",
+        "back": "Breaking hydrogen bonds to unwind the DNA double helix.",
+        "deck": "Molecular Biology · Friday Midterm",
+        "ease": 2.55,
+        "interval_days": 7,
+        "last_review": "2026-07-20",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "bd1d5067-fe46-49dd-9f13-c3890323cc45",
+      "group": "Molecular Biology · Friday Midterm",
+      "position": 3,
+      "fields": {
+        "front": "Why is ATP synthase called a molecular motor?",
+        "back": "Proton flow rotates part of the enzyme and drives ATP formation.",
+        "deck": "Molecular Biology · Friday Midterm",
+        "ease": 2.4,
+        "interval_days": 7,
+        "last_review": "2026-07-17",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "40b6ec0f-cb12-470c-9317-cfb7a4f95013",
+      "group": "Molecular Biology · Friday Midterm",
+      "position": 4,
+      "fields": {
+        "front": "What changes after a GPCR activates its G protein?",
+        "back": "GDP on the alpha subunit is exchanged for GTP.",
+        "deck": "Molecular Biology · Friday Midterm",
+        "ease": 2.75,
+        "interval_days": 21,
+        "last_review": "2026-07-27",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "71175688-6a53-4745-bc65-6d5d57bb8fe4",
+      "group": "Molecular Biology · Friday Midterm",
+      "position": 5,
+      "fields": {
+        "front": "When is homologous recombination most available?",
+        "back": "In S and G2, when a sister chromatid can serve as a template.",
+        "deck": "Molecular Biology · Friday Midterm",
+        "ease": 2.9,
+        "interval_days": 70,
+        "last_review": "2026-06-02",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "934e180f-8575-44e6-9598-fe6ada64d016",
+      "group": "Modern History · Archive Essay",
+      "position": 1,
+      "fields": {
+        "front": "Why did the Marshall Plan deepen early Cold War tension?",
+        "back": "Moscow read US economic aid as a strategy for political influence in Europe.",
+        "deck": "Modern History · Archive Essay",
+        "ease": 2.35,
+        "interval_days": 1,
+        "last_review": "2026-07-25",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "2a8458a2-13fc-4cfe-bc1f-855429d2286c",
+      "group": "Modern History · Archive Essay",
+      "position": 2,
+      "fields": {
+        "front": "Primary source vs. secondary source",
+        "back": "A primary source comes from the period; a secondary source interprets it later.",
+        "deck": "Modern History · Archive Essay",
+        "ease": 2.6,
+        "interval_days": 14,
+        "last_review": "2026-07-25",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "8d85ae82-35c7-4011-981a-16df0adca3e2",
+      "group": "Modern History · Archive Essay",
+      "position": 3,
+      "fields": {
+        "front": "What did the Bandung Conference signal in 1955?",
+        "back": "Newly independent states wanted cooperation outside the US-Soviet bloc system.",
+        "deck": "Modern History · Archive Essay",
+        "ease": 2.5,
+        "interval_days": 20,
+        "last_review": "2026-07-05",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "aabdf6b7-f9a0-46fe-9d30-29e131635f63",
+      "group": "Modern History · Archive Essay",
+      "position": 4,
+      "fields": {
+        "front": "What limited détente by the late 1970s?",
+        "back": "Regional conflicts, arms competition, domestic opposition, and the Soviet invasion of Afghanistan.",
+        "deck": "Modern History · Archive Essay",
+        "ease": 2.95,
+        "interval_days": 90,
+        "last_review": "2026-05-22",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    }
+  ]
+}

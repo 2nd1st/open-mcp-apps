@@ -1,6 +1,7 @@
 # The runtime contract — `window.oma`
 
-**Contract version: 1** (read it at runtime as `oma.contract`)
+**Contract version: 2** (read it at runtime as `oma.contract`; 2 = the 2026-08-04 name
+removals below — an app built against 1 that used none of the removed names runs unchanged)
 
 This is the contract for writing an app **outside** this repo — in your own editor, with your own
 bundler — and installing it with `install-app.mjs`. If an AI is writing your app it doesn't need
@@ -29,14 +30,17 @@ Everything below was measured against a real engine in a real browser, not read 
 
 ## 1. What an app is
 
-One self-contained HTML document. That is the whole packaging format.
+Two slots, saved together as one version: `ui` — one self-contained HTML document — and
+`manifest` — a JSON object declaring what the app is (its collection, fields, settings, kind).
+On disk (an App Store entry, or an app you build yourself) that is a directory:
+`<name>/ui.html` + `<name>/manifest.json`.
 
 | | |
 |---|---|
-| Size | ≤ 200,000 bytes (`html_too_large` above it) |
+| Size | ui ≤ 200,000 bytes (`ui_too_large` above it) |
 | Network | no requests — the runtime iframe's CSP is `default-src 'none'`, so `fetch`/XHR fail and remote images, fonts and scripts do not load. Inline every asset (`data:` URIs are allowed for images and fonts). **This is not a data-egress guarantee**: CSP does not govern a page navigating itself, so treat anything your app can read as something it could also send somewhere. Don't put secrets in an app you wouldn't publish |
 | Provided for you | the kit CSS, the host's design-token layer, and `window.oma` — all injected at serve time, so don't ship your own copy |
-| Declaration | an `#oma-manifest` block naming your collection and its fields (§5) |
+| Declaration | the manifest slot, naming your collection and its fields (§5). NOT inside the html — a document carrying a legacy `#oma-manifest` block is refused on save |
 
 Bundle whatever you like into those bytes. 200 KB is a real constraint but not a small one — it
 holds a compiled framework and a substantial app, as long as you are not shipping a design system
@@ -63,7 +67,7 @@ An app runs in one of two modes, decided by its **provenance**, not by anything 
 
 | | direct | behind the runner |
 |---|---|---|
-| when | author is local (the AI, you via `install-app.mjs`, a seed, the library) | any other author — `install-app.mjs --sandboxed`, and whatever a hosted publishing pipeline installs |
+| when | author is local (the AI, you via `install-app.mjs`, a seed, the App Store) | any other author — `install-app.mjs --sandboxed`, and whatever a hosted publishing pipeline installs |
 | where it runs | in the widget document itself | in an `about:srcdoc` iframe, `sandbox="allow-scripts"` (opaque origin — the parent cannot read into it, and it cannot read out) |
 | `window.oma` | the real object | a message-passing bridge with the same names |
 | capability limits | none — co-equal with the AI | enforced per call; a refusal rejects the promise |
@@ -75,11 +79,11 @@ where it lands decides what it is allowed to do, not what it is allowed to say.
 What a sandboxed app can still do, with *no* capabilities granted: read and write its own bound
 collection (the typed verbs go through the bridge and are always available), read and write its own
 files, read preferences. What it cannot: `callTool` (rejects with `tool "…" not allowed`), reads or
-writes to any other collection, `sendMessage`, `updateContext`, `setPref`, deleting items.
+writes to any other collection, `sendMessage`, `setPref`, deleting items.
 
 ## 4. The API
 
-### Available in BOTH modes — the portable surface (21)
+### Available in BOTH modes — the portable surface (19)
 
 ```js
 oma.contract                        // number — this contract's version (1)
@@ -91,15 +95,17 @@ oma.refresh()                       // re-read the bound collection
 oma.addItem({group, fields, position})   // → Promise
 oma.updateItem(id, fields)               // shallow merge; null deletes a key
 oma.moveItem(id, group, position)
-oma.deleteItem(id)
-oma.readCollection(name, opts)           // read ANY collection without touching your own state
+oma.deleteItem(id)                       // confirm_delete is ENFORCED BY THE ENGINE: when on, the shell
+                                         // shows its own confirmation and your await resolves after the
+                                         // user answers (ok:false if they cancel). Never build your own.
+oma.readCollection(name)                 // read ANY collection (full paged walk) without touching your own state
 oma.callTool(name, args)                 // escape hatch to the raw tool surface
-oma.callFunction(name, args)             // ⚠️ NOT USABLE YET — the method exists on the object,
-                                    // but the server seat does not: there is no `call_function`
-                                    // tool among the 36, so every call fails with
-                                    // `-32602 Tool call_function not found`. It ships with the
-                                    // function pillar (OMA_FUNCTIONS). Listed because the name is
-                                    // on the runtime and feature-detection would wrongly say yes.
+oma.callFunction(fn, args)               // run a function THIS app declares (manifest.functions) —
+                                         // data in, data out, engine-side. Resolves the ack body
+                                         // ({ok, result, writes}) or the typed refusal ({ok:false,
+                                         // reason, …}); a refusal is an ANSWER, not an exception.
+                                         // You can only reach your OWN functions — the callee is
+                                         // forced. get_app_guide {topic:"functions"} for authoring.
 
 oma.pref(key, fallback)             // merged: your override ▸ global ▸ fallback. The fallback's TYPE coerces
 oma.onPrefChange(cb)                // cb({key, value, oldValue, scope})
@@ -120,25 +126,21 @@ oma.openLink(url) -> {ok}           // DIRECT MODE ONLY. Ask the host to open a 
                                     // than throwing. Sandboxed (embedded/previewed) apps
                                     // do NOT get this: a URL carries data, so a link opener is
                                     // an outbound channel, and the sandbox closes those.
-oma.updateContext(text)             // silently updates the AI's context for its next turn
 
-oma.bind(collection)                // DIRECT MODE ONLY. Bind this runtime to a collection, once,
-                                    // from a value the SERVER computed. One caller: the universal
-                                    // loader, which is a single document serving every app and so
-                                    // cannot be baked with a binding the way a per-app document is.
-                                    // First call wins; never recompute the binding yourself.
-
-oma.host                            // "claude-ai" | "chatgpt" | "browser-viewer" | …
 oma.standalone                      // true in a plain browser page (no chat attached)
 oma.toolInput                       // arguments of the call that mounted this widget
 ```
 
-### Direct mode only (3)
+Retired from this surface 2026-08-04 (each returns WITH its real consumer, never ahead of it):
+`updateContext` (ships with the view-context bridge), `host` and `isControlPlaneTool` (zero
+consumers), `bind` (was loader-only — now the internal `__OMA_BIND__` hook, not author API).
+`callFunction` returned 2026-08-05 exactly on that condition — W3 shipped the server seat.
+
+### Direct mode only (2)
 
 ```js
 oma.embed(name, opts)               // mount another app inside this one (depth 1 — a child cannot embed)
 oma.viewBase                        // base path for app→app links, default "/view/"
-oma.isControlPlaneTool(name)        // for EMBEDDERS building their own bridge, not for ordinary apps
 ```
 
 Reading one of these in a sandboxed app gives `undefined`. If your app needs them, it needs to be
@@ -156,20 +158,20 @@ flight) in variables *outside* `render()`.
 
 ## 5. Declaring yourself
 
-```html
-<script type="application/json" id="oma-manifest">
+The manifest is its own file (`manifest.json` beside `ui.html`), stored as its own slot:
+
+```json
 { "manifest_version": 2,
   "collections": { "trips": { "fields": { "place": {"type":"string","required":true},
                                           "days":  {"type":"number"} },
                               "label_field": "place", "strict": true } },
   "settings": [ {"key":"compact","type":"boolean","label":"Compact rows","default":false} ],
   "kind": "app" }
-</script>
 ```
 
-Write the opening tag **exactly** as shown — same attributes, same order, double quotes. The engine
-finds the block by that literal line, and any other spelling is a rejected save naming the correct
-line. Exactly one block per document; two is a rejection, not a tiebreak.
+Slot semantics on save: an omitted manifest keeps the stored one; an object replaces it whole;
+`null` clears it. Every save snapshots both slots as one version, so restore/undo bring back the
+pair — a document is never paired with a declaration from a different save.
 
 `fields` values are objects (`{"type":"string"}`), not type names — `{"place":"string"}` is rejected
 with `field trips.place must be an object`. Declaring `fields` makes the engine validate **every**
@@ -257,11 +259,13 @@ token you are about to type actually finds it:
 --color-background-inverse   --color-background-danger      --color-background-success
 --color-text-primary         --color-text-secondary         --color-text-tertiary
 --color-text-inverse         --color-text-danger            --color-text-success
+--color-text-warning         --color-text-info
 --color-border-primary       --color-border-secondary
 --color-ring-primary         --color-ring-info
 
 --font-sans  --font-mono  --font-text-sm-size  --font-text-md-size
---border-radius-sm  --border-radius-md  --border-radius-lg  --border-radius-full  --shadow-sm
+--border-radius-sm  --border-radius-md  --border-radius-lg  --border-radius-full
+--shadow-xs  --shadow-sm  --shadow-md  --shadow-lg
 --k-s1 --k-s2 --k-s3 --k-s4  = 4/8/12/16px      --k-t-fast  --k-t  --k-t-slow
 --k-ease  standard                              --k-spring  for the one confirming action
 ```
@@ -296,8 +300,9 @@ The AI gets these from the GUIDE on every run. You get them here, or you get the
 
 `confirm()`, `alert()` and `prompt()` are **blocked by the sandbox and return without error** —
 `confirm()` yields `false`. **Never gate an action on `confirm()`**: the user clicks Delete, your
-code asks for confirmation, gets `false`, and does nothing. Forever. Do an inline two-step instead
-(button → "Sure?" → act, reverting after ~3s), or delete and offer an undo.
+code asks for confirmation, gets `false`, and does nothing. Forever. Deletes need no gate of
+yours at all — the engine enforces `confirm_delete` and the shell renders the confirmation
+(§ oma.deleteItem above); for anything else, act and offer an undo.
 
 `target="_blank"` and `window.open()` are blocked too (no `allow-popups`). An external link may
 simply not open. Show the URL as selectable text; an `<a target="_blank" rel="noopener">` is fine

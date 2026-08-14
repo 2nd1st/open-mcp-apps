@@ -1,0 +1,85 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "work_sets",
+      "type": "number",
+      "label": "Default work sets per exercise",
+      "default": 3,
+      "min": 1,
+      "max": 6,
+      "step": 1
+    },
+    {
+      "key": "spark_points",
+      "type": "number",
+      "label": "Trend history points",
+      "default": 8,
+      "min": 3,
+      "max": 8,
+      "step": 1
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "week_start",
+    "density"
+  ],
+  "collections": {
+    "training-plan": {
+      "label_field": "focus",
+      "fields": {
+        "day": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri",
+            "sat",
+            "sun"
+          ]
+        },
+        "focus": {
+          "type": "string",
+          "required": true
+        },
+        "exercises": {
+          "type": "array",
+          "required": true
+        }
+      },
+      "strict": true
+    },
+    "training-sessions": {
+      "label_field": "focus",
+      "fields": {
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "focus": {
+          "type": "string",
+          "required": true
+        },
+        "top_set": {
+          "type": "string"
+        },
+        "volume_note": {
+          "type": "string"
+        },
+        "feel": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "input-cocreate"
+  }
+}

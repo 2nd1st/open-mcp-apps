@@ -1,0 +1,46 @@
+{
+  "items": [
+    {
+      "id": "81d1486a-b3bb-43a0-afb2-e850f2416bac",
+      "group": "active",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "title": "Emergency fund",
+        "target_amount": 10000,
+        "current_amount": 6800,
+        "currency": "USD",
+        "target_date": "2026-12-31",
+        "priority": 1
+      }
+    },
+    {
+      "id": "87b2a824-9634-4845-8d8c-7a86a81ecd55",
+      "group": "active",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "title": "Japan trip",
+        "target_amount": 5000,
+        "current_amount": 2400,
+        "currency": "USD",
+        "target_date": "2027-04-01",
+        "priority": 2
+      }
+    },
+    {
+      "id": "cd5edc69-dfee-4e7e-b329-7318f0f3280c",
+      "group": "reached",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "title": "New laptop",
+        "target_amount": 2400,
+        "current_amount": 2400,
+        "currency": "USD",
+        "target_date": "2026-06-01",
+        "priority": 3
+      }
+    }
+  ]
+}

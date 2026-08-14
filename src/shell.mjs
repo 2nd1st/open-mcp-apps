@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { kitStyle } from "./runner.mjs";
+import { kitStyle, SELF_HEIGHT_UNPIN_SCRIPT } from "./runner.mjs";
 import { TOKEN_NAME_RE, TOKEN_VALUE_RE } from "./runtime-core.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -25,6 +25,16 @@ function runtime() {
 // Fallbacks for the host style variables (Claude overwrites these via applyHostStyleVariables).
 // Exported for embedding shells (hosted /library preview): the canonical no-host token
 // fallbacks — a server composing preview documents has no live computed styles to read.
+//
+// warning/info and the three shadow steps were added 2026-08-13: apps across the whole store were
+// already naming them (RUNTIME.md teaches the accent as `--color-text-info`, and runner.mjs
+// forwards all five to embedded children), but no layer here ever defined them, so every one of
+// those references fell through to whatever literal the author had written after the comma —
+// i.e. exactly the hardcoded colour this token layer exists to prevent. The values are chosen so
+// the common fallbacks resolve to the SAME paint they already showed: info equals the ring
+// colour every app fell back to, warning equals the kit's own `--k-warn` literal. Light/dark is
+// handled the way the neighbours handle it — system colours and scheme-neutral literals, no
+// media query.
 export const TOKEN_FALLBACK_CSS = `
 :root { color-scheme: light dark; }
 :root {
@@ -35,6 +45,7 @@ export const TOKEN_FALLBACK_CSS = `
   --color-text-primary: CanvasText; --color-text-secondary: color-mix(in srgb, CanvasText 62%, Canvas);
   --color-text-tertiary: color-mix(in srgb, CanvasText 42%, Canvas);
   --color-text-inverse: Canvas; --color-text-danger: #e5484d; --color-text-success: #2e9e5b;
+  --color-text-warning: #b98200; --color-text-info: #3b6cf6;
   --color-border-primary: color-mix(in srgb, CanvasText 14%, Canvas);
   --color-border-secondary: color-mix(in srgb, CanvasText 9%, Canvas);
   --color-ring-primary: #3b6cf6; --color-ring-info: #3b6cf6;
@@ -42,7 +53,10 @@ export const TOKEN_FALLBACK_CSS = `
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
   --font-text-sm-size: 12.5px; --font-text-md-size: 14px; --font-heading-sm-size: 18px;
   --border-radius-sm: 7px; --border-radius-md: 10px; --border-radius-lg: 14px; --border-radius-full: 999px;
+  --shadow-xs: 0 1px 2px rgba(0,0,0,.05);
   --shadow-sm: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.05);
+  --shadow-md: 0 2px 4px rgba(0,0,0,.07), 0 8px 20px rgba(0,0,0,.07);
+  --shadow-lg: 0 4px 10px rgba(0,0,0,.08), 0 18px 44px rgba(0,0,0,.09);
 }
 body { font-family: var(--font-sans); color: var(--color-text-primary); }
 `;
@@ -158,53 +172,18 @@ function appName(state) {
   try { return window.__OMA_IDENTITY__() || null; } catch (e) { return null; }
 }
 
-function identityChannels() {
-  var ch = [];
-  var ti = null, st = null, hc = null;
-  try { ti = oma.toolInput || null; } catch (e) {}
-  try { st = oma.state || null; } catch (e) {}
-  try { hc = window.__OMA_HOST_CONTEXT__ || null; } catch (e) {}
-  ch.push(["toolInput.app", ti && ti.app ? ti.app : null]);
-  ch.push(["state.app", st && st.app ? st.app : null]);
-  ch.push(["state.collection", st && st.collection ? st.collection : null]);
-  var info = hc && hc.toolInfo;
-  ch.push(["hostContext.toolInfo.id", info && info.id != null ? String(info.id) : null]);
-  ch.push(["hostContext.toolInfo.tool.name", info && info.tool && info.tool.name ? info.tool.name : null]);
-  // The channel that does not depend on the host binding this render to the right call.
-  var kept = null;
-  try { kept = (window.openai && window.openai.widgetState && window.openai.widgetState.__oma) || null; } catch (e) {}
-  ch.push(["openai.widgetState.__oma", kept && kept.app ? kept.app : null]);
-  return ch;
-}
+// The identity-loss screen, cut to what changes the OUTCOME (elegance A15, 2026-08-04): once
+// live identity and the remembered-note recovery have both come up empty, no amount of host
+// forensics changes what happens next — the user reopens the app. What survives of the old
+// 93-line evidence console: the one actionable sentence (naming the call the host DID bind,
+// when toolInfo says), and a compact console record for anyone diagnosing a host.
 function lost() {
-  var d = { channels: {} };
-  var ch = identityChannels();
-  for (var i = 0; i < ch.length; i++) d.channels[ch[i][0]] = ch[i][1];
-  try { d.toolInput = oma.toolInput || null; } catch (e) { d.toolInput = "READ FAILED: " + e; }
-  try {
-    var s = oma.state || {};
-    d.state = { app: s.app, collection: s.collection, host: s.host, version: s.version, total: s.total, items: (s.items || []).length };
-  } catch (e) { d.state = "READ FAILED: " + e; }
-  try { d.hostContext = window.__OMA_HOST_CONTEXT__ === undefined ? "undefined (bridge never connected — host sent no context)" : window.__OMA_HOST_CONTEXT__; } catch (e) { d.hostContext = "READ FAILED: " + e; }
-  try { d.url = location.href; d.referrer = document.referrer || null; d.frameName = window.name || null; } catch (e) {}
-  try { d.hostGlobals = Object.keys(window).filter(function (k) { return /openai|oai|widget|mcp|host|anthropic|claude/i.test(k); }); } catch (e) {}
-  // A vendor state channel is the only thing that survives a re-render the host binds to the wrong
-  // call, so when one exists we need to see BOTH what it offers and what we managed to keep in it.
-  try {
-    var oai = window.openai;
-    d.openai = oai
-      ? { keys: Object.keys(oai), canPersist: typeof oai.setWidgetState === "function", widgetState: oai.widgetState || null }
-      : "absent";
-  } catch (e) { d.openai = "READ FAILED: " + e; }
-  try { localStorage.setItem("__oma_probe", "1"); localStorage.removeItem("__oma_probe"); d.localStorage = "available"; }
-  catch (e) { d.localStorage = "blocked: " + (e && e.name); }
-  var json;
-  try { json = JSON.stringify(d, null, 2); } catch (e) { json = "DUMP FAILED: " + e; }
-  try { console.warn("[oma] identity lost — every channel the host could have used:", d); } catch (e) {}
-
-  var found = [];
-  for (var j = 0; j < ch.length; j++) found.push(ch[j][0].replace("hostContext.", "") + (ch[j][1] ? " ✓ " + ch[j][1] : " ✗"));
-
+  var d = {};
+  try { d.toolInput = oma.toolInput || null; } catch (e) { d.toolInput = null; }
+  try { var st = oma.state || {}; d.state = { app: st.app, collection: st.collection }; } catch (e) {}
+  try { d.toolName = boundToolName(); } catch (e) {}
+  try { console.warn("[oma] identity lost — the host re-rendered without replaying the opening call:", d); } catch (e) {}
+  var other = d.toolName;
   document.body.innerHTML = "";
   var wrap = document.createElement("div");
   wrap.style.cssText = "padding:20px;font-family:var(--font-sans);color:var(--color-text-secondary);font-size:13px;line-height:1.55";
@@ -212,43 +191,11 @@ function lost() {
   h.style.cssText = "margin:0 0 8px;color:var(--color-text-primary);font-weight:600";
   h.textContent = "This widget lost track of which app it is.";
   var p = document.createElement("p");
-  p.style.cssText = "margin:0 0 12px";
-  // NAME THE ACTUAL CAUSE WHEN WE KNOW IT. "The host re-rendered without replaying the call" is
-  // true but generic; when toolInfo says which call this render WAS bound to, that is the whole
-  // diagnosis in one sentence — and it is the sentence that turns a mystery into a host bug
-  // someone can report. Measured shape: a turn with several tool calls replays its FIRST one.
-  var other = boundToolName();
+  p.style.cssText = "margin:0";
   p.textContent = other
     ? "The host bound this re-render to a different call — " + other + ", not the one that opened this app — so it never learned which app it is. Ask your assistant to open the app again; your data is untouched."
     : "The host re-rendered it without replaying the call that opened it. Ask your assistant to open the app again — your data is untouched.";
-  var sig = document.createElement("p");
-  sig.style.cssText = "margin:0 0 12px;font-family:var(--font-mono);font-size:11.5px;color:var(--color-text-tertiary);word-break:break-word";
-  sig.textContent = found.join("  ·  ");
-  var det = document.createElement("details");
-  var sum = document.createElement("summary");
-  sum.style.cssText = "cursor:pointer;color:var(--color-text-tertiary);font-size:12px";
-  sum.textContent = "What the host handed us";
-  var pre = document.createElement("pre");
-  pre.style.cssText = "margin:8px 0 0;padding:10px;overflow:auto;max-height:340px;background:var(--color-background-secondary);border-radius:var(--border-radius-sm);font-family:var(--font-mono);font-size:11px;white-space:pre-wrap;word-break:break-word";
-  pre.textContent = json;
-  var btn = document.createElement("button");
-  btn.className = "k-btn";
-  btn.style.cssText = "margin-top:8px";
-  btn.textContent = "Copy";
-  btn.onclick = function () {
-    var fallback = function () {
-      try {
-        var r = document.createRange(); r.selectNodeContents(pre);
-        var sel = getSelection(); sel.removeAllRanges(); sel.addRange(r);
-        btn.textContent = "Selected — press Cmd-C";
-      } catch (e) { btn.textContent = "Select the text above"; }
-    };
-    try {
-      navigator.clipboard.writeText(json).then(function () { btn.textContent = "Copied"; }, fallback);
-    } catch (e) { fallback(); }
-  };
-  det.appendChild(sum); det.appendChild(pre); det.appendChild(btn);
-  wrap.appendChild(h); wrap.appendChild(p); wrap.appendChild(sig); wrap.appendChild(det);
+  wrap.appendChild(h); wrap.appendChild(p);
   document.body.appendChild(wrap);
 }
 function mount(html) {
@@ -313,16 +260,15 @@ oma.ready(async (state) => {
     // The server computed it and sent it back with the html; do not re-derive it from the name here
     // (a second copy of "what does this app open on" is a second answer waiting to disagree). An
     // older engine sends none, and then we bind nothing rather than guess.
-    if (sc.collection) oma.bind(sc.collection);
+    if (sc.collection) window.__OMA_BIND__(sc.collection);
     // Tier branch (security-model §2.3): "local" — or a result carrying no tier at all, from
     // an engine predating tiers — mounts same-document (direct mode) exactly as before.
     // Anything else is untrusted and runs behind the sandboxed runner with engine-computed
     // caps, through the runtime's own embed (src/runner.mjs — the single chokepoint).
     if (sc.tier == null || sc.tier === "local") {
-      // Identity for the runtime's render-health reporter (auto-revert): on this loader path the
-      // runtime module has already evaluated, so the globals are simply read later at error time.
+      // Identity for the runtime's broken-mount notice: on this loader path the runtime module
+      // has already evaluated, so the global is simply read later at error time.
       window.__OMA_APP__ = name;
-      if (sc.version != null) window.__OMA_APP_VERSION__ = sc.version;
       return mount(sc.html);
     }
     document.body.innerHTML = "";
@@ -353,6 +299,17 @@ const scriptJson = (v) => JSON.stringify(v).replace(/</g, "\\u003c");
 // and anything outside these charsets is a hard error rather than a silent partial write.
 // The charsets themselves live in runtime-core (one definition) because the user-writable
 // THEME layer is the same class of data arriving through a different door.
+/** The engine's OWN browser viewer, stamped into a widget document as an absolute base ending in
+ *  "/view/". A widget runs in an opaque origin, so the relative default (oma.viewBase → "/view/")
+ *  resolves to nowhere and every link built on it is dead — the engine is the only party that
+ *  knows the real URL, and this is the door it travels through. Absent when the engine has no
+ *  viewer (bare stdio, OMA_VIEWER=0), which is exactly what makes the system badge's
+ *  "Open in browser" item not exist rather than not work (D-13 ②). */
+function viewBaseScript(viewBase) {
+  if (typeof viewBase !== "string" || !/^https?:\/\//.test(viewBase)) return "";
+  return `<script data-oma="viewbase">window.__OMA_VIEW_BASE__=${scriptJson(viewBase)}</script>\n`;
+}
+
 function hostTokenStyle(tokens) {
   if (tokens == null) return "";
   if (typeof tokens !== "object" || Array.isArray(tokens)) throw new TypeError("tokens must be an object");
@@ -377,12 +334,13 @@ function hostTokenStyle(tokens) {
  *  let the runner enforce caps. One tier branch, two transports.
  *
  *  The loader carries `app` in `standalone` rather than as its own global: __OMA_APP__
- *  is the identity of the document's OWN app (render-health reports it), and the loader is
- *  not the app — it mounts one. state.app is where the loader reads the name. */
+ *  is the identity of the document's OWN app (the broken-mount notice names it), and the loader
+ *  is not the app — it mounts one. state.app is where the loader reads the name. */
 export function wrapLoader(opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
-${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
+${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}${viewBaseScript(opts.viewBase)}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
 ${kitStyle(KIT_CSS())}
+${SELF_HEIGHT_UNPIN_SCRIPT}
 <script data-oma="watchdog">${LOADER_WATCHDOG}</script>
 <script type="module" data-oma="runtime">${runtime()}</script>
 <script type="module" data-oma="loader">${LOADER_JS}</script>
@@ -399,22 +357,32 @@ ${kitStyle(KIT_CSS())}
  * the base path for app→app links (window.oma.viewBase, default "/view/"); an
  * embedding shell points it at its own mount base. It flows through window.__OMA_STANDALONE__
  * to the runtime as-is — no other engine code change is needed for it to reach oma.viewBase.
+ * opts.viewBase — the ENGINE's own viewer base (absolute, ".../view/"), for a document that has
+ * no standalone config at all: a widget inside a chat host. Same destination (oma.viewBase),
+ * different door; see viewBaseScript.
  * opts.app — app name, injected as window.__OMA_APP__ so the runtime knows
  * its identity on the dynamic-tools resource path (the generic loader cannot carry it).
  */
 export function wrapApp(appHtml, opts = {}) {
   // The early-error buffer is a CLASSIC script and goes FIRST: app classic inline scripts
   // run at parse time BEFORE the (deferred) runtime module, so only a parse-time hook can see
-  // their errors. The runtime drains this buffer for the render-health report (auto-revert).
+  // their errors. The runtime drains this buffer for the broken-mount notice.
   const inject =
     `<script data-oma="early-errors">window.__OMA_EARLY_ERRORS__=[];(function(b){function p(m){if(b.length<5)b.push(String(m).slice(0,300))}window.addEventListener("error",function(e){p((e&&e.message)||"script error")});window.addEventListener("unhandledrejection",function(e){p((e&&e.reason&&e.reason.message)||e.reason||"unhandled rejection")});})(window.__OMA_EARLY_ERRORS__)</script>\n` +
     (opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : "") +
+    viewBaseScript(opts.viewBase) +
     (opts.app ? `<script data-oma="app">window.__OMA_APP__=${scriptJson(opts.app)}</script>\n` : "") +
     (opts.collection ? `<script data-oma="collection">window.__OMA_COLLECTION_HINT__=${scriptJson(opts.collection)}</script>\n` : "") +
-    (opts.version != null ? `<script data-oma="app-version">window.__OMA_APP_VERSION__=${scriptJson(opts.version)}</script>\n` : "") +
     `<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>\n` +
     hostTokenStyle(opts.tokens) + // after the fallbacks, so the embedder's values win
     kitStyle(KIT_CSS()) + "\n" + // …and after the tokens, since every kit colour reads one
+    // The same height unpin the loader and the runner's children carry: this document is the OTHER
+    // top-level widget document (a per-app ui:// resource under OMA_DYNAMIC_TOOLS), and a host
+    // sizes its frame from what its own shim measures here — so an app that pins html/body would
+    // be measured at the frame height it already has and could never be seen to grow. It no-ops
+    // when nothing is embedding us (the /view case this same function also serves) and when the
+    // embedder is a shell that owns the frame — see SELF_HEIGHT_UNPIN_SOURCE.
+    SELF_HEIGHT_UNPIN_SCRIPT + "\n" +
     `<script type="module" data-oma="runtime">${runtime()}</script>\n`;
 
   // Put the shell BEFORE the app's own markup/scripts so window.oma exists first

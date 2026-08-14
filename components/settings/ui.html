@@ -1,0 +1,2139 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Settings</title>
+<meta name="description" content="Preferences, installed apps, data collections and per-app permissions for your open-mcp-apps workbench.">
+<style>
+  /* app-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
+  :root {
+    --ground: var(--color-background-secondary);
+    --surface: var(--color-background-primary);
+    --soft: var(--color-background-secondary);
+    --softer: var(--color-background-tertiary);
+    --ink: var(--color-text-primary);
+    --ink-2: var(--color-text-secondary);
+    --ink-3: var(--color-text-tertiary);
+    --line: var(--color-border-primary);
+    --line-2: var(--color-border-secondary);
+    --accent: var(--k-accent);
+    --accent-deep: color-mix(in oklab, var(--k-accent) 76%, var(--color-text-primary));
+    --accent-soft: color-mix(in oklab, var(--k-accent) 11%, var(--color-background-primary));
+    --on-solid: var(--color-text-inverse);
+    --mint: var(--k-ok);
+    --wine: var(--k-hue-4);
+    --warn: var(--k-warn);
+    --bad: var(--k-bad);
+  }
+  body { padding: 0; background: var(--ground); color: var(--ink); }
+  /* In the browser viewer the runtime's stage already frames the page — no second ground there. */
+  .standalone body, body.standalone { background: transparent; }
+
+  /* overflow-x: clip is the belt under every width rule below — a widget that is one pixel wider
+     than its frame gets a horizontal scrollbar across the whole card, and `clip` costs nothing
+     (unlike `hidden` it does not turn this into a scroll container, so nothing inside it that
+     relies on the page's own scrollport changes behaviour). */
+  .shell { display: grid; grid-template-columns: minmax(0, 1fr); overflow-x: clip; }
+  .rail { display: none; }
+
+  .main { min-width: 0; padding: 16px 14px 34px; }
+
+  /* ---- the chat-host capsule ----
+     Inside a chat the widget is a card floating in the conversation, and every one of the 20+
+     library apps draws that card itself: an app-bar (mark · eyebrow · name · status) over a
+     bordered, rounded surface. This app is the one that stopped doing it, and the first repair
+     hung the capsule on `(max-width:560px)` — which is a WIDTH, and the thing it was meant to
+     answer is a CONTEXT. Measured on Leo's desktop claude.ai: the widget is ~736px wide, the
+     media query never matched, and the app was still bare in the transcript. So the split is the
+     context alone: `:not(.standalone)` = a card in someone's conversation, draw the frame at any
+     width; `.standalone` = the browser viewer, whose runtime stage already frames the page (one
+     frame, never two). The wide form keeps its rail-and-main layout INSIDE the capsule. */
+  body:not(.standalone) { padding: 12px; background: transparent; }
+  body:not(.standalone) .shell {
+    overflow: clip;   /* clip, not hidden: it rounds the corners without becoming a scrollport */
+    border: 1px solid var(--line-2);
+    border-radius: var(--border-radius-lg, 16px);
+    background: var(--surface);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+  body:not(.standalone) .main { background: var(--ground); }
+  .appbar { display: none; }   /* the capsule's own chrome — drawn only where the capsule is */
+  body:not(.standalone) .appbar {
+    display: flex; align-items: center; gap: 11px;
+    grid-column: 1 / -1;   /* spans rail AND main: it is the capsule's bar, not the column's */
+    padding: 11px 14px; border-bottom: 1px solid var(--line-2); background: var(--surface);
+  }
+  .appbar .app-mark {
+    display: grid; width: 34px; height: 34px; flex: none; place-items: center;
+    border-radius: 11px; color: var(--on-solid);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 62%, var(--ink-3)), var(--accent-deep));
+  }
+  .appbar .app-mark svg { width: 17px; height: 17px; }
+  .appbar .barCopy { min-width: 0; flex: 1; }
+  .appbar .eyebrow { display: block; color: var(--ink-3); font-size: 9.5px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+  .appbar h1 { margin: 1px 0 0; font-size: 15px; font-weight: 680; letter-spacing: -.015em; }
+
+  /* Mobile tab strip: the ≤560px form of the sidebar nav (Codex mobileTabs). */
+  /* Six sections never fit 420px, so the strip scrolls — and a scroller with no visible bar reads
+     as a truncated list. The right-edge fade is the affordance (alpha only; the colour is a token). */
+  .tabstrip { display: flex; gap: 8px; margin: 0 -14px 16px; padding: 2px 14px 6px; overflow-x: auto; scrollbar-width: none;
+    mask-image: linear-gradient(to right, var(--ink) calc(100% - 26px), transparent); }
+  .tabstrip::-webkit-scrollbar { display: none; }
+  .tabstrip button {
+    display: inline-flex; flex: none; align-items: center; gap: 6px; min-height: 34px; padding: 0 14px;
+    border: 1px solid var(--line-2); border-radius: var(--border-radius-full, 999px);
+    background: var(--surface); color: var(--ink-2); font: inherit; font-size: 12.5px; font-weight: 620;
+    cursor: pointer; transition: background var(--k-t-fast), color var(--k-t-fast), border-color var(--k-t-fast);
+  }
+  .tabstrip button[data-active="true"] { border-color: transparent; background: var(--accent-deep); color: var(--on-solid); }
+  .tabstrip svg { width: 14px; height: 14px; }
+
+  /* Page title block — desktop only, the mobile strip already names the section. */
+  .pageTitle { display: none; margin: 0 0 22px; }
+  .pageIcon {
+    display: grid; width: 54px; height: 54px; place-items: center; margin-bottom: 12px;
+    border-radius: var(--border-radius-lg, 16px);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 62%, var(--ink-3)), var(--accent-deep));
+    color: var(--on-solid); box-shadow: var(--shadow-md);
+  }
+  .pageIcon svg { width: 27px; height: 27px; }
+  .pageTitle h1 { margin: 0; font-size: 27px; font-weight: 700; letter-spacing: -.03em; }
+  .pageTitle p { max-width: 58ch; margin: 7px 0 0; color: var(--ink-3); font-size: 13px; line-height: 1.5; }
+
+  .status { display: flex; align-items: center; gap: 8px; min-height: 22px; margin: 0 2px 10px; }
+  #saved[hidden] { display: none; }
+  #saved .k-icon { width: 12px; height: 12px; vertical-align: -2px; }
+
+  .pane { display: none; }
+  .pane.on { display: block; }
+
+  /* Group + row anatomy — the whole design lives here (Codex .group/.row/.rowIcon/.rowCopy). */
+  h2.sectionTitle { margin: 22px 3px 8px; color: var(--ink-3); font-size: 12px; font-weight: 680; letter-spacing: .01em; }
+  .pane > h2.sectionTitle:first-child, .pane > .group:first-child { margin-top: 0; }
+  .group {
+    overflow: hidden; border: 1px solid var(--line-2); border-radius: 15px;
+    background: var(--surface); box-shadow: var(--shadow-xs);
+  }
+  .group + .group { margin-top: 10px; }
+  .row {
+    position: relative; display: flex; min-width: 0; min-height: 52px; align-items: center;
+    gap: 11px; padding: 10px 14px;
+  }
+  .row + .row::before { position: absolute; top: 0; right: 14px; left: 50px; height: 1px; content: ""; background: var(--line-2); }
+  .rowlist:empty { display: none; }
+  .rowIcon {
+    display: grid; width: 25px; height: 25px; flex: none; place-items: center;
+    border-radius: 7px; background: var(--ink-3); color: var(--on-solid);
+  }
+  .rowIcon[data-tone="blue"] { background: var(--accent); }
+  .rowIcon[data-tone="mint"] { background: var(--mint); }
+  .rowIcon[data-tone="wine"] { background: var(--wine); }
+  .rowIcon[data-tone="warn"] { background: var(--warn); }
+  .rowIcon[data-tone="bad"] { background: var(--bad); }
+  .rowIcon svg { width: 14px; height: 14px; }
+  .rowCopy { min-width: 0; flex: 1; }
+  .rowCopy b { display: block; font-size: 13px; font-weight: 610; overflow-wrap: anywhere; }
+  /* A description is prose, so it gets a MEASURE. Without the cap it ran the full width of the
+     content column in the browser viewer (~600px at 1280) — one long line the eye has to track
+     back across — while the line-height stayed at the 1.4 that suits a one-line hint. */
+  .rowCopy small { display: block; margin-top: 3px; max-width: 64ch; color: var(--ink-3); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
+  .rowValue { max-width: 46%; overflow: hidden; color: var(--ink-3); font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+  .rowAction {
+    display: inline-flex; align-items: center; gap: 5px; flex: none; padding: 6px 11px; border: 0;
+    border-radius: var(--border-radius-full, 999px); background: var(--accent-soft); color: var(--accent-deep);
+    font: inherit; font-size: 11.5px; font-weight: 670; text-decoration: none; cursor: pointer;
+  }
+  .rowAction svg { width: 13px; height: 13px; }
+  .rowAction.quiet { background: var(--soft); color: var(--ink-2); }
+  .rowAction.bad { background: color-mix(in oklab, var(--bad) 11%, var(--surface)); color: var(--bad); }
+  .iconBtn {
+    display: grid; width: 28px; height: 28px; flex: none; place-items: center; padding: 0; border: 0;
+    border-radius: 8px; background: transparent; color: var(--ink-3); cursor: pointer;
+    transition: background var(--k-t-fast), color var(--k-t-fast);
+  }
+  .iconBtn:hover { background: var(--soft); color: var(--ink); }
+  .iconBtn svg { width: 14px; height: 14px; }
+  .spc { width: 28px; flex: none; }
+
+  /* Controls inside a row */
+  .row input.k-field[type=number] { width: 88px; }
+  .row input.k-field[type=text] { width: 176px; }
+  /* A select has to hold whole option sentences ("On request — only when asked"), so it gets a
+     real budget rather than the 176px the text inputs live on. */
+  .row select.k-field { min-width: 150px; max-width: 262px; text-overflow: ellipsis; }
+  .row .k-switch { flex: none; }
+
+  /* ---- the row's second shape: label, then prose, then control ----
+     A long label beside a wide control squeezes the copy into a sliver and leaves the control
+     floating in the gap. The first repair stacked them under `(max-width: 560px)` — a VIEWPORT
+     query, and the thing that decides is the width the ROW gets. Measured: a 736px widget puts a
+     200px rail beside the content, so the row is 451px wide and the query never matched; the
+     proactivity description wrapped at ~215px into eight lines, two or three words each, with the
+     select hanging beside the middle of it. `@container` asks the question that was always meant:
+     how much room does this row have? (Every .row lives in a .group, so the group is the container;
+     `details.group` — More options, and every per-app section — is one too, so their rows inherit
+     the same treatment for free.)
+
+     The stacked shape, in reading order: the tile and the bold label own line one (with whatever
+     tail the row carries — switch, value, reset); the description drops to its own full-width
+     paragraph under them, at a size meant to be read rather than squinted at; the control takes
+     the last line, indented to the copy's own left edge so the three lines share one margin.
+     `display: contents` on .rowCopy is what lets the label and its description sit on different
+     flex lines while staying one element in the DOM (and one node for every caller that builds a
+     row). A row with no label — a note, the shared-override footer — keeps its single line: the
+     `:has()` guard and the `small:first-child` rule are those two cases. */
+  .group { container-type: inline-size; container-name: settingsRow; }
+
+  @container settingsRow (max-width: 620px) {
+    .row { flex-wrap: wrap; row-gap: 7px; padding: 12px 14px; }
+    .row > * { order: 2; }                                     /* tail items (switch, value, chips, buttons) stay on line one */
+    .row > .rowIcon, .row > .spc:first-child { order: 0; }
+    .row > .rowCopy { display: contents; }
+    .row > .rowCopy > b { order: 1; flex: 1 1 auto; min-width: 0; }
+    .row > .rowCopy > small {
+      order: 4; flex: 1 1 100%; max-width: none; margin-top: 0; margin-left: 36px;
+      color: var(--ink-2); font-size: 13px; line-height: 1.5;
+    }
+    .row > .rowCopy > small:first-child { order: 1; flex: 1 1 auto; margin-left: 0; color: var(--ink-3); font-size: 11px; }
+    /* Beats `.row select.k-field` / `.row input.k-field[type=…]` on specificity — those set the
+       widths this shape has to undo. */
+    .row:has(> .rowCopy > b) > .k-field {
+      order: 5; flex: 1 1 100%; width: auto; min-width: 0; max-width: none; margin-left: 36px;
+    }
+  }
+  .roval { max-width: 240px; }
+  .sk1 { height: 13px; flex: 1; max-width: 190px; }
+  .sk2 { height: 13px; width: 84px; margin-left: auto; }
+
+  /* Disclosure group: a .row that opens. Same anatomy, chevron at the tail. */
+  details.group > summary { display: flex; align-items: center; gap: 11px; min-height: 52px; padding: 10px 14px; cursor: pointer; list-style: none; }
+  details.group > summary::-webkit-details-marker { display: none; }
+  details.group > summary:hover { background: var(--soft); }
+  details.group > summary .chev { display: inline-flex; flex: none; color: var(--ink-3); rotate: -90deg; transition: rotate var(--k-t) var(--k-spring); }
+  details.group[open] > summary .chev { rotate: 0deg; }
+  details.group[open] > summary { border-bottom: 1px solid var(--line-2); }
+  details.group .row:first-of-type::before { display: none; }
+  details.group .k-dot { width: 6px; height: 6px; flex: none; }
+
+  /* Installed pane */
+  .toolbar { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+  .searchBox { position: relative; display: flex; flex: 1; min-width: 0; align-items: center; }
+  .searchBox svg { position: absolute; left: 10px; width: 15px; height: 15px; color: var(--ink-3); pointer-events: none; }
+  .searchBox input { width: 100%; height: 36px; padding: 0 12px 0 33px; border-radius: 10px; background: var(--surface); }
+  .cats { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .appsGrid { display: grid; grid-template-columns: minmax(0, 1fr); gap: 10px; }
+  .appCard {
+    display: grid; min-width: 0; grid-template-columns: minmax(0, 1fr); overflow: hidden;
+    border: 1px solid var(--line-2); border-radius: 13px; background: var(--surface); color: var(--ink);
+    box-shadow: var(--shadow-xs);
+    transition: transform var(--k-t) var(--k-ease), box-shadow var(--k-t) var(--k-ease), border-color var(--k-t) var(--k-ease);
+  }
+  .appCard:hover { transform: translateY(-2px); border-color: color-mix(in oklab, var(--accent) 30%, var(--line)); box-shadow: var(--shadow-md); }
+  .appCard .cardBody:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: -2px; }
+  .cardPreview { position: relative; overflow: hidden; background: var(--soft); border-bottom: 1px solid var(--line-2); }
+  .cardPreview iframe { position: absolute; top: 0; left: 0; border: 0; pointer-events: none; }
+  .cardPreview > .k-skel { position: absolute; inset: 0; border-radius: 0; }
+  .cardPreview::after { position: absolute; right: 0; bottom: 0; left: 0; height: 26px; content: ""; pointer-events: none; background: linear-gradient(to bottom, transparent, var(--soft)); }
+  .cardBody { display: flex; width: 100%; min-width: 0; align-items: center; gap: 11px; padding: 12px 14px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+  .cardText { min-width: 0; flex: 1; }
+  .cardText small { display: block; color: var(--accent); font-size: 9px; font-weight: 700; letter-spacing: .055em; text-transform: uppercase; }
+  .cardText .t { display: block; margin: 5px 0 4px; overflow: hidden; font-size: 14px; font-weight: 670; letter-spacing: -.015em; text-overflow: ellipsis; white-space: nowrap; }
+  .cardText .d { display: block; color: var(--ink-3); font-size: 11px; line-height: 1.4; }
+  .cardFoot { display: flex; align-items: center; gap: 6px; margin-top: 7px; color: var(--ink-3); font-size: 10px; }
+  .viewPill { margin-left: auto; flex: none; padding: 4px 10px; border-radius: var(--border-radius-full, 999px); background: var(--accent-soft); color: var(--accent-deep); font-size: 10px; font-weight: 680; }
+
+  /* Detail view — replaces the grid in place (no overlay, no scrollport of its own). */
+  .backLink {
+    display: inline-flex; align-items: center; gap: 7px; margin-bottom: 14px; padding: 6px 12px 6px 9px;
+    border: 1px solid var(--line-2); border-radius: var(--border-radius-full, 999px); background: var(--surface);
+    color: var(--accent-deep); font: inherit; font-size: 12px; font-weight: 620; cursor: pointer;
+  }
+  .backLink svg { width: 14px; height: 14px; }
+  .detailHead { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; align-items: start; margin-bottom: 16px; }
+  .detailTitle { margin: 0 0 6px; font-size: clamp(21px, 6vw, 28px); font-weight: 720; letter-spacing: -.035em; line-height: 1.05; overflow-wrap: anywhere; }
+  .detailMeta { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; margin: 0 0 8px; color: var(--ink-3); font-size: 11px; }
+  #d-desc { margin: 0; max-width: 52ch; color: var(--ink-2); font-size: 13px; line-height: 1.5; }
+  .detailActions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .metaStrip { display: flex; gap: 0; margin: 16px -14px; padding: 14px; overflow-x: auto; border-top: 1px solid var(--line-2); border-bottom: 1px solid var(--line-2); scrollbar-width: none; }
+  .metaStrip::-webkit-scrollbar { display: none; }
+  .metaStrip div { width: 138px; min-width: 138px; padding: 0 14px; }
+  .metaStrip div + div { border-left: 1px solid var(--line-2); }
+  .metaStrip small { display: block; margin-bottom: 5px; color: var(--ink-3); font-size: 9px; font-weight: 720; letter-spacing: .065em; text-transform: uppercase; }
+  .metaStrip b { display: block; overflow: hidden; font-size: 12px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+  .previewCard { overflow: hidden; border: 1px solid var(--line-2); border-radius: 14px; background: var(--surface); box-shadow: var(--shadow-sm); }
+  #pv-wrap iframe { display: block; border: 0; background: transparent; }
+  .previewCaption { display: flex; align-items: center; gap: 8px; margin: 0; padding: 11px 14px; border-top: 1px solid var(--line-2); color: var(--ink-3); font-size: 11px; line-height: 1.45; }
+  .previewCaption i { width: 6px; height: 6px; flex: none; border-radius: 50%; background: var(--mint); box-shadow: 0 0 0 3px color-mix(in oklab, var(--mint) 16%, transparent); }
+  #d-hist { margin: 0; padding-left: 20px; font-size: 11.5px; }
+  #d-hist li { margin: 3px 0; color: var(--ink-2); }
+  #d-hist .k-btn { padding: 0 8px; margin-left: 6px; font-size: 11px; }
+  #d-err { margin-top: 10px; padding: 9px 12px; border: 1px dashed color-mix(in oklab, var(--bad) 34%, var(--line-2)); border-radius: 10px; background: color-mix(in oklab, var(--bad) 6%, var(--surface)); color: var(--bad); font-size: 12px; }
+  #d-plan-list li { color: var(--ink-2); line-height: 1.5; }
+  #d-plan-list li.kept { color: var(--ink-3); }
+  .planCard { margin-top: 12px; padding: 13px 14px; border: 1px solid color-mix(in oklab, var(--bad) 26%, var(--line-2)); border-radius: 13px; background: color-mix(in oklab, var(--bad) 5%, var(--surface)); }
+
+  /* Data pane */
+  .own { display: flex; flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
+  .devt { display: flex; align-items: baseline; gap: 8px; padding: 7px 14px; border-top: 1px solid var(--line-2); font-size: 11.5px; }
+  .devt:first-child { border-top: 0; }
+  .devt .k-num { color: var(--ink-3); flex: none; }
+  .devt .what { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .devt .k-btn { padding: 0 8px; font-size: 11px; flex: none; }
+
+  .note { margin: 0 3px 10px; color: var(--ink-3); font-size: 12px; line-height: 1.5; }
+  .note a { color: var(--accent-deep); }
+  code { background: var(--soft); border-radius: var(--border-radius-sm, 6px); padding: 1px 5px; font-family: var(--font-mono); font-size: 12px; }
+
+  /* kit classes set their own display, which beats the UA [hidden] rule — restate it */
+  #lib-cats[hidden], #d-cat[hidden], #d-open[hidden], #lib-none[hidden], #lib-empty[hidden], #d-delete[hidden],
+  #d-cascade-row[hidden], #d-plan[hidden], #d-live[hidden], #saved[hidden] { display: none !important; }
+
+  /* ---- wide state (>560px): the Codex desktop form — fixed left rail, row lists, dense grid ---- */
+  @media (min-width: 561px) {
+    .shell { grid-template-columns: 200px minmax(0, 1fr); }
+    /* The capsule bar stays, flatter: one line, eyebrow beside the name instead of over it —
+       the wide form has the rail and .pageTitle doing the introducing, so the bar is a title
+       strip, not a header. */
+    body:not(.standalone) .appbar { gap: 9px; padding: 7px 13px; }
+    body:not(.standalone) .appbar .app-mark { width: 26px; height: 26px; border-radius: 8px; }
+    body:not(.standalone) .appbar .app-mark svg { width: 14px; height: 14px; }
+    body:not(.standalone) .appbar .barCopy { display: flex; align-items: baseline; gap: 8px; }
+    body:not(.standalone) .appbar h1 { margin: 0; font-size: 13.5px; }
+    .rail {
+      display: block; padding: 20px 12px 24px; border-right: 1px solid var(--line-2);
+      background: color-mix(in oklab, var(--surface) 62%, var(--ground));
+    }
+    .railSearch { position: relative; display: flex; align-items: center; margin-bottom: 14px; }
+    .railSearch svg { position: absolute; left: 10px; width: 14px; height: 14px; color: var(--ink-3); pointer-events: none; }
+    .railSearch input { width: 100%; height: 33px; padding: 0 10px 0 31px; border-radius: 9px; background: var(--surface); font-size: 12.5px; }
+    .identity { display: flex; width: 100%; align-items: center; gap: 10px; margin: 0 0 16px; padding: 8px; border: 0; border-radius: 11px; background: transparent; color: var(--ink); font: inherit; text-align: left; }
+    .avatar { display: grid; width: 36px; height: 36px; flex: none; place-items: center; border-radius: 11px; background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 62%, var(--ink-3)), var(--accent-deep)); color: var(--on-solid); }
+    .avatar svg { width: 18px; height: 18px; }
+    .identity b { display: block; overflow: hidden; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .identity span > span { display: block; overflow: hidden; color: var(--ink-3); font-size: 10.5px; text-overflow: ellipsis; white-space: nowrap; }
+    .railNav { display: grid; gap: 3px; }
+    .railNav button {
+      display: flex; width: 100%; align-items: center; gap: 10px; min-height: 33px; padding: 6px 10px;
+      border: 0; border-radius: 9px; background: transparent; color: var(--ink-2);
+      font: inherit; font-size: 12.5px; font-weight: 550; text-align: left; cursor: pointer;
+      transition: background var(--k-t-fast), color var(--k-t-fast);
+    }
+    .railNav button:hover { background: var(--soft); color: var(--ink); }
+    .railNav button[data-active="true"] { background: var(--accent-deep); color: var(--on-solid); font-weight: 640; }
+    .railNav svg { width: 16px; height: 16px; flex: none; }
+    .tabstrip { display: none; }
+    .pageTitle { display: block; }
+    .main { padding: 26px clamp(20px, 4vw, 44px) 46px; }
+    .metaStrip { margin-inline: 0; padding-inline: 0; }
+    .metaStrip div:first-child { padding-left: 0; }
+    .appsGrid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 320px), 1fr)); gap: 12px; }
+    .appCard { grid-template-columns: minmax(120px, .8fr) minmax(0, 1fr); }
+    .cardPreview { border-right: 1px solid var(--line-2); border-bottom: 0; min-height: 138px; }
+    .cardBody { flex-direction: column; align-items: stretch; gap: 0; padding: 14px; }
+    .detailHead { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); gap: clamp(20px, 4vw, 40px); align-items: center; }
+  }
+  @media (min-width: 921px) {
+    .shell { grid-template-columns: 236px minmax(0, 1fr); }
+  }
+</style>
+</head>
+<body>
+  <main class="shell">
+    <!-- The capsule's app bar (CSS decides when it exists — chat contexts only). Same anatomy the
+         library apps use: mark · eyebrow · name · status. It is a child of .shell, not of .main,
+         because it belongs to the CARD: it spans the rail as well, the way a window's title bar
+         does, and in the narrow form (no rail) that is the same single column it always was. -->
+    <header class="appbar">
+      <span class="app-mark" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2.5h4.2v4.2H2.5zM9.3 2.5h4.2v4.2H9.3zM2.5 9.3h4.2v4.2H2.5zM9.3 9.3h4.2v4.2H9.3z"/></svg></span>
+      <div class="barCopy">
+        <span class="eyebrow">open-mcp-apps</span>
+        <h1 data-i18n="settings">Settings</h1><!-- literal default: applyI18n only runs once the bridge answers, and a nameless bar in the meantime reads as a broken app -->
+      </div>
+      <span class="k-badge" id="a-host-bar" hidden></span>
+    </header>
+
+    <aside class="rail">
+      <label class="railSearch">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+        <input class="k-field" id="nav-q" type="search" data-i18n-placeholder="searchSettings" data-i18n-aria="searchSettings" autocomplete="off" spellcheck="false">
+      </label>
+      <div class="identity">
+        <span class="avatar" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 2.5h4.2v4.2H2.5zM9.3 2.5h4.2v4.2H9.3zM2.5 9.3h4.2v4.2H2.5zM9.3 9.3h4.2v4.2H9.3z"/></svg></span>
+        <span><b>open-mcp-apps</b><span id="a-host-rail" hidden></span></span><!-- starts hidden: no host name is the normal case, and a dash is a placeholder for a value that is usually never coming -->
+      </div>
+      <nav class="railNav" id="railNav" data-i18n-aria="settings"></nav>
+    </aside>
+
+    <section class="main">
+      <nav class="tabstrip" id="tabstrip" data-i18n-aria="settings"></nav>
+
+      <header class="pageTitle">
+        <span class="pageIcon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4.5h6M11.5 4.5h2M8.5 2.5v4M2.5 11.5h2M7.5 11.5h6M4.5 9.5v4"/></svg></span>
+        <h1 id="page-h"></h1>
+        <p id="page-p"></p>
+      </header>
+
+      <div class="status"><span id="saved" class="k-badge ok" hidden></span><!-- transient "Saved" / "Not saved" — content set by flash() --></div>
+
+      <div class="pane on" id="prefs">
+        <h2 class="sectionTitle" data-i18n="secGeneral"></h2>
+        <div class="group rowlist" id="shared-rows"></div><!-- TOP_KEYS rows, unfolded and header-free -->
+        <details class="group" id="more" hidden>
+          <summary><span class="rowIcon" data-tone="blue" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M3 8h10M8 3v10"/></svg></span><span class="rowCopy"><b data-i18n="moreOptions"></b><small data-i18n="moreOptionsDetail"></small></span><span class="chev"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></summary>
+          <div id="more-rows"></div>
+        </details>
+        <div id="comps-wrap" hidden>
+          <h2 class="sectionTitle" data-i18n="secApps"></h2>
+          <div id="comp-secs"></div>
+        </div>
+        <p class="note" id="comp-teach" hidden data-i18n="noAppOptions"></p>
+        <details class="group" id="advanced" hidden>
+          <summary><span class="rowIcon" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 4h11M2.5 8h11M2.5 12h11"/></svg></span><span class="rowCopy"><b data-i18n="advanced"></b><small data-i18n="advancedDetail"></small></span><span class="chev"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3.5 6l4.5 4.5L12.5 6"/></svg></span></summary>
+          <div id="adv-rows"></div>
+        </details>
+        <p class="note" id="ask-ai" style="margin-top:14px" hidden data-i18n="askAi"></p>
+      </div>
+
+      <div class="pane" id="guide">
+        <h2 class="sectionTitle" data-i18n="guideUse"></h2>
+        <div class="group rowlist" id="guide-use"></div>
+        <h2 class="sectionTitle" data-i18n="guideModel"></h2>
+        <div class="group rowlist" id="guide-model"></div>
+      </div>
+
+      <div class="pane" id="about">
+        <div class="metaStrip">
+          <div><small data-i18n="statApps"></small><b id="a-comps" class="k-num">–</b></div>
+          <div><small data-i18n="statSets"></small><b id="a-colls" class="k-num">–</b></div>
+          <div><small data-i18n="statItems"></small><b id="a-items" class="k-num">–</b></div>
+        </div>
+        <h2 class="sectionTitle" data-i18n="secEngine"></h2>
+        <div class="group rowlist" id="about-rows"></div>
+      </div>
+
+      <div class="pane" id="library">
+        <div id="lib-browse">
+          <div class="toolbar">
+            <label class="searchBox">
+              <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="7" cy="7" r="4.5"/><path d="M10.4 10.4 14 14"/></svg>
+              <input class="k-field" id="lib-q" type="search" data-i18n-placeholder="searchApps" data-i18n-aria="searchApps" autocomplete="off" spellcheck="false">
+            </label>
+          </div>
+          <div class="cats" id="lib-cats" hidden></div>
+          <div class="appsGrid" id="lib-grid"></div>
+          <div class="k-empty" id="lib-empty" hidden><!-- first run, empty registry -->
+            <svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path stroke="var(--ink-3)" stroke-width="2" d="M32 20 52 30.75v13L32 54.5 12 43.75v-13zM12 30.75l20 10.75 20-10.75M32 41.5v13"/>
+              <path stroke="var(--accent)" stroke-width="2" d="M24 4l1.7 5.8 5.8 1.7-5.8 1.7L24 19l-1.7-5.8-5.8-1.7 5.8-1.7zM45 10l1 3.4 3.4 1-3.4 1-1 3.4-1-3.4-3.4-1 3.4-1z"/>
+            </svg>
+            <b data-i18n="emptyTitle"></b>
+            <span data-i18n="emptyBody"></span>
+          </div>
+          <div class="k-empty" id="lib-none" hidden>
+            <svg viewBox="0 0 64 64" fill="none" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <path stroke="var(--ink-3)" stroke-width="2" d="M28 8a19 19 0 1 1 0 38 19 19 0 0 1 0-38zM42 41l13 13"/>
+              <path stroke="var(--accent)" stroke-width="2" d="M53 8l1.4 4.6 4.6 1.4-4.6 1.4L53 20l-1.4-4.6-4.6-1.4 4.6-1.4z"/>
+            </svg>
+            <b data-i18n="noMatchTitle"></b>
+            <span data-i18n="noMatchBody"></span>
+          </div>
+        </div>
+
+        <section id="lib-detail" hidden aria-labelledby="d-name">
+          <button class="backLink" id="d-close"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 3.5 5 8l4.5 4.5"/></svg><span data-i18n="backToInstalled"></span></button>
+          <div class="detailHead">
+            <div>
+              <h1 class="detailTitle" id="d-name"></h1>
+              <p class="detailMeta"><span class="k-chip static on" id="d-cat" hidden></span><span class="k-badge info" id="d-ver"></span><span class="k-num" id="d-meta"></span></p>
+              <p id="d-desc"></p>
+              <div class="detailActions">
+                <button class="k-btn" id="d-open"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 12 12 4M5.5 4H12v6.5"/></svg><span data-i18n="openInChat"></span></button>
+                <button class="k-btn sec" id="d-preview"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9l7.5-4.5z"/></svg><span id="d-pv-lbl"></span></button>
+                <span class="k-mut" id="d-locked" hidden data-i18n="builtInLocked"></span>
+                <button class="k-btn danger" id="d-delete"><svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4"/></svg><span id="d-del-lbl"></span></button>
+              </div>
+            </div>
+            <div id="d-live" hidden>
+              <div class="previewCard">
+                <div id="pv-wrap"></div>
+                <p class="previewCaption"><i aria-hidden="true"></i><span data-i18n="livePreviewCaption"></span></p>
+              </div>
+            </div>
+          </div>
+
+          <div class="metaStrip">
+            <div><small data-i18n="metaStorage"></small><b id="d-store">–</b></div>
+            <div><small data-i18n="metaSize"></small><b id="d-size">–</b></div>
+            <div><small data-i18n="metaUpdated"></small><b id="d-when">–</b></div>
+            <div><small data-i18n="metaAuthor"></small><b id="d-author">–</b></div>
+          </div>
+
+          <!-- Cascade opt-in (D-13 ③). Unchecked = the default tombstone: the app goes, its data
+               stays and restore_app can bring it back. Checked = delete_app data:"cascade", which
+               the engine answers with a PLAN before it removes anything. -->
+          <div class="group" id="d-cascade-row" hidden>
+            <label class="row">
+              <span class="rowIcon" data-tone="bad" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5"/></svg></span>
+              <span class="rowCopy"><b data-i18n="cascadeLabel"></b><small data-i18n="cascadeDetail"></small></span>
+              <input class="k-switch" type="checkbox" id="d-cascade" data-i18n-aria="cascadeLabel">
+            </label>
+          </div>
+          <div class="planCard" id="d-plan" hidden>
+            <p class="k-sub" id="d-plan-what" style="margin:0 0 6px"></p>
+            <ul id="d-plan-list" style="margin:0 0 10px;padding-left:18px;font-size:11.5px"></ul>
+            <div class="k-row">
+              <button class="k-btn ghost" id="d-plan-no"></button>
+              <span class="k-grow"></span>
+              <button class="k-btn danger" id="d-plan-yes"></button>
+            </div>
+          </div>
+          <p id="d-err" hidden></p>
+
+          <h2 class="sectionTitle" data-i18n="history"></h2>
+          <div class="group" style="padding:12px 14px"><ol id="d-hist" class="k-mut"></ol></div>
+        </section>
+      </div>
+
+      <div class="pane" id="data">
+        <h2 class="sectionTitle" data-i18n="secCollections"></h2>
+        <p class="note" data-i18n="collectionsNote"></p>
+        <div class="group rowlist" id="data-rows"></div>
+        <h2 class="sectionTitle" data-i18n="secActivity"></h2>
+        <p class="note" id="data-ledger-note" hidden><span data-i18n="ledgerElsewhere"></span> <a id="data-ledger-link" href="#" target="_blank" rel="noopener" data-i18n="ledgerLink"></a></p>
+        <div id="data-ledger" hidden>
+          <div class="toolbar">
+            <select class="k-field k-grow" id="data-coll" data-i18n-aria="collectionFilter"></select>
+            <button class="rowAction quiet" id="data-reload" data-i18n="reload"></button>
+          </div>
+          <div class="group" id="data-events"></div>
+        </div>
+      </div>
+
+      <div class="pane" id="perms">
+        <h2 class="sectionTitle" data-i18n="secPermissions"></h2>
+        <p class="note" data-i18n="permsNote"></p>
+        <div id="perm-rows"></div>
+        <p class="note" id="perm-empty" hidden data-i18n="permsEmpty"></p>
+      </div>
+    </section>
+  </main>
+
+  <script type="module">
+    // ---- i18n: one dictionary, en/zh, resolved from the shared `locale` preference ----
+    const STR = {
+      en: {
+        documentTitle: "Settings",
+        settings: "Settings",
+        searchSettings: "Search settings",
+        secPrefs: "Preferences", secGuide: "Guide", secAbout: "About",
+        secInstalled: "Installed", secData: "Data", secPerms: "Permissions",
+        introPrefs: "Shared preferences and per-app options. Every app on this workbench reads them.",
+        introGuide: "What this workbench is, and the handful of sentences that make it work.",
+        introAbout: "The engine behind these apps, and what is stored right now.",
+        introInstalled: "Every app in your registry — preview it, roll it back, or remove it.",
+        introData: "Every collection in your store, which app claims it, and what changed.",
+        introPerms: "What each installed app is allowed to do.",
+        secGeneral: "General", secApps: "Apps", secEngine: "Engine",
+        secCollections: "Data sets", secActivity: "Recent activity", secPermissions: "App permissions",
+        moreOptions: "More options", moreOptionsDetail: "Formats, behaviour and everything else the engine declares",
+        advanced: "Advanced", advancedDetail: "Stored values nothing declares — themes, strays, orphans",
+        noAppOptions: "None of your apps declare options yet — when one does, its settings appear here automatically.",
+        askAi: "Faster: just tell the AI — “start my weeks on Sunday”, “make the meal planner stop asking before delete.”",
+        saved: "Saved", notSaved: "Not saved",
+        resetTitle: "Reset to default (deletes the stored value)",
+        clearOverride: "Clear the override (back to the tier default)",
+        deleteStored: "Delete this stored value",
+        delete: "Delete",
+        resetAll: "Reset all", resetAllTitle: "Delete every stored value in this section",
+        overrideShared: "Override a shared setting…", overrideSharedAria: "Override a shared setting for {name}",
+        usedByThisApp: "Used by this app", allShared: "All shared settings", sharedSettings: "Shared settings",
+        reservedKey: "Reserved key (read-only).",
+        undeclared: "Stored value (undeclared) — edited as JSON.",
+        typeMismatch: "Stored value doesn't match the declared type ({type}) — fix or delete.",
+        hasCustom: "Has customized values",
+        noCatalog: "This engine has no shared-settings catalog — showing stored values only.",
+        grpFormats: "Formats", grpBehavior: "Behavior", grpGeneral: "General",
+        themeApp: "Theme (this app only)", theme: "Theme", otherGlobal: "Other global keys", orphaned: "Orphaned",
+        themeNote: "Design tokens applied to every app. Ask the AI to change one, or edit it here.",
+        themeLive: "Design token — applies everywhere unless an app overrides it.",
+        themeDead: "Not applied — the name must look like --color-text-info and the value must be a plain CSS value.",
+        themeAppNote: "Design token — overrides the global theme for {name}.",
+        orphanNote: "Left behind by an app that's been renamed or removed.",
+        guideUse: "How to use it", guideModel: "Where it lives",
+        g1: "Say what you want", g1d: "“show my habit tracker”, “open my board” — the app appears right in the chat.",
+        g2: "Ask what you have", g2d: "“what data do I have” lists everything stored; “open the dashboard” gives the overview.",
+        g3: "Ask for what doesn't exist", g3d: "“make me an X” — the AI writes it, saves it, and reuses it forever. Or browse the App Store.",
+        g4: "One app, many data sets", g4d: "“open my work data in the kanban app” — apps are views, not containers.",
+        g5: "Let the AI operate", g5d: "“mark ‘research the spec’ done” — any open widget refreshes itself.",
+        g6: "One private store", g6d: "Everything lives in a store you own, with a full change history — nothing disappears silently.",
+        g7: "Data outlives the chat", g7d: "You and the AI edit the same rows. Close the conversation and they are still there.",
+        statApps: "Apps", statSets: "Data sets", statItems: "Items",
+        aboutName: "open-mcp-apps", aboutNameDetail: "Give your AI a persistent workbench.",
+        aboutStd: "MCP Apps standard", aboutStdDetail: "The AI creates, persists and reuses interactive apps over data you own (ui://).",
+        aboutLicense: "License", aboutLicenseDetail: "MIT · github.com/2nd1st/open-mcp-apps",
+        aboutHost: "Host", aboutHostDetail: "The client this workbench is talking to.",
+        searchApps: "Search apps",
+        allCategories: "All",
+        emptyTitle: "Nothing here yet", emptyBody: "Ask for anything — “make me a habit tracker” — and it appears here, forever.",
+        noMatchTitle: "No match", noMatchBody: "Try fewer words — or just ask the AI to build it. It takes about a minute.",
+        installedBy: "by {author}", byLibrary: "App Store", bySeed: "system",
+        view: "Details", backToInstalled: "Installed",
+        openInChat: "Open in chat", preview: "Preview", stopPreview: "Stop preview",
+        livePreviewCaption: "This is the app itself — real data, real writes.",
+        builtInLocked: "Built-in app — can't be deleted.",
+        metaStorage: "Storage", metaSize: "Size", metaUpdated: "Updated", metaAuthor: "Author",
+        items: "{n} items", item1: "1 item", files: "{n} files, {kb} KB", file1: "1 file, {kb} KB",
+        cascadeLabel: "Delete its data too",
+        cascadeDetail: "Its own collections and settings go too, permanently. Data other apps also use is kept.",
+        history: "History",
+        checkpoints: "{n} checkpoints", checkpoint1: "1 checkpoint", checkpointN: "Checkpoint {n}", checkpoint: "Checkpoint",
+        earlier: "+ {n} earlier checkpoints",
+        restore: "Restore", really: "Really?", restoreFailed: "Restore failed.",
+        collectionsNote: "Every collection in your store, and which app claims it. An app claims a collection by declaring it in its manifest (or just by sharing its name).",
+        loading: "Loading…", noData: "No data yet — everything an app saves will show up here.",
+        collFailed: "Couldn't load collections.", ledgerFailed: "Couldn't load the ledger.",
+        permsFailed: "Couldn't load permissions.",
+        system: "system", byName: "{name} · by name", orphan: "orphan",
+        adopt: "Adopt…", adoptTitle: "Ask the AI to declare this collection in one of your apps",
+        adoptMsg: "Adopt my \"{coll}\" data collection: pick (or build) the right app and declare the collection in its manifest.",
+        openMsg: "Open the \"{name}\" app (open_app).",
+        ledgerElsewhere: "The audit trail (who wrote what, with undo) lives in the browser view — open",
+        ledgerLink: "settings in the browser", noActivity: "No activity yet.",
+        collectionFilter: "Collection filter", allCollections: "All collections", reload: "Reload", undo: "Undo",
+        permsNote: "Everything installed here — your own apps, AI-built apps, and App Store installs — runs locally with full trust. Per-app permission switches arrive together with shared/published apps.",
+        permsEmpty: "No apps installed.",
+        fullTrust: "full local trust", fixedSystemUi: "fixed system UI",
+        sandboxed: "{tier} · sandboxed",
+        sandboxNote: "{origin} — runs in the sandboxed runner; it can only touch its own saved data.",
+        capSend: "Send chat messages", capRead: "Read its stored files", capWrite: "Write files",
+        justNow: "just now", minsAgo: "{n}m ago", hoursAgo: "{n}h ago", daysAgo: "{n}d ago", monthsAgo: "{n}mo ago",
+      },
+      zh: {
+        documentTitle: "设置",
+        settings: "设置",
+        searchSettings: "搜索设置",
+        secPrefs: "偏好", secGuide: "指南", secAbout: "关于",
+        secInstalled: "已安装", secData: "数据", secPerms: "权限",
+        introPrefs: "共享偏好与各应用的选项。这台工作台上的每个应用都会读取它们。",
+        introGuide: "这台工作台是什么，以及让它跑起来的那几句话。",
+        introAbout: "这些应用背后的引擎，以及此刻存了些什么。",
+        introInstalled: "注册表里的每个应用——预览、回滚，或者删除。",
+        introData: "store 里的每个 collection、归属的应用，以及发生过的改动。",
+        introPerms: "每个已安装应用被允许做什么。",
+        secGeneral: "通用", secApps: "应用", secEngine: "引擎",
+        secCollections: "数据集", secActivity: "最近活动", secPermissions: "应用权限",
+        moreOptions: "更多选项", moreOptionsDetail: "格式、行为，以及引擎声明的其余偏好",
+        advanced: "高级", advancedDetail: "没有任何声明认领的存储值——主题、游离键、孤儿键",
+        noAppOptions: "你的应用暂时都没有声明选项——一旦有，它的设置会自动出现在这里。",
+        askAi: "更快的办法：直接告诉 AI——「我的一周从周日开始」「餐单应用删除前别再问我」。",
+        saved: "已保存", notSaved: "未保存",
+        resetTitle: "恢复默认（删除已存的值）",
+        clearOverride: "清除覆盖（回到该等级的默认值）",
+        deleteStored: "删除这个存储值",
+        delete: "删除",
+        resetAll: "全部重置", resetAllTitle: "删除本节里所有已存的值",
+        overrideShared: "覆盖一项共享设置…", overrideSharedAria: "为 {name} 覆盖一项共享设置",
+        usedByThisApp: "该应用使用的", allShared: "全部共享设置", sharedSettings: "共享设置",
+        reservedKey: "保留键（只读）。",
+        undeclared: "存储值（未声明）——按 JSON 编辑。",
+        typeMismatch: "存储值与声明的类型（{type}）不符——请修正或删除。",
+        hasCustom: "已有自定义值",
+        noCatalog: "这个引擎没有共享设置目录——只显示已存的值。",
+        grpFormats: "格式", grpBehavior: "行为", grpGeneral: "通用",
+        themeApp: "主题（仅此应用）", theme: "主题", otherGlobal: "其他全局键", orphaned: "孤儿键",
+        themeNote: "作用于所有应用的设计 token。可以让 AI 改，也可以在这里改。",
+        themeLive: "设计 token——除非某个应用覆盖，否则处处生效。",
+        themeDead: "未生效——名字要形如 --color-text-info，值要是一个普通的 CSS 值。",
+        themeAppNote: "设计 token——为 {name} 覆盖全局主题。",
+        orphanNote: "由已改名或已删除的应用留下。",
+        guideUse: "怎么用", guideModel: "数据在哪",
+        g1: "直接说你要什么", g1d: "「打开我的习惯追踪」「打开我的看板」——应用直接出现在对话里。",
+        g2: "问问自己有什么", g2d: "「我有哪些数据」会列出全部内容；「打开 dashboard」给你一个总览。",
+        g3: "要一个还不存在的应用", g3d: "「给我做一个 X」——AI 写好、存好，以后一直复用。也可以去 App Store 逛。",
+        g4: "一个应用，多份数据", g4d: "「用看板应用打开我的工作数据」——应用是视图，不是容器。",
+        g5: "让 AI 替你操作", g5d: "「把『研究规范』标成已完成」——任何打开着的组件都会自己刷新。",
+        g6: "一个私有 store", g6d: "所有东西都存在你自己的 store 里，带完整变更历史——不会有东西悄悄消失。",
+        g7: "数据活得比对话久", g7d: "你和 AI 编辑的是同一批行。关掉对话，它们还在。",
+        statApps: "应用", statSets: "数据集", statItems: "条目",
+        aboutName: "open-mcp-apps", aboutNameDetail: "给你的 AI 一台常驻的工作台。",
+        aboutStd: "MCP Apps 标准", aboutStdDetail: "AI 在你自己的数据之上创建、持久化并复用交互式应用（ui://）。",
+        aboutLicense: "许可", aboutLicenseDetail: "MIT · github.com/2nd1st/open-mcp-apps",
+        aboutHost: "宿主", aboutHostDetail: "这台工作台正在对话的客户端。",
+        searchApps: "搜索应用",
+        allCategories: "全部",
+        emptyTitle: "这里还什么都没有", emptyBody: "开口要任何东西——「给我做一个习惯追踪」——它就会出现在这里，一直在。",
+        noMatchTitle: "没有匹配", noMatchBody: "少输几个词——或者直接让 AI 现做一个，大概一分钟。",
+        installedBy: "作者 {author}", byLibrary: "App Store", bySeed: "系统",
+        view: "详情", backToInstalled: "已安装",
+        openInChat: "在对话中打开", preview: "预览", stopPreview: "停止预览",
+        livePreviewCaption: "这就是应用本身——真实数据，真实写入。",
+        builtInLocked: "内置应用——不能删除。",
+        metaStorage: "存储", metaSize: "体积", metaUpdated: "更新于", metaAuthor: "作者",
+        items: "{n} 条", item1: "1 条", files: "{n} 个文件，{kb} KB", file1: "1 个文件，{kb} KB",
+        cascadeLabel: "连同它的数据一起删除",
+        cascadeDetail: "它自己的 collection 和设置也会永久删除。其他应用也在用的数据会保留。",
+        history: "历史",
+        checkpoints: "{n} 个检查点", checkpoint1: "1 个检查点", checkpointN: "检查点 {n}", checkpoint: "检查点",
+        earlier: "+ 另有 {n} 个更早的检查点",
+        restore: "回滚", really: "确定？", restoreFailed: "回滚失败。",
+        collectionsNote: "store 里的每个 collection，以及认领它的应用。应用通过在 manifest 里声明来认领（或者仅仅同名）。",
+        loading: "加载中…", noData: "还没有数据——应用存的任何东西都会出现在这里。",
+        collFailed: "无法加载 collection。", ledgerFailed: "无法加载账本。",
+        permsFailed: "无法加载权限。",
+        system: "系统", byName: "{name} · 同名", orphan: "孤儿",
+        adopt: "认领…", adoptTitle: "让 AI 在你的某个应用里声明这个 collection",
+        adoptMsg: "认领我的「{coll}」数据集：挑一个（或做一个）合适的应用，并在它的 manifest 里声明这个 collection。",
+        openMsg: "打开「{name}」应用（open_app）。",
+        ledgerElsewhere: "审计轨迹（谁写了什么，可撤销）在浏览器视图里——打开",
+        ledgerLink: "浏览器中的设置", noActivity: "还没有活动。",
+        collectionFilter: "按 collection 过滤", allCollections: "全部 collection", reload: "重新加载", undo: "撤销",
+        permsNote: "这里安装的一切——你自己的应用、AI 写的应用、从 App Store 装的应用——都在本地以完全信任运行。逐应用的权限开关会与共享/发布应用一起到来。",
+        permsEmpty: "还没有安装任何应用。",
+        fullTrust: "本地完全信任", fixedSystemUi: "固定的系统界面",
+        sandboxed: "{tier} · 沙箱",
+        sandboxNote: "{origin}——在沙箱 runner 里运行；只能碰它自己存的数据。",
+        capSend: "发送对话消息", capRead: "读取它存的文件", capWrite: "写入文件",
+        justNow: "刚刚", minsAgo: "{n} 分钟前", hoursAgo: "{n} 小时前", daysAgo: "{n} 天前", monthsAgo: "{n} 个月前",
+      },
+    };
+    const locale = () => { const p = oma.pref("locale", "auto"); return p === "auto" ? navigator.language : p; };
+    const language = () => (String(locale()).toLowerCase().startsWith("zh") ? "zh" : "en");
+    const t = (key, vars = {}) => {
+      let value = STR[language()][key] ?? STR.en[key] ?? key;
+      for (const [name, replacement] of Object.entries(vars)) value = value.replaceAll(`{${name}}`, String(replacement));
+      return value;
+    };
+
+    // ---- shared preference registry — SERVER-OWNED (P4 code/UI split): the engine's
+    // ui_prefs_schema tool is the single source of truth; this UI only renders it. Starts
+    // empty and fills at boot — stored/stray rows render meanwhile, catalog rows follow.
+    let SHARED_PREFS = [];
+    let SHARED_KEYS = new Set();
+    const KEY_RE = /^[a-z][a-z0-9_]{0,31}$/;
+    const RESERVED = (k) => /^(security_|_)/.test(k) || /^(security|policy):/.test(k);
+    // Theme tokens live in this same collection (group "" = everywhere, group "<app>" = that app
+    // only) so the whole feature costs zero tool seats. They are NOT preferences, so they get
+    // their own micro-group instead of reading as undeclared strays next to an app's options.
+    const THEME = (k) => k.slice(0, 6) === "theme:";
+    // TOP_KEYS render first, unfolded (frozen 2026-07-25: the two decisions users revisit);
+    // every other catalog key folds into "More options" under these micro-groups. A key the
+    // catalog renames simply drops out of TOP and shows up foldered — visible, never silent.
+    const TOP_KEYS = ["confirm_delete", "proactivity"];
+    const SECTION_OF = { locale: "grpFormats", week_start: "grpFormats", date_format: "grpFormats", currency: "grpFormats",
+                        density: "grpBehavior", widget_poll_seconds: "grpBehavior" };   // unknown keys → "General"
+    // System collections are engine plumbing — excluded from every user-visible count
+    // (shared convention with the dashboard's hiddenCollections; pins/settings rows aren't "data").
+    const SYSTEM_COLLECTIONS = new Set(["dashboard", "settings"]);
+
+// coercePref — kept byte-identical to src/shell-runtime.js (settings-design §2.1); embedded
+// verbatim into the preview BRIDGE below via toString(). Do not reformat or re-indent.
+function coercePref(v, fallback) {
+  const t = typeof fallback;
+  if (t === "boolean") {
+    if (v === true  || v === "true"  || v === 1) return true;
+    if (v === false || v === "false" || v === 0) return false;
+    return fallback;                                   // "25", "yes", {…} → fallback
+  }
+  if (t === "number") {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    if (typeof v === "boolean") return v ? 1 : 0;
+    return fallback;                                   // "abc", "", {…} → fallback
+  }
+  if (t === "string") {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return fallback;                                   // objects only via raw rows → fallback
+  }
+  return v === undefined ? fallback : v;               // exotic fallback type: raw pass-through
+}
+
+    // ---- tiny DOM + icon helpers (icon paths from docs/design-system.md §3) ----
+    const ICONS = {
+      refresh: "M13.5 8A5.5 5.5 0 1 1 11.89 4.11M13.5 1.5v3h-3",
+      trash: "M2.5 4h11M5.5 4V2.5h5V4M4.5 4l.5 9.5h6l.5-9.5M6.7 7v4M9.3 7v4",
+      chevron: "M3.5 6l4.5 4.5L12.5 6",
+      check: "M2.5 8.5l3.7 3.7 7.3-8.4",
+      sliders: "M2.5 4.5h6M11.5 4.5h2M8.5 2.5v4M2.5 11.5h2M7.5 11.5h6M4.5 9.5v4",
+      book: "M3.5 12.5V3.5a2 2 0 0 1 2-2h7v13h-7a2 2 0 0 1-2-2 2 2 0 0 1 2-2h7",
+      info: "M5.5 1.5v3.5M10.5 1.5v3.5M3.5 5h9v2.5a4.5 4.5 0 0 1-9 0zM8 12v2.5",
+      grid: "M2.5 2.5H7V7H2.5zM9 2.5h4.5V7H9zM2.5 9H7v4.5H2.5zM9 9h4.5v4.5H9z",
+      database: "M8 2c3 0 5.5 1 5.5 2.2S11 6.5 8 6.5 2.5 5.4 2.5 4.2 5 2 8 2zM2.5 4.2v7.6C2.5 13 5 14 8 14s5.5-1 5.5-2.2V4.2M2.5 8c0 1.2 2.5 2.2 5.5 2.2S13.5 9.2 13.5 8",
+      shield: "M8 1.5l5.5 2.5v3.5c0 3.5-2.5 6-5.5 7-3-1.5-5.5-3.5-5.5-7V4z",
+      toggle: "M5 4.5h6a3.5 3.5 0 0 1 0 7H5a3.5 3.5 0 0 1 0-7zM11 6.2a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z",
+      hash: "M3 6h10M3 10h10M6.5 2.5 5 13.5M11 2.5 9.5 13.5",
+      list: "M6 4.5h7.5M6 8h7.5M6 11.5h7.5M3 4.5h.01M3 8h.01M3 11.5h.01",
+      pencil: "M11.5 2.5l2 2-8 8-3 1 1-3zM10 4l2 2",
+      spark: "M8 2v3.2M8 10.8V14M2 8h3.2M10.8 8H14M4 4l2.2 2.2M9.8 9.8 12 12M12 4 9.8 6.2M6.2 9.8 4 12",
+      chat: "M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2H7l-3 3v-3h-.5a1 1 0 0 1-1-1z",
+      box: "M8 1.8 13.5 5v6L8 14.2 2.5 11V5zM2.5 5 8 8.2 13.5 5M8 8.2V14.2",
+      lock: "M4.5 7V5a3.5 3.5 0 0 1 7 0v2M3.5 7h9v6.5h-9z",
+      globe: "M8 1.5a6.5 6.5 0 1 1 0 13 6.5 6.5 0 0 1 0-13zM1.5 8h13M8 1.5c1.8 1.8 2.7 4 2.7 6.5S9.8 12.7 8 14.5C6.2 12.7 5.3 10.5 5.3 8S6.2 3.3 8 1.5z",
+      tag: "M2.5 2.5h5L13.5 8.5l-5 5L2.5 7.5zM5.2 5.2h.01",
+      clock: "M8 2.5a5.5 5.5 0 1 1 0 11 5.5 5.5 0 0 1 0-11zM8 5v3.2l2.2 1.4",
+    };
+    const icon = (n) => `<svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="${ICONS[n]}"/></svg>`;
+    const tile = (n, tone) => {
+      const s = el("span", "rowIcon");
+      if (tone) s.dataset.tone = tone;
+      s.setAttribute("aria-hidden", "true");
+      s.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[n]}"/></svg>`;
+      return s;
+    };
+    const el = (tag, cls, text) => { const e = document.createElement(tag); if (cls) e.className = cls; if (text !== undefined) e.textContent = text; return e; };
+    const jstr = (v) => { const s = JSON.stringify(v); return s === undefined ? "" : s; };
+    const optVal = (o) => (typeof o === "string" ? o : o && typeof o === "object" ? o.value : undefined);
+    const optLabel = (o) => (typeof o === "string" ? o : String(o.label !== undefined ? o.label : o.value).slice(0, 60));
+
+    const REDUCE = matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const WIDE = matchMedia("(min-width: 561px)");
+    function countUp(el, to, from = Number(el.textContent) || 0) {
+      if (REDUCE || Math.abs(to - from) < 2) { el.textContent = to; return; }
+      const t0 = performance.now();
+      (function tick(t) {
+        const p = Math.min((t - t0) / 500, 1), e = 1 - (1 - p) ** 3;   // ease-out cubic
+        el.textContent = Math.round(from + (to - from) * e);
+        if (p < 1) requestAnimationFrame(tick);
+      })(t0);
+    }
+
+    // ---- navigation: one section list, rendered twice (desktop rail + narrow tab strip) ----
+    const SECTIONS = [
+      { id: "prefs", label: "secPrefs", intro: "introPrefs", icon: "sliders" },
+      { id: "guide", label: "secGuide", intro: "introGuide", icon: "book" },
+      { id: "about", label: "secAbout", intro: "introAbout", icon: "info" },
+      { id: "library", label: "secInstalled", intro: "introInstalled", icon: "grid" },
+      { id: "data", label: "secData", intro: "introData", icon: "database" },
+      { id: "perms", label: "secPerms", intro: "introPerms", icon: "shield" },
+    ];
+    let section = "prefs";
+    function renderNav() {
+      for (const [box, withIcon] of [[document.getElementById("railNav"), true], [document.getElementById("tabstrip"), false]]) {
+        box.innerHTML = "";
+        for (const s of SECTIONS) {
+          const b = el("button");
+          b.type = "button";
+          b.dataset.p = s.id;
+          b.dataset.active = String(section === s.id);
+          if (withIcon) b.innerHTML = `<svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="${ICONS[s.icon]}"/></svg>`;
+          b.append(el("span", null, t(s.label)));
+          b.onclick = () => go(s.id);
+          box.append(b);
+        }
+      }
+      const cur = SECTIONS.find((s) => s.id === section);
+      document.getElementById("page-h").textContent = t(cur.label);
+      document.getElementById("page-p").textContent = t(cur.intro);
+    }
+    function go(id) {
+      section = id;
+      for (const p of document.querySelectorAll(".pane")) p.classList.toggle("on", p.id === id);
+      renderNav();
+      if (id === "library") { libEntrance(); queueThumbSync(); }   // Installed pane first-open entrance stagger (design-system §8.0 gating)
+      if (id === "perms") loadPerms();       // fresh read every visit — cheap, always current
+      if (id === "data") loadData();         // fresh collections + ownership + ledger every visit
+    }
+    renderNav();   // the nav is data, not markup — paint it before the bridge answers anything
+    // The rail's search jumps to the section whose label matches — the sidebar's only job here.
+    document.getElementById("nav-q").oninput = (ev) => {
+      const q = ev.target.value.trim().toLowerCase();
+      if (!q) return;
+      const hit = SECTIONS.find((s) => t(s.label).toLowerCase().includes(q));
+      if (hit && hit.id !== section) go(hit.id);
+    };
+
+    // ---- Permissions pane (P4): renders app_permissions; overrides write through
+    // security_set (security:<name>:<cap>) — the ONLY tool that may touch reserved keys.
+    // Local tier = direct render = full trust (switches would be theater — shown read-only);
+    // runner tiers (App Store installs, pasted comps) get real switches the runner enforces.
+    const PERM_CAPS = [
+      ["send_message", "capSend"],
+      ["file_read", "capRead"],
+      ["file_write", "capWrite"],
+    ];
+    async function setCapOverride(name, cap, value) {
+      await oma.callTool("security_set", { key: "security:" + name + ":" + cap, value, command_id: crypto.randomUUID() });
+      flashSaved();
+      loadPerms();
+    }
+    // permsCache is the detail view's locked-state truth: until it lands, the Danger area renders
+    // NO buttons rather than a dead one. A failed refetch keeps the previous cache.
+    // app_permissions retired (2026-08-04): list_apps rows carry `locked`, and app_html — which
+    // this pane already fetches per app for manifests — carries tier + caps (stashed in appMeta).
+    let permsCache = null;
+    async function fetchPerms() {
+      try {
+        const comps = (await oma.callTool("list_apps", {}))?.structuredContent?.apps || [];
+        await Promise.all(comps.filter((c) => !appMeta.has(c.name)).map((c) => loadManifest(c.name)));
+        return (permsCache = comps.map((c) => {
+          const m = appMeta.get(c.name) || {};
+          return { name: c.name, author: c.author, locked: !!c.locked, tier: m.tier || "local", caps: m.caps };
+        }));
+      } catch { return null; }
+    }
+    const originLabel = (author) => author === "library" ? t("byLibrary") : author === "seed" ? t("bySeed") : t("installedBy", { author });
+    async function loadPerms() {
+      const box = document.getElementById("perm-rows");
+      const rows = await fetchPerms();
+      if (!rows) { box.textContent = t("permsFailed"); return; }
+      document.getElementById("perm-empty").hidden = rows.length > 0;
+      box.innerHTML = "";
+      // OSS keeps this pane SIMPLE: local apps (which is everything in OSS — own, AI-built
+      // and App Store apps alike) get one clean line in a single group. The switch UI below only
+      // materializes for future non-local tiers (shared/published apps), so no dead controls show.
+      const plain = el("div", "group rowlist");
+      for (const c of rows) {
+        if (c.tier === "local") {
+          const row = el("div", "row");
+          row.append(tile(c.locked ? "lock" : "box", c.locked ? undefined : "mint"));
+          row.append(lbl(c.name, [originLabel(c.author), c.locked ? t("fixedSystemUi") : null, t("fullTrust")].filter(Boolean).join(" · ")));
+          row.append(el("span", "spc"));
+          plain.append(row);
+          continue;
+        }
+        const d = el("details", "group");
+        const sum = el("summary");
+        sum.append(tile("shield", "warn"));
+        sum.append(lbl(c.name, t("sandboxNote", { origin: originLabel(c.author) })));
+        sum.append(el("span", "k-chip static", t("sandboxed", { tier: c.tier })));
+        const chev = el("span", "chev"); chev.innerHTML = icon("chevron");
+        sum.append(chev);
+        d.append(sum);
+        for (const [cap, key] of PERM_CAPS) {
+          const label = t(key);
+          const row = el("div", "row");
+          row.append(tile(cap === "send_message" ? "chat" : "box", "blue"));
+          row.append(lbl(label, "security:" + c.name + ":" + cap));
+          const sw = el("input", "k-switch"); sw.type = "checkbox"; sw.checked = c.caps[cap] === true;
+          sw.setAttribute("aria-label", label + " — " + c.name);
+          sw.onchange = () => setCapOverride(c.name, cap, sw.checked ? "allow" : "deny");
+          row.append(sw);
+          const rst = el("button", "iconBtn"); rst.innerHTML = icon("refresh");
+          rst.title = t("clearOverride");
+          rst.onclick = () => setCapOverride(c.name, cap, "");
+          row.append(rst);
+          d.append(row);
+        }
+        box.append(d);
+      }
+      if (plain.children.length) box.prepend(plain);
+    }
+
+    // ---- stored-settings access (the settings collection IS our bound collection) ----
+    let compsCache = [];
+    let collsCache = [];             // data_collections snapshot — About stats + detail Storage line
+    let collsLoaded = false;         // unknown ≠ zero: the detail view omits the item count until this flips
+    const manifests = new Map();     // name -> {settings, uses_shared} | null (malformed/absent)
+    const openSecs = new Set();      // <details> open state survives re-renders
+    let prefsLoading = true;         // ui_prefs_schema in flight → skeleton rows, never a blank pane
+    let bootingManifests = true;     // manifest fan-out in flight → in-flight sections get a skeleton row
+
+    const curStored = (group, key) => { let f; for (const it of oma.state.items) if (it.group === group && it.fields && it.fields.key === key) f = it; return f; };  // last in snapshot order wins
+    function groupItems(group) {
+      const m = new Map();           // key -> item (last-wins over duplicates)
+      for (const it of oma.state.items) if (it.group === group && it.fields && typeof it.fields.key === "string") m.set(it.fields.key, it);
+      return m;
+    }
+
+    let savedT;
+    // Transient status: "Saved" (ok) or "Not saved" (bad) — one slot, k-pop entrance.
+    function flash(ok) {
+      const s = document.getElementById("saved");
+      s.className = "k-badge " + (ok ? "ok" : "bad");
+      s.innerHTML = ok ? icon("check") + t("saved") : t("notSaved");
+      s.hidden = false;
+      void s.offsetWidth; s.classList.add("k-pop");
+      clearTimeout(savedT); savedT = setTimeout(() => { s.hidden = true; }, 1600);
+    }
+    const flashSaved = () => flash(true);
+    // Save-on-change; updates are last-write-wins (no expected_version — settings-design §4.2/§2.6).
+    // A refused write flashes "Not saved" and re-renders — the UI never displays a value the store rejected.
+    async function setSetting(group, key, value) {
+      const it = curStored(group, key);
+      let r;
+      try {
+        if (it) {
+          r = await oma.callTool("data_update_item", { command_id: crypto.randomUUID(), id: it.id, fields: { value }, actor: "human" });
+          if (r && r.isError) r = await oma.addItem({ group, fields: { key, value } });   // concurrently deleted → re-create
+          else await oma.refresh();    // callTool bypasses applySnapshot — pull our own snapshot back
+        } else {
+          r = await oma.addItem({ group, fields: { key, value } });
+        }
+      } catch { r = { isError: true }; }
+      if (r && r.isError) { flash(false); renderPrefs(); return; }
+      flashSaved();
+    }
+    async function delSetting(id) {   // reset = DELETE the item, never write the default
+      try { await oma.deleteItem(id); flashSaved(); } catch { flash(false); }
+    }
+
+    // ---- form rendering (settings-design §4.2 control mapping) ----
+    function matchesType(v, def) {
+      if (def.type === "boolean") return typeof v === "boolean";
+      if (def.type === "number") return typeof v === "number" && Number.isFinite(v);
+      if (def.type === "string") return typeof v === "string";
+      if (def.type === "enum") return typeof v === "string" && def.options.map(optVal).includes(v);
+      return false;
+    }
+    function lbl(text, desc) {
+      const s = el("span", "rowCopy"); s.append(el("b", null, text));   // textContent only — manifest text is untrusted
+      if (desc) s.append(el("small", null, desc));
+      return s;
+    }
+    // The row's leading tile: one glyph + tone per control type, so a list of twenty rows still
+    // reads as a list of KINDS rather than a wall of identical text.
+    const TYPE_TILE = { boolean: ["toggle", "mint"], number: ["hash", "blue"], enum: ["list", "wine"], string: ["pencil", null] };
+    function typeTile(type) { const [g, tone] = TYPE_TILE[type] || TYPE_TILE.string; return tile(g, tone); }
+    function controlFor(def, current, commit) {
+      if (def.type === "boolean") {
+        const c = el("input", "k-switch"); c.type = "checkbox"; c.checked = current === true;
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => commit(c.checked);
+        return c;
+      }
+      if (def.type === "number") {
+        const c = el("input", "k-field"); c.type = "number"; c.value = current;
+        for (const a of ["min", "max", "step"]) if (typeof def[a] === "number") c[a] = def[a];
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => {
+          let n = Number(c.value);
+          if (!Number.isFinite(n)) { c.value = current; return; }
+          if (typeof def.min === "number") n = Math.max(def.min, n);
+          if (typeof def.max === "number") n = Math.min(def.max, n);
+          commit(n);
+        };
+        return c;
+      }
+      if (def.type === "enum") {
+        const c = el("select", "k-field");
+        for (const o of def.options) { const op = el("option", null, optLabel(o)); op.value = optVal(o); c.append(op); }
+        c.value = String(current);
+        c.setAttribute("aria-label", def.label);
+        c.onchange = () => commit(c.value);
+        return c;
+      }
+      const c = el("input", "k-field"); c.type = "text"; c.value = current;
+      c.maxLength = Number.isInteger(def.maxlength) && def.maxlength >= 1 && def.maxlength <= 4096 ? def.maxlength : 4096;
+      c.setAttribute("aria-label", def.label);
+      c.onblur = () => { if (c.value !== String(current)) commit(c.value); };
+      c.onkeydown = (e) => { if (e.key === "Enter") c.blur(); };
+      return c;
+    }
+    function resetBtn(it) {
+      const b = el("button", "iconBtn");
+      b.innerHTML = icon("refresh");
+      b.title = t("resetTitle");
+      b.onclick = () => delSetting(it.id);
+      return b;
+    }
+    function prefRow(def, group) {
+      const it = curStored(group, def.key);
+      const row = el("div", "row");
+      row.append(typeTile(def.type));
+      row.append(lbl(def.label, def.desc));
+      let cur = coercePref(it ? it.fields.value : undefined, def.default);
+      if (def.type === "enum" && !def.options.map(optVal).includes(cur)) cur = def.default;
+      const ctl = controlFor(def, cur, (v) => setSetting(group, def.key, v));
+      ctl.dataset.pk = group + " " + def.key;   // identity for draft/focus restore across re-renders
+      row.append(ctl);
+      row.append(it ? resetBtn(it) : el("span", "spc"));
+      return row;
+    }
+    function rawRow(it, note) {
+      const key = it.fields.key;
+      const row = el("div", "row");
+      const ro = RESERVED(key);
+      row.append(tile(ro ? "lock" : "pencil", ro ? "warn" : null));
+      row.append(lbl(key, note || (ro ? t("reservedKey") : t("undeclared"))));
+      if (ro) { row.append(el("span", "k-code k-ellip roval", jstr(it.fields.value))); row.append(el("span", "spc")); return row; }
+      const c = el("input", "k-field"); c.type = "text"; c.value = jstr(it.fields.value);
+      c.dataset.pk = it.group + " " + key;
+      c.setAttribute("aria-label", key);
+      c.onblur = () => {
+        if (c.value === jstr(it.fields.value)) return;
+        let v; try { v = JSON.parse(c.value); } catch { v = c.value; }   // fallback: store as string
+        setSetting(it.group, key, v);
+      };
+      c.onkeydown = (e) => { if (e.key === "Enter") c.blur(); };
+      row.append(c);
+      const del = el("button", "iconBtn"); del.innerHTML = icon("trash"); del.title = t("deleteStored");
+      del.onclick = () => delSetting(it.id);
+      row.append(del);
+      return row;
+    }
+    function orphanRow(it) {
+      const row = el("div", "row");
+      row.append(tile("tag", "warn"));
+      row.append(lbl(it.group + " · " + it.fields.key));
+      row.append(el("span", "k-code k-ellip roval", jstr(it.fields.value)));
+      if (RESERVED(it.fields.key)) { row.append(el("span", "spc")); return row; }
+      const del = el("button", "iconBtn"); del.innerHTML = icon("trash"); del.title = t("delete");
+      del.onclick = () => delSetting(it.id);
+      row.append(del);
+      return row;
+    }
+    function sectionFooter(name, mf, g, declared) {
+      const overridden = new Set([...g.keys()].filter((k) => SHARED_KEYS.has(k)));
+      const usable = (k) => !overridden.has(k) && !declared.has(k);
+      const us = ((mf && mf.uses_shared) || []).filter((k) => SHARED_KEYS.has(k) && usable(k));
+      const rest = SHARED_PREFS.map((s) => s.key).filter((k) => usable(k) && !us.includes(k));
+      const f = el("div", "row");
+      if (us.length || rest.length) {
+        f.append(el("span", "spc"));
+        const sel = el("select", "k-field k-grow");
+        sel.setAttribute("aria-label", t("overrideSharedAria", { name }));
+        const ph = el("option", null, t("overrideShared")); ph.value = ""; sel.append(ph);
+        const grp = (label, keys) => { const og = document.createElement("optgroup"); og.label = label; for (const k of keys) { const o = el("option", null, k); o.value = k; og.append(o); } sel.append(og); };
+        if (us.length) grp(t("usedByThisApp"), us);                  // uses_shared keys listed first
+        if (rest.length) grp(us.length ? t("allShared") : t("sharedSettings"), rest);
+        sel.onchange = () => {
+          const k = sel.value; if (!k) return;
+          const def = SHARED_PREFS.find((s) => s.key === k);
+          const gl = curStored("", k);
+          setSetting(name, k, coercePref(gl ? gl.fields.value : undefined, def.default));   // created at the current effective value
+          sel.value = "";
+        };
+        f.append(sel);
+      }
+      if (g.size) {
+        const ra = el("button", "rowAction bad", t("resetAll"));
+        ra.title = t("resetAllTitle");
+        // No confirmation UI here: the engine demands one per delete_item while confirm_delete
+        // is on, and the shell coalesces the concurrent burst into ONE card ("Delete N items…").
+        // The deletes are deliberately fired together — awaiting them one by one is what used to
+        // produce a chain of cards, one per row.
+        ra.onclick = async () => {
+          const acks = await Promise.all([...g.values()].filter((it) => !RESERVED(it.fields.key)).map((it) => oma.deleteItem(it.id)));
+          // A cancelled card answers every joined demand ok:false — "Saved" would be a lie then.
+          if (acks.some((r) => r?.structuredContent?.ok)) flashSaved();
+        };
+        if (!f.children.length) f.append(el("span", "spc"), el("span", "rowCopy"));
+        f.append(ra);
+      }
+      return f.children.length ? f : null;
+    }
+    // One disclosure group per app with any of {parsed manifest, stored keys, uses_shared};
+    // meta apps (settings, dashboard) included — "meta" is not a preference concept.
+    function compSection(name) {
+      const pending = bootingManifests && !manifests.has(name);   // manifest still in flight
+      const mf = manifests.get(name) || null;
+      const g = groupItems(name);
+      if (!mf && !g.size && !pending) return null;   // resolved with nothing to show; pending renders summary + skeleton below
+      const declared = new Set(((mf && mf.settings) || []).map((s) => s.key));
+      const d = el("details", "group");
+      if (openSecs.has(name)) d.open = true;
+      d.addEventListener("toggle", () => { if (d.open) openSecs.add(name); else openSecs.delete(name); });
+      const sum = el("summary");
+      sum.append(tile("box", "blue"));
+      const copy = el("span", "rowCopy");
+      copy.append(el("b", null, name));
+      const n = ((mf && mf.settings) || []).length;
+      if (n || g.size) copy.append(el("small", null, [n ? n + "" : null, g.size ? t("hasCustom") : null].filter(Boolean).join(" · ")));
+      sum.append(copy);
+      if (g.size) { const dot = el("span", "k-dot"); dot.title = t("hasCustom"); sum.append(dot); }
+      const chev = el("span", "chev"); chev.innerHTML = icon("chevron");
+      sum.append(chev);
+      d.append(sum);
+      for (const def of (mf && mf.settings) || []) {
+        const it = g.get(def.key);
+        if (it && !matchesType(it.fields.value, def))
+          d.append(rawRow(it, t("typeMismatch", { type: def.type })));
+        else d.append(prefRow({ ...def, desc: def.description }, name));
+      }
+      for (const sp of SHARED_PREFS) if (!declared.has(sp.key) && g.has(sp.key)) d.append(prefRow(sp, name));   // shared-key overrides render with the proper control
+      for (const [k, it] of g) if (!declared.has(k) && !SHARED_KEYS.has(k) && !THEME(k)) d.append(rawRow(it));
+      const themed = [...g].filter(([k]) => THEME(k));
+      if (themed.length) {
+        d.append(subhead(t("themeApp")));
+        for (const [, it] of themed) d.append(rawRow(it, t("themeAppNote", { name })));
+      }
+      if (pending) d.append(skelRow());   // declared rows may still land
+      const foot = sectionFooter(name, mf, g, declared);
+      if (foot) d.append(foot);
+      return d;
+    }
+    // Micro-group heading inside a group card — a row-height band, not a floating h4.
+    function subhead(text) {
+      const h = el("div", "row");
+      h.style.minHeight = "34px";
+      h.append(el("span", "spc"), el("b", "k-mut", text));
+      h.querySelector("b").style.cssText = "font-size:10.5px;font-weight:700;letter-spacing:.09em;text-transform:uppercase";
+      return h;
+    }
+    // An explanatory line that sits inside a group without pretending to be a setting.
+    function noteRow(text) {
+      const r = el("div", "row");
+      const s = el("span", "rowCopy");
+      s.append(el("small", null, text));
+      r.append(el("span", "spc"), s);
+      return r;
+    }
+    // A placeholder row (label + control ghosts) — the LOADING state of the row anatomy.
+    function skelRow() {
+      const r = el("div", "row");
+      r.append(el("span", "rowIcon k-skel"), el("span", "k-skel sk1"), el("span", "k-skel sk2"), el("span", "spc"));
+      return r;
+    }
+    function renderShared(box) {
+      box.innerHTML = "";
+      const more = document.getElementById("more"), moreRows = document.getElementById("more-rows");
+      moreRows.innerHTML = "";
+      if (!SHARED_PREFS.length) {
+        more.hidden = true;
+        if (prefsLoading) { for (let i = 0; i < 4; i++) box.append(skelRow()); return; }
+        // engine predates ui_prefs_schema — stored globals stay editable as raw rows
+        box.append(noteRow(t("noCatalog")));
+        for (const [, it] of groupItems("")) box.append(rawRow(it));
+        return;
+      }
+      for (const key of TOP_KEYS) { const def = SHARED_PREFS.find((s) => s.key === key); if (def) box.append(prefRow(def, "")); }
+      const rest = SHARED_PREFS.filter((s) => !TOP_KEYS.includes(s.key));
+      more.hidden = !rest.length;
+      let sec = null;   // micro-group headings in catalog order (Formats / Behavior / General)
+      for (const def of rest) {
+        const s = SECTION_OF[def.key] || "grpGeneral";
+        if (s !== sec) { moreRows.append(subhead(t(s))); sec = s; }
+        moreRows.append(prefRow(def, ""));
+      }
+    }
+    // Strays + orphans + reserved rows fold into one Advanced section — absent on a healthy store.
+    function renderAdvanced() {
+      const adv = document.getElementById("advanced"), box = document.getElementById("adv-rows");
+      box.innerHTML = "";
+      const global = SHARED_PREFS.length ? [...groupItems("")].filter(([k]) => !SHARED_KEYS.has(k)) : [];
+      const themed = global.filter(([k]) => THEME(k));
+      const strays = global.filter(([k]) => !THEME(k));
+      if (themed.length) {
+        box.append(subhead(t("theme")));
+        box.append(noteRow(t("themeNote")));
+        for (const [k, it] of themed) {
+          // "Did it take?" is answered by the OUTCOME, not by a second copy of the runtime's
+          // charset rule: the runtime stamps every accepted token as an inline property on
+          // <html>, so an absent one was refused. (Global rows only — a per-app token applies in
+          // THAT app's document, never in this one, so the same check there would always lie.)
+          const live = document.documentElement.style.getPropertyValue(k.slice(6)).trim() !== "";
+          box.append(rawRow(it, live ? t("themeLive") : t("themeDead")));
+        }
+      }
+      if (strays.length) {
+        box.append(subhead(t("otherGlobal")));
+        for (const [, it] of strays) box.append(rawRow(it));
+      }
+      if (!compsCache.length) { adv.hidden = !box.children.length; return; }   // can't judge "registered" before the registry loads
+      const names = new Set(compsCache.map((c) => c.name));
+      const rows = new Map();           // group\0key -> item (last-wins)
+      for (const it of oma.state.items) {
+        if (it.group === "" || names.has(it.group) || !it.fields || typeof it.fields.key !== "string") continue;
+        rows.set(it.group + " " + it.fields.key, it);
+      }
+      if (rows.size) {
+        box.append(subhead(t("orphaned")));
+        box.append(noteRow(t("orphanNote")));
+        for (const it of rows.values()) box.append(orphanRow(it));
+      }
+      adv.hidden = !box.children.length;   // empty → the whole section stays invisible
+    }
+    function renderPrefs() {
+      // an external settings write can repaint mid-edit — carry the focused field's draft across
+      const ae = document.activeElement;
+      const draft = ae && ae.tagName === "INPUT" && ae.dataset.pk !== undefined && (ae.type === "text" || ae.type === "number")
+        ? { pk: ae.dataset.pk, value: ae.value, ss: ae.selectionStart, se: ae.selectionEnd } : null;
+      renderShared(document.getElementById("shared-rows"));
+      const wrap = document.getElementById("comps-wrap"), secs = document.getElementById("comp-secs");
+      secs.innerHTML = "";
+      for (const c of [...compsCache].sort((a, b) => a.name.localeCompare(b.name))) { const s = compSection(c.name); if (s) secs.append(s); }
+      wrap.hidden = !secs.children.length;
+      document.getElementById("comp-teach").hidden = !(compsCache.length && !secs.children.length && !bootingManifests);
+      renderAdvanced();
+      if (draft) {
+        const c = [...document.querySelectorAll("input[data-pk]")].find((x) => x.dataset.pk === draft.pk);
+        if (c) { c.value = draft.value; c.focus({ preventScroll: true }); try { c.setSelectionRange(draft.ss, draft.se); } catch { /* number inputs */ } }
+      }
+    }
+    // Guide + About are static row lists — declared once here, rendered through the same anatomy.
+    const GUIDE_USE = [["chat", "blue", "g1"], ["database", "mint", "g2"], ["spark", "wine", "g3"], ["grid", null, "g4"], ["check", "mint", "g5"]];
+    const GUIDE_MODEL = [["lock", "blue", "g6"], ["clock", "wine", "g7"]];
+    /** The chat host's own name, or "" when it never told us. Empty is not an error state:
+     *  it is what every host on the current spec reports (MCP 2026-07-28 dropped the initialize
+     *  handshake this was derived from), so nothing that reads it may print a placeholder — an
+     *  identity line reading "open-mcp-apps / unknown" states a fact about the protocol as
+     *  though it were a fact about the user's machine. */
+    const hostLabel = () => (oma.state && typeof oma.state.host === "string" && oma.state.host) || "";
+    function renderStatic() {
+      for (const [id, rows] of [["guide-use", GUIDE_USE], ["guide-model", GUIDE_MODEL]]) {
+        const box = document.getElementById(id);
+        box.innerHTML = "";
+        for (const [g, tone, key] of rows) {
+          const row = el("div", "row");
+          row.append(tile(g, tone), lbl(t(key), t(key + "d")));
+          box.append(row);
+        }
+      }
+      const about = document.getElementById("about-rows");
+      about.innerHTML = "";
+      // A host that does not name itself is the NORMAL case since MCP 2026-07-28 dropped the
+      // initialize handshake this label was derived from — so "unknown" was not an anomaly
+      // report, it was the reading printed as a value. Say nothing instead (see hostLabel).
+      const host = hostLabel();
+      for (const [g, tone, k, v] of [["box", "blue", "aboutName", null], ["spark", "wine", "aboutStd", null],
+                                     ["shield", "mint", "aboutLicense", null], ["globe", null, "aboutHost", host]]) {
+        const row = el("div", "row");
+        row.append(tile(g, tone), lbl(t(k), t(k + "Detail")));
+        if (v) row.append(el("span", "rowValue", v));
+        about.append(row);
+      }
+    }
+    function render(state) {
+      for (const id of ["a-host-rail", "a-host-bar"]) {
+        const n = document.getElementById(id);
+        n.textContent = hostLabel();
+        n.hidden = !n.textContent;
+      }
+      renderStatic();
+      renderPrefs();
+      // Preview children keep themselves fresh: oma.embed watches our settings changes and
+      // re-pushes prefs to every mounted child (settings-design §2.7 parity, now in the runner).
+    }
+
+    let migrated = false;
+    // Lazy migration (settings-design §4.2): retired global dashboard_poll_seconds
+    // → (group:"dashboard", widget_poll_seconds), clamped to [5,300]. Idempotent per mount:
+    // the retired row is deleted whenever it still exists, even if the override already does.
+    async function migrate() {
+      if (migrated) return; migrated = true;
+      const old = curStored("", "dashboard_poll_seconds");
+      if (!old) return;
+      try {
+        if (!curStored("dashboard", "widget_poll_seconds")) {
+          const n = Math.max(5, Math.min(300, Number(old.fields.value) || 20));
+          await oma.addItem({ group: "dashboard", fields: { key: "widget_poll_seconds", value: n } });
+        }
+        for (const it of oma.state.items.filter((i) => i.group === "" && i.fields && i.fields.key === "dashboard_poll_seconds")) await oma.deleteItem(it.id);
+      } catch { /* retried on next mount */ }
+    }
+
+    // ---- manifest parsing (settings-design §3.3) — the manifest is UNTRUSTED input ----
+    function validEntry(e) {
+      if (!e || typeof e !== "object") return false;
+      if (typeof e.key !== "string" || !KEY_RE.test(e.key) || RESERVED(e.key)) return false;
+      if (!["boolean", "number", "enum", "string"].includes(e.type)) return false;
+      if (typeof e.label !== "string" || !e.label || e.label.length > 60) return false;
+      if (e.description !== undefined && (typeof e.description !== "string" || e.description.length > 200)) return false;
+      if (e.type === "boolean") return typeof e.default === "boolean";
+      if (e.type === "number") {
+        if (typeof e.default !== "number" || !Number.isFinite(e.default)) return false;
+        for (const a of ["min", "max", "step"]) if (e[a] !== undefined && !Number.isFinite(e[a])) return false;   // JSON "1e999" → Infinity
+        return !(typeof e.min === "number" && typeof e.max === "number" && e.min > e.max);
+      }
+      if (e.type === "string") return typeof e.default === "string";
+      if (!Array.isArray(e.options) || !e.options.length || e.options.length > 12) return false;
+      const vals = e.options.map(optVal);
+      return vals.every((v) => typeof v === "string" && v.length <= 120) && vals.includes(e.default);
+    }
+    // The declaration arrives already parsed: the engine stores the manifest slot at
+    // save time and hands the result over. This function only decides which parts THIS app renders.
+    //
+    // Two gates used to live here and both were wrong. `manifest_version !== 1` would have made every
+    // v2 declaration vanish silently; `!Array.isArray(m.settings)` was already dropping the whole
+    // declaration of five shipped apps — the ones that declare only `uses_shared` — so their
+    // preferences section never appeared and their shared-pref grouping was always empty. The rule
+    // now is: read the keys that are present, ignore the rest.
+    function useDeclaration(m) {
+      if (!m || typeof m !== "object") return null;
+      if (m.manifest_version != null && ![1, 2].includes(m.manifest_version)) return null;
+      const settings = Array.isArray(m.settings) ? m.settings.filter(validEntry).slice(0, 24) : [];
+      const uses_shared = Array.isArray(m.uses_shared) ? m.uses_shared.filter((k) => typeof k === "string") : [];
+      return settings.length || uses_shared.length ? { settings, uses_shared } : null;
+    }
+
+    // ---- srcdoc previews (write-set D): thumbnails and the detail child mount through
+    // oma.embed — the ONE runner machine (src/runner.mjs, bundled into the shell runtime).
+    // The two hand-kept preview bridges that used to live here (~350 lines: CSP, token
+    // re-emission, an omaPv* mini-bridge, and a full caps chokepoint each) are gone; presets
+    // carry their semantics: "inert" = the thumbnail rules, "live" = the detail view's
+    // caps-enforced read-write preview.
+    let pvHandle = null;   // the detail view's live-preview embed handle
+    let pvStarting = false; // a mount is in flight — the toggle must read that as ON (see startPreview)
+
+    // ============ Installed tab (internal id "library", design-system §7): grid + thumbs + detail ============
+    let libCat = "", libEntered = false, drawerComp = null;
+    const libGrid = document.getElementById("lib-grid");
+    const thumbs = new Map();   // wrap element -> embed handle (unmounted on every grid re-render)
+    const hueOf = (s) => { let h = 0; for (const c of s) h = (h * 31 + c.charCodeAt(0)) >>> 0; return h % 6; };
+    const kb = (n) => (n / 1024).toFixed(1) + "k";
+    function ago(ts) {
+      const t0 = Date.parse(ts || "");
+      if (!Number.isFinite(t0)) return "";
+      const m = Math.max(0, (Date.now() - t0) / 60000);
+      if (m < 1) return t("justNow");
+      if (m < 60) return t("minsAgo", { n: Math.floor(m) });
+      if (m < 1440) return t("hoursAgo", { n: Math.floor(m / 60) });
+      if (m < 43200) return t("daysAgo", { n: Math.floor(m / 1440) });
+      return t("monthsAgo", { n: Math.floor(m / 43200) });
+    }
+
+    // Thumb scaling lives in oma.embed's `fit` now (W4) — the natural width is the one argument
+    // this grid still owns.
+    const VIRTUAL_W = 720;   // real widget width: thumbs lay out exactly like a live widget, scaled down
+
+    // IFRAME BUDGET. A thumbnail is a whole sandboxed document, so a 21-app registry that mounts
+    // them all is 21 documents in one widget. Two rules bound it, and they are deliberately
+    // different from the SaaS storefront's (which has a page to itself):
+    //   · narrow (≤560px, a chat host): NO grid thumbs at all — the row carries a glyph and text,
+    //     and the ONE live preview in this pane is the detail view's, on demand.
+    //   · wide: lazy-mount as a card nears the viewport, hard cap LIVE_CAP mounted at once;
+    //     mounting past the cap evicts the least-recently-mounted thumb first.
+    // 🔴 ONE PASS OWNS WHICH THUMBS ARE LIVE — the same fix the App Store needed. Letting each
+    // finishing mount evict "the oldest" and re-observe the victim is a race with no owner: the
+    // re-armed wrap is often still ON SCREEN, the observer re-fires, and the run settles with cards
+    // marked mounted but holding nothing. Priority is distance from the viewport centre, so a card
+    // in view always outranks one that is not, and the pass is idempotent.
+    const LIVE_CAP = 6;
+    const MOUNT_MARGIN = 160;
+    function unmountThumb(th) {
+      const h = thumbs.get(th);
+      if (h) { thumbs.delete(th); try { h.unmount(); } catch {} }
+      if (th.isConnected) { th.innerHTML = ""; th.append(el("div", "k-skel")); delete th.dataset.live; }
+    }
+    let thumbSyncQueued = false;
+    function queueThumbSync() {
+      if (thumbSyncQueued) return;
+      thumbSyncQueued = true;
+      requestAnimationFrame(() => { thumbSyncQueued = false; syncThumbs(); });
+    }
+    function syncThumbs() {
+      const vh = window.innerHeight || 800;
+      const scored = [];
+      for (const th of libGrid.querySelectorAll(".cardPreview[data-name]")) {
+        const r = th.getBoundingClientRect();
+        if (!r.width && !r.height) continue;               // a hidden pane or a filtered-out card
+        if (r.bottom < -MOUNT_MARGIN || r.top > vh + MOUNT_MARGIN) continue;
+        scored.push([Math.abs(r.top + r.height / 2 - vh / 2), th]);
+      }
+      scored.sort((a, b) => a[0] - b[0]);
+      const want = new Set(scored.slice(0, LIVE_CAP).map((x) => x[1]));
+      for (const th of [...thumbs.keys()]) if (!want.has(th)) unmountThumb(th);
+      for (const th of want) if (!th.dataset.live) mountThumb(th);
+    }
+    addEventListener("scroll", queueThumbSync, { passive: true, capture: true });
+    addEventListener("resize", queueThumbSync, { passive: true });
+    // A chat host scrolls the PARENT document, where no scroll event of ours fires — there the
+    // observer is the trigger. It decides nothing; it only asks for a pass.
+    const thumbIO = new IntersectionObserver(queueThumbSync, { rootMargin: MOUNT_MARGIN + "px" });
+
+    // ONE snapshot for ALL thumbnails, fetched by the parent, shared by every child.
+    //
+    // The thumbnails used to mount with the "readonly" preset — a real child that really calls the
+    // host. That looked cheap until a meta app was in the grid: dashboard renders a card per
+    // collection, so it fans out one data_list per collection ON MOUNT and runs out of its own
+    // per-mount refresh budget at six (measured 2026-07-28 — 10 collections, 4 cards drawn, and a
+    // toast that named the APP rather than the preview). A thumbnail has no business doing a full
+    // app's data fetching, and that stays true however generous the budget is.
+    //
+    // So the parent pays once. Rows carry their `collection`, which is exactly the shape the inert
+    // machine filters on, so ONE snapshot serves a multi-collection app and a single-collection one
+    // alike. Deliberately the same shape composePreviewDoc() takes server-side: the public store
+    // page, the share page and this grid are then three consumers of one preview machine rather
+    // than three lookalikes that drift (the last drift cost us "Refresh failed" on the public page
+    // while the in-app preview was fine).
+    const PREVIEW_ROWS_PER_COLLECTION = 24;   // a thumbnail is ~130px: past this nothing is visible
+    const PREVIEW_COLLECTION_CAP = 24;        // …and no thumbnail has any business pulling the whole store
+    // THE INPUTS GATE — wait for the data, do not answer without it.
+    //
+    // A thumb mounts from an IntersectionObserver the moment its card nears the viewport. The grid
+    // is rendered by loadApps(), and boot only asks data_collections AFTERWARDS — a whole
+    // host round trip later. So on first paint the observer normally fires FIRST, and answering it
+    // with an empty snapshot is not a rare race, it is the ordinary path.
+    //
+    // It was permanent, too. An earlier fix stopped MEMOISING the empty answer, which was the right
+    // diagnosis of the wrong half: the empty answer was still SERVED, the thumb mounted with zero
+    // rows, went into `thumbs`, lost its skeleton, and nothing ever mounted it again. Not caching a
+    // wrong answer does not help if you hand it out.
+    //
+    // Waiting is the whole fix: a thumb that paints 200 ms later is invisible to a person; a thumb
+    // that paints empty is wrong for the life of the pane. boot() releases this unconditionally
+    // (including on failure), so an empty store answers [] rather than never.
+    let previewInputsReady;
+    const previewInputsP = new Promise((r) => { previewInputsReady = r; });
+    // SINGLE-FLIGHT, and the cached thing is the PROMISE, not its result. Thumbs mount from an
+    // IntersectionObserver, so the first screenful starts together: caching the result let five
+    // mounts each find `null` and each fetch the whole store — measured 55 data_list calls where
+    // 11 were needed. "Fetch once" is a property of the in-flight call, not of the finished one.
+    let previewRowsP = null;
+    async function previewSnapshot() {
+      await previewInputsP;
+      if (previewRowsP) return previewRowsP;
+      previewRowsP = (async () => {
+        const rows = [];
+        const eligible = collsCache.filter((c) => c.collection && c.collection !== "settings");
+        const colls = eligible.slice(0, PREVIEW_COLLECTION_CAP);
+        // SAY WHEN YOU TRUNCATE. A thumbnail has no business pulling the whole store, so the cap
+        // stays — but silence about it is the third version of tonight's recurring mistake (the
+        // control-plane refusal left no trace; the App Store preview swallowed its own error). An app
+        // whose collection falls past the cap renders an empty preview while its data sits right
+        // there, and nobody could tell that from a genuinely empty app.
+        if (eligible.length > colls.length) {
+          console.warn(`[oma] preview snapshot covers ${colls.length} of ${eligible.length} collections; ` +
+            `apps bound to the rest will preview empty (thumbnail cap, not missing data)`);
+        }
+        for (const c of colls) {
+          try {
+            const r = await oma.callTool("data_list", { collection: c.collection, limit: PREVIEW_ROWS_PER_COLLECTION });
+            for (const it of r?.structuredContent?.items || []) rows.push({ collection: c.collection, group: it.group || "", fields: it.fields || {} });
+          } catch { /* one unreadable collection must not cost the whole grid its data */ }
+        }
+        return rows;
+      })();
+      return previewRowsP;
+    }
+
+    // Mount = oma.embed with the INERT preset: zero host IO from the child, reads answered from the
+    // shared snapshot, writes pretend to succeed so demo interactions animate. heights:false leaves
+    // sizing to .cardPreview's scaled-picture CSS.
+    async function mountThumb(th) {
+      if (th.dataset.live) return;    // one mount per element (renderLibrary creates fresh elements)
+      th.dataset.live = "1";
+      const name = th.dataset.name;
+      try {
+        const all = await previewSnapshot();
+        if (!th.isConnected) return;                    // grid re-rendered while the snapshot loaded
+        // 🔴 THE FETCH IS SHARED; THE DATA IS NOT. Handing the whole snapshot to every child put one
+        // app's rows inside another app's sandboxed document. The cut itself lives in the runtime
+        // (childPreviewSnapshot) rather than here: it is both a security boundary AND the answer to
+        // "what does this app open on", and the second question already has an owner on the server.
+        // An earlier version of this line cut on `row.collection === name`, which is not what an app
+        // is bound to — builder-progress lives in build-progress — so 6 of 17 shipped apps previewed
+        // empty. We hand over the declaration and let one rule decide.
+        //
+        // The roster travels too: a meta app asks list_apps, and inert has no host to
+        // ask. Names only — the same registry listing this pane already holds.
+        const roster = compsCache.map((c) => ({ name: c.name, description: c.description || "" }));
+        const h = await oma.embed(name, { into: th, preset: "inert", fit: { width: VIRTUAL_W },
+          declaration: declsRaw.get(name),
+          snapshot: { items: all, version: 1, apps: roster } });
+        if (!th.isConnected) { h.unmount(); return; }   // grid re-rendered while mounting
+        th.querySelector(".k-skel")?.remove();
+        thumbs.set(th, h);
+        queueThumbSync();   // a mount that landed after the pass that wanted it gets reconciled here
+      } catch { delete th.dataset.live; /* source fetch failed — skeleton stays, honestly unfinished */ }
+    }
+
+    // ---- grid rendering: search field + category chips + app cards ----
+    function renderCats() {
+      const row = document.getElementById("lib-cats");
+      row.innerHTML = "";
+      const cats = [...new Set(compsCache.map((c) => c.category_id).filter(Boolean))].sort();
+      row.hidden = !cats.length;   // no categories anywhere → the whole chip row disappears
+      if (!cats.length) { libCat = ""; return; }
+      if (libCat && !cats.includes(libCat)) libCat = "";
+      const mk = (label, val) => {
+        const b = el("button", "k-chip" + (libCat === val ? " on" : ""), label);
+        b.onclick = () => { libCat = val; renderCats(); applyLibFilter(); };
+        return b;
+      };
+      row.append(mk(t("allCategories"), ""));
+      for (const c of cats) row.append(mk(c, c));
+    }
+    function applyLibFilter() {
+      const q = document.getElementById("lib-q").value.trim().toLowerCase();
+      let visible = 0;
+      for (const card of libGrid.querySelectorAll(".appCard")) {
+        const c = card._comp;
+        const ok = (!q || (c.name + " " + (c.description || "")).toLowerCase().includes(q))
+          && (!libCat || c.category_id === libCat);
+        card.hidden = !ok;
+        if (ok) visible++;
+      }
+      document.getElementById("lib-empty").hidden = compsCache.length > 0;   // first run: a real invitation, not a blank pane
+      document.getElementById("lib-none").hidden = visible > 0 || !compsCache.length;
+      queueThumbSync();   // filtering changes which thumbs are on screen, and so which deserve a frame
+    }
+    function libCard(c, idx) {
+      const card = el("div", "appCard");
+      card.dataset.name = c.name;
+      card.style.setProperty("--i", idx);
+      card._comp = c;
+      if (WIDE.matches) {
+        const th = el("div", "cardPreview");
+        th.dataset.name = c.name;
+        th.append(el("div", "k-skel"));
+        card.append(th);
+        thumbIO.observe(th);
+      }
+      // The card's hit area is a BUTTON and its content is phrasing-only: a heading or a
+      // paragraph inside a button is not valid content, and this card is entirely clickable.
+      const body = el("button", "cardBody");
+      body.type = "button";
+      if (!WIDE.matches) body.append(tile("box", ["blue", "mint", "wine", "warn", null, "bad"][hueOf(c.name)]));
+      const text = el("span", "cardText");
+      if (c.category_id) text.append(el("small", null, c.category_id));
+      text.append(el("span", "t", c.name));
+      // No version badge: `version` IS the global ledger seq, so a card that says "v43" for an
+      // app edited twice invites "what happened to the other 41?". The card already carries the
+      // honest pair — size and when it last changed. The count lives in the detail view.
+      text.append(el("span", "d k-ellip2", c.description || ""));
+      const foot = el("span", "cardFoot");
+      foot.append(el("span", "k-num", [kb(c.ui_size), ago(c.updated_at)].filter(Boolean).join(" · ")));
+      foot.append(el("span", "viewPill", t("view")));
+      text.append(foot);
+      body.append(text);
+      card.append(body);
+      body.onclick = () => openDrawer(c);
+      return card;
+    }
+    // Every app in the registry gets a card — settings/dashboard included.
+    //
+    // ⚠️ This comment has now been wrong TWICE, in opposite directions, within one day. Both the
+    // error and the correction are kept, because the pattern is the lesson (2026-07-29):
+    //   · It first said "thumbs are inert" while they were mounted READONLY. Corrected.
+    //   · The correction then said "a thumb is an oma.embed with the READONLY preset" — and was
+    //     falsified 80 minutes later by the change directly below, which moved thumbs to INERT.
+    //     A comment that describes the line under it is not safe from the commit that edits
+    //     that line; only a test is.
+    //
+    // What is true NOW (read mountThumb above, not this paragraph, if they ever disagree again):
+    // a thumb is an `oma.embed(..., { preset: "inert" })` — zero host IO from the child, every
+    // read answered from the snapshot the pane hands it. Recursion is bounded by inertness
+    // itself: a nested Installed tab has no host to mount anything against.
+    //
+    // Still true, and deliberate: app_html is NOT reachable from a preview (an inert child
+    // calls no host tools at all), so a nested Preferences pane renders WITHOUT declared
+    // entries. Widening a preview's reach to "read any app's source" is the wrong trade for a
+    // 130px thumbnail.
+    //
+    // Why inert at all: under the old readonly preset each thumb was a real child that really
+    // called the host, so a meta app (dashboard fans out one data_list per collection)
+    // exhausted its own per-mount refresh budget on mount — measured 2026-07-28.
+    function renderLibrary() {
+      for (const h of thumbs.values()) h.unmount();   // embed handles hold listeners — release them
+      thumbs.clear();
+      previewRowsP = null;                            // a re-render means the data may have moved
+
+      renderCats();
+      libGrid.innerHTML = "";
+      compsCache.forEach((c, i) => libGrid.append(libCard(c, i)));
+      applyLibFilter();
+      queueThumbSync();
+      if (section === "library") libEntrance();
+    }
+    // First-mount-only entrance (§8.0): the stagger class is added when the Installed pane
+    // first shows with cards, then removed after the animation window — filters and
+    // re-renders never replay it.
+    function libEntrance() {
+      if (libEntered || !libGrid.children.length) return;
+      libEntered = true;
+      libGrid.classList.add("k-stagger");
+      setTimeout(() => libGrid.classList.remove("k-stagger"), 700);
+    }
+    document.getElementById("lib-q").oninput = applyLibFilter;
+    // Crossing the breakpoint changes whether the grid mounts thumbs at all — rebuild the cards.
+    WIDE.addEventListener("change", () => { if (compsCache.length) renderLibrary(); });
+
+    // ---- detail view (§7.4): info + storage + live RW preview + history + actions ----
+    // Not an overlay: the browse grid hides and this section takes its place, so the pane keeps
+    // its natural height and nothing needs a scrollport of its own.
+    let drawerTrigger = null;
+    function showDetail(on) {
+      document.getElementById("lib-browse").hidden = on;
+      document.getElementById("lib-detail").hidden = !on;
+      queueThumbSync();   // the covered grid measures zero, so the pass releases its frames
+    }
+    function openDrawer(c) {
+      stopPreview();
+      const ae = document.activeElement;   // reopen-in-place (restore) keeps the original trigger
+      if (ae && ae !== document.body && !document.getElementById("lib-detail").contains(ae)) drawerTrigger = ae;
+      drawerComp = c;
+      disarmDelete();
+      document.getElementById("d-err").hidden = true;
+      document.getElementById("d-name").textContent = c.name;
+      document.getElementById("d-ver").textContent = "";   // filled by loadHistory: a checkpoint count, not the ledger seq
+      document.getElementById("d-desc").textContent = c.description || "";
+      const cat = document.getElementById("d-cat");
+      cat.hidden = !c.category_id;
+      cat.textContent = c.category_id || "";
+      document.getElementById("d-meta").textContent = "";
+      document.getElementById("d-size").textContent = kb(c.ui_size);
+      document.getElementById("d-when").textContent = ago(c.updated_at) || "–";
+      document.getElementById("d-author").textContent = c.author ? originLabel(c.author) : "–";
+      document.getElementById("d-open").hidden = !!oma.standalone;   // no chat to speak to when standalone
+      // Danger area honesty: locked system apps get a plain sentence, and until the
+      // permissions truth has loaded there is NO delete button — never a dead one.
+      const perm = permsCache && permsCache.find((p) => p.name === c.name);
+      const deletable = !(!perm || perm.locked);
+      document.getElementById("d-delete").hidden = !deletable;
+      document.getElementById("d-locked").hidden = !(perm && perm.locked);
+      // The cascade opt-in belongs to the delete button: no button, no tick — and it never
+      // survives an entry switch, so one app's answer can never travel to another.
+      document.getElementById("d-cascade-row").hidden = !deletable;
+      document.getElementById("d-cascade").checked = false;
+      hidePlan();
+      showDetail(true);
+      document.getElementById("d-close").focus();
+      loadStorage(c);
+      loadHistory(c);
+    }
+    // Storage line: item count from the data_collections cache + lazy file_usage — pure
+    // counts, never a quota framing. System collections are plumbing, not user data; an
+    // unloaded cache is UNKNOWN, not zero, so the line stays a dash until the count is real.
+    function loadStorage(c) {
+      const st = document.getElementById("d-store");
+      if (SYSTEM_COLLECTIONS.has(c.name) || !collsLoaded) { st.textContent = "–"; return; }
+      const coll = collsCache.find((x) => x.collection === c.name);
+      const n = coll ? coll.items : 0;
+      st.textContent = n === 1 ? t("item1") : t("items", { n });
+      oma.callTool("file_list", { app: c.name, limit: 1 }).then((r) => {
+        const u = r?.structuredContent?.usage;   // usage rides every file_list page (file_usage retired)
+        if (drawerComp !== c || !u || !u.count) return;   // entry switched, or no files → nothing to add
+        const kbs = (u.bytes / 1024).toFixed(1);
+        st.textContent += " · " + (u.count === 1 ? t("file1", { kb: kbs }) : t("files", { n: u.count, kb: kbs }));
+      }).catch(() => {});
+    }
+    function closeDrawer() {
+      stopPreview();
+      const name = drawerComp && drawerComp.name;
+      drawerComp = null;
+      disarmDelete();
+      hidePlan();   // an unanswered plan dies with the view — its request_state buys nothing later
+      showDetail(false);
+      // focus returns to the trigger — or to its rebuilt card when a re-render replaced it
+      const tr = drawerTrigger && drawerTrigger.isConnected ? drawerTrigger
+        : name && libGrid.querySelector(`.appCard[data-name="${CSS.escape(name)}"] .cardBody`);
+      drawerTrigger = null;
+      if (tr) tr.focus();
+    }
+    document.getElementById("d-close").onclick = closeDrawer;
+    document.addEventListener("keydown", (e) => { if (e.key === "Escape" && drawerComp) closeDrawer(); });
+    document.getElementById("d-open").onclick = () =>
+      drawerComp && oma.sendMessage(t("openMsg", { name: drawerComp.name }));
+
+    async function loadHistory(c) {
+      const ol = document.getElementById("d-hist");
+      ol.innerHTML = "";
+      let hist = null;
+      try {
+        const r = await oma.callTool("app_history", { name: c.name });
+        hist = r?.structuredContent?.history || null;
+      } catch { hist = null; }
+      if (drawerComp !== c) return;   // entry switched while the history was in flight
+      if (!hist || !hist.length) hist = [{ checkpoint: 1, ts: c.updated_at, ui_size: c.ui_size }];   // degrade: the current one only
+      // Restore = version rollback of a REGISTERED app only (restore_app); locked
+      // apps never show it (the engine refuses), and no permissions truth means no button.
+      const perm = permsCache && permsCache.find((p) => p.name === c.name);
+      const restorable = perm && !perm.locked;
+      // "Checkpoint 3 · 2m ago" reads as a history of THIS app. "v43 · 2m ago" reads as a mystery,
+      // because 43 counts every write in the store. The engine derives the checkpoint; the version
+      // survives as what Restore actually targets.
+      document.getElementById("d-ver").textContent = hist.length === 1 ? t("checkpoint1") : t("checkpoints", { n: hist.length });
+      for (const h of hist.slice(0, 12)) {
+        const label = h.checkpoint ? t("checkpointN", { n: h.checkpoint }) : t("checkpoint");
+        const li = el("li", "k-num", [label, ago(h.ts), kb(h.ui_size)].filter(Boolean).join(" · "));
+        if (restorable && h.checkpoint !== hist[0].checkpoint) li.append(restoreBtn(c, h.checkpoint));   // hist is newest-first
+        ol.append(li);
+      }
+      if (hist.length > 12) ol.append(el("li", null, t("earlier", { n: hist.length - 12 })));
+    }
+    // Arm-to-confirm Restore (button → "Really?" → act, ~4s disarm — same pattern as Delete;
+    // window.confirm is unreliable in sandboxed iframes). Nothing is lost: the engine re-saves
+    // the old html as a NEW version, so you can roll forward again.
+    function restoreBtn(c, checkpoint) {
+      const b = el("button", "k-btn ghost", t("restore"));
+      b.onclick = async () => {
+        if (b.dataset.armed !== "1") {
+          b.dataset.armed = "1"; b.textContent = t("really");
+          setTimeout(() => { b.dataset.armed = ""; b.textContent = t("restore"); }, 4000);
+          return;
+        }
+        b.disabled = true;
+        const errEl = document.getElementById("d-err");
+        errEl.hidden = true;
+        try {
+          const r = await oma.callTool("restore_app", { command_id: crypto.randomUUID(), name: c.name, checkpoint });
+          if (r && r.isError) throw new Error((r.content && r.content[0] && r.content[0].text) || t("restoreFailed"));
+          await loadManifest(c.name);   // the restored html may declare different settings
+          await loadApps();       // grid, prefs and version badges refresh
+          const cur = compsCache.find((x) => x.name === c.name);
+          if (drawerComp === c && cur) openDrawer(cur);   // fresh header + history for the new version
+        } catch (e) {
+          errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+          b.disabled = false; b.dataset.armed = ""; b.textContent = t("restore");
+        }
+      };
+      return b;
+    }
+
+    // Preview toggle — the detail preview is a LIVE embed: caps-enforced read-write through
+    // the runner machine (local tier keeps wildcard-with-denylist semantics; non-local runs
+    // under its engine-computed caps) — the same chokepoint the universal loader uses.
+    function pvLabel(on) { document.getElementById("d-pv-lbl").textContent = on ? t("stopPreview") : t("preview"); }
+    // A mount takes two awaits, and `pvHandle` is null for both of them — so nothing downstream
+    // could tell "no preview" from "a preview on the way". A second click, or switching the entry
+    // mid-mount, started a SECOND embed; the winner overwrote pvHandle and the loser's iframe was
+    // dropped by innerHTML with its listeners, parent callbacks and liveEmbeds entry still live
+    // (reproduced: one leaked message listener per occurrence). `pvGen` is what tells them apart:
+    // every start claims a number, and a result whose number is stale unmounts itself and returns.
+    let pvGen = 0;
+    async function startPreview(c) {
+      stopPreview();                       // also bumps pvGen, retiring anything in flight
+      const gen = pvGen;
+      pvStarting = true;
+      document.getElementById("d-live").hidden = false;
+      pvLabel(true);
+      try {
+        const h = await oma.embed(c.name, { into: document.getElementById("pv-wrap"), preset: "live", heights: { min: 140, max: 560 } });
+        if (gen !== pvGen) { h.unmount(); return; }   // superseded while mounting
+        pvHandle = h;
+      } catch (e) {
+        if (gen !== pvGen) return;         // a stale failure must not tear down the CURRENT preview
+        const errEl = document.getElementById("d-err");
+        errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+        stopPreview();
+      } finally {
+        if (gen === pvGen) pvStarting = false;
+      }
+    }
+    function stopPreview() {
+      pvGen++;                             // retire any mount still in flight
+      pvStarting = false;
+      if (pvHandle) { pvHandle.unmount(); pvHandle = null; }
+      document.getElementById("pv-wrap").innerHTML = "";
+      document.getElementById("d-live").hidden = true;
+      pvLabel(false);
+    }
+    document.getElementById("d-preview").onclick = () => {
+      if (!drawerComp) return;
+      // "mounting" counts as ON, or the toggle starts a second one instead of cancelling the first.
+      if (pvHandle || pvStarting) stopPreview(); else startPreview(drawerComp);
+    };
+
+    // Delete — honors the confirm_delete shared pref with an in-widget two-click confirm
+    // (window.confirm is unreliable in sandboxed widget iframes), then delete_app.
+    //
+    // WITH "Delete its data too" ticked it is delete_app data:"cascade", whose confirmation is
+    // the ENGINE's, not ours (W1): the first call never deletes — it answers with the disposition
+    // plan it recomputed in its own transaction, plus a request_state bound to the world that
+    // plan describes. We render the plan (taken, and kept, with the engine's own reason) and
+    // re-send the identical call with the state attached. Any write in between invalidates the
+    // state, and the engine's answer to that says so in as many words: ask again without it.
+    // The two-click arm above stays what it is — a slip guard on OUR button. It is not the
+    // confirmation, and cascade demands one even when the pref turns the arming off.
+    //
+    // 🔴 THIS CARD IS EXTRACTED AND RUN STANDALONE by test/bridge-resilience.mjs §13, with only a
+    // handful of stubs in scope. It therefore carries its OWN copy rather than reaching for the
+    // app dictionary: `t()` is not in that scope and referencing it would take the section down.
+    let delArmed = false, delArmT = 0;
+    let delPlan = null;   // {name, state} — a plan the user has been shown, awaiting its second leg
+    const DEL_EN = { del: "Delete", really: "Really delete?", reallyData: "Really delete + data?",
+      what: 'Deleting "{name}" and its data — permanent, with no undo:',
+      items: "{n} items", item1: "1 item", keys: "its settings · {n} keys", key1: "its settings · 1 key",
+      none: "no data of its own — only the app itself", kept: "Kept: ",
+      cancel: "Cancel", forever: "Delete permanently",
+      failed: "Delete failed.", again: " Press Delete again to see the current plan." };
+    const DEL_ZH = { del: "删除", really: "确定删除？", reallyData: "确定删除并清数据？",
+      what: "正在删除「{name}」及其数据——永久生效，无法撤销：",
+      items: "{n} 条", item1: "1 条", keys: "它的设置 · {n} 个键", key1: "它的设置 · 1 个键",
+      none: "没有自己的数据——只删应用本身", kept: "保留：",
+      cancel: "取消", forever: "永久删除",
+      failed: "删除失败。", again: " 再按一次删除可以看到当前的处置计划。" };
+    const dt = (k, vars) => {
+      const zh = typeof language === "function" && language() === "zh";
+      let s = (zh ? DEL_ZH : DEL_EN)[k] ?? DEL_EN[k] ?? k;
+      for (const n in (vars || {})) s = s.split("{" + n + "}").join(String(vars[n]));
+      return s;
+    };
+    function confirmDeleteOn() {
+      const it = curStored("settings", "confirm_delete") || curStored("", "confirm_delete");
+      return coercePref(it ? it.fields.value : undefined, true);
+    }
+    function disarmDelete() {
+      delArmed = false; clearTimeout(delArmT);
+      document.getElementById("d-del-lbl").textContent = dt("del");
+    }
+    function hidePlan() {
+      delPlan = null;
+      document.getElementById("d-plan").hidden = true;
+    }
+    function cascadeWanted() { return document.getElementById("d-cascade").checked; }
+    /** Render the engine's plan: what goes, and — just as loudly — what stays and why. */
+    function showPlan(c, sc) {
+      const list = document.getElementById("d-plan-list");
+      list.innerHTML = "";
+      const rows = Array.isArray(sc.plan) ? sc.plan : [];
+      const taken = rows.filter((p) => p.verdict === "exclusive");
+      const kept = rows.filter((p) => p.verdict !== "exclusive");
+      document.getElementById("d-plan-what").textContent = dt("what", { name: c.name });
+      document.getElementById("d-plan-no").textContent = dt("cancel");
+      document.getElementById("d-plan-yes").textContent = dt("forever");
+      for (const p of taken) list.append(el("li", null, p.collection + " · " + (p.rows === 1 ? dt("item1") : dt("items", { n: p.rows }))));
+      if (sc.settings_keys) list.append(el("li", null, sc.settings_keys === 1 ? dt("key1") : dt("keys", { n: sc.settings_keys })));
+      if (!taken.length && !sc.settings_keys) list.append(el("li", null, dt("none")));
+      for (const p of kept) list.append(el("li", "kept", dt("kept") + p.collection + (p.why ? " (" + p.why + ")" : "")));
+      delPlan = { name: c.name, state: sc.request_state };
+      document.getElementById("d-plan").hidden = false;
+      document.getElementById("d-plan-no").focus();
+    }
+    /** Everything that follows a delete that actually happened. */
+    async function afterDelete(c, cascaded) {
+      manifests.delete(c.name);
+      declsRaw.delete(c.name);
+      hidePlan();
+      closeDrawer();
+      await loadApps();   // keep-mode history is retained server-side (tombstone); the grid refreshes
+      // A cascade emptied collections, so the Data pane's cache is stale in a way loadApps
+      // cannot fix. Best-effort: a failed refresh must not read as a failed delete.
+      if (cascaded) { try { await loadData(); } catch {} }
+    }
+    document.getElementById("d-delete").onclick = async () => {
+      const c = drawerComp; if (!c) return;
+      const errEl = document.getElementById("d-err");
+      errEl.hidden = true;
+      hidePlan();
+      if (confirmDeleteOn() && !delArmed) {
+        delArmed = true;
+        document.getElementById("d-del-lbl").textContent = cascadeWanted() ? dt("reallyData") : dt("really");
+        delArmT = setTimeout(disarmDelete, 4000);
+        return;
+      }
+      disarmDelete();
+      try {
+        const r = await oma.callTool("delete_app", { command_id: crypto.randomUUID(), name: c.name, actor: "human",
+          ...(cascadeWanted() ? { data: "cascade" } : {}) });
+        const sc = (r && r.structuredContent) || {};
+        // The demand is NOT an error (the engine says so on purpose) — it is the plan.
+        if (sc.reason === "confirmation_required") { showPlan(c, sc); return; }
+        if (r && r.isError) { errEl.textContent = (r.content && r.content[0] && r.content[0].text) || dt("failed"); errEl.hidden = false; return; }
+        await afterDelete(c, !!sc.cascaded);
+      } catch (e) {
+        errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+      }
+    };
+    document.getElementById("d-plan-no").onclick = () => { hidePlan(); document.getElementById("d-delete").focus(); };
+    document.getElementById("d-plan-yes").onclick = async () => {
+      const c = drawerComp;
+      if (!c || !delPlan || delPlan.name !== c.name) { hidePlan(); return; }   // the view moved on
+      const errEl = document.getElementById("d-err");
+      errEl.hidden = true;
+      const btn = document.getElementById("d-plan-yes");
+      btn.disabled = true;
+      try {
+        // The identical call, plus the state. `data:"cascade"` is restated rather than re-read
+        // from the checkbox: the state is bound to the plan the user was shown, and a tick that
+        // changed between the two legs must not be able to send a different call with it.
+        const r = await oma.callTool("delete_app", { name: c.name, data: "cascade", request_state: delPlan.state,
+          command_id: crypto.randomUUID(), actor: "human" });
+        const sc = (r && r.structuredContent) || {};
+        // The engine reissues rather than guessing when the world moved under the plan; so do we.
+        if (sc.reason === "confirmation_required") { showPlan(c, sc); return; }
+        if (r && r.isError) {
+          // Stale or expired state (something wrote in between). The plan on screen describes a
+          // world that no longer exists, so it goes; pressing Delete again asks for a fresh one.
+          errEl.textContent = ((r.content && r.content[0] && r.content[0].text) || dt("failed")) + dt("again");
+          errEl.hidden = false;
+          hidePlan();
+          return;
+        }
+        await afterDelete(c, !!sc.cascaded);
+      } catch (e) {
+        errEl.textContent = String(e && e.message || e); errEl.hidden = false;
+      } finally {
+        btn.disabled = false;
+      }
+    };
+
+    // ---- Data pane (write-set D): collections × ownership × the ledger ----
+    // Ownership is DECLARED (an app's manifest collections list), by-name (the
+    // default binding convention), or absent — an orphan, which is LEGAL (seeding may precede
+    // the app). Adoption is an authoring act, so the button asks the AI rather than editing
+    // manifests from here. The ledger view needs `via` and undo, which live on the /rpc
+    // internal path only (no AI face carries them) — so it renders in the browser view alone.
+    const declsRaw = new Map();   // name -> raw declaration (loadManifest fills it)
+    const appMeta = new Map();    // name -> {tier, caps} from the same app_html read (perms pane truth)
+    // The grammar keys collections by NAME — {"collections":{"trips":{…}}} — and the store
+    // REJECTS the array form outright ("manifest.collections must be an object"). This once
+    // tested Array.isArray, so the ownership column was empty for every conforming manifest
+    // (2026-07-27 audit, two panels independently).
+    const dataComps = new Map();  // name -> row from the FULL registry (archived included)
+    const collOwners = (coll) => {
+      const names = [];
+      for (const name of dataComps.keys()) {
+        const d = declsRaw.get(name);
+        const decl = d && d.collections && typeof d.collections === "object" && !Array.isArray(d.collections) ? d.collections : null;
+        if (decl && Object.prototype.hasOwnProperty.call(decl, coll)) names.push(name);
+      }
+      return names;
+    };
+    async function loadData() {
+      const box = document.getElementById("data-rows");
+      try {
+        const r = await oma.callTool("data_collections", {});
+        collsCache = r?.structuredContent?.collections || [];
+        collsLoaded = true;
+      } catch { box.textContent = t("collFailed"); return; }
+      // Ownership must see the WHOLE registry: an archived app still stewards its data, and the
+      // default list (featured+listed) would silently strip its chip from the Data pane.
+      try {
+        const full = await oma.callTool("list_apps", { kind: "any", visibility: "any" });
+        dataComps.clear();
+        for (const c of full?.structuredContent?.apps || []) dataComps.set(c.name, c);
+        await Promise.all([...dataComps.keys()].filter((n) => !declsRaw.has(n)).map((n) => loadManifest(n)));
+      } catch { for (const c of compsCache) if (!dataComps.has(c.name)) dataComps.set(c.name, c); }
+      const compNames = new Set([...dataComps.keys(), ...compsCache.map((c) => c.name)]);
+      box.innerHTML = "";
+      if (!collsCache.length) box.append(noteRow(t("noData")));
+      for (const c of [...collsCache].sort((a, b) => a.collection.localeCompare(b.collection))) {
+        const row = el("div", "row");
+        row.append(tile("database", SYSTEM_COLLECTIONS.has(c.collection) ? null : "blue"));
+        row.append(lbl(c.collection, (c.items === 1 ? t("item1") : t("items", { n: c.items })) + (c.last_activity ? " · " + ago(c.last_activity) : "")));
+        const own = el("span", "own");
+        const declared = collOwners(c.collection);
+        if (declared.length) for (const n of declared) own.append(el("span", "k-chip static on", n));
+        else if (SYSTEM_COLLECTIONS.has(c.collection)) own.append(el("span", "k-chip static", t("system")));
+        else if (compNames.has(c.collection)) own.append(el("span", "k-chip static", t("byName", { name: c.collection })));
+        else {
+          own.append(el("span", "k-badge warn", t("orphan")));
+          const adopt = el("button", "rowAction", t("adopt"));
+          adopt.title = t("adoptTitle");
+          adopt.onclick = () => oma.sendMessage(t("adoptMsg", { coll: c.collection }));
+          own.append(adopt);
+        }
+        row.append(own);
+        box.append(row);
+      }
+      const sa = !!oma.standalone;
+      document.getElementById("data-ledger").hidden = !sa;
+      document.getElementById("data-ledger-note").hidden = sa;
+      if (!sa) { document.getElementById("data-ledger-link").href = oma.viewBase + "settings"; return; }
+      const sel = document.getElementById("data-coll");
+      const cur = sel.value;
+      sel.innerHTML = "";
+      const all = el("option", null, t("allCollections")); all.value = ""; sel.append(all);
+      for (const c of collsCache) { const o = el("option", null, c.collection); o.value = c.collection; sel.append(o); }
+      if ([...sel.options].some((o) => o.value === cur)) sel.value = cur;
+      loadLedger();
+    }
+    async function loadLedger() {
+      const box = document.getElementById("data-events");
+      const coll = document.getElementById("data-coll").value;
+      let events = [];
+      try {
+        const r = await oma.callTool("_ledger_recent", { ...(coll ? { collection: coll } : {}), limit: 50 });
+        events = r?.structuredContent?.events || [];
+      } catch { box.textContent = t("ledgerFailed"); return; }
+      box.innerHTML = "";
+      if (!events.length) { const r0 = el("div", "devt"); r0.append(el("span", "what k-mut", t("noActivity"))); box.append(r0); }
+      const VERB = { item_added: "added", item_updated: "updated", item_moved: "moved", item_deleted: "deleted",
+        component_saved: "saved app", component_deleted: "deleted app", component_archived: "archived",
+        component_renamed: "renamed app",
+        file_written: "wrote file", file_deleted: "deleted file" };
+      for (const ev of events) {
+        const row = el("div", "devt");
+        row.append(el("span", "k-num", "#" + ev.seq));
+        const who = ev.actor + (ev.via && ev.via.app ? " · via " + ev.via.app : "");
+        const what = (VERB[ev.type] || ev.type) + " " + (ev.type.startsWith("app_") || ev.type.startsWith("file_") ? ev.id : String(ev.id).slice(0, 8))
+          + (ev.fields ? " " + jstr(ev.fields).slice(0, 80) : "") + (ev.to != null ? " → " + (ev.to || "(ungrouped)") : "");
+        row.append(el("span", "what k-num", who + " · " + what));
+        row.append(el("span", "k-num k-mut", ago(ev.ts)));
+        if (ev.undoable) {
+          const b = el("button", "k-btn ghost", t("undo"));
+          b.onclick = async () => {
+            b.disabled = true;
+            // Pin the seq we SHOWED: if a concurrent write advanced this target since the pane
+            // rendered, the store refuses (stale_undo) rather than reverting the newer write.
+            const r = await oma.callTool("_undo_last", { target: ev.id, expected_seq: ev.seq }).catch(() => null);
+            if (r && !r.isError) { flashSaved(); loadData(); }
+            else { flash(false); if (r && r.structuredContent && r.structuredContent.error === "stale_undo") loadData(); else b.disabled = false; }
+          };
+          row.append(b);
+        }
+        box.append(row);
+      }
+    }
+    document.getElementById("data-reload").onclick = loadLedger;
+    document.getElementById("data-coll").onchange = loadLedger;
+
+    // ---- boot: About stats, app grid, manifests (settings-design §4.3 data flow) ----
+    async function loadApps() {
+      const comps = await oma.callTool("list_apps", {});
+      compsCache = comps?.structuredContent?.apps || [];
+      // COUNT RULE: "N apps" = what the user made or installed — system collections AND locked
+      // built-ins are excluded, so a fresh install honestly reads 0. The Installed grid below
+      // is the management view and still lists everything, locked included.
+      // `locked` rides each list_apps row now; the detail view's permsCache warms right after render.
+      const locked = new Set(compsCache.filter((c) => c.locked).map((c) => c.name));
+      fetchPerms();
+      countUp(document.getElementById("a-comps"), compsCache.filter((c) => !SYSTEM_COLLECTIONS.has(c.name) && !locked.has(c.name)).length);
+      renderLibrary();
+      renderPrefs();
+    }
+    async function loadManifest(name) {
+      try {
+        const sc = (await oma.callTool("app_html", { name }))?.structuredContent || {};
+        const d = sc.declaration;
+        declsRaw.set(name, d || null);          // the Data pane's ownership source (collections key)
+        manifests.set(name, useDeclaration(d)); // the prefs panes' filtered view (settings/uses_shared)
+        if (sc.tier) appMeta.set(name, { tier: sc.tier, caps: sc.caps });   // perms pane rides the same read
+      }
+      catch { declsRaw.set(name, null); manifests.set(name, null); }
+    }
+    // Everything the dictionary touches that is not rebuilt by a render pass.
+    function applyI18n() {
+      document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
+      document.title = t("documentTitle");
+      for (const node of document.querySelectorAll("[data-i18n]")) node.textContent = t(node.dataset.i18n);
+      for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
+      for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
+      pvLabel(!!pvHandle || pvStarting);
+      disarmDelete();
+      renderNav();
+      renderStatic();
+    }
+    (async () => {
+      try {
+        // The shared-pref catalog comes from the ENGINE (ui_prefs_schema) — skeleton rows
+        // until it lands; an older engine without the tool just leaves the catalog empty
+        // (stored rows still render as raw values, with a note).
+        try {
+          const ps = await oma.callTool("ui_prefs_schema", {});
+          const shared = ps?.structuredContent?.shared;
+          if (Array.isArray(shared) && shared.length) {
+            SHARED_PREFS = shared;
+            SHARED_KEYS = new Set(shared.map((s) => s.key));
+          }
+        } catch {}
+        prefsLoading = false;
+        renderPrefs();
+        document.getElementById("ask-ai").hidden = !!oma.standalone;   // no chat to tell when standalone
+        await loadApps();   // grid + stored-key sections appear before manifests finish loading
+        const colls = await oma.callTool("data_collections", {});
+        collsCache = colls?.structuredContent?.collections || [];
+        collsLoaded = true;
+        if (drawerComp) loadStorage(drawerComp);   // a detail view opened before the cache landed gets its count now
+        const user = collsCache.filter((c) => !SYSTEM_COLLECTIONS.has(c.collection));   // pins/settings rows never count
+        countUp(document.getElementById("a-colls"), user.length);
+        countUp(document.getElementById("a-items"), user.reduce((n, c) => n + c.items, 0));
+        await Promise.all(compsCache.map((c) => loadManifest(c.name).then(() => renderPrefs())));   // sections appear as each manifest lands
+      } catch {}
+      // Release the thumbnails, whatever happened above. They have been waiting since the grid was
+      // rendered — collsCache says WHICH collections to fetch and declsRaw says which of them each
+      // app may see, and neither existed when the first cards scrolled into view. Unconditional on
+      // purpose: a failed load must let the grid render honestly empty, never leave it waiting.
+      previewInputsReady();
+      bootingManifests = false;
+      renderPrefs();
+    })();
+
+    if (oma.standalone) document.body.classList.add("standalone");
+    oma.onChange(render);
+    // onPrefChange fires on EVERY settings write, and this app writes constantly. Re-running the
+    // dictionary pass on each of them would also disarm a two-click Delete mid-arm — so only an
+    // actual language change costs anything.
+    let langKey = "";
+    oma.onPrefChange(() => {
+      if (language() === langKey) return;
+      langKey = language();
+      applyI18n();
+    });
+    oma.ready((s) => { langKey = language(); applyI18n(); render(s); migrate(); });
+  </script>
+</body>
+</html>

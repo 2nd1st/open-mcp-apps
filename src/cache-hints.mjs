@@ -1,77 +1,53 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright (C) 2026 2nd1st
-// cache-hints.mjs — post-processing for cacheable results: drop redundant $schema, add caching hints.
+// cache-hints.mjs — the SEP-2549 cache POLICY, plus the tools/list `$schema` trim.
 //
-// Both are things the SDK does not do and we cannot express through registerTool/registerResource,
-// because the SDK builds the definitions inside its own list handlers. So we WRAP those handlers
-// rather than reimplement them: the original still produces the payload, we only edit the envelope.
+// The enforcement moved: the v2 SDK emits `ttlMs`/`cacheScope` itself, configured per operation
+// (ServerOptions.cacheHints, engine.mjs) and per resource (registerResource's cacheHint,
+// tools/apps.mjs). What lives here is the POLICY those two places read — which answers are
+// tenant-derived and which are engine-constant, and why mixing them up is a cross-tenant
+// disclosure, not a performance bug. One module so the doctrine has one home; the days of
+// wrapping the SDK's private handler map for cache fields are over (the `$schema` trim below is
+// the one wrap that remains, for a thing registerTool still cannot express).
 //
-// Wrapping reaches into Protocol's private handler map. That is a real coupling, taken knowingly:
-// the alternative is owning the whole listing (far more surface to drift), and test/tool-surface.mjs
-// compares the served list against a golden byte-for-byte, so an SDK change that breaks this shows
-// up as a failing build rather than a silent regression. If the handler is not where we expect, we
-// leave the server exactly as it was — a missing optimisation, never a broken listing.
+// ⚠️ Era note (v2 semantics): cache fields are 2026-07-28 vocabulary. The SDK emits them on
+// modern-era responses only — a 2025-era client never sees them, which is spec-correct where the
+// old hand-injection sprayed them on the only (legacy) wire we had. Tests that assert these
+// fields must speak the modern era to see them.
 
-import { LOADER_URI } from "./tools/apps.mjs";
+// The dialect the spec declares as default for tool schemas ("Defaults to JSON Schema 2020-12
+// when no explicit $schema is provided" — Tool.inputSchema, 2026-07-28). A declaration that
+// merely restates the default carries zero information, so serving it is pure resident bytes.
+//
+// This used to be a full draft-07↔2020-12 divergence classifier (recursive keyword walk,
+// 17-entry divergent-keyword table). Retired 2026-08-04 (elegance A7): SDK v2 fixes Standard
+// Schema conversion to 2020-12, no registration in this repo supplies raw JSON Schema, so the
+// only $schema that can appear is the default restated. If a future wave imports an explicit
+// non-default dialect, the golden byte gate forces the decision back into the open.
+const DEFAULT_DIALECT = "https://json-schema.org/draft/2020-12/schema";
 
-// Keywords whose MEANING differs between draft-07 and 2020-12. If a schema uses none of them, the
-// two dialects agree on every keyword it actually contains, so the declaration carries no
-// information and the spec's default (2020-12) describes it exactly.
-const DIVERGENT_KEYWORDS = new Set(["definitions", "dependencies", "additionalItems", "$ref", "$defs", "prefixItems"]);
-
-/** True if this schema means something different depending on which dialect it is read as. */
-export function dialectMatters(value) {
-  if (Array.isArray(value)) return value.some(dialectMatters);
-  if (!value || typeof value !== "object") return false;
-  for (const [k, v] of Object.entries(value)) {
-    if (DIVERGENT_KEYWORDS.has(k)) return true;
-    if (k === "items" && Array.isArray(v)) return true;        // tuple form moved to prefixItems
-    if (k === "exclusiveMinimum" && typeof v === "boolean") return true; // draft-04 style
-    if (k === "exclusiveMaximum" && typeof v === "boolean") return true;
-    if (dialectMatters(v)) return true;
-  }
-  return false;
-}
-
-/** Drop `$schema` from schemas that read identically under either dialect.
- *
- *  ⚠️ The premise this started from was wrong. The assumption was that these declared the 2020-12
- *  DEFAULT and were pure waste; the SDK actually emits "http://json-schema.org/draft-07/schema#",
- *  an explicit and different dialect. Removing that would silently reinterpret the schema — the
- *  spec lists an explicit draft-07 tool as a legitimate case.
- *
- *  So the removal is conditional and self-guarding: our current schemas use only keywords the two
- *  drafts agree on (verified: zero occurrences of definitions/$ref/dependencies/tuple-items across
- *  all 34 tools), which makes dropping the declaration information-preserving. The moment a schema
- *  gains a divergent construct, its declaration stays, without anyone having to remember why.
- *  Worth 3,172 B — ~793 tokens resident in every conversation. */
-function dropRedundantDialect(value) {
-  if (Array.isArray(value)) return value.map(dropRedundantDialect);
-  if (!value || typeof value !== "object") return value;
-  const drop = "$schema" in value && !dialectMatters(value);
-  const out = {};
-  for (const [k, v] of Object.entries(value)) {
-    if (k === "$schema" && drop) continue;
-    out[k] = dropRedundantDialect(v);
-  }
-  return out;
+/** Drop a top-level `$schema` that merely restates the spec default. Identity-preserving:
+ *  an untouched schema keeps its object (and any symbols riding it). */
+function dropRedundantDialect(schema) {
+  if (!schema || typeof schema !== "object" || Array.isArray(schema)) return schema;
+  if (schema.$schema !== DEFAULT_DIALECT) return schema;
+  const { $schema, ...rest } = schema;
+  return rest;
 }
 
 /**
- * Caching hints for tools/list. The draft spec makes these MUST for complete list results.
+ * Caching hints for tools/list — the one scope that is NOT a constant. Per the spec, "public"
+ * lets a client, gateway or proxy serve one caller's cached response to another — explicitly
+ * including across authorization contexts ("different access tokens can leverage the same cache").
  *
- * cacheScope is the part that needs care, and it is NOT a constant. Per the spec, "public" lets a
- * client, gateway or proxy serve one caller's cached response to another — explicitly including
- * across authorization contexts, "different access tokens can leverage the same cache".
+ *   · dynamic tools OFF (the default): every tenant sees the identical tool list. Nothing in it
+ *     is user-specific, so "public" is true and lets shared infrastructure cache it once.
+ *   · dynamic tools ON: the list contains one open_<name> per app, i.e. THIS tenant's app names.
+ *     Declaring that "public" would leak them through a shared cache. "private" confines reuse
+ *     to the same authorization context.
  *
- *   · dynamic tools OFF (the default): every tenant sees the identical 34 tools. Nothing in the
- *     list is user-specific, so "public" is true and lets shared infrastructure cache it once.
- *   · dynamic tools ON: the list contains one open_<name> per app, i.e. THIS tenant's
- *     app names. Declaring that "public" would leak them through a shared cache. "private"
- *     confines reuse to the same authorization context.
- *
- * Getting this wrong is not a performance bug, it is a cross-tenant disclosure — which is why the
- * scope is derived from the flag rather than written down as a literal.
+ * Derived from the flag rather than written down as a literal, because getting it wrong is a
+ * cross-tenant disclosure.
  */
 export function listCacheHints({ dynamicTools }) {
   return dynamicTools
@@ -80,109 +56,72 @@ export function listCacheHints({ dynamicTools }) {
 }
 
 /**
- * The same two fields on the resource side (SEP-2549 requires them on `resources/list`,
- * `resources/read` and `resources/templates/list` too, not just `tools/list`).
+ * The two kinds of document behind our `ui://` space, and the template list, want opposite hints:
  *
- * There are exactly two kinds of document behind our `ui://` space, and they want opposite hints:
- *
- *   · STORE-DERIVED — the per-app resources and the list that enumerates them. The bytes are
- *     the user's own app, and the list is the user's own app names. `private`, because a
- *     shared cache serving one tenant's app to another is a disclosure, not a slow render. And
- *     `ttlMs: 0` — "immediately stale, re-fetch when needed" — because the AI can rewrite a
- *     app mid-sentence: any freshness window we promise here is a window in which the user
- *     sees the app they just changed, unchanged. We have no basis to promise one, so we promise
- *     none. (Spec: 0 is a defined value, not the absence of a hint.)
- *   · ENGINE-CONSTANT — answers built from the engine binary alone. Byte-identical for every tenant
- *     of a deployment, so `public` lets a gateway fetch them once for everyone.
- *
- * The template list is engine-constant — it carries URI patterns, never store contents — and
- * test/server-smoke pins it empty so that the day someone registers a store-derived template, the
- * scope decision comes back up for review instead of silently going public.
+ *   · STORE-DERIVED answers (the per-app resources, the lists that enumerate them) carry NO
+ *     explicit hint: the SDK default — {ttlMs: 0, cacheScope: "private"} — is exactly the right
+ *     one. `private`, because a shared cache serving one tenant's app to another is a disclosure;
+ *     `0`, because the AI can rewrite an app mid-sentence. The constant that used to restate this
+ *     default was retired 2026-08-04 (elegance A18): stating it here ONCE is the doctrine, and
+ *     inheritance is what keeps every store-derived registration honest by omission.
+ *   · ENGINE_CONSTANT — answers built from the engine binary alone, byte-identical for every
+ *     tenant of a deployment, so `public` lets a gateway fetch them once for everyone. The
+ *     template list qualifies — it carries URI patterns, never store contents — and
+ *     test/server-smoke pins it empty so the day someone registers a store-derived template, the
+ *     scope decision comes back up for review instead of silently going public.
  */
-const STORE_DERIVED = { ttlMs: 0, cacheScope: "private" };
-const ENGINE_CONSTANT = { ttlMs: 300_000, cacheScope: "public" };
+export const ENGINE_CONSTANT = { ttlMs: 300_000, cacheScope: "public" };
 
 /** The universal loader: PUBLIC, but promising no freshness. Measured, 2026-07-29.
  *
- *  This carried ENGINE_CONSTANT's 300_000 ms on the strength of "stable for the life of the build".
- *  That sentence is true and it is not the whole statement, because the thing the hint is attached
- *  to — `ui://open-mcp-apps/app.html` — is NOT scoped to a build. It is one constant string for the
- *  life of the project. So a five-minute promise made by build N is still being honoured while
- *  build N+1 is serving, and there is no way to withdraw it: the identifier a cache keys on did not
- *  change when the bytes did.
+ *  It carried ENGINE_CONSTANT's 300_000 ms on the strength of "stable for the life of the build" —
+ *  true, and not the whole statement, because `ui://open-mcp-apps/app.html` is one constant string
+ *  for the life of the PROJECT, not of a build. A five-minute promise made by build N is still
+ *  being honoured while build N+1 serves, and there is no way to withdraw it. Measured cost on
+ *  stg: an eight-minute window in which a host rendered widgets against the previous build's
+ *  cached loader, and nobody could tell which side of the line they were on. So the loader pays
+ *  one `resources/read` per widget open (~30 ms, measured) against a cache that cannot go stale.
  *
- *  What that cost us, measured on stg: the image swapped at 03:48:18 UTC, a widget rendered at
- *  03:51:56 against a document the host had cached from BEFORE the swap (zero `resources/read` in
- *  between), and the host did not fetch the new document until 03:56:02. Eight minutes in which
- *  every test measured the previous build — and nobody could tell which side of the line they were
- *  on. Two days of "fixed it, then it broke again" were partly this.
- *
- *  Two ways out. Scope the IDENTIFIER to the build (a content hash in the URI) — which makes the
- *  long TTL honest, at the price of a name that churns on every edit and a byte-compared tool
- *  surface that churns with it. Or stop claiming a stability we cannot enforce. We already made
- *  exactly this call for store-derived documents, for exactly this reason — "any freshness window
- *  we promise is a window in which the user sees the app they just changed, unchanged" — and the
- *  loader changes on every deploy. So it gets the same answer, and pays the same price: one
- *  `resources/read` per widget open (~30 ms, measured), against a cache that cannot go stale.
- *
- *  `public` stays: the document really is identical for every tenant of a deployment, and with no
- *  freshness window there is nothing for a shared cache to hold on to. */
-const LOADER = { ttlMs: 0, cacheScope: "public" };
+ *  `public` holds only while the answer really is the same for everybody — and the widget
+ *  security declaration can make it deployment-specific (`_meta.ui.domain`, redirect_domains).
+ *  Both inputs are knobs of createEngine, so the branch is decided AT REGISTRATION
+ *  (tools/apps.mjs): deployment-derived fields present ⇒ the hint is omitted (private/zero default). */
+export const LOADER = { ttlMs: 0, cacheScope: "public" };
 
-/** The loader is only shareable while it really is the same answer for everybody.
+/** Trim redundant `$schema` declarations from the served tools/list, in place.
+ *  Returns true if the wrap took effect.
  *
- *  It was declared public on the strength of "wrapLoader() is built from the engine binary alone",
- *  which was true — and then stopped being the whole truth: the widget security declaration
- *  attaches `_meta.ui.domain` and `redirect_domains`, and both are properties of a DEPLOYMENT.
- *  Two deployments then serve the same URI with different metadata while both say "public", which
- *  is a licence for a shared gateway to hand one deployment's declaration to another.
- *
- *  So the scope is read off the ANSWER rather than remembered from the body: deployment-derived
- *  fields present ⇒ private. A future field of the same kind only has to be named here.
- *
- *  ⚠️ This said "the test pins the two cases" from the day it was written, and that was FALSE until
- *  2026-07-29: only the no-domain side was covered, so the branch a SaaS deployment actually takes
- *  had zero tests. Both sides are pinned now (test/server-smoke §2c builds an engine with
- *  widgetDomain, and one with viewBase, and asserts the loader drops to private) — but the lesson
- *  is the sentence, not the gap: a comment claiming coverage is not coverage, and this one went
- *  three weeks without anyone checking it against the file it named. */
-function deploymentSpecific(result) {
-  const meta = result?.contents?.[0]?._meta || {};
-  const ui = meta.ui || {};
-  return !!(ui.domain || meta["openai/widgetDomain"] || (meta["openai/widgetCSP"]?.redirect_domains || []).length);
-}
-
-export function resourceCacheHints(uri, result) {
-  return uri === LOADER_URI && !deploymentSpecific(result) ? LOADER : STORE_DERIVED;
-}
-
-/** Wrap the SDK's cacheable-result handlers in place. Returns true if the wrap took effect. */
-export function installCacheHints(server, { dynamicTools }) {
+ *  Wrapping reaches into Protocol's private handler map — a real coupling, taken knowingly: the
+ *  SDK builds tool definitions inside its own list handler, so there is no registration-time seam
+ *  for this. test/tool-surface.mjs compares the served list against a golden byte-for-byte, so an
+ *  SDK change that breaks the wrap shows up as a failing build rather than a silent regression;
+ *  if the handler is not where we expect, the server is left exactly as it was — a missing
+ *  optimisation, never a broken listing. */
+export function installSchemaTrim(server) {
   const handlers = server?.server?._requestHandlers;
   const inner = handlers?.get?.("tools/list");
   if (typeof inner !== "function") return false; // SDK moved it — leave the server untouched
-  handlers.set("tools/list", async (request, extra) => ({
-    ...dropRedundantDialect(await inner(request, extra)),
-    ...listCacheHints({ dynamicTools }),
-  }));
-
-  // Resources are wrapped one by one and each is optional: a server with no resources registered
-  // has no such handler, and that is not an error.
-  for (const [method, hints] of [
-    ["resources/list", STORE_DERIVED],           // enumerates ui:// per app = tenant names
-    ["resources/templates/list", ENGINE_CONSTANT], // URI patterns only (pinned empty by the smoke)
-  ]) {
-    const list = handlers.get(method);
-    if (typeof list === "function")
-      handlers.set(method, async (request, extra) => ({ ...(await list(request, extra)), ...hints }));
-  }
-
-  const read = handlers.get("resources/read");
-  if (typeof read === "function")
-    handlers.set("resources/read", async (request, extra) => {
-      const out = await read(request, extra);
-      return { ...out, ...resourceCacheHints(request?.params?.uri, out) };
-    });
-
+  handlers.set("tools/list", async (request, extra) => {
+    // Rebuild ONLY the two schema fields of tools that actually change. Identity is load-bearing
+    // twice over: the SDK rides its per-operation cache-hint fallback on a Symbol attached to the
+    // result object (`Symbol(modelcontextprotocol.resultCacheHintFallback)`, measured), and a
+    // rebuilt result silently downgrades every tools/list to {ttlMs: 0, cacheScope: "private"}.
+    // Running the trim over whole tool objects would also rewrite fields that are not schemas at
+    // all — an opaque `_meta.$schema` is somebody's extension key, not a dialect declaration.
+    const out = await inner(request, extra);
+    if (out && Array.isArray(out.tools)) {
+      out.tools = out.tools.map((t) => {
+        if (!t || typeof t !== "object") return t;
+        const input = dropRedundantDialect(t.inputSchema);
+        const output = dropRedundantDialect(t.outputSchema);
+        if (input === t.inputSchema && output === t.outputSchema) return t;
+        const copy = { ...t };
+        if (input !== t.inputSchema) copy.inputSchema = input;
+        if (output !== t.outputSchema) copy.outputSchema = output;
+        return copy;
+      });
+    }
+    return out;
+  });
   return true;
 }

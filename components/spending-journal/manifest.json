@@ -1,0 +1,9 @@
+{
+  "manifest_version": 2,
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "currency",
+    "confirm_delete"
+  ]
+}

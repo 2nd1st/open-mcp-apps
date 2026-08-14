@@ -12,24 +12,36 @@
 // tool surface itself — an unfinished tool reaching tools/list is a live cost regression for
 // every user, because prompt caching is an exact-prefix match.
 
-import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import { EXTENSION_ID } from "@modelcontextprotocol/ext-apps/server";
+import { AsyncLocalStorage } from "node:async_hooks";
+import { McpServer, CLIENT_INFO_META_KEY, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/server";
+import { EXTENSION_ID } from "./mcp-apps.mjs";
 import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE } from "./store.mjs";
 import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_APPS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
 import { isControlPlaneTool } from "./tool-policy.mjs";
+import { latestPref } from "./runtime-core.mjs";
+import { bridgeInvalidations } from "./notify.mjs";
 import { ENGINE_VERSION } from "./version.mjs";
-import { installCacheHints } from "./cache-hints.mjs";
+import { installSchemaTrim, listCacheHints, ENGINE_CONSTANT } from "./cache-hints.mjs";
 import { register as registerAppTools } from "./tools/apps.mjs";
 import { register as registerDataTools } from "./tools/data.mjs";
 import { register as registerFileTools } from "./tools/files.mjs";
 import { register as registerRegistryTools } from "./tools/registry.mjs";
-import { register as registerLibraryTools } from "./tools/library.mjs";
+import { register as registerAppStoreTools } from "./tools/app-store.mjs";
 import { register as registerSettingsTools } from "./tools/settings.mjs";
 
 // Part of this module's public surface (server.mjs / http.mjs / index.mjs import them from here),
 // so the move into contracts.mjs is invisible to callers.
 export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor } from "./contracts.mjs";
+
+// WHO is calling, carried across await points. Two writers, one reader:
+//   · the HTTP entry wraps each /mcp dispatch in run({ fallback }) — its User-Agent/body-derived
+//     label, request-scoped so stateless requests can never inherit another client's identity;
+//   · the per-call wrapper below overlays { call } from the request's own `_meta` envelope
+//     (`io.modelcontextprotocol/clientInfo`, SEP-2575) — the most specific claim there is.
+// AsyncLocalStorage rather than a variable because tool handlers await store/file work and a
+// concurrent call on the same connection (stdio allows it) would otherwise swap labels mid-flight.
+export const hostContext = new AsyncLocalStorage();
 
 
 // Downloaded into the model's context at initialize — this is where the engine teaches the
@@ -45,7 +57,7 @@ ROUTING:
 - Need a fact, no UI → data_list / data_collections. Acting for the user ("mark X done") → data_* writes; visible widgets refresh themselves.
 - What did the user do while you were away? Their widget edits never pass through this conversation — data_changes is the only tool that attributes them.
 - Building or CHANGING an app → get_app_guide FIRST; the craft lives there, not here. Prefer reusing an app on a new collection over creating near-duplicates.
-- "library" is the built-in store of ready-made apps — browse it, or install_from_library directly. dashboard and settings are the other system apps.
+- "app-store" is the built-in store of ready-made apps — browse it, or install_from_app_store directly. dashboard and settings are the other system apps.
 - An app can keep FILES too (file_write / file_list / file_read): images, PDFs, exports — per app, across chats.
 
 __PROACTIVITY_STANCE__
@@ -61,8 +73,7 @@ WHEN NOT: one-shot visuals or pure discussion — answer in text/charts. Persona
 // Read a global settings pref (group "") from the shared store — one cheap settings snapshot.
 function readPref(store, key) {
   try {
-    for (const it of store.snapshot(SETTINGS_COLLECTION).items)
-      if (String(it.fields?.key ?? "") === key) return it.fields.value;
+    return latestPref(store.snapshot(SETTINGS_COLLECTION).items, key)?.fields.value;
   } catch {}
   return undefined;
 }
@@ -142,17 +153,53 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  * @param opts.viewBase  base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787").
  *                        When present, list_apps prints a real /view/<name> link per app;
  *                        when absent (bare stdio — no viewer exists) it prints none.
+ * @param opts.functions  register the call_function seat and its engine-side executor. DEFAULT
+ *                        OFF at this layer, deliberately: execution is same-process (node:vm is an
+ *                        isolation seam, not a hardened boundary — functions.mjs header), which is
+ *                        the right trust model for the LOCAL product (the author's code already
+ *                        runs with these caps in the user's browser) and the wrong one for a
+ *                        multi-tenant hosted plane. The engine's own entrypoints (server.mjs,
+ *                        http.mjs) pass true — OSS users get functions out of the box, with
+ *                        OMA_FUNCTIONS=0 as the kill-switch — while an embedding consumer that
+ *                        does not ask gets no seat, so a hosted deployment can only turn this on
+ *                        on purpose (ruled: hosted execution waits for container isolation).
  */
-export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain } = {}) {
+export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false } = {}) {
+  const dynamicTools = process.env.OMA_DYNAMIC_TOOLS === "1";
   const server = new McpServer(
-    // Reported to the host at initialize. Real version, not a literal — see version.mjs for why
-    // being unable to tell which build a deployment runs is a correctness problem, not a nicety.
+    // Reported to the host at initialize (legacy era) / server-discover (2026-07-28). Real version,
+    // not a literal — see version.mjs for why being unable to tell which build a deployment runs
+    // is a correctness problem, not a nicety.
     { name: "open-mcp-apps", version: ENGINE_VERSION },
     {
       instructions: composeInstructions(instructions, store),
-      // Advertise the MCP Apps extension (2026-07-28 RC makes extensions first-class;
+      // Advertise the MCP Apps extension (2026-07-28 makes extensions first-class;
       // strict hosts may otherwise assume no ui:// support despite _meta.ui on tools).
-      capabilities: { extensions: { [EXTENSION_ID]: {} } },
+      // `resources.subscribe` / `resources.listChanged` are what make a `subscriptions/listen`
+      // filter mentioning our URIs honorable — the SDK narrows a requested filter against the
+      // declared capabilities, so an undeclared bit means the client's subscription is silently
+      // dropped from the ack. `tools.listChanged` is declared ONLY with the per-app openers on:
+      // with them off the tool surface never moves, and claiming it might is an invitation for a
+      // host to re-list — the prompt-cache cost OMA_DYNAMIC_TOOLS exists to keep opt-in.
+      capabilities: {
+        extensions: { [EXTENSION_ID]: {} },
+        resources: { subscribe: true, listChanged: true },
+        ...(dynamicTools ? { tools: { listChanged: true } } : {}),
+      },
+      // Both eras, one engine: the SDK's default list is legacy-only, and a list with a modern
+      // entry is ALSO the switch that registers `server/discover` (a MUST on 2026-07-28) — so
+      // this line is the whole modern-era opt-in, not a version cosmetics.
+      supportedProtocolVersions: ["2026-07-28", ...SUPPORTED_PROTOCOL_VERSIONS],
+      // SEP-2549 cache scopes ride SDK-native now; the POLICY (what is tenant-derived and what is
+      // engine-constant, and why getting it wrong is a cross-tenant disclosure) lives in
+      // cache-hints.mjs. Omitted operations keep the SDK default {ttlMs: 0, cacheScope: "private"},
+      // which IS the store-derived answer — stated there, inherited here. `server/discover` is
+      // deliberately omitted too: its instructions are personalised per store (onboarding vs
+      // inventory), so the conservative default is the correct scope, not an oversight.
+      cacheHints: {
+        "tools/list": listCacheHints({ dynamicTools }),
+        "resources/templates/list": ENGINE_CONSTANT,
+      },
     },
   );
 
@@ -165,11 +212,18 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // the OpenAI compatibility spelling of the same fact, stamped at ONE seam so a new tool that
   // widgets call gets it by joining the list, not by remembering a field.
   const WIDGET_CALLABLE = new Set([
-    "data_list", "data_version", "data_changes", "app_html", "render_health",
+    "data_list", "data_version", "data_changes", "app_html",
     "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
-    "library_list", "library_preview", "install_from_library", "list_apps", "data_collections",
-    "ui_prefs_schema", "security_set",
+    "app_store_list", "app_store_preview", "install_from_app_store", "list_apps", "data_collections",
+    "ui_prefs_schema", "security_set", "call_function",
   ]);
+  // MCP Apps `_meta.ui.visibility` (elegance C2, Leo 2026-08-04): tools whose only real callers
+  // are widgets/system apps — their own descriptions say "internal" — declared app-only, which the
+  // standard specifies as "do not expose to the model". On a host that honors it this moves their
+  // schemas out of the model's resident context entirely; on one that does not, nothing changes.
+  // The wire (tools/list) still carries them either way — the golden tracks raw-wire bytes.
+  // data_version stays model-visible on purpose: its description invites the model to poll.
+  const APP_ONLY = new Set(["app_html", "app_store_preview", "ui_prefs_schema", "security_set"]);
   // ONE line per control-plane tool call that REACHES US. Deliberately not a call log: only the
   // handful of names tool-policy already treats as privileged, and only the name — never arguments,
   // never a row, never anything the user typed.
@@ -187,35 +241,61 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   const logged = (name, handler) => (isControlPlaneTool(name)
     ? (...a) => { try { console.error(`[oma] control-plane tool called: ${name} host=${hostName()}`); } catch {} return handler(...a); }
     : handler);
-  server.registerTool = (name, config, handler) => sdkRegisterTool(
-    name,
-    WIDGET_CALLABLE.has(name)
-      ? { ...config, _meta: { ...(config._meta || {}), "openai/widgetAccessible": true } }
-      : config,
-    logged(name, handler),
-  );
+  // Per-call identity (SEP-2575): on the 2026-07-28 wire every request carries its own clientInfo
+  // in the `_meta` envelope, and the SDK lifts it onto ctx.mcpReq.envelope. Overlaying it here —
+  // at the ONE seam every tool passes through — is what lets hostName() name THE CALL instead of
+  // whichever connection happened to open first. The ctx is found by shape, not position, because
+  // the SDK hands no-input tools a shorter argument list.
+  const perCallHost = (handler) => (...args) => {
+    const ctx = args.find((x) => x && typeof x === "object" && x.mcpReq);
+    const ci = ctx?.mcpReq?.envelope?.[CLIENT_INFO_META_KEY];
+    return (ci && typeof ci.name === "string" && ci.name)
+      ? hostContext.run({ ...hostContext.getStore(), call: ci.name }, () => handler(...args))
+      : handler(...args);
+  };
+  server.registerTool = (name, config, handler) => {
+    let cfg = config;
+    if (WIDGET_CALLABLE.has(name) || APP_ONLY.has(name)) {
+      const meta = { ...(config._meta || {}) };
+      if (WIDGET_CALLABLE.has(name)) meta["openai/widgetAccessible"] = true;
+      if (APP_ONLY.has(name)) meta.ui = { ...(meta.ui || {}), visibility: ["app"] };
+      cfg = { ...config, _meta: meta };
+    }
+    return sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
+  };
 
-  // The per-app file channel: opaque user-file storage (bytes on a swappable backend; the store
-  // holds the ref index). MEMOIZED per store (files.mjs) so every engine over one store — incl.
+  // The per-app file channel: opaque user-file storage (bytes in a local content-addressed
+  // folder; the store holds the ref index). MEMOIZED per store (files.mjs) so every engine over one store — incl.
   // the stateless /mcp path's engine-per-request — shares ONE upload table; the startup orphan
   // sweep runs inside openFileChannel exactly once per store.
   const fileChannel = openFileChannel(store);
 
-  // Who is talking to us? Up to MCP 2026-06-18 the answer arrives once, in the `initialize`
-  // handshake, and the SDK keeps it — which is what getClientVersion() reads. From 2026-07-28
-  // there IS no initialize (SEP-2575): identity rides every request's `_meta`, so on that wire
-  // this call returns nothing and the label falls to OMA_HOST / "unknown".
+  // Who is talking to us? Both protocol eras answer, most specific claim first:
+  //   1. a fixed hostLabel (the caller KNOWS — e.g. "browser-viewer");
+  //   2. this call's own clientInfo — the 2026-07-28 per-request `_meta` envelope, overlaid onto
+  //      hostContext by the perCallHost wrapper above (SEP-2575 names THE CALL, which is also the
+  //      shape that answered "one claude.ai user presents three clientInfo names");
+  //   3. the legacy `initialize` clientInfo the SDK keeps per connection (stdio's 2025-era wire);
+  //   4. the HTTP entry's request-scoped fallback (User-Agent/body-derived, set via hostContext);
+  //   5. OMA_HOST, then NOTHING — "" is the answer, not a name.
+  // Provenance annotation for the ledger, not a security property.
   //
-  // The HTTP entry already reads both eras (src/http.mjs) because it holds the raw request body
-  // and can simply look. This path cannot: it is handed a connected server, and reaching a
-  // per-request `_meta` needs an SDK that surfaces one. That is gated on the v2 packages
-  // (@modelcontextprotocol/{core,server,client}), which we cannot adopt yet — ext-apps 1.7.5
-  // still peer-depends on sdk ^1.29.0 and has no v2 line, so upgrading would take MCP Apps out.
-  // Deliberately half-done, and this comment is the record of which half and why.
+  // 🔴 It used to end in the literal "unknown", and that string is a claim: it travels in the
+  // ledger's host column and — through app_html/open_app's structuredContent — into
+  // `oma.state.host`, where the settings app prints it as this machine's identity. Measured on
+  // Leo's claude.ai (2026-08-13): the capsule badge and the rail both read "unknown", because
+  // every step above genuinely came up empty. That is the NORMAL case since MCP 2026-07-28
+  // dropped the `initialize` handshake — the protocol's silence, not a fact about the user's
+  // client — so the honest value is the empty one, which is already what every reader treats as
+  // "say nothing" (settings' hostLabel, the ledger's nullable column). Keeping the sentinel and
+  // teaching each display to special-case it would have put the same lie on the wire forever and
+  // made every future consumer inherit it.
   const hostName = () => {
     if (hostLabel) return hostLabel;
+    const scoped = hostContext.getStore();
+    if (scoped?.call) return scoped.call;
     const ci = server.server.getClientVersion?.();
-    return (ci && ci.name) || process.env.OMA_HOST || "unknown";
+    return (ci && ci.name) || scoped?.fallback || process.env.OMA_HOST || "";
   };
 
   // ── the model-facing text ────────────────────────────────────────────────────────────────
@@ -276,10 +356,15 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     if (r.error === "not_found") return "That item no longer exists — refresh.";
     if (r.error === "command_id_reused") return "That command_id was already used by a DIFFERENT command — nothing was done. Use a fresh uuid per action.";
     if (r.error === "schema_violation") return `schema_violation — rejected by the collection's manifest (declared by "${r.manifest_app}"): ${(r.violations || []).join("; ")}.`;
-    if (r.error === "empty_html") return "empty_html — an app needs something to render: every app here is something a person opens. Send the HTML you want saved.";
+    if (r.error === "empty_ui") return "empty_ui — an app needs something to render: every app here is something a person opens. Send the HTML you want saved as `ui`.";
+    if (r.error === "ui_required_on_create") return "ui_required_on_create — a NEW app needs its document: pass `ui` (a complete self-contained HTML). manifest alone can only update an existing app.";
+    if (r.error === "no_slots_provided") return "no_slots_provided — pass `ui`, `manifest`, or both; a save that touches neither slot changes nothing.";
     if (r.error === "bad_name") return "bad_name — app names are lowercase letters, digits and dashes, starting with a letter (max 32 chars).";
     if (r.error === "provenance_locked") return `provenance_locked — "${r.name}" was authored outside this conversation (by ${r.author}, trust tier ${r.tier}) and runs under that provenance. Saving over it here would re-stamp it as yours and change what it is allowed to do, so nothing was written. Build your own under a different name, or delete this one first if it should go.`;
     if (r.error === "group_too_long") return `group_too_long — a group is a lane name (max ${r.limit} chars), not a data field.`;
+    if (r.error === "confirmation_expired") return "confirmation_expired — the confirmation window closed. Re-send WITHOUT request_state to get a fresh one.";
+    if (r.error === "confirmation_invalid") return "confirmation_invalid — the request_state does not match this exact delete (row, version, caller). Re-send WITHOUT request_state to get a fresh one.";
+    if (r.confirmation_required) return `Confirmation required — deleting "${r.preview}". Confirm with the user, then re-send with request_state.`;
     if (r.conflict) return `Version conflict (expected v${r.expected}) — refresh and retry.`;
     if (r.error) return `Command failed: ${r.error}${r.detail ? ` — ${r.detail}` : ""}.`;
     return "Command failed.";
@@ -308,16 +393,14 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     bad_sha256: "Internal error: bad content hash.",
     bad_size: "Invalid file size.",
     not_found: "No such file — refresh.",
-    upload_not_found: "No such upload (it may have expired or been committed/aborted) — start again with file_write_begin.",
+    upload_not_found: "No such upload (it may have expired or been committed) — start again with file_write_begin.",
     upload_expired: "That upload expired or its staging data was lost — start again with file_write_begin.",
     upload_busy: "That upload is mid-operation — send chunks one at a time, in order.",
     too_many_uploads: "Too many uploads in flight — commit or abort one first.",
-    backend_no_staging: "This file backend doesn't support chunked uploads.",
     bad_chunk_seq: "Invalid chunk seq — a 0-based index of this chunk within the upload.",
     chunk_out_of_order: "That chunk arrived out of order — send the index the upload expects next (see `expected`).",
-    chunk_already_staged: "That chunk index was already staged and cannot be re-verified — continue with the next index, or abort and restart if unsure what was sent.",
-    chunk_mismatch: "That chunk index was already staged with DIFFERENT bytes — the resend does not match what landed. Abort and restart the upload.",
-    sha256_mismatch: "The staged bytes hash differently than expected_sha256 — nothing was committed and the upload is still intact: re-check what you sent, then commit again (or abort).",
+    chunk_already_staged: "That chunk index was already staged and cannot be re-verified — continue with the next index, or abandon this upload and start a fresh one if unsure what was sent.",
+    chunk_mismatch: "That chunk index was already staged with DIFFERENT bytes — the resend does not match what landed. Abandon this upload and start a fresh one.",
   };
   const fileFailNote = (r) =>
     r.conflict ? `Version conflict (expected v${r.expected}) — refresh and retry.`
@@ -327,13 +410,10 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // caps = tier preset ⊕ policy:defaults:<tier>:<cap> ⊕ security:<app>:<cap> (last wins).
   // Rows come from the settings snapshot scanned in items[] order (the same last-wins scan the
   // pref merge uses). Overlays apply verbatim — security_set is the only writer and is privileged.
-  // E13a: caps are decided on TWO axes from here on — what the app is trusted to be (tier),
-  // and WHO is asking (caller). Today caller is always "owner" and changes nothing, which is the
-  // whole point: the same app opened by its owner and by a stranger must be able to differ,
-  // and every chokepoint that decides caps (shell.mjs runnerMount, the settings mirror,
-  // tool-policy) reads this ONE signature. Widening it later means touching all of them at once.
-  function computeCaps(app, tier, caller = "owner") {
-    void caller;
+  // (The dormant caller axis — computeCaps(app, tier, caller) with caller always "owner" —
+  // retired 2026-08-04, elegance A4: a parameter with one value is a promise, not a feature.
+  // WHO-is-asking arrives with its first real second caller, as a signature change then.)
+  function computeCaps(app, tier) {
     const preset = TIER_CAPS[tier] || TIER_CAPS.unreviewed;
     const caps = { ...preset, call_tools: [...preset.call_tools] };
     const byKey = new Map();
@@ -378,20 +458,30 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   };
 
   // The shared context every tool module gets.
-  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain };
+  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain, functions };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
-  // apps goes first because it hands back registerApp, which library and registry
+  // apps goes first because it hands back registerApp, which app-store and registry
   // need to wire an app that did not exist when their module ran.
   Object.assign(ctx, registerAppTools(ctx));
   registerDataTools(ctx);
   registerFileTools(ctx);
   registerRegistryTools(ctx);
-  registerLibraryTools(ctx);
+  registerAppStoreTools(ctx);
   registerSettingsTools(ctx);
 
-  // Must run AFTER every registration: it wraps the handlers the SDK built around the finished set.
-  installCacheHints(server, { dynamicTools: process.env.OMA_DYNAMIC_TOOLS === "1" });
+  // Must run AFTER every registration: it wraps the handler the SDK built around the finished set.
+  // Only the `$schema` trim remains here — the SEP-2549 cache fields moved into ServerOptions
+  // (cacheHints above, per-resource cacheHint in tools/apps.mjs) where the SDK emits them itself.
+  installSchemaTrim(server);
+
+  // The invalidation bridge (W2). Wired LAST because it needs the finished app registry, and
+  // released with the connection: engines are per-connection, the store's emitter is not, so a
+  // subscription that outlives its server is a listener writing to a closed transport forever.
+  // The transport owns `onclose`; chaining rather than assigning keeps whatever it already had.
+  const releaseBridge = bridgeInvalidations(store, server, { dynamicTools, hasApp: ctx.hasApp });
+  const priorClose = server.server.onclose;
+  server.server.onclose = () => { releaseBridge(); if (typeof priorClose === "function") priorClose(); };
 
   return server;
 }

@@ -27,7 +27,7 @@
  *  shape changed, a documented behaviour altered. Adding a name does not bump — an app built
  *  against 1 keeps working on an engine that added something, and feature-detects what it wants.
  *  test/runtime-contract.mjs pins the surfaces this number describes. */
-export const RUNTIME_CONTRACT = 1;
+export const RUNTIME_CONTRACT = 2;
 
 /** Pages a mount walk will fetch before declaring the projection truncated (honestly). */
 export const MAX_PAGES = 10;
@@ -66,6 +66,9 @@ export function ackPosition(ack) {
 export function decideAck(state, ack) {
   if (!ack || typeof ack !== "object" || !("ok" in ack)) return { kind: "ignore" };
   if (!state.collection || ack.collection !== state.collection) return { kind: "ignore" };
+  // A confirmation demand is not a refusal: nothing was written and nothing on screen is stale.
+  // The delete path resolves it (overlay → resend); everyone else should stay quiet.
+  if (ack.reason === "confirmation_required") return { kind: "ignore" };
   if (ack.ok !== true) return { kind: "conflict" };
   const held = Number(state.version) || 0;
   const seq = ackPosition(ack);
@@ -209,6 +212,100 @@ export function decideChanges(changes) {
 // scopes that already exist — group "" is global, group "<app>" is that one app. Merge
 // order is oma.pref's merge order, unchanged.
 
+/** What a stored preference VALUE means, with the fallback's TYPE driving the coercion — the
+ *  single owner of that rule. Settings rows hold whatever a writer put there (a checkbox may
+ *  land `false`, `"false"` or `0`), so "what does this row mean" has to be answered identically
+ *  everywhere or the answer is a dialect. It moved here from shell-runtime.js when the ENGINE
+ *  needed it too: the W-S confirmation gate reads `confirm_delete` server-side, and a resolver
+ *  of its own read `"FALSE"` as off while the renderer read it as on — a case where the UI
+ *  says "ask me before deleting" and the store deletes without asking (codex review, measured).
+ *  The runner's BRIDGE keeps a string copy for the sandboxed child; that one cannot import. */
+export function coercePref(v, fallback) {
+  const t = typeof fallback;
+  if (t === "boolean") {
+    if (v === true  || v === "true"  || v === 1) return true;
+    if (v === false || v === "false" || v === 0) return false;
+    return fallback;                                   // "25", "yes", {…} → fallback
+  }
+  if (t === "number") {
+    if (typeof v === "number" && Number.isFinite(v)) return v;
+    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
+    if (typeof v === "boolean") return v ? 1 : 0;
+    return fallback;                                   // "abc", "", {…} → fallback
+  }
+  if (t === "string") {
+    if (typeof v === "string") return v;
+    if (typeof v === "number" || typeof v === "boolean") return String(v);
+    return fallback;                                   // objects only via raw rows → fallback
+  }
+  return v === undefined ? fallback : v;               // exotic fallback type: raw pass-through
+}
+
+/** WHICH row answers for a settings key — the other half of "what does this row mean", and the
+ *  half that only matters when a key has more than one row. Duplicates are ordinary: nothing
+ *  forbids a second `data_add_item` under a key that already exists.
+ *
+ *  The rule is LAST WINS in collection order, because that is what every WRITER already assumes:
+ *  setPref (both runtimes) and the settings UI find the last matching row and update it. Readers
+ *  did not all agree — `readPref` returned the FIRST match, so a user whose `proactivity` key had
+ *  picked up a duplicate had their instructions built from the stale row while the UI showed and
+ *  wrote the fresh one; `security_set` UPDATED the first row while computeCaps read the last, so
+ *  a policy could be set, echoed back as set, and never take effect. Four resolvers, two answers.
+ *
+ *  Returns the ITEM, not the value, so a writer can target the same row a reader will read.
+ *  `group` is the pref scope: "" is the global layer, an app name is that app's override. */
+export function latestPref(items, key, group = "") {
+  let hit;
+  for (const it of items || []) {
+    if ((it.group ?? "") !== group) continue;
+    if (String(it.fields?.key ?? "") !== key) continue;
+    hit = it;
+  }
+  return hit;
+}
+
+/** The confirm-and-resend loop, ONCE. Both runtimes face the same three-step obligation — send,
+ *  and if the engine answers with a demand, put it in front of the user and re-send the identical
+ *  command with the state — and each had grown its own copy. That is the very duplication class
+ *  write-set D collapsed into the runner machine, so adding a second mirror while building W-S
+ *  would have been handing a future wave work this one created.
+ *
+ *  `send(name, args)` performs the call; `ask(demand)` shows it and resolves true for yes. The
+ *  state never leaves this function: on cancel or with no way to ask, the envelope goes back
+ *  stripped, because a caller holding it could spend the answer the user just withheld. */
+export function withConfirmation({ send, ask }) {
+  return async function confirmable(name, args) {
+    const r = await send(name, args);
+    const sc = r && r.structuredContent;
+    if (!sc || sc.reason !== "confirmation_required") return r;
+    if (!ask) return sansRequestState(r);
+    const yes = await ask(sc) === true;   // a truthy non-boolean is not a yes
+    if (!yes) return sansRequestState(r, "confirmation_declined");
+    return send(name, { ...args, request_state: sc.request_state });
+  };
+}
+
+/** A confirmation demand with the BEARER CREDENTIAL removed — what untrusted code may see.
+ *  `request_state` authorizes exactly one destructive execution, so handing it to app code
+ *  hands app code the user's answer: measured (codex review) — a widget whose user clicked
+ *  Cancel read the state out of the returned envelope and replayed it through `callTool`,
+ *  and the item died anyway. The state is the SHELL's to hold for its own resend, never the
+ *  app's; `expires_at` goes with it, being meaningless alone. */
+export function sansRequestState(result, reason) {
+  const sc = result && result.structuredContent;
+  if (!sc || typeof sc !== "object") return result;
+  const { request_state, expires_at, note, ...rest } = sc;
+  if (request_state === undefined && expires_at === undefined && !reason) return result;
+  // BOTH channels, and the note with them. Stripping only structuredContent left the text
+  // channel — and the structured `note` copied into it — still quoting the expiry and telling
+  // the app to "re-send with request_state", i.e. instructions for a credential it no longer
+  // has, written where an app is most likely to read them (codex review).
+  const said = reason === "confirmation_declined" ? "Cancelled — nothing was deleted."
+    : "Confirmation required; this app cannot carry it out itself.";
+  return { ...result, content: [{ type: "text", text: said }],
+           structuredContent: { ...rest, note: said, ...(reason ? { reason } : {}) } };
+}
+
 /** Custom-property name/value charsets. ONE definition: shell.mjs's hostTokenStyle validates the
  *  EMBEDDER's tokens against the same pair, and a theme row is the same class of data arriving
  *  through a different door. The value charset excludes < > ; { } backslash and newline. */
@@ -286,9 +383,18 @@ export function childPreviewSnapshot(rows, { app, declaration, apps, tier } = {}
   const declared = tier === "local" ? declaredCollections(declaration) : [];
   const collection = declared.length === 1 ? declared[0] : name;
   const allowed = new Set([collection, name, ...declared]);
+  // A row with NO `collection` belongs to the one this snapshot binds to. That is not a leniency,
+  // it is the fixture convention written down in app_store_preview's schema ("collection optional
+  // — the preview machines normalise it into real item shape when they answer a read"), and the
+  // filter was reading the key before anything normalised it. Measured 2026-08-14 across the
+  // shipped store: 13 of 21 entries carry NO collection on any fixture row, so `has(undefined)`
+  // dropped every row and every one of those previews rendered its empty state — the exact failure
+  // this function's own note calls "starved of its own rows, only quietly". Store rows are never
+  // in this position (the column is NOT NULL and every read projects it), so the fallback can only
+  // ever fire on fixtures: a shared snapshot of real collections still slices exactly as before.
   return {
     collection,
-    items: (rows || []).filter((r) => r && typeof r === "object" && allowed.has(r.collection)),
+    items: (rows || []).filter((r) => r && typeof r === "object" && allowed.has(r.collection ?? collection)),
     // Never undefined: inert's list_apps has no other source, and an app whose collection is
     // empty is invisible to a row-derived answer — it exists only in the roster.
     apps: Array.isArray(apps) ? apps : [],
@@ -301,14 +407,11 @@ export function childPreviewSnapshot(rows, { app, declaration, apps, tier } = {}
 export const VIA_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** The via stamp for a widget write — OBJECT FORM, frozen before the first stamp (row #8):
- *  widget write = {app}; a function write adds {function} (write-set F). Advisory
- *  provenance only (forgeable, like actor): consumed by the Data pane, stripped from every
- *  AI face, never part of export/publish closure. Returns undefined when the name can't be
- *  stamped — a write must never fail over its shadow edge. */
-export function viaOf(app, fn) {
+ *  {app}. Advisory provenance only (forgeable, like actor): consumed by the Data pane,
+ *  stripped from every AI face, never part of export/publish closure. Returns undefined when
+ *  the name can't be stamped — a write must never fail over its shadow edge. (The `function`
+ *  second key returns WITH write-set F's executor — elegance A4: no seams ahead of callers.) */
+export function viaOf(app) {
   const c = String(app || "");
-  if (!VIA_NAME_RE.test(c)) return undefined;
-  if (fn == null) return { app: c };
-  const f = String(fn);
-  return f ? { app: c, function: f } : { app: c };
+  return VIA_NAME_RE.test(c) ? { app: c } : undefined;
 }

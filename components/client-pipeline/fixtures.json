@@ -1,0 +1,20 @@
+{
+  "items": [
+    {
+      "id": "landing-client-01", "group": "", "position": 1, "version": 1,
+      "fields": { "name": "Nakamura Studio", "company": "Nakamura Studio", "contact": "Maya Nakamura", "stage": "overdue", "amount": 4800, "currency": "USD", "quote_date": "2026-07-12", "invoice_due": "2026-07-31", "last_chased": "2026-08-05", "next_step": "Review draft, then send", "notes": "Brand systems engagement" }
+    },
+    {
+      "id": "landing-client-02", "group": "", "position": 2, "version": 1,
+      "fields": { "name": "Marrow & Field", "company": "Marrow & Field", "contact": "Eli Ward", "stage": "overdue", "amount": 2200, "currency": "USD", "quote_date": "2026-07-18", "invoice_due": "2026-08-02", "last_chased": "2026-08-05", "next_step": "Review draft, then send", "notes": "Research sprint" }
+    },
+    {
+      "id": "landing-client-03", "group": "", "position": 3, "version": 1,
+      "fields": { "name": "Northstar Lab", "company": "Northstar Lab", "contact": "Priya Shah", "stage": "active", "amount": 6500, "currency": "USD", "quote_date": "2026-07-25", "invoice_due": "2026-08-14", "last_chased": "", "next_step": "Deliver research synthesis", "notes": "Product strategy" }
+    },
+    {
+      "id": "landing-client-04", "group": "", "position": 4, "version": 1,
+      "fields": { "name": "Kite & Co", "company": "Kite & Co", "contact": "Jon Bell", "stage": "proposal", "amount": 1900, "currency": "USD", "quote_date": "2026-08-01", "invoice_due": "", "last_chased": "", "next_step": "Follow up Friday", "notes": "Operations audit" }
+    }
+  ]
+}

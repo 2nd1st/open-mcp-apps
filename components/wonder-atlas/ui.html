@@ -1,0 +1,2168 @@
+<!--
+Wonder Atlas hard-contract check
+[x] One self-contained HTML document; runtime code uses window.oma only.
+[x] No network requests, external fonts, scripts, images, or URLs.
+[x] The installed app stays empty; preview stories live only in fixtures.json.
+[x] Every rendered question comes from oma state and explored state persists through oma.updateItem.
+[x] Natural document height at desktop, 500px, and 360px; no internal vertical scroller.
+[x] All eight illustration families are CSS/SVG-native and carry no fetched media.
+[x] Empty state teaches the app and offers an explicit AI hand-off.
+-->
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Wonder Atlas · A map made from real questions</title>
+<meta name="description" content="Keep the questions that make you stop, look closer, and understand the world a little better.">
+<meta name="oma-category" content="Learning">
+<style>
+  :root {
+    --ink: var(--color-text-primary, #17202a);
+    --muted: var(--color-text-secondary, #5d6875);
+    --quiet: var(--color-text-tertiary, #7b8794);
+    --surface: var(--color-background-primary, #ffffff);
+    --surface-soft: var(--color-background-secondary, #f4f6f8);
+    --surface-softer: var(--color-background-tertiary, #e9edf2);
+    --line: var(--color-border-primary, #d5dbe2);
+    --line-soft: var(--color-border-secondary, #e6eaf0);
+    --blue: var(--color-text-info, #5267d8);
+    --green: var(--color-text-success, #3d8b66);
+    --gold: var(--color-text-warning, #c7861e);
+    --rose: var(--color-text-danger, #bd536a);
+    --violet: color-mix(in oklab, var(--blue) 72%, var(--rose));
+    --shadow: var(--shadow-lg, 0 24px 70px rgba(28, 38, 52, .14));
+    --fast: 150ms;
+    --ease: cubic-bezier(.2, .75, .2, 1);
+  }
+
+  * {
+    box-sizing: border-box;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  html,
+  body {
+    width: 100%;
+    margin: 0;
+    overflow-x: clip;
+    overflow-y: visible;
+  }
+
+  body {
+    padding: 12px;
+    color: var(--ink);
+    background: transparent;
+    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
+  }
+
+  button {
+    color: inherit;
+    font: inherit;
+  }
+
+  button:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:focus-visible {
+    outline: 3px solid color-mix(in oklab, var(--blue) 42%, transparent);
+    outline-offset: 3px;
+  }
+
+  .atlas {
+    position: relative;
+    width: min(100%, 1120px);
+    margin: 0 auto;
+    overflow: clip;
+    background:
+      radial-gradient(circle at 9% 0%, color-mix(in oklab, var(--blue) 9%, transparent), transparent 30%),
+      radial-gradient(circle at 92% 4%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 28%),
+      var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 28px;
+    box-shadow: var(--shadow);
+  }
+
+  .topbar {
+    position: relative;
+    z-index: 5;
+    display: flex;
+    min-height: 78px;
+    padding: 15px 18px;
+    align-items: center;
+    gap: 14px;
+    border-bottom: 1px solid var(--line-soft);
+    background: color-mix(in oklab, var(--surface) 91%, transparent);
+    backdrop-filter: blur(18px);
+  }
+
+  .brand {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 11px;
+  }
+
+  .brand-mark {
+    position: relative;
+    display: grid;
+    width: 45px;
+    height: 45px;
+    flex: 0 0 auto;
+    place-items: center;
+    color: var(--blue);
+    background:
+      radial-gradient(circle, color-mix(in oklab, var(--gold) 28%, var(--surface)) 0 18%, transparent 19%),
+      color-mix(in oklab, var(--blue) 9%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--blue) 24%, var(--line));
+    border-radius: 50%;
+    box-shadow: inset 0 0 0 5px color-mix(in oklab, var(--surface) 66%, transparent);
+  }
+
+  .brand-mark::before,
+  .brand-mark::after {
+    position: absolute;
+    width: 4px;
+    height: 4px;
+    content: "";
+    background: var(--gold);
+    border-radius: 50%;
+  }
+
+  .brand-mark::before {
+    top: 7px;
+    right: 8px;
+  }
+
+  .brand-mark::after {
+    bottom: 8px;
+    left: 8px;
+    opacity: .6;
+  }
+
+  .brand-mark svg {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.45;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .brand-copy {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    display: block;
+    margin: 0 0 2px;
+    color: var(--quiet);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .15em;
+    text-transform: uppercase;
+  }
+
+  .brand-copy h1 {
+    margin: 0;
+    font-size: 18px;
+    line-height: 1.1;
+    letter-spacing: -.025em;
+  }
+
+  .brand-copy p {
+    margin: 3px 0 0;
+    overflow: hidden;
+    color: var(--muted);
+    font-size: 11.5px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .progress-pill {
+    display: flex;
+    min-width: 0;
+    margin-left: auto;
+    padding: 5px 10px 5px 6px;
+    align-items: center;
+    gap: 8px;
+    color: var(--muted);
+    background: color-mix(in oklab, var(--surface-soft) 74%, transparent);
+    border: 1px solid var(--line-soft);
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+
+  .progress-ring {
+    --progress: 0deg;
+    position: relative;
+    width: 27px;
+    height: 27px;
+    flex: 0 0 auto;
+    background: conic-gradient(var(--green) var(--progress), var(--surface-softer) 0);
+    border-radius: 50%;
+  }
+
+  .progress-ring::after {
+    position: absolute;
+    inset: 4px;
+    content: "";
+    background: var(--surface);
+    border-radius: inherit;
+  }
+
+  .top-actions {
+    display: flex;
+    flex: 0 0 auto;
+    gap: 7px;
+  }
+
+  .button {
+    display: inline-flex;
+    min-height: 36px;
+    padding: 8px 12px;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    font-size: 11.5px;
+    font-weight: 700;
+    line-height: 1;
+    transition: transform var(--fast) var(--ease), background var(--fast), border-color var(--fast);
+  }
+
+  .button:hover {
+    background: var(--surface-soft);
+    border-color: color-mix(in oklab, var(--blue) 27%, var(--line));
+  }
+
+  .button:active {
+    transform: scale(.97);
+  }
+
+  .button.primary {
+    color: var(--color-text-inverse, #ffffff);
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+
+  .button.primary:hover {
+    background: color-mix(in oklab, var(--ink) 88%, var(--blue));
+  }
+
+  .button.soft {
+    color: var(--blue);
+    background: color-mix(in oklab, var(--blue) 8%, var(--surface));
+    border-color: color-mix(in oklab, var(--blue) 22%, var(--line));
+  }
+
+  .button svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .error-bar {
+    position: relative;
+    z-index: 8;
+    display: flex;
+    margin: 12px 16px 0;
+    padding: 10px 12px;
+    align-items: center;
+    gap: 10px;
+    color: var(--rose);
+    background: color-mix(in oklab, var(--rose) 8%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--rose) 25%, var(--line));
+    border-radius: 12px;
+    font-size: 11.5px;
+  }
+
+  .error-bar span {
+    min-width: 0;
+    flex: 1;
+    overflow-wrap: anywhere;
+  }
+
+  .error-bar button {
+    width: 25px;
+    height: 25px;
+    padding: 0;
+    color: inherit;
+    background: transparent;
+    border: 0;
+    border-radius: 8px;
+    font-size: 17px;
+  }
+
+  .hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1.12fr) minmax(340px, .88fr);
+    min-width: 0;
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .scene-panel {
+    --scene-main: var(--blue);
+    --scene-alt: var(--violet);
+    --scene-pop: var(--gold);
+    position: relative;
+    min-width: 0;
+    min-height: 512px;
+    overflow: clip;
+    background:
+      radial-gradient(circle at 70% 24%, color-mix(in oklab, var(--scene-pop) 16%, transparent), transparent 22%),
+      linear-gradient(145deg, color-mix(in oklab, var(--scene-main) 12%, var(--surface)), color-mix(in oklab, var(--scene-alt) 7%, var(--surface-soft)));
+    border-right: 1px solid var(--line-soft);
+    isolation: isolate;
+  }
+
+  .scene-panel::before {
+    position: absolute;
+    inset: 20px;
+    z-index: -1;
+    content: "";
+    border: 1px solid color-mix(in oklab, var(--scene-main) 16%, transparent);
+    border-radius: 180px 180px 24px 24px;
+    pointer-events: none;
+  }
+
+  .scene-panel::after {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: -1;
+    width: 78%;
+    aspect-ratio: 1;
+    content: "";
+    border: 1px dashed color-mix(in oklab, var(--scene-main) 18%, transparent);
+    border-radius: 50%;
+    translate: -50% -52%;
+    pointer-events: none;
+  }
+
+  .scene-host[data-scene="moon"] {
+    --scene-main: var(--violet);
+    --scene-alt: var(--blue);
+    --scene-pop: var(--gold);
+  }
+
+  .scene-host[data-scene="blue-sky"] {
+    --scene-main: var(--blue);
+    --scene-alt: var(--violet);
+    --scene-pop: var(--gold);
+  }
+
+  .scene-host[data-scene="rainbow"] {
+    --scene-main: var(--rose);
+    --scene-alt: var(--blue);
+    --scene-pop: var(--gold);
+  }
+
+  .scene-host[data-scene="migration"] {
+    --scene-main: var(--blue);
+    --scene-alt: var(--green);
+    --scene-pop: var(--gold);
+  }
+
+  .scene-host[data-scene="autumn-leaf"] {
+    --scene-main: var(--gold);
+    --scene-alt: var(--rose);
+    --scene-pop: var(--green);
+  }
+
+  .scene-host[data-scene="shell-sound"] {
+    --scene-main: var(--rose);
+    --scene-alt: var(--gold);
+    --scene-pop: var(--blue);
+  }
+
+  .scene-host[data-scene="cold-breath"] {
+    --scene-main: var(--blue);
+    --scene-alt: var(--violet);
+    --scene-pop: var(--green);
+  }
+
+  .scene-host[data-scene="seed-direction"] {
+    --scene-main: var(--green);
+    --scene-alt: var(--gold);
+    --scene-pop: var(--rose);
+  }
+
+  .scene-meta {
+    position: absolute;
+    top: 34px;
+    left: 34px;
+    z-index: 3;
+    display: flex;
+    max-width: calc(100% - 68px);
+    align-items: center;
+    gap: 8px;
+  }
+
+  .scene-category,
+  .scene-coordinate {
+    display: inline-flex;
+    min-height: 25px;
+    padding: 5px 9px;
+    align-items: center;
+    color: color-mix(in oklab, var(--scene-main) 76%, var(--ink));
+    background: color-mix(in oklab, var(--surface) 82%, transparent);
+    border: 1px solid color-mix(in oklab, var(--scene-main) 20%, var(--line));
+    border-radius: 999px;
+    backdrop-filter: blur(10px);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .scene-coordinate {
+    color: var(--muted);
+  }
+
+  .scene-art {
+    position: absolute;
+    inset: 44px 14px 56px;
+  }
+
+  .scene-svg {
+    display: block;
+    width: 100%;
+    height: 100%;
+  }
+
+  .scene-svg .scene-back {
+    fill: color-mix(in oklab, var(--scene-main) 12%, var(--surface));
+  }
+
+  .scene-svg .scene-soft {
+    fill: color-mix(in oklab, var(--scene-alt) 17%, var(--surface));
+  }
+
+  .scene-svg .scene-main {
+    fill: var(--scene-main);
+  }
+
+  .scene-svg .scene-alt {
+    fill: var(--scene-alt);
+  }
+
+  .scene-svg .scene-pop {
+    fill: var(--scene-pop);
+  }
+
+  .scene-svg .scene-ink {
+    fill: var(--ink);
+  }
+
+  .scene-svg .scene-paper {
+    fill: color-mix(in oklab, var(--surface) 92%, var(--scene-main));
+  }
+
+  .scene-svg .scene-line,
+  .scene-svg .scene-line-alt,
+  .scene-svg .scene-line-pop,
+  .scene-svg .scene-line-ink {
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .scene-svg .scene-line {
+    stroke: var(--scene-main);
+  }
+
+  .scene-svg .scene-line-alt {
+    stroke: var(--scene-alt);
+  }
+
+  .scene-svg .scene-line-pop {
+    stroke: var(--scene-pop);
+  }
+
+  .scene-svg .scene-line-ink {
+    stroke: var(--ink);
+  }
+
+  .scene-caption {
+    position: absolute;
+    right: 32px;
+    bottom: 28px;
+    left: 32px;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+
+  .scene-caption span {
+    max-width: 320px;
+    color: color-mix(in oklab, var(--ink) 75%, var(--scene-main));
+    font-size: 10.5px;
+    font-weight: 650;
+    line-height: 1.35;
+  }
+
+  .round-button {
+    display: grid;
+    width: 36px;
+    height: 36px;
+    flex: 0 0 auto;
+    padding: 0;
+    place-items: center;
+    color: var(--scene-main);
+    background: color-mix(in oklab, var(--surface) 86%, transparent);
+    border: 1px solid color-mix(in oklab, var(--scene-main) 24%, var(--line));
+    border-radius: 50%;
+    backdrop-filter: blur(10px);
+  }
+
+  .round-button svg {
+    width: 16px;
+    height: 16px;
+    stroke: currentColor;
+    fill: none;
+    stroke-width: 1.7;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .answer-panel {
+    display: flex;
+    min-width: 0;
+    padding: 42px 38px 34px;
+    flex-direction: column;
+    background:
+      linear-gradient(180deg, color-mix(in oklab, var(--surface) 86%, transparent), var(--surface)),
+      var(--surface);
+  }
+
+  .answer-kicker {
+    display: flex;
+    margin: 0 0 15px;
+    align-items: center;
+    gap: 8px;
+    color: var(--quiet);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 9px;
+    font-weight: 750;
+    letter-spacing: .14em;
+    text-transform: uppercase;
+  }
+
+  .answer-kicker::before {
+    width: 24px;
+    height: 1px;
+    content: "";
+    background: var(--blue);
+  }
+
+  .answer-panel h2 {
+    max-width: 510px;
+    margin: 0;
+    font-size: clamp(30px, 4vw, 46px);
+    font-weight: 760;
+    letter-spacing: -.055em;
+    line-height: .99;
+    text-wrap: balance;
+  }
+
+  .answer {
+    max-width: 520px;
+    margin: 20px 0 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.65;
+  }
+
+  .big-idea {
+    position: relative;
+    margin: 23px 0 0;
+    padding: 14px 15px 14px 42px;
+    color: var(--ink);
+    background: color-mix(in oklab, var(--blue) 6%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--blue) 18%, var(--line));
+    border-radius: 15px;
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .big-idea::before {
+    position: absolute;
+    top: 15px;
+    left: 15px;
+    display: grid;
+    width: 19px;
+    height: 19px;
+    content: "✦";
+    place-items: center;
+    color: var(--blue);
+    font-size: 14px;
+  }
+
+  .big-idea b,
+  .try-copy b {
+    display: block;
+    margin-bottom: 3px;
+    font-size: 9px;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  .try-card {
+    display: grid;
+    margin-top: 11px;
+    padding: 14px 15px;
+    grid-template-columns: 32px minmax(0, 1fr);
+    gap: 10px;
+    background: color-mix(in oklab, var(--gold) 7%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--gold) 22%, var(--line));
+    border-radius: 15px;
+  }
+
+  .try-icon {
+    display: grid;
+    width: 31px;
+    height: 31px;
+    place-items: center;
+    color: var(--gold);
+    background: color-mix(in oklab, var(--gold) 12%, var(--surface));
+    border-radius: 10px;
+    font-size: 16px;
+  }
+
+  .try-copy {
+    min-width: 0;
+    color: var(--muted);
+    font-size: 11.5px;
+    line-height: 1.5;
+  }
+
+  .try-copy b {
+    color: color-mix(in oklab, var(--gold) 74%, var(--ink));
+  }
+
+  .try-note {
+    display: block;
+    margin-top: 6px;
+    color: var(--quiet);
+    font-size: 10px;
+  }
+
+  .answer-actions {
+    display: flex;
+    margin-top: auto;
+    padding-top: 24px;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  .explore-button[data-explored="true"] {
+    color: var(--green);
+    background: color-mix(in oklab, var(--green) 8%, var(--surface));
+    border-color: color-mix(in oklab, var(--green) 24%, var(--line));
+  }
+
+  .trail {
+    position: relative;
+    padding: 42px 38px 50px;
+    background:
+      linear-gradient(90deg, transparent 0 49.9%, color-mix(in oklab, var(--blue) 7%, transparent) 50% 50.1%, transparent 50.2%),
+      var(--surface-soft);
+  }
+
+  .trail::before {
+    position: absolute;
+    top: 117px;
+    bottom: 66px;
+    left: 50%;
+    width: 1px;
+    content: "";
+    background: repeating-linear-gradient(to bottom, color-mix(in oklab, var(--blue) 20%, transparent) 0 5px, transparent 5px 13px);
+    pointer-events: none;
+  }
+
+  .trail-header {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+  }
+
+  .trail-header h2 {
+    margin: 0;
+    font-size: 24px;
+    letter-spacing: -.035em;
+  }
+
+  .trail-header p {
+    max-width: 520px;
+    margin: 7px 0 0;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  .trail-count {
+    flex: 0 0 auto;
+    color: var(--quiet);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 10px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .filters {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    margin-top: 19px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  .filter {
+    min-height: 30px;
+    padding: 6px 10px;
+    color: var(--muted);
+    background: color-mix(in oklab, var(--surface) 80%, transparent);
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    font-size: 10.5px;
+    font-weight: 650;
+    transition: transform var(--fast) var(--ease), color var(--fast), background var(--fast);
+  }
+
+  .filter:hover {
+    color: var(--ink);
+    background: var(--surface);
+  }
+
+  .filter[aria-pressed="true"] {
+    color: var(--color-text-inverse, #ffffff);
+    background: var(--ink);
+    border-color: var(--ink);
+  }
+
+  .portal-grid {
+    position: relative;
+    z-index: 2;
+    display: grid;
+    margin-top: 23px;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    align-items: start;
+    gap: 14px;
+  }
+
+  @media (min-width: 921px) {
+    .portal-grid[data-count="2"] {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .portal-grid[data-count="3"] {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+  }
+
+  @media (min-width: 701px) {
+    .portal-grid[data-count="1"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-grid[data-count="1"] .portal {
+      display: grid;
+      grid-template-columns: minmax(280px, .92fr) minmax(0, 1.08fr);
+      border-radius: 150px 18px 18px 150px;
+    }
+
+    .portal-grid[data-count="1"] .portal-art {
+      height: 260px;
+      border-right: 1px solid var(--line-soft);
+      border-bottom: 0;
+    }
+
+    .portal-grid[data-count="1"] .portal-copy {
+      display: grid;
+      min-height: 0;
+      padding: 28px 30px;
+      align-content: center;
+    }
+
+    .portal-grid[data-count="1"] .portal h3 {
+      max-width: 460px;
+      font-size: 22px;
+      line-height: 1.18;
+      -webkit-line-clamp: 4;
+    }
+  }
+
+  .portal {
+    --scene-main: var(--blue);
+    --scene-alt: var(--violet);
+    --scene-pop: var(--gold);
+    position: relative;
+    min-width: 0;
+    padding: 0;
+    overflow: clip;
+    text-align: left;
+    color: var(--ink);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 110px 110px 18px 18px;
+    box-shadow: var(--shadow-sm, 0 8px 24px rgba(28, 38, 52, .08));
+    transition: transform 220ms var(--ease), box-shadow 220ms, border-color 220ms;
+  }
+
+  .portal:nth-child(4n + 2),
+  .portal:nth-child(4n + 4) {
+    margin-top: 28px;
+  }
+
+  .portal:hover {
+    z-index: 3;
+    transform: translateY(-5px);
+    border-color: color-mix(in oklab, var(--scene-main) 35%, var(--line));
+    box-shadow: var(--shadow-md, 0 15px 38px rgba(28, 38, 52, .13));
+  }
+
+  .portal[aria-pressed="true"] {
+    border-color: color-mix(in oklab, var(--scene-main) 60%, var(--line));
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--scene-main) 10%, transparent), var(--shadow-sm);
+  }
+
+  .portal-art {
+    position: relative;
+    height: 158px;
+    overflow: clip;
+    background:
+      radial-gradient(circle at 70% 18%, color-mix(in oklab, var(--scene-pop) 13%, transparent), transparent 27%),
+      color-mix(in oklab, var(--scene-main) 9%, var(--surface-soft));
+    border-bottom: 1px solid var(--line-soft);
+  }
+
+  .portal-art .scene-svg {
+    position: absolute;
+    inset: 10px 4px 0;
+    width: calc(100% - 8px);
+    height: calc(100% - 10px);
+  }
+
+  .portal-number {
+    position: absolute;
+    top: 11px;
+    left: 50%;
+    z-index: 2;
+    display: grid;
+    width: 26px;
+    height: 26px;
+    translate: -50% 0;
+    place-items: center;
+    color: color-mix(in oklab, var(--scene-main) 80%, var(--ink));
+    background: color-mix(in oklab, var(--surface) 84%, transparent);
+    border: 1px solid color-mix(in oklab, var(--scene-main) 22%, var(--line));
+    border-radius: 50%;
+    backdrop-filter: blur(8px);
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 9px;
+    font-weight: 750;
+  }
+
+  .portal-copy {
+    min-height: 116px;
+    padding: 14px 14px 15px;
+  }
+
+  .portal-meta {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    color: color-mix(in oklab, var(--scene-main) 72%, var(--ink));
+    font-family: var(--font-mono, ui-monospace, monospace);
+    font-size: 8.5px;
+    font-weight: 750;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+
+  .portal-done {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    color: var(--green);
+  }
+
+  .portal h3 {
+    display: -webkit-box;
+    margin: 9px 0 0;
+    overflow: hidden;
+    font-size: 14px;
+    letter-spacing: -.015em;
+    line-height: 1.3;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
+  }
+
+  .empty-state {
+    display: grid;
+    min-height: 650px;
+    padding: 48px;
+    place-items: center;
+    background:
+      radial-gradient(circle at 50% 32%, color-mix(in oklab, var(--blue) 12%, transparent), transparent 33%),
+      var(--surface-soft);
+  }
+
+  .empty-card {
+    display: grid;
+    width: min(100%, 760px);
+    overflow: clip;
+    grid-template-columns: minmax(260px, .9fr) minmax(300px, 1.1fr);
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 180px 180px 24px 24px;
+    box-shadow: var(--shadow);
+  }
+
+  .empty-scene {
+    position: relative;
+    min-height: 410px;
+    overflow: clip;
+    background: color-mix(in oklab, var(--violet) 10%, var(--surface-soft));
+    border-right: 1px solid var(--line-soft);
+  }
+
+  .empty-scene .scene-svg {
+    position: absolute;
+    inset: 24px -15px 0;
+    width: calc(100% + 30px);
+    height: calc(100% - 24px);
+  }
+
+  .empty-copy {
+    display: flex;
+    padding: 58px 42px 40px;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .empty-copy h2 {
+    max-width: 430px;
+    margin: 0;
+    font-size: 35px;
+    letter-spacing: -.05em;
+    line-height: 1.02;
+    text-wrap: balance;
+  }
+
+  .empty-copy p {
+    margin: 17px 0 0;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.65;
+  }
+
+  .empty-actions {
+    display: flex;
+    margin-top: 23px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .atlas-footer {
+    display: flex;
+    min-height: 62px;
+    padding: 14px 20px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    color: var(--quiet);
+    background: var(--surface);
+    border-top: 1px solid var(--line-soft);
+    font-size: 10.5px;
+  }
+
+  .footer-mark {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    color: var(--muted);
+    font-weight: 650;
+  }
+
+  .footer-mark::before {
+    width: 7px;
+    height: 7px;
+    content: "";
+    background: var(--green);
+    border-radius: 50%;
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--green) 10%, transparent);
+  }
+
+  html[data-motion="gentle"] .moon-orbit {
+    transform-origin: 320px 214px;
+    animation: orbit-drift 14s linear infinite;
+  }
+
+  html[data-motion="gentle"] .float-one {
+    animation: float-one 5s ease-in-out infinite alternate;
+  }
+
+  html[data-motion="gentle"] .float-two {
+    animation: float-two 6.5s ease-in-out infinite alternate;
+  }
+
+  html[data-motion="gentle"] .pulse {
+    transform-origin: center;
+    animation: soft-pulse 3.4s ease-in-out infinite;
+  }
+
+  @keyframes orbit-drift {
+    to {
+      rotate: 360deg;
+    }
+  }
+
+  @keyframes float-one {
+    to {
+      translate: 0 -8px;
+    }
+  }
+
+  @keyframes float-two {
+    to {
+      translate: 7px -5px;
+    }
+  }
+
+  @keyframes soft-pulse {
+    50% {
+      opacity: .52;
+      scale: .94;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .moon-orbit,
+    .float-one,
+    .float-two,
+    .pulse {
+      animation: none !important;
+    }
+
+    .portal,
+    .button {
+      transition-duration: 0ms;
+    }
+  }
+
+  @media (max-width: 920px) {
+    .topbar {
+      flex-wrap: wrap;
+    }
+
+    .progress-pill {
+      order: 3;
+      width: 100%;
+      margin-left: 56px;
+      justify-content: flex-start;
+      border: 0;
+      background: transparent;
+      padding-block: 0;
+    }
+
+    .top-actions {
+      margin-left: auto;
+    }
+
+    .hero {
+      grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
+    }
+
+    .scene-panel {
+      min-height: 490px;
+    }
+
+    .answer-panel {
+      padding-inline: 27px;
+    }
+
+    .portal-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .portal:nth-child(4n + 2),
+    .portal:nth-child(4n + 4) {
+      margin-top: 0;
+    }
+
+    .portal:nth-child(even) {
+      margin-top: 30px;
+    }
+
+    .portal-art {
+      height: 190px;
+    }
+  }
+
+  @media (max-width: 700px) {
+    body {
+      padding: 8px;
+    }
+
+    .atlas {
+      border-radius: 22px;
+    }
+
+    .hero {
+      grid-template-columns: 1fr;
+    }
+
+    .scene-panel {
+      min-height: 380px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .answer-panel {
+      min-height: 0;
+      padding: 32px 27px 30px;
+    }
+
+    .answer-actions {
+      margin-top: 0;
+    }
+
+    .trail {
+      padding: 34px 26px 43px;
+    }
+
+    .trail-header {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .trail::before {
+      left: 50%;
+    }
+
+    .portal-grid[data-count="1"] {
+      grid-template-columns: minmax(0, 1fr);
+    }
+
+    .portal-grid[data-count="1"] .portal {
+      width: min(100%, 440px);
+      margin-inline: auto;
+    }
+
+    .empty-state {
+      min-height: 0;
+      padding: 28px 18px 36px;
+    }
+
+    .empty-card {
+      width: min(100%, 500px);
+      grid-template-columns: 1fr;
+      border-radius: 160px 160px 22px 22px;
+    }
+
+    .empty-scene {
+      min-height: 320px;
+      border-right: 0;
+      border-bottom: 1px solid var(--line-soft);
+    }
+
+    .empty-copy {
+      padding: 34px 28px 30px;
+    }
+  }
+
+  @media (max-width: 500px) {
+    body {
+      padding: 6px;
+    }
+
+    .atlas {
+      border-radius: 18px;
+    }
+
+    .topbar {
+      min-height: 0;
+      padding: 12px;
+      gap: 10px;
+    }
+
+    .brand-mark {
+      width: 40px;
+      height: 40px;
+    }
+
+    .brand-copy h1 {
+      font-size: 16px;
+    }
+
+    .brand-copy p {
+      max-width: 165px;
+      font-size: 10px;
+    }
+
+    .top-actions {
+      width: 100%;
+      margin-left: 0;
+    }
+
+    .top-actions .button {
+      flex: 1;
+    }
+
+    .progress-pill {
+      order: 2;
+      width: auto;
+      margin-left: auto;
+      padding: 4px 8px 4px 5px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line-soft);
+    }
+
+    .top-actions {
+      order: 3;
+    }
+
+    .scene-panel {
+      min-height: 326px;
+    }
+
+    .scene-panel::before {
+      inset: 14px;
+      border-radius: 130px 130px 18px 18px;
+    }
+
+    .scene-meta {
+      top: 24px;
+      left: 24px;
+      max-width: calc(100% - 48px);
+    }
+
+    .scene-art {
+      inset: 36px 4px 50px;
+    }
+
+    .scene-caption {
+      right: 22px;
+      bottom: 18px;
+      left: 22px;
+    }
+
+    .scene-caption span {
+      max-width: 235px;
+      font-size: 9.5px;
+    }
+
+    .answer-panel {
+      padding: 28px 21px 25px;
+    }
+
+    .answer-panel h2 {
+      font-size: 34px;
+    }
+
+    .answer {
+      margin-top: 16px;
+      font-size: 13px;
+      line-height: 1.6;
+    }
+
+    .big-idea,
+    .try-card {
+      margin-top: 14px;
+    }
+
+    .answer-actions .button {
+      flex: 1 1 145px;
+    }
+
+    .trail {
+      padding: 29px 15px 36px;
+    }
+
+    .trail-header h2 {
+      font-size: 21px;
+    }
+
+    .filters {
+      margin-top: 15px;
+    }
+
+    .portal-grid {
+      margin-top: 17px;
+      gap: 9px;
+    }
+
+    .portal:nth-child(even) {
+      margin-top: 20px;
+    }
+
+    .portal {
+      border-radius: 90px 90px 14px 14px;
+    }
+
+    .portal-art {
+      height: 128px;
+    }
+
+    .portal-copy {
+      min-height: 108px;
+      padding: 11px 10px 12px;
+    }
+
+    .portal h3 {
+      margin-top: 7px;
+      font-size: 12.5px;
+      line-height: 1.28;
+    }
+
+    .portal-meta {
+      font-size: 7.5px;
+    }
+
+    .atlas-footer {
+      align-items: flex-start;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .empty-card {
+      border-radius: 130px 130px 18px 18px;
+    }
+
+    .empty-scene {
+      min-height: 270px;
+    }
+
+    .empty-copy {
+      padding: 29px 22px 25px;
+    }
+
+    .empty-copy h2 {
+      font-size: 30px;
+    }
+  }
+
+  @media (max-width: 370px) {
+    .brand-copy p {
+      display: none;
+    }
+
+    .progress-pill #progressText {
+      max-width: none;
+      overflow: visible;
+      font-size: 0;
+      text-overflow: clip;
+    }
+
+    .progress-pill #progressText::after {
+      content: attr(data-short);
+      font-size: 10.5px;
+    }
+
+    .button {
+      padding-inline: 9px;
+      font-size: 10.5px;
+    }
+
+    .scene-panel {
+      min-height: 292px;
+    }
+
+    .scene-category,
+    .scene-coordinate {
+      padding-inline: 7px;
+      font-size: 7.5px;
+    }
+
+    .scene-caption span {
+      max-width: 210px;
+    }
+
+    .answer-panel h2 {
+      font-size: 30px;
+    }
+
+    .portal-art {
+      height: 112px;
+    }
+
+    .portal-copy {
+      min-height: 101px;
+    }
+
+    .portal h3 {
+      font-size: 12px;
+    }
+
+    .empty-copy h2 {
+      font-size: 28px;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="atlas" id="app">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24">
+          <circle cx="12" cy="12" r="8.2"></circle>
+          <path d="M14.9 9.1l-1.8 4-4 1.8 1.8-4z"></path>
+          <path d="M12 1.8v2.1M12 20.1v2.1M1.8 12h2.1M20.1 12h2.1"></path>
+        </svg>
+      </div>
+      <div class="brand-copy">
+        <span class="eyebrow" data-i18n="appEyebrow">World explorer</span>
+        <h1 data-i18n="appName">Wonder Atlas</h1>
+        <p data-i18n="appSubtitle">A map made from real questions</p>
+      </div>
+    </div>
+
+    <div class="progress-pill" aria-live="polite">
+      <span class="progress-ring" id="progressRing" aria-hidden="true"></span>
+      <span id="progressText">0 of 0 explored</span>
+    </div>
+
+    <div class="top-actions">
+      <button class="button" id="surpriseButton" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h2.2c2.4 0 3.1 8 5.6 8H14"></path><path d="M11.5 9.5L14 12l-2.5 2.5M2 12h2.2c1.1 0 1.8-1.7 2.5-3.5M9 4.4c.3-.3.5-.4.8-.4H14"></path><path d="M11.5 1.5L14 4l-2.5 2.5"></path></svg>
+        <span data-i18n="surprise">Surprise me</span>
+      </button>
+      <button class="button primary" id="askButton" type="button">
+        <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12"></path></svg>
+        <span data-i18n="addQuestion">Add a question</span>
+      </button>
+    </div>
+  </header>
+
+  <div class="error-bar" id="errorBar" role="status" hidden>
+    <span id="errorText"></span>
+    <button id="dismissError" type="button" aria-label="Dismiss">×</button>
+  </div>
+
+  <section class="empty-state" id="emptyState" hidden>
+    <div class="empty-card">
+      <div class="empty-scene scene-host" data-scene="moon" id="emptyScene" aria-hidden="true"></div>
+      <div class="empty-copy">
+        <span class="eyebrow" data-i18n="emptyEyebrow">The first waypoint</span>
+        <h2 data-i18n="emptyTitle">Every atlas begins with one good question.</h2>
+        <p data-i18n="emptyBody">Ask about something you noticed. The AI can answer clearly, add a small safe way to investigate it, and keep the question here for you.</p>
+        <div class="empty-actions">
+          <button class="button primary" id="emptyStart" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2v12M2 8h12"></path></svg>
+            <span data-i18n="askFirst">Ask my first why</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="atlasView" hidden>
+    <section class="hero" id="hero">
+      <div class="scene-panel scene-host" id="scenePanel" data-scene="moon" role="img">
+        <div class="scene-meta">
+          <span class="scene-category" id="sceneCategory">Sky</span>
+          <span class="scene-coordinate" id="sceneCoordinate">Waypoint 01</span>
+        </div>
+        <div class="scene-art" id="sceneArt" aria-hidden="true"></div>
+        <div class="scene-caption">
+          <span id="sceneCaption">A question worth keeping becomes a place you can return to.</span>
+          <button class="round-button" id="sceneSurpriseButton" type="button" aria-label="Choose another question">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h2.2c2.4 0 3.1 8 5.6 8H14"></path><path d="M11.5 9.5L14 12l-2.5 2.5M2 12h2.2c1.1 0 1.8-1.7 2.5-3.5M9 4.4c.3-.3.5-.4.8-.4H14"></path></svg>
+          </button>
+        </div>
+      </div>
+
+      <article class="answer-panel">
+        <p class="answer-kicker" data-i18n="currentWonder">Current wonder</p>
+        <h2 id="heroQuestion" tabindex="-1">Why does the Moon follow me?</h2>
+        <p class="answer" id="heroAnswer"></p>
+        <div class="big-idea">
+          <b data-i18n="bigIdea">The big idea</b>
+          <span id="heroIdea"></span>
+        </div>
+        <div class="try-card">
+          <span class="try-icon" aria-hidden="true">⌁</span>
+          <div class="try-copy">
+            <b data-i18n="tryIt">Try it</b>
+            <span id="heroTry"></span>
+            <small class="try-note" id="heroTryNote"></small>
+          </div>
+        </div>
+        <div class="answer-actions">
+          <button class="button explore-button" id="exploreButton" type="button" data-explored="false">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.5"></circle><path d="M5.3 8.1l1.7 1.7 3.8-4"></path></svg>
+            <span id="exploreLabel">Mark explored</span>
+          </button>
+          <button class="button soft" id="deeperButton" type="button">
+            <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.2 4 4 1.2-4 1.2-1.2 4-1.2-4-4-1.2 4-1.2z"></path></svg>
+            <span data-i18n="goDeeper">Go deeper with AI</span>
+          </button>
+        </div>
+      </article>
+    </section>
+
+    <section class="trail">
+      <div class="trail-header">
+        <div>
+          <span class="eyebrow" data-i18n="atlasTrail">Atlas trail</span>
+          <h2 data-i18n="chooseQuestion">Pick another question</h2>
+          <p data-i18n="trailBody">Follow any path. The atlas grows whenever you ask why.</p>
+        </div>
+        <span class="trail-count" id="trailCount">8 waypoints</span>
+      </div>
+      <div class="filters" id="filters" aria-label="Question categories"></div>
+      <div class="portal-grid" id="portalGrid"></div>
+    </section>
+
+    <footer class="atlas-footer">
+      <span class="footer-mark" data-i18n="footerPrivate">Your questions stay in your own atlas.</span>
+      <span data-i18n="footerQuiet">No feed. No ads. Just things you chose to understand.</span>
+    </footer>
+  </div>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+
+  const STR = {
+    en: {
+      metaDescription: "Keep the questions that make you stop, look closer, and understand the world a little better.",
+      appEyebrow: "World explorer",
+      appName: "Wonder Atlas",
+      appSubtitle: "A map made from real questions",
+      surprise: "Surprise me",
+      addQuestion: "Add a question",
+      currentWonder: "Current wonder",
+      bigIdea: "The big idea",
+      tryIt: "Try it",
+      markExplored: "Mark explored",
+      explored: "Explored",
+      goDeeper: "Go deeper with AI",
+      atlasTrail: "Atlas trail",
+      chooseQuestion: "Pick another question",
+      trailBody: "Follow any path. The atlas grows whenever you ask why.",
+      allWonders: "All wonders",
+      waypointCountOne: "1 waypoint",
+      waypoints: "{count} waypoints",
+      progress: "{done} of {total} explored",
+      sceneCaption: "A question worth keeping becomes a place you can return to.",
+      waypoint: "Waypoint {number}",
+      done: "Explored",
+      openQuestion: "Open: {question}",
+      filtersAria: "Question categories",
+      footerPrivate: "Your questions stay in your own atlas.",
+      footerQuiet: "No feed. No ads. Just things you chose to understand.",
+      emptyEyebrow: "The first waypoint",
+      emptyTitle: "Every atlas begins with one good question.",
+      emptyBody: "Ask about something you noticed. The AI can answer clearly, add a small safe way to investigate it, and keep the question here for you.",
+      askFirst: "Ask my first why",
+      dismiss: "Dismiss",
+      anotherQuestion: "Choose another question",
+      writeFailed: "The atlas could not save that change. Please try again.",
+      messageFailed: "The chat could not open that question. You can ask it directly in the conversation.",
+      categorySky: "Sky",
+      categoryAnimals: "Animals",
+      categoryPlants: "Plants",
+      categoryEveryday: "Everyday"
+    },
+    zh: {
+      metaDescription: "把那些让你停下来、再看一眼、想真正弄懂世界的问题留在自己的地图里。",
+      appEyebrow: "世界探索者",
+      appName: "奇问地图",
+      appSubtitle: "由真实问题长成的地图",
+      surprise: "随机探索",
+      addQuestion: "添加问题",
+      currentWonder: "正在探索",
+      bigIdea: "关键原理",
+      tryIt: "试一试",
+      markExplored: "标记已探索",
+      explored: "已探索",
+      goDeeper: "和 AI 继续深入",
+      atlasTrail: "探索路线",
+      chooseQuestion: "选择另一个问题",
+      trailBody: "沿任何方向出发。每一次追问都会让地图继续生长。",
+      allWonders: "全部奇问",
+      waypointCountOne: "1 个地点",
+      waypoints: "{count} 个地点",
+      progress: "已探索 {done}/{total}",
+      sceneCaption: "一个值得保留的问题，会变成可以再次回来的地方。",
+      waypoint: "地点 {number}",
+      done: "已探索",
+      openQuestion: "打开：{question}",
+      filtersAria: "问题分类",
+      footerPrivate: "你的问题保存在自己的地图里。",
+      footerQuiet: "没有信息流，没有广告，只有你真正想弄懂的事。",
+      emptyEyebrow: "第一个地点",
+      emptyTitle: "每一张地图，都从一个好问题开始。",
+      emptyBody: "问一件你刚刚留意到的事。AI 会清楚回答，附上一个安全的小观察，并把问题留在这里。",
+      askFirst: "问我的第一个为什么",
+      dismiss: "关闭",
+      anotherQuestion: "选择另一个问题",
+      writeFailed: "这次修改没有保存，请再试一次。",
+      messageFailed: "暂时无法把问题带回对话，你也可以直接在聊天里提问。",
+      categorySky: "天空",
+      categoryAnimals: "动物",
+      categoryPlants: "植物",
+      categoryEveryday: "日常"
+    }
+  };
+
+  const CATEGORY_ORDER = ["Sky", "Animals", "Plants", "Everyday"];
+  const VALID_SCENES = new Set([
+    "moon",
+    "blue-sky",
+    "rainbow",
+    "migration",
+    "autumn-leaf",
+    "shell-sound",
+    "cold-breath",
+    "seed-direction"
+  ]);
+
+  const SCENE_ART = {
+    moon: [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-paper pulse" cx="474" cy="104" r="57"></circle>',
+      '<circle class="scene-pop" cx="474" cy="104" r="43" opacity=".82"></circle>',
+      '<circle class="scene-paper" cx="459" cy="90" r="5" opacity=".55"></circle>',
+      '<circle class="scene-paper" cx="492" cy="116" r="8" opacity=".38"></circle>',
+      '<g class="moon-orbit" opacity=".75">',
+      '<circle class="scene-main" cx="320" cy="35" r="4"></circle>',
+      '<circle class="scene-alt" cx="599" cy="214" r="3"></circle>',
+      '<circle class="scene-pop" cx="320" cy="393" r="3"></circle>',
+      '<circle class="scene-main" cx="42" cy="214" r="4"></circle>',
+      '</g>',
+      '<path class="scene-line" d="M116 128C207 49 378 31 505 72" stroke-width="2" stroke-dasharray="4 13" opacity=".48"></path>',
+      '<circle class="scene-main" cx="131" cy="88" r="4" opacity=".6"></circle>',
+      '<circle class="scene-pop" cx="197" cy="53" r="3" opacity=".7"></circle>',
+      '<circle class="scene-alt" cx="276" cy="92" r="3" opacity=".55"></circle>',
+      '<circle class="scene-main" cx="554" cy="65" r="3" opacity=".6"></circle>',
+      '<path class="scene-soft" d="M22 307C117 249 200 282 279 261C372 237 443 260 618 211V412H22Z"></path>',
+      '<path class="scene-ink" d="M22 348C128 304 212 333 299 306C401 275 483 303 618 265V412H22Z" opacity=".88"></path>',
+      '<path class="scene-paper" d="M291 412C299 350 325 309 385 279C347 327 335 365 340 412Z" opacity=".86"></path>',
+      '<g transform="translate(217 272)">',
+      '<circle class="scene-ink" cx="18" cy="20" r="10"></circle>',
+      '<path class="scene-line-ink" d="M18 31v49M18 44L2 60M18 46l18 8M18 80L7 105M18 80l17 22" stroke-width="8"></path>',
+      '<path class="scene-line-pop" d="M38 31v71M31 36h31" stroke-width="4"></path>',
+      '<path class="scene-paper" d="M42 42h54l-7 31H42z"></path>',
+      '<path class="scene-line-ink" d="M51 50h29M51 58h22" stroke-width="3" opacity=".65"></path>',
+      '</g>',
+      '</svg>'
+    ].join(""),
+    "blue-sky": [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-pop pulse" cx="512" cy="99" r="48"></circle>',
+      '<g class="float-one">',
+      '<circle class="scene-paper" cx="164" cy="105" r="28"></circle>',
+      '<circle class="scene-paper" cx="198" cy="94" r="40"></circle>',
+      '<circle class="scene-paper" cx="239" cy="109" r="29"></circle>',
+      '<rect class="scene-paper" x="161" y="106" width="80" height="30" rx="15"></rect>',
+      '</g>',
+      '<path class="scene-line-pop" d="M467 139L348 222M491 151L425 266M449 116L298 143" stroke-width="6" opacity=".55"></path>',
+      '<g opacity=".9">',
+      '<circle class="scene-main" cx="382" cy="195" r="7"></circle>',
+      '<circle class="scene-alt" cx="409" cy="221" r="5"></circle>',
+      '<circle class="scene-main" cx="352" cy="237" r="6"></circle>',
+      '<circle class="scene-alt" cx="447" cy="186" r="4"></circle>',
+      '<circle class="scene-main" cx="314" cy="175" r="4"></circle>',
+      '<circle class="scene-alt" cx="478" cy="248" r="6"></circle>',
+      '</g>',
+      '<path class="scene-line" d="M356 192c-35-23-61-29-93-25M411 219c-41 15-75 39-98 66M448 185c-7-35-4-63 7-89" stroke-width="3" stroke-dasharray="3 10" opacity=".72"></path>',
+      '<path class="scene-soft" d="M22 322C109 281 176 299 240 286C327 268 410 247 618 275V412H22Z"></path>',
+      '<path class="scene-main" d="M22 362C145 310 262 340 354 316C444 292 518 307 618 294V412H22Z" opacity=".66"></path>',
+      '<g transform="translate(202 285)">',
+      '<circle class="scene-ink" cx="28" cy="15" r="11"></circle>',
+      '<path class="scene-line-ink" d="M28 27v54M28 44L8 59M28 43l24 9M28 80L13 108M28 80l19 27" stroke-width="8"></path>',
+      '</g>',
+      '</svg>'
+    ].join(""),
+    rainbow: [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-pop pulse" cx="105" cy="89" r="35"></circle>',
+      '<path class="scene-line" d="M122 321C141 128 478 89 531 321" stroke-width="23" opacity=".75"></path>',
+      '<path class="scene-line-pop" d="M148 321C167 157 451 126 505 321" stroke-width="17" opacity=".78"></path>',
+      '<path class="scene-line-alt" d="M174 321C194 188 421 159 478 321" stroke-width="13" opacity=".74"></path>',
+      '<g class="float-one">',
+      '<circle class="scene-paper" cx="174" cy="122" r="28"></circle>',
+      '<circle class="scene-paper" cx="207" cy="107" r="39"></circle>',
+      '<circle class="scene-paper" cx="246" cy="125" r="27"></circle>',
+      '<rect class="scene-paper" x="173" y="123" width="75" height="27" rx="14"></rect>',
+      '</g>',
+      '<g class="float-two">',
+      '<circle class="scene-soft" cx="437" cy="85" r="22"></circle>',
+      '<circle class="scene-soft" cx="465" cy="74" r="32"></circle>',
+      '<circle class="scene-soft" cx="494" cy="89" r="23"></circle>',
+      '<rect class="scene-soft" x="435" y="87" width="61" height="21" rx="11"></rect>',
+      '</g>',
+      '<path class="scene-main" d="M22 338C132 281 224 318 312 293C411 265 506 301 618 271V412H22Z" opacity=".45"></path>',
+      '<path class="scene-ink" d="M22 373C141 324 237 354 334 327C430 300 515 329 618 310V412H22Z" opacity=".82"></path>',
+      '<g transform="translate(287 297)">',
+      '<circle class="scene-paper" cx="16" cy="14" r="9"></circle>',
+      '<path class="scene-line-pop" d="M16 24v41M16 35L3 48M16 35l15 9M16 65L6 86M16 65l13 20" stroke-width="7"></path>',
+      '</g>',
+      '</svg>'
+    ].join(""),
+    migration: [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-pop pulse" cx="487" cy="107" r="47"></circle>',
+      '<path class="scene-line-ink float-one" d="M123 103q16-17 32 0q16-17 32 0M209 142q13-14 26 0q13-14 26 0M308 88q18-18 36 0q18-18 36 0" stroke-width="6"></path>',
+      '<path class="scene-line" d="M117 184C244 102 394 144 514 207" stroke-width="3" stroke-dasharray="5 12" opacity=".62"></path>',
+      '<path class="scene-soft" d="M22 302L145 183L242 285L356 165L499 294L570 227L618 273V412H22Z"></path>',
+      '<path class="scene-alt" d="M22 347L139 253L225 326L352 220L466 318L552 257L618 305V412H22Z" opacity=".65"></path>',
+      '<path class="scene-ink" d="M22 379C132 333 223 353 317 330C408 308 507 338 618 307V412H22Z" opacity=".87"></path>',
+      '<g transform="translate(143 294)">',
+      '<path class="scene-line-pop" d="M0 64l30-30 20 20 46-46" stroke-width="5"></path>',
+      '<circle class="scene-pop" cx="96" cy="8" r="7"></circle>',
+      '</g>',
+      '<g transform="translate(504 304)">',
+      '<circle class="scene-paper" cx="14" cy="12" r="8"></circle>',
+      '<path class="scene-line-ink" d="M14 21v37M14 32L1 44M14 32l15 7M14 58L5 79M14 58l12 20" stroke-width="6"></path>',
+      '</g>',
+      '</svg>'
+    ].join(""),
+    "autumn-leaf": [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-pop" cx="515" cy="90" r="38" opacity=".65"></circle>',
+      '<path class="scene-line-ink" d="M99 366C183 283 235 190 292 64M216 217c81-36 158-48 249-50M258 134c60-20 104-45 139-82M176 285c78 3 154 31 230 76" stroke-width="17"></path>',
+      '<g class="float-one">',
+      '<ellipse class="scene-main" cx="183" cy="242" rx="34" ry="58" transform="rotate(-48 183 242)"></ellipse>',
+      '<path class="scene-line-pop" d="M154 266l57-51" stroke-width="4"></path>',
+      '</g>',
+      '<ellipse class="scene-alt" cx="289" cy="145" rx="32" ry="54" transform="rotate(29 289 145)"></ellipse>',
+      '<path class="scene-line-pop" d="M275 176l27-62" stroke-width="4"></path>',
+      '<ellipse class="scene-pop" cx="389" cy="75" rx="29" ry="47" transform="rotate(52 389 75)"></ellipse>',
+      '<path class="scene-line" d="M366 94l47-39" stroke-width="4"></path>',
+      '<ellipse class="scene-main" cx="430" cy="167" rx="34" ry="57" transform="rotate(78 430 167)" opacity=".78"></ellipse>',
+      '<path class="scene-line-pop" d="M394 177l70-20" stroke-width="4"></path>',
+      '<ellipse class="scene-alt float-two" cx="382" cy="337" rx="31" ry="51" transform="rotate(-69 382 337)" opacity=".76"></ellipse>',
+      '<path class="scene-line-pop" d="M413 326l-62 22" stroke-width="4"></path>',
+      '<path class="scene-soft" d="M22 373C161 339 279 381 389 352C483 327 550 343 618 328V412H22Z"></path>',
+      '</svg>'
+    ].join(""),
+    "shell-sound": [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<path class="scene-soft" d="M22 293C144 256 232 284 322 260C415 235 511 263 618 237V412H22Z"></path>',
+      '<path class="scene-pop" d="M22 343C133 306 239 332 330 308C421 284 510 310 618 287V412H22Z" opacity=".46"></path>',
+      '<path class="scene-line-alt" d="M53 222c54-35 99-35 153 0s99 35 153 0 99-35 153 0" stroke-width="8" opacity=".6"></path>',
+      '<path class="scene-line" d="M58 252c45-26 84-26 129 0s84 26 129 0 84-26 129 0" stroke-width="4" opacity=".48"></path>',
+      '<g transform="translate(230 85)">',
+      '<path class="scene-paper" d="M95 234C19 221-20 154 10 88C38 27 112-2 178 28C238 56 253 125 222 177C193 225 145 243 95 234Z"></path>',
+      '<path class="scene-line-pop" d="M95 234C19 221-20 154 10 88C38 27 112-2 178 28C238 56 253 125 222 177C193 225 145 243 95 234Z" stroke-width="7"></path>',
+      '<path class="scene-line" d="M112 191c-43 5-78-26-78-68c0-47 39-84 88-84c53 0 96 41 96 92c0 56-47 100-106 100" stroke-width="8"></path>',
+      '<path class="scene-line-alt" d="M116 158c-24 3-44-14-44-38c0-26 22-47 49-47c30 0 53 23 53 51c0 31-26 55-58 55" stroke-width="7"></path>',
+      '<circle class="scene-main" cx="119" cy="122" r="20"></circle>',
+      '</g>',
+      '<path class="scene-line-pop float-two" d="M500 126c37 24 37 56 0 80M533 104c58 39 58 90 0 129" stroke-width="6" opacity=".72"></path>',
+      '</svg>'
+    ].join(""),
+    "cold-breath": [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-paper" cx="494" cy="83" r="35" opacity=".7"></circle>',
+      '<g opacity=".68">',
+      '<circle class="scene-paper float-one" cx="117" cy="88" r="6"></circle>',
+      '<circle class="scene-paper" cx="182" cy="137" r="4"></circle>',
+      '<circle class="scene-paper float-two" cx="269" cy="73" r="7"></circle>',
+      '<circle class="scene-paper" cx="397" cy="122" r="5"></circle>',
+      '<circle class="scene-paper" cx="551" cy="161" r="6"></circle>',
+      '</g>',
+      '<path class="scene-soft" d="M22 330C151 288 261 321 352 298C443 274 526 298 618 279V412H22Z"></path>',
+      '<path class="scene-alt" d="M22 367C142 329 250 353 347 330C449 306 529 327 618 314V412H22Z" opacity=".46"></path>',
+      '<g transform="translate(133 183)">',
+      '<path class="scene-ink" d="M95 25c36 0 64 29 64 65c0 20-8 36-23 49v62H39v-63C15 127 0 102 0 74C0 33 39 4 95 25Z" opacity=".88"></path>',
+      '<path class="scene-paper" d="M111 72c17 4 28 16 28 31c0 18-15 33-35 33c-7 0-14-2-19-5c19-15 27-34 26-59Z"></path>',
+      '<circle class="scene-paper" cx="110" cy="65" r="5"></circle>',
+      '</g>',
+      '<g class="float-two">',
+      '<circle class="scene-main" cx="322" cy="249" r="14" opacity=".45"></circle>',
+      '<circle class="scene-main" cx="354" cy="234" r="20" opacity=".38"></circle>',
+      '<circle class="scene-alt" cx="391" cy="211" r="27" opacity=".3"></circle>',
+      '<circle class="scene-alt" cx="435" cy="178" r="35" opacity=".2"></circle>',
+      '</g>',
+      '<path class="scene-line" d="M300 253c61-2 113-36 163-96" stroke-width="3" stroke-dasharray="3 11" opacity=".6"></path>',
+      '</svg>'
+    ].join(""),
+    "seed-direction": [
+      '<svg class="scene-svg" viewBox="0 0 640 430" aria-hidden="true" focusable="false">',
+      '<rect class="scene-back" x="22" y="18" width="596" height="394" rx="196"></rect>',
+      '<circle class="scene-pop pulse" cx="501" cy="91" r="39"></circle>',
+      '<path class="scene-line-pop" d="M501 35v-19M501 166v-19M445 91h-19M576 91h-19M462 52l-14-14M554 144l-14-14M540 52l14-14M448 144l14-14" stroke-width="5" opacity=".58"></path>',
+      '<path class="scene-alt" d="M22 257C151 235 258 269 358 245C451 223 532 241 618 225V412H22Z" opacity=".58"></path>',
+      '<path class="scene-ink" d="M22 297C144 274 249 306 353 284C453 263 533 281 618 266V412H22Z" opacity=".82"></path>',
+      '<ellipse class="scene-pop" cx="315" cy="285" rx="48" ry="31" transform="rotate(-18 315 285)"></ellipse>',
+      '<path class="scene-line" d="M314 278C305 239 317 205 346 178C364 162 371 142 368 117" stroke-width="9"></path>',
+      '<path class="scene-line" d="M344 179c-37-5-61-21-73-48M349 170c28-22 56-30 85-24" stroke-width="7"></path>',
+      '<ellipse class="scene-main" cx="263" cy="126" rx="25" ry="43" transform="rotate(-52 263 126)"></ellipse>',
+      '<ellipse class="scene-main" cx="440" cy="144" rx="25" ry="43" transform="rotate(64 440 144)"></ellipse>',
+      '<path class="scene-line-pop" d="M315 302c2 34-18 55-14 92M322 306c20 28 42 39 43 76M310 331c-21 13-33 29-38 49M346 342c24 4 41 15 51 33" stroke-width="7"></path>',
+      '<path class="scene-line" d="M241 227h164" stroke-width="3" stroke-dasharray="4 10" opacity=".48"></path>',
+      '<path class="scene-line-pop" d="M453 219l17 17 31-35" stroke-width="5"></path>',
+      '</svg>'
+    ].join("")
+  };
+
+  let latestState = { items: [] };
+  let selectedId = "";
+  let activeCategory = "All";
+  let selectedItem = null;
+  let errorTimer = 0;
+
+  const nodes = {
+    atlasView: document.getElementById("atlasView"),
+    emptyState: document.getElementById("emptyState"),
+    emptyScene: document.getElementById("emptyScene"),
+    progressRing: document.getElementById("progressRing"),
+    progressText: document.getElementById("progressText"),
+    scenePanel: document.getElementById("scenePanel"),
+    sceneArt: document.getElementById("sceneArt"),
+    sceneCategory: document.getElementById("sceneCategory"),
+    sceneCoordinate: document.getElementById("sceneCoordinate"),
+    sceneCaption: document.getElementById("sceneCaption"),
+    heroQuestion: document.getElementById("heroQuestion"),
+    heroAnswer: document.getElementById("heroAnswer"),
+    heroIdea: document.getElementById("heroIdea"),
+    heroTry: document.getElementById("heroTry"),
+    heroTryNote: document.getElementById("heroTryNote"),
+    exploreButton: document.getElementById("exploreButton"),
+    exploreLabel: document.getElementById("exploreLabel"),
+    filters: document.getElementById("filters"),
+    portalGrid: document.getElementById("portalGrid"),
+    trailCount: document.getElementById("trailCount"),
+    errorBar: document.getElementById("errorBar"),
+    errorText: document.getElementById("errorText")
+  };
+
+  function language() {
+    const value = String(oma.pref("locale", "auto") || "auto").toLowerCase();
+    const locale = value === "auto" ? String(navigator.language || "en").toLowerCase() : value;
+    return locale.startsWith("zh") ? "zh" : "en";
+  }
+
+  function t(key, values) {
+    const table = STR[language()] || STR.en;
+    let value = table[key] || STR.en[key] || key;
+    for (const entry of Object.entries(values || {})) {
+      value = value.replaceAll("{" + entry[0] + "}", String(entry[1]));
+    }
+    return value;
+  }
+
+  function categoryLabel(category) {
+    const key = {
+      Sky: "categorySky",
+      Animals: "categoryAnimals",
+      Plants: "categoryPlants",
+      Everyday: "categoryEveryday"
+    }[category];
+    return key ? t(key) : String(category || "");
+  }
+
+  function applyLanguage() {
+    const lang = language();
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    document.title = lang === "zh"
+      ? "奇问地图 · 由真实问题长成的地图"
+      : "Wonder Atlas · A map made from real questions";
+    document.querySelectorAll("[data-i18n]").forEach(function (node) {
+      node.textContent = t(node.dataset.i18n);
+    });
+    document.getElementById("dismissError").setAttribute("aria-label", t("dismiss"));
+    document.getElementById("sceneSurpriseButton").setAttribute("aria-label", t("anotherQuestion"));
+    nodes.filters.setAttribute("aria-label", t("filtersAria"));
+  }
+
+  function sceneKey(value) {
+    const key = String(value || "");
+    return VALID_SCENES.has(key) ? key : "moon";
+  }
+
+  function sceneMarkup(value) {
+    return SCENE_ART[sceneKey(value)] || SCENE_ART.moon;
+  }
+
+  function orderedItems(state) {
+    return (Array.isArray(state && state.items) ? state.items : [])
+      .filter(function (item) {
+        return item && item.fields && String(item.fields.question || "").trim();
+      })
+      .sort(function (a, b) {
+        const rankA = Number(a.fields.rank);
+        const rankB = Number(b.fields.rank);
+        const safeA = Number.isFinite(rankA) ? rankA : 9999;
+        const safeB = Number.isFinite(rankB) ? rankB : 9999;
+        return safeA - safeB || Number(a.position || 0) - Number(b.position || 0) || String(a.id).localeCompare(String(b.id));
+      });
+  }
+
+  function showError(message) {
+    clearTimeout(errorTimer);
+    nodes.errorText.textContent = String(message || t("writeFailed"));
+    nodes.errorBar.hidden = false;
+    errorTimer = setTimeout(function () {
+      nodes.errorBar.hidden = true;
+    }, 7000);
+  }
+
+  function clearError() {
+    clearTimeout(errorTimer);
+    nodes.errorBar.hidden = true;
+  }
+
+  function resultFailed(result) {
+    return !!(result && (result.isError === true || result.ok === false));
+  }
+
+  async function sendToChat(message, button) {
+    clearError();
+    if (button) button.disabled = true;
+    try {
+      const result = await oma.sendMessage(message);
+      if (resultFailed(result)) throw new Error(t("messageFailed"));
+    } catch (error) {
+      showError(error && error.message ? error.message : t("messageFailed"));
+    } finally {
+      if (button) button.disabled = false;
+    }
+  }
+
+  function addQuestionPrompt() {
+    if (language() === "zh") {
+      return "我想给 Wonder Atlas 添加一个真实的新问题。请先问我最近对什么感到好奇；然后用两三句准确、容易理解的话回答，提炼一个关键原理，并设计一个安全、简单的小观察或实验。最后把它保存到 wonder-atlas collection：question、short_answer、big_idea、try_it、try_note、related_prompt、rank，并从 manifest 允许的 category 和 scene 中选择；explored 设为 false。不要虚构健康或安全结论。";
+    }
+    return "I want to add one real question to Wonder Atlas. First ask what I have been curious about. Then answer it accurately in two or three clear sentences, name one big idea, and suggest one small, safe observation or experiment. Save it to the wonder-atlas collection with question, short_answer, big_idea, try_it, try_note, related_prompt, and rank; choose category and scene from the manifest enums and set explored to false. Do not invent health or safety claims.";
+  }
+
+  function deeperPrompt(item) {
+    const question = String(item.fields.question || "");
+    const follow = String(item.fields.related_prompt || "");
+    if (language() === "zh") {
+      return "我想继续探索 Wonder Atlas 里的问题：“" + question + "”。请从直觉解释开始，再给一个准确的进阶解释和一个我可以继续观察的线索。" + (follow ? "可以沿这个方向展开：“" + follow + "”" : "");
+    }
+    return "I want to go deeper into this Wonder Atlas question: \"" + question + "\". Start with an intuitive explanation, then give one accurate next-level explanation and one clue I can keep observing." + (follow ? " A useful direction is: \"" + follow + "\"" : "");
+  }
+
+  function makeButton(className, text) {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = className;
+    button.textContent = text;
+    return button;
+  }
+
+  function renderFilters(items) {
+    nodes.filters.innerHTML = "";
+    const present = CATEGORY_ORDER.filter(function (category) {
+      return items.some(function (item) {
+        return item.fields.category === category;
+      });
+    });
+    if (activeCategory !== "All" && !present.includes(activeCategory)) activeCategory = "All";
+
+    ["All"].concat(present).forEach(function (category) {
+      const count = category === "All"
+        ? items.length
+        : items.filter(function (item) { return item.fields.category === category; }).length;
+      const label = category === "All" ? t("allWonders") : categoryLabel(category);
+      const button = makeButton("filter", label + " · " + new Intl.NumberFormat().format(count));
+      button.setAttribute("aria-pressed", String(activeCategory === category));
+      button.onclick = function () {
+        activeCategory = category;
+        render(latestState);
+      };
+      nodes.filters.appendChild(button);
+    });
+  }
+
+  function renderPortals(items) {
+    nodes.portalGrid.innerHTML = "";
+    const visible = activeCategory === "All"
+      ? items
+      : items.filter(function (item) { return item.fields.category === activeCategory; });
+    nodes.portalGrid.dataset.count = String(visible.length);
+    nodes.trailCount.textContent = t(visible.length === 1 ? "waypointCountOne" : "waypoints", { count: visible.length });
+
+    visible.forEach(function (item) {
+      const fields = item.fields;
+      const index = items.indexOf(item) + 1;
+      const portal = document.createElement("button");
+      portal.type = "button";
+      portal.className = "portal scene-host";
+      portal.dataset.scene = sceneKey(fields.scene);
+      portal.setAttribute("aria-pressed", String(item.id === selectedId));
+      portal.setAttribute("aria-label", t("openQuestion", { question: fields.question }));
+
+      const art = document.createElement("div");
+      art.className = "portal-art";
+      art.innerHTML = sceneMarkup(fields.scene);
+      const number = document.createElement("span");
+      number.className = "portal-number";
+      number.textContent = String(index).padStart(2, "0");
+      art.appendChild(number);
+
+      const copy = document.createElement("div");
+      copy.className = "portal-copy";
+      const meta = document.createElement("div");
+      meta.className = "portal-meta";
+      const category = document.createElement("span");
+      category.textContent = categoryLabel(fields.category);
+      meta.appendChild(category);
+      if (fields.explored) {
+        const done = document.createElement("span");
+        done.className = "portal-done";
+        done.textContent = "✓ " + t("done");
+        meta.appendChild(done);
+      }
+      const question = document.createElement("h3");
+      question.textContent = fields.question;
+      copy.append(meta, question);
+      portal.append(art, copy);
+      portal.onclick = function () {
+        selectedId = item.id;
+        render(latestState);
+        document.getElementById("hero").scrollIntoView({
+          behavior: document.documentElement.dataset.motion === "gentle" ? "smooth" : "auto",
+          block: "start"
+        });
+      };
+      nodes.portalGrid.appendChild(portal);
+    });
+  }
+
+  function renderHero(item, items) {
+    selectedItem = item;
+    const fields = item.fields;
+    const index = items.indexOf(item) + 1;
+    const scene = sceneKey(fields.scene);
+    nodes.scenePanel.dataset.scene = scene;
+    nodes.scenePanel.setAttribute("aria-label", fields.question);
+    nodes.sceneArt.innerHTML = sceneMarkup(scene);
+    nodes.sceneCategory.textContent = categoryLabel(fields.category);
+    nodes.sceneCoordinate.textContent = t("waypoint", { number: String(index).padStart(2, "0") });
+    nodes.sceneCaption.textContent = t("sceneCaption");
+    nodes.heroQuestion.textContent = fields.question;
+    nodes.heroAnswer.textContent = String(fields.short_answer || "");
+    nodes.heroIdea.textContent = String(fields.big_idea || "");
+    nodes.heroTry.textContent = String(fields.try_it || "");
+    nodes.heroTryNote.textContent = String(fields.try_note || "");
+    nodes.heroTryNote.hidden = !String(fields.try_note || "").trim();
+    nodes.exploreButton.dataset.explored = String(!!fields.explored);
+    nodes.exploreLabel.textContent = fields.explored ? t("explored") : t("markExplored");
+  }
+
+  function render(state) {
+    latestState = state || { items: [] };
+    applyLanguage();
+    document.documentElement.dataset.motion = oma.pref("scene_motion", "gentle") === "still" ? "still" : "gentle";
+    document.documentElement.dataset.density = String(oma.pref("density", "comfortable") || "comfortable");
+    const items = orderedItems(latestState);
+    const explored = items.filter(function (item) { return !!item.fields.explored; }).length;
+    const degrees = items.length ? Math.round((explored / items.length) * 360) : 0;
+    nodes.progressRing.style.setProperty("--progress", String(degrees) + "deg");
+    nodes.progressText.textContent = t("progress", { done: explored, total: items.length });
+    nodes.progressText.dataset.short = String(explored) + "/" + String(items.length);
+    document.getElementById("surpriseButton").hidden = items.length < 2;
+    document.getElementById("sceneSurpriseButton").hidden = items.length < 2;
+
+    if (!items.length) {
+      selectedId = "";
+      selectedItem = null;
+      nodes.emptyScene.innerHTML = sceneMarkup("moon");
+      nodes.emptyState.hidden = false;
+      nodes.atlasView.hidden = true;
+      return;
+    }
+
+    if (!selectedId || !items.some(function (item) { return item.id === selectedId; })) {
+      selectedId = items[0].id;
+    }
+    const item = items.find(function (candidate) { return candidate.id === selectedId; }) || items[0];
+    nodes.emptyState.hidden = true;
+    nodes.atlasView.hidden = false;
+    renderHero(item, items);
+    renderFilters(items);
+    renderPortals(items);
+  }
+
+  function chooseSurprise() {
+    const items = orderedItems(latestState);
+    const pool = activeCategory === "All"
+      ? items
+      : items.filter(function (item) { return item.fields.category === activeCategory; });
+    if (pool.length < 2) return;
+    const current = pool.findIndex(function (item) { return item.id === selectedId; });
+    const jump = 1 + Math.floor(Math.random() * (pool.length - 1));
+    selectedId = pool[(Math.max(0, current) + jump) % pool.length].id;
+    render(latestState);
+  }
+
+  document.getElementById("dismissError").onclick = clearError;
+  document.getElementById("askButton").onclick = function (event) {
+    sendToChat(addQuestionPrompt(), event.currentTarget);
+  };
+  document.getElementById("emptyStart").onclick = function (event) {
+    sendToChat(addQuestionPrompt(), event.currentTarget);
+  };
+  document.getElementById("deeperButton").onclick = function (event) {
+    if (selectedItem) sendToChat(deeperPrompt(selectedItem), event.currentTarget);
+  };
+  document.getElementById("surpriseButton").onclick = chooseSurprise;
+  document.getElementById("sceneSurpriseButton").onclick = chooseSurprise;
+  nodes.exploreButton.onclick = async function () {
+    if (!selectedItem) return;
+    clearError();
+    nodes.exploreButton.disabled = true;
+    try {
+      const result = await oma.updateItem(selectedItem.id, { explored: !selectedItem.fields.explored });
+      if (resultFailed(result)) throw new Error(t("writeFailed"));
+    } catch (error) {
+      showError(error && error.message ? error.message : t("writeFailed"));
+    } finally {
+      nodes.exploreButton.disabled = false;
+    }
+  };
+
+  oma.ready(render);
+  oma.onChange(render);
+  oma.onPrefChange(function () {
+    render(latestState);
+  });
+</script>
+</body>
+</html>

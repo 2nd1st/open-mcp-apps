@@ -1,0 +1,48 @@
+{
+  "manifest_version": 2,
+  "settings": [],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density"
+  ],
+  "collections": {
+    "build-progress": {
+      "label_field": "target",
+      "strict": true,
+      "fields": {
+        "target": {
+          "type": "string",
+          "required": true
+        },
+        "step": {
+          "type": "string",
+          "required": true
+        },
+        "status": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "doing",
+            "done",
+            "fail"
+          ]
+        },
+        "detail": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "at": {
+          "type": "string",
+          "required": true
+        }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "system"
+  }
+}

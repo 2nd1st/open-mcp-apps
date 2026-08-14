@@ -3,16 +3,16 @@
 // runner.mjs — THE enforcement piece for sandboxed app children (write-set D).
 //
 // Before this module there were three hand-kept copies of the same machine — the loader's
-// runnerMount (shell.mjs), settings.html's thumbnail bridge, settings.html's drawer bridge —
-// plus library.html's inert stub as a fourth variant, and they had measurably drifted (three
-// divergent rules found in the write-set D survey). Every future gap between copies is a
+// mount branch (then `runnerMount` in shell.mjs), the settings app's thumbnail bridge, the
+// settings app's drawer bridge — plus the App Store app's inert stub as a fourth variant, and
+// they had measurably drifted (three divergent rules found in the write-set D survey; none of
+// those names exists any more). Every future gap between copies is a
 // cross-app escape seam (adversarial review F2: "one missing line = escape"), so the machine
 // now exists ONCE: document composition (CSP-first), the child mini-bridge, and the caps
 // chokepoint live here, parameterized by a PRESET instead of re-implemented per consumer.
 //
 //   preset "live"      caps-driven read/write (the loader, oma.embed, settings' drawer)
-//   preset "readonly"  reads only, writes refused (settings' library thumbnails)
-//   preset "inert"     zero host IO — snapshot/fixture-fed (library previews)
+//   preset "inert"     zero host IO — snapshot/fixture-fed (App Store previews)
 //
 // NOT a security boundary against the EMBEDDER (it runs in the embedder's document); it is
 // the boundary around the CHILD: sandbox="allow-scripts" (no allow-same-origin) makes the
@@ -24,8 +24,8 @@
 // and exported through index.mjs for embedding shells (the hosted /library preview) so no
 // out-of-repo mirror has to exist.
 
-import { isControlPlaneTool } from "./tool-policy.mjs";
-import { viaOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { isControlPlaneTool, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
+import { viaOf, sansRequestState, withConfirmation, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 
 // CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
 // script/img/font sources) — that closes fetch/XHR/img/font/frame egress on every host, incl.
@@ -60,9 +60,243 @@ import { viaOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 export const RUNNER_CSP_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'";
 export const RUNNER_CSP = '<meta http-equiv="Content-Security-Policy" content="' + RUNNER_CSP_POLICY + '">';
 
+/** Measure natural app content instead of the iframe viewport. Chromium keeps
+ * documentElement.scrollHeight at least as tall as the viewport, so feeding that value back
+ * into the iframe makes a filtered/tabbed app unable to shrink and leaves a large blank tail. */
+export function measureNaturalBodyHeight(body, viewportHeight) {
+  if (!body) return Math.max(0, Math.ceil(Number(viewportHeight) || 0));
+
+  const bodyRect = body.getBoundingClientRect();
+  const children = body.children || [];
+  let firstTop = Number.POSITIVE_INFINITY;
+  let lastBottom = Number.NEGATIVE_INFINITY;
+  let measured = 0;
+
+  for (let index = 0; index < children.length; index += 1) {
+    const element = children[index];
+    const tag = String(element?.tagName || "").toUpperCase();
+    if (tag === "SCRIPT" || tag === "STYLE" || tag === "LINK" || tag === "META" || tag === "TITLE") continue;
+    if (!element || typeof element.getBoundingClientRect !== "function") continue;
+
+    const rect = element.getBoundingClientRect();
+    if (!(rect.width > 0 || rect.height > 0)) continue;
+    firstTop = Math.min(firstTop, rect.top - bodyRect.top);
+    lastBottom = Math.max(lastBottom, rect.bottom - bodyRect.top);
+    measured += 1;
+  }
+
+  const bodyHeight = Number(body.scrollHeight) || 0;
+  const childExtent = measured
+    ? Math.max(0, lastBottom) + Math.max(0, firstTop)
+    : bodyHeight;
+  const viewport = Number(viewportHeight) || 0;
+  const naturalHeight = bodyHeight > viewport + 1
+    ? Math.max(childExtent, bodyHeight)
+    : childExtent;
+  return Math.max(0, Math.ceil(naturalHeight));
+}
+
+/** The ONE height bound — and it binds only where the ENGINE ITSELF is the embedder.
+ *
+ *  One message carries it: `omaRunHeight`, posted by a sandboxed child to the document that mounted
+ *  it (oma.embed's frames, the store's inert previews). A CHAT host never reads that message —
+ *  measured on Leo's claude.ai (2026-08-13, wire capture): the thing that reports a widget's height
+ *  is a shim the HOST injects inside the iframe, posting `ui/notifications/size-changed`, and
+ *  `grep size-changed` over this repo is empty. So nothing here decides how tall a widget in a
+ *  conversation may be. That is the host's own published limit, and as of 2026-08-14 (Leo's call)
+ *  the engine has no second opinion to add — see unpinDocumentHeight for what it does instead.
+ *
+ *  `window.screen.height` is the DEVICE screen, not the frame or the window — a sandboxed child
+ *  can read it, and it is the only bound available that does not feed back on itself (the FRAME's
+ *  height is the number the embedder derived from us, so measuring against it is a loop). A hostile
+ *  or absent reading (0, NaN, a stub) must never collapse a widget, so a bad number means NO BOUND
+ *  at all; an implausibly small one is floored at 320, which no real device is below.
+ *
+ *  Returns 0 for "unbounded" — the caller below reads that as "change nothing". */
+export function screenHeightCap(screenHeight) {
+  const screen = Math.ceil(Number(screenHeight) || 0);
+  if (!(screen > 0)) return 0;
+  return Math.max(screen, 320);
+}
+
+/** Cap what a child ASKS ITS EMBEDDER for, at the device's own screen height.
+ *
+ *  measureNaturalBodyHeight answers "how tall is this app", and handing that number to an embedder
+ *  unmodified means an app-store front page thousands of pixels tall gets a frame thousands of
+ *  pixels tall, inside a page the reader then has to scroll past. Nothing is lost by bounding it:
+ *  the app keeps its own scrolling, and every embedder here already clamps into its own [min,max]
+ *  on top of this. Only the engine's own embedders ever receive this — see screenHeightCap. */
+export function capBroadcastHeight(naturalHeight, screenHeight) {
+  const h = Math.max(0, Math.ceil(Number(naturalHeight) || 0));
+  const cap = screenHeightCap(screenHeight);
+  return cap > 0 ? Math.min(h, cap) : h;          // unreadable screen ⇒ report the natural height
+}
+
+/** UNPIN the document, so that whoever measures it measures the CONTENT.
+ *
+ *  🔴 Our postMessage is not the channel a chat host listens on. Measured on Leo's claude.ai
+ *  (2026-08-13, wire capture): the host injects its OWN shim inside the widget iframe and that shim
+ *  posts `ui/notifications/size-changed {width, height}` — `grep size-changed` over this repo is
+ *  empty, i.e. the reporter is not our code and never will be. It reads the document's own
+ *  scrollHeight and it re-reports (755 → 1004 → 755 captured on one app). So the only lever we
+ *  hold over what a host does with our height is THE DOM IT MEASURES.
+ *
+ *  WHAT THAT LEVER IS FOR is the part this file got wrong once. For one day (2026-08-13 → 08-14) it
+ *  also carried a CAP: max-height at the screen bound, `overflow-y:auto`, the native scrollbar
+ *  hidden and an overlay thumb drawn in its place, so that a tall app could not bury the
+ *  conversation. It bought that with a scroll trap — `body` became the scroll container, and on a
+ *  phone the app's own scrolling stopped working outright. Leo's call, 2026-08-14: infinite height,
+ *  the host's official limit decides. Every host that embeds widgets publishes one; ours was a
+ *  second, worse limit drawn on top of it, and the whole cap machine is gone.
+ *
+ *  WHAT REMAINS is the half that limits nothing — the app has to be MEASURABLE at all.
+ *  `overflow:hidden` on html and/or body (SEVEN of the 24 shipped apps: habit-streaks,
+ *  hydration-tally, keep-in-touch, meal-planner, spending-journal on both boxes; event-countdowns
+ *  and savings-goals on the body) or `body{min-height:100vh}` (dashboard) turn the document's
+ *  measured height into the FRAME's height — which the host set from its own last reading — so the
+ *  number freezes at whatever it already was and adding a row changes nothing. That is the
+ *  habit-streaks bug Leo reported at its root, and no amount of watching more elements fixes it,
+ *  because the number being read is not about the content at all. `height:auto` + `min-height:0` on
+ *  both boxes is the whole of the fix: an inner `height:100%` pane resolves against an auto-height
+ *  body and grows with its content again.
+ *
+ *  `overflow-y:visible` is the third declaration, and it is a REPEAL of the cap's `auto` rather than
+ *  a leftover of it. A body with `overflow-y:auto` and no max-height is a scroll container that can
+ *  never scroll, and `position:sticky` binds to the nearest ancestor whose overflow is not visible:
+ *  the store's and settings' capsule bars would stick to that dead box and never reach the top of
+ *  the frame in the one case where an app still scrolls inside itself — a host that clamps the frame
+ *  shorter than the content (ChatGPT desktop). `visible` is also what the seven pinned apps need
+ *  from us, since with an auto height there is no overflow at the body to hide.
+ *
+ *  Inline + `!important` because these are the app's OWN declarations we are overriding, and an
+ *  app's stylesheet rule beats a plain inline value it wrote deliberately (`html,body{...!important}`
+ *  exists in the wild). Inline declarations also survive the loader's wholesale `body.innerHTML`
+ *  rewrites — which is why this runs once, early, and then stays. */
+export function unpinDocumentHeight() {
+  var body = document.body, root = document.documentElement;
+  if (!body) return false;
+  var unpin = function (el) {
+    if (!el || !el.style) return;
+    el.style.setProperty("height", "auto", "important");
+    el.style.setProperty("min-height", "0", "important");
+    el.style.setProperty("overflow-y", "visible", "important");
+  };
+  unpin(root);
+  unpin(body);
+  return true;
+}
+
+
+/** Install the height watcher. Injected by toString into both child documents, so read it as
+ *  browser source: no imports, no closures over this module, ES5-shaped for the CSP'd child.
+ *
+ *  Observing `document.body` ALONE is the bug this replaces. A widget iframe has a height its
+ *  embedder set, and inside it the body box is frequently pinned — by that viewport, by an app
+ *  that writes `html,body{overflow:hidden}`, by a root element that is the only thing which
+ *  actually grows. Adding a row then changes what is on screen without changing the one box we
+ *  were watching, so nothing was re-measured and the frame never grew; a whole-page re-render
+ *  (a filter change, a tab switch) resized the body and looked like it worked, which is exactly
+ *  the shape Leo measured — habit-streaks stuck on insert, the App Store fine on category change.
+ *  So: watch the body AND each of its direct children, and re-attach when that child list changes
+ *  (an app that rewrites body.innerHTML replaces every element we were holding). */
+export function watchNaturalHeight(report) {
+  var timer = 0, watched = [], ro = null;
+  var ping = function () { clearTimeout(timer); timer = setTimeout(report, 50); };   // coalesce a burst
+  var rewatch = function () {
+    var body = document.body;
+    if (!ro || !body) return;
+    for (var i = 0; i < watched.length; i++) { try { ro.unobserve(watched[i]); } catch (e) { /* gone */ } }
+    watched = [body];
+    for (var c = body.firstElementChild; c; c = c.nextElementSibling) watched.push(c);
+    for (var j = 0; j < watched.length; j++) { try { ro.observe(watched[j]); } catch (e) { /* gone */ } }
+  };
+  var start = function () {
+    if (!document.body) return;
+    if (typeof ResizeObserver === "function") {
+      ro = new ResizeObserver(ping);
+      rewatch();
+      if (typeof MutationObserver === "function") {
+        new MutationObserver(function () { rewatch(); ping(); }).observe(document.body, { childList: true });
+      }
+    }
+    report();   // first paint answers immediately — the debounce is for what comes after
+  };
+  if (document.readyState === "complete") start();
+  else window.addEventListener("load", start);
+}
+
+/** The unpin as an INJECTABLE SOURCE — the one copy every document we compose carries.
+ *
+ *  It shipped first inside the height-broadcast source, which reaches exactly the two documents
+ *  that broadcast: the sandboxed bridge child and the inert preview. Measured on Leo's claude.ai
+ *  (2026-08-13) that is not where the problem lives — a chat host's TOP-LEVEL widget document is
+ *  composed by shell.mjs (wrapLoader for the universal opener, wrapApp for a per-app resource),
+ *  neither of which broadcasts anything, and a pinned app there stayed unmeasurable. Broadcasting
+ *  and being-measured are two different jobs: only some documents report a height, but EVERY
+ *  document a host measures has to be honest about its own. So the unpin is its own export, and
+ *  shell.mjs injects this string rather than keeping a second copy of it.
+ *
+ *  Every injected document wraps this in an IIFE, so the names below are locals, not globals an
+ *  app could collide with.
+ *
+ *  ONLY WHEN SOMEONE ELSE OWNS OUR FRAME AND DERIVES IT FROM OUR CONTENT. A document that nobody
+ *  measures has nothing to gain from being unpinned and a layout to lose, and two different
+ *  documents are in that position, needing two different tests — because "is anyone embedding me"
+ *  and "does that embedder size me from my content" are not the same question:
+ *
+ *  1. `parent === window` — no embedder at all. /view is a top-level browser page whose viewer
+ *     stage already styles `body`. Needs no cross-origin access to evaluate.
+ *  2. `window.__OMA_STANDALONE__` — an embedder that is a SHELL, not a measuring host. A shell
+ *     hands us a viewport-fixed frame and expects the app to lay itself out and scroll INSIDE it;
+ *     it never reads our scrollHeight, and an app written to fill that frame (`height:100%` down
+ *     the tree) is doing exactly what the shell asked of it. Rewriting html/body's height there
+ *     answers a question nobody asked. The marker is set by shell.mjs (wrapApp/wrapLoader) for
+ *     exactly the browser-viewer/hosted-shell configs, and it is emitted BEFORE this script, so it
+ *     is readable here.
+ *
+ *  A chat host is neither: no standalone config (shell.mjs composes it without one) and a real
+ *  embedder that sizes the widget from what its own shim reads. Same for the runner's own children
+ *  (bridge, inert preview): they are built from THIS module's source, never carry
+ *  `__OMA_STANDALONE__`, and stay unpinned. */
+export const SELF_HEIGHT_UNPIN_SOURCE =
+  "var omaUnpin=" + unpinDocumentHeight.toString() + ";" +
+  "var omaUnpinNow=function(){try{if(window.parent===window)return;" +
+  "if(window.__OMA_STANDALONE__)return;omaUnpin()}catch(e){}};" +
+  // The unpin has to be in place BEFORE anyone else measures. A host's own reporter re-reads on
+  // mutation, but a PINNED app never gives it a different number to read — the frame it already
+  // set is the answer, forever — so an app that renders before the unpin lands can be frozen at
+  // its first size for the rest of its life. Unpinning the moment a body exists closes that
+  // window: parse time in the preview document (the script sits after the body) and
+  // DOMContentLoaded in the bridge and the two shell documents (they sit in the head, and in the
+  // loader's case the app markup arrives long after — the declarations are inline `!important` on
+  // html/body, which an innerHTML swap does not touch, so once is enough).
+  "if(document.body)omaUnpinNow();else document.addEventListener(\"DOMContentLoaded\",omaUnpinNow);";
+
+/** The same source as a ready-to-embed classic script tag — for a composer that is building an
+ *  HTML document rather than a source blob (shell.mjs). Classic, not a module: a module is
+ *  deferred, and "as soon as a body exists" is the entire point. */
+export const SELF_HEIGHT_UNPIN_SCRIPT =
+  '<scr' + 'ipt data-oma="height-unpin">(function(){' + SELF_HEIGHT_UNPIN_SOURCE + "})();</scr" + "ipt>";
+
+// ONE height machine, injected into both child documents (the live bridge and the inert preview).
+// They used to hand-roll a broadcast each and had already drifted — only one of them survived a
+// host that rejects postMessage, only one of them reported at all without ResizeObserver.
+//
+// `screenHeightCap` travels under its own name because capBroadcastHeight's source CALLS it by that
+// name — and it belongs HERE, not in the unpin source, because the bound only exists for the
+// message below. Its absence would be silent: the whole postMessage is inside a catch.
+const HEIGHT_BROADCAST_SOURCE =
+  SELF_HEIGHT_UNPIN_SOURCE +
+  "var screenHeightCap=" + screenHeightCap.toString() + ";" +
+  "var omaNaturalHeight=" + measureNaturalBodyHeight.toString() + ";" +
+  "var omaCapHeight=" + capBroadcastHeight.toString() + ";" +
+  "var omaWatchHeight=" + watchNaturalHeight.toString() + ";" +
+  "var omaSendHeight=function(){try{parent.postMessage({omaRunHeight:true," +
+  'h:omaCapHeight(omaNaturalHeight(document.body,window.innerHeight),(window.screen||{}).height)},"*")}catch(e){}};';
+
 // The child is a separate document, so host-injected design tokens don't reach it. Read the
 // COMPUTED values from the embedder document's root and re-emit them as :root CSS for the
-// child (the proven settings.html tokenCSS pattern, now the only copy).
+// child (the pattern the settings app proved, now the only copy).
 export const TOKEN_NAMES = [
   ...["background", "text", "border"].flatMap((k) => ["primary", "secondary", "tertiary", "inverse", "ghost", "info", "danger", "success", "warning", "disabled"].map((v) => "--color-" + k + "-" + v)),
   ...["primary", "secondary", "inverse", "info", "danger", "success", "warning"].map((v) => "--color-ring-" + v),
@@ -70,7 +304,7 @@ export const TOKEN_NAMES = [
   ...["xs", "sm", "md", "lg"].flatMap((s) => ["--font-text-" + s + "-size", "--font-text-" + s + "-line-height"]),
   ...["xs", "sm", "md", "lg", "xl", "2xl", "3xl"].flatMap((s) => ["--font-heading-" + s + "-size", "--font-heading-" + s + "-line-height"]),
   ...["xs", "sm", "md", "lg", "xl", "full"].map((s) => "--border-radius-" + s),
-  "--border-width-regular", "--shadow-hairline", "--shadow-sm", "--shadow-md", "--shadow-lg",
+  "--border-width-regular", "--shadow-hairline", "--shadow-xs", "--shadow-sm", "--shadow-md", "--shadow-lg",
 ];
 
 /** The system UI kit as a head <style>. ONE definition of the tag, shared by every composer
@@ -152,21 +386,23 @@ export const BRIDGE = [
   'addItem:function(o){return req("addItem",o||{})}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f})},',
   'moveItem:function(id,g,p){return req("moveItem",{id:id,group:g,position:p})}, deleteItem:function(id){return req("deleteItem",{id:id})},',
   'refresh:function(){return req("refresh",{})}, callTool:function(n,a){return req("callTool",{name:n,args:a})},',
-  'readCollection:function(c,o){return req("readCollection",{collection:c,opts:o||{}})},',
-  'callFunction:function(f,a){return req("callFunction",{function:f,args:a||{}})},',
+  'readCollection:function(c){return req("readCollection",{collection:c})},',
   'files:{ list:function(){return req("filesList",{})},',
   'read:function(p){return req("filesRead",{path:p}).then(function(r){return b64bytes(r.base64)})},',
   'url:function(p){if(urlCache[p])return Promise.resolve(urlCache[p]);return req("filesRead",{path:p}).then(function(r){var u=URL.createObjectURL(new Blob([b64bytes(r.base64)],{type:r.mime||"application/octet-stream"}));urlCache[p]=u;return u;})} },',
   'pref:function(k,f){return (P&&k in P)?coercePref(P[k],f):f},',
   'onPrefChange:function(cb){prefCbs.push(cb)},',
   'setPref:function(k,v){return req("setPref",{key:k,value:v})},',
-  'sendMessage:function(t){return req("sendMessage",{text:t})}, updateContext:function(t){return req("updateContext",{text:t})},',
+  'sendMessage:function(t){return req("sendMessage",{text:t})},',
+  // Rides the generic callTool door so the guard's shaping (callee/via/actor forced to SELF)
+  // fires exactly as it does for a hand-rolled call — the typed verb adds no second policy path.
+  'callFunction:function(f,a){var q={function:String(f)};if(a!=null)q.args=a;return req("callTool",{name:"call_function",args:q}).then(function(r){return (r&&r.structuredContent)||null;})},',
   // Same contract number the direct runtime reports — the whole point of oma.contract is that an
   // app cannot tell which runtime it landed in by reading it, only which VOCABULARY it may use.
   'get contract(){return ' + RUNTIME_CONTRACT + '},',
-  'get toolInput(){return TI}, get host(){return S.host}, get standalone(){return false} };',
-  'var ro=new ResizeObserver(function(){parent.postMessage({omaRunHeight:true,h:document.documentElement.scrollHeight},"*")});',
-  'window.addEventListener("load",function(){ro.observe(document.body)});',
+  'get toolInput(){return TI}, get standalone(){return false} };',
+  HEIGHT_BROADCAST_SOURCE,
+  "omaWatchHeight(omaSendHeight);",
   "})();</scr" + "ipt>",
 ].join("\n");
 
@@ -185,20 +421,41 @@ export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss 
     tokenCss + kitStyle(kitCss) + bridge + "</head><body>" + html + "</body></html>";
 }
 
-// Sliding-window rate limits (research thresholds — one table, no more per-copy literals).
-export const RATES = { writes: [60, 60000], refresh: [6, 60000], messages: [3, 10000] };
+// (The per-iframe sliding-window rate limiter — RATES/stamps/rate() — retired 2026-08-04,
+// elegance A9. Its thresholds were self-described "research thresholds", every mounted child
+// is local/trusted today, and its ONLY measured activation throttled a legitimate dashboard
+// preview. If abuse is ever measured, the quota belongs server-side, keyed by an observed
+// principal and workload — not in per-mount counters an attacker gets a fresh copy of per iframe.)
 
-// Tool-name families the guard routes by. WRITE_TOOLS get actor+via stamping and the writes
-// rate; the file families gate on file caps with app binding.
-const DATA_WRITE_TOOLS = new Set(["data_add_item", "data_update_item", "data_move_item", "data_delete_item"]);
+// Tool-name families the guard routes by. The data-write membership comes from tool-policy
+// (ONE list with the direct runtime's stamping set); the file families gate on file caps with
+// app binding.
+const DATA_WRITE_TOOLS = new Set(DATA_WRITE_LIST);
 const FILE_READ_TOOLS = new Set(["file_read", "file_list"]);
-const FILE_WRITE_TOOLS = new Set(["file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_write_abort", "file_delete"]);
+const FILE_WRITE_TOOLS = new Set(["file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_delete"]);
 const FILE_BIND_TOOLS = new Set(["file_write", "file_write_begin", "file_delete"]);   // carry `app` — forced to the caller
 // The chunked family carries NO app, only an upload_id, so there is nothing to force:
 // binding has to be by WHICH ids this guard opened (see myUploads in makeGuard). They were
 // previously assumed to "inherit begin's binding", which is not a thing the wire supports.
-const UPLOAD_ID_TOOLS = new Set(["file_write_chunk", "file_write_commit", "file_write_abort"]);
-const READONLY_LOCAL_TOOLS = new Set(["data_list", "data_collections", "list_apps"]); // thumbnail allowance (system apps preview richly)
+const UPLOAD_ID_TOOLS = new Set(["file_write_chunk", "file_write_commit"]);
+
+// ---- reserved boundaries (W4, redesign §8 R2/R4 — recorded, deliberately NOT built) --------
+//
+// R4 · standard-form inner bridge + `oma.mcp` escape hatch: the omaRun* subprotocol above is
+// the seam where an MCP-framed adapter would sit if the child↔parent wire ever needs to speak
+// standard shapes — makeGuard stays the policy authority either way (the ruling's own words).
+// Neither is built today, for the A10 reason (a public method that can only fail is a broken
+// promise): every transport this engine serves carries TOOL calls only, so an `oma.mcp`
+// protocol-method hatch would have nothing to reach. It becomes buildable when a protocol
+// surface exists behind it (W3 functions / resources); its admission guardrails are already
+// ruled (redesign §8 R4: only where no high-level oma method exists · same guard + caps ·
+// never taught in the GUIDE · ≥3 apps using one shape triggers promotion review).
+//
+// R2 · App-Provided Tools: if a view ever registers tools with the host, the registration
+// funnels through THIS guard (mount-scoped names, teardown-on-unmount, view-local state only —
+// persistent semantics keep their single call_function chokepoint). Gated on the §8-R2
+// predicates (standard transport + lifecycle green on real hosts + zero stale-tool calls +
+// measured prompt-cache cost) — none measured yet, so this is a named seam, not a feature.
 
 /**
  * Build the parent-side chokepoint. Every child call — typed method or generic callTool —
@@ -209,10 +466,10 @@ const READONLY_LOCAL_TOOLS = new Set(["data_list", "data_collections", "list_app
  *   name       child app name (the binding target for collection/file/function forcing)
  *   coll       bound collection
  *   caps       engine-computed caps (absent fields mean DENY — strictest)
- *   tier       child tier ("local" | ...) — the readonly preset's allowance nuance
- *   preset     "live" | "readonly" | "inert"
- *   io         { callTool, sendMessage, updateContext, snapshot, settingsIds, readCollection,
- *                readFile(app, path) → {base64, mime}, notify, confirm, uuid } — ALL
+ *   tier       child tier ("local" | ...)
+ *   preset     "live" | "inert"
+ *   io         { callTool, sendMessage, snapshot, settingsIds, readCollection,
+ *                readFile(app, path) → {base64, mime}, notify, requestConfirm, uuid } — ALL
  *                effects go through io, so the whole policy is node-testable with fakes.
  */
 export function makeGuard(cfg) {
@@ -239,37 +496,6 @@ export function makeGuard(cfg) {
     throw new Error('tool "' + tn + '" is not available to apps');
   };
 
-  const stamps = { writes: [], refresh: [], messages: [] };
-  // One notice per saturation EPISODE, not per refused call. Cleared as soon as a call gets
-  // through again, so a second genuine episode is still reported.
-  const saturated = { writes: false, refresh: false, messages: false };
-  function rate(kind) {
-    const [limit, win] = RATES[kind];
-    const now = Date.now(), arr = stamps[kind];
-    while (arr.length && now - arr[0] > win) arr.shift();
-    if (arr.length >= limit) {
-      // WHOSE budget this was, said correctly. These stamps are PER-GUARD, i.e. per mounted
-      // child, so a preview is starving its own allowance and not the app's — but the notice
-      // named the app alone, which made settings' Installed grid report
-      // 'App "dashboard" hit its refresh rate limit' while the real dashboard was
-      // untouched (measured 2026-07-28: a thumbnail fans out one data_list per collection on
-      // mount and runs out at six). The user cannot tell a starved thumbnail from a throttled
-      // app unless the sentence says which one it is.
-      //
-      // And it said it FOUR times for that one episode — every refused call notified. Ten
-      // installed apps would have made that a toast storm, so the notice is now deduped.
-      if (!saturated[kind]) {
-        saturated[kind] = true;
-        notify(preset === "live"
-          ? 'App "' + name + '" hit its ' + kind + " rate limit."
-          : 'Preview of "' + name + '" hit its ' + kind + " rate limit — the app itself is unaffected.");
-      }
-      throw new Error(kind + " rate limit exceeded");
-    }
-    arr.push(now);
-    saturated[kind] = false;
-  }
-
   const inScope = (id) => (snap().items || []).some((i) => i.id === id);
   // NO expected_version on the typed writes — LAST-WRITE-WINS, the same policy direct mode chose
   // and for the same reason (shell-runtime's long note: a widget write is the user rapid-clicking
@@ -288,18 +514,26 @@ export function makeGuard(cfg) {
     if (String(target == null ? "" : target).trim() === "settings" && caps.settings_write !== true) throw new Error("settings write denied");
   }
 
-  function confirmDelete() {
+  // The EMBEDDER's axis over its child: allow, deny, or "confirm" — and "confirm" no longer
+  // means "the runner asks". It used to call window.confirm, which the sandbox BLOCKS, so in
+  // every real host the middle tier silently degraded to deny; and once the engine grew its own
+  // confirmation the two could also both fire, asking the user twice for one delete (codex
+  // review named this the clearest over-built part). Now the tier says what it means —
+  // "this app's deletes MUST be confirmed, whatever the preference says" — and the engine's
+  // single, row-and-version-pinned prompt does the asking. Raising the requirement is all a
+  // caller can do with the flag, so it is safe to carry across the tool boundary from anyone.
+  function deleteGate(ta) {
     if (caps.delete_items === "allow") return;
-    if (caps.delete_items === "confirm") {
-      let okd = false;
-      try { okd = io.confirm ? io.confirm('App "' + name + '" wants to delete an item. Allow?') === true : false; } catch { okd = false; }
-      if (okd) return;
-      notify("Delete refused (not confirmed, or confirmation unavailable in this host).");
-      throw new Error("delete not confirmed");
-    }
+    if (caps.delete_items === "confirm") { ta.require_confirmation = true; return; }
     notify('App "' + name + '" tried to delete an item — denied by policy.');
     throw new Error("delete denied");
   }
+
+  // The confirm-and-resend loop is runtime-core's (withConfirmation) — one implementation for
+  // both runtimes. Here it wraps the CHILD's calls: the demand is rendered in the PARENT shell's
+  // chrome and the child's promise simply stays pending until the user answers, so an embedded
+  // app needs no confirmation code at all.
+  const confirmable = withConfirmation({ send: (tn, ta) => io.callTool(tn, ta), ask: io.requestConfirm });
 
   async function proxySetPref(a) {
     const key = a.key, value = a.value;
@@ -336,113 +570,94 @@ export function makeGuard(cfg) {
       if (caps.file_write !== true) throw new Error("file write denied by policy");
       if (FILE_BIND_TOOLS.has(tn)) ta.app = name;
       else if (UPLOAD_ID_TOOLS.has(tn) && !myUploads.has(String(ta.upload_id == null ? "" : ta.upload_id))) throw new Error("upload_id was not opened by this app");
+      // A file delete is a widget's destructive act like any other: it is stamped human so the
+      // engine's gate can see who is asking, and it goes through the same confirm-and-resend
+      // door. (The file plane carries no `via`, so the per-app preference override does not
+      // reach it — the global one does.)
+      if (tn === "file_delete") { ta.actor = "human"; if (!ta.command_id) ta.command_id = uuid(); return confirmable(tn, ta); }
     }
     if (tn === "data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
     // Every collection-addressed READ is bound the same way. data_changes was the one left out,
     // and it is the RICHEST of the three — full events, fields and item ids for any collection
     // the child names (the "one missing line = cross-app escape" shape, again).
-    if (tn === "data_list" || tn === "data_query" || tn === "data_changes") {
-      rate("refresh");
+    if (tn === "data_list" || tn === "data_changes") {
       if (caps.cross_collection_read !== true) ta.collection = coll;   // force the bound collection
     }
     // A batch is the model's bulk verb, not a widget's: forwarding it would need every
     // per-command rule above re-implemented inside the batch — one missed line is a
     // cross-app escape (adversarial F2). Children write one command at a time.
-    if (tn === "data_batch") { notify('App "' + name + '" tried data_batch — not available to apps.'); throw new Error("data_batch is not available to apps"); }
+    if (tn === "data_batch") { notify('App "' + name + '" tried data_batch — not available to apps.'); throw new Error(DATA_BATCH_REFUSAL); }
     // A child may call ONLY its own app's functions (the designed free path); the
     // callee is forced, so a second hop through another app is unreachable by shape.
+    // actor is stamped like any widget write: a widget's function call is the user
+    // acting in their own UI, and the executor threads this actor onto every inner write.
     if (tn === "call_function") {
-      rate("writes");
       ta.app = name;
       ta.via = via();
+      ta.actor = "human";
       if (!ta.command_id) ta.command_id = uuid();
     }
-    if (DATA_WRITE_TOOLS.has(tn)) {
-      rate("writes");
-      ta.actor = "human";   // runner-stamped provenance
-      ta.via = via();       // shadow edge — forced, never child-supplied
-      if (tn === "data_add_item") {
-        if (caps.cross_collection_write !== true) ta.collection = coll;
-        settingsGuard(ta.collection);
-      } else {
-        // id-addressed: the settings guard applies on EVERY write path, independent of
-        // cross_collection_write. Bound-collection rows are guarded via coll; foreign ids
-        // that match a known settings row are guarded via the settingsIds set.
-        settingsGuard(coll);
-        // 🔴 The set is EVIDENCE, and absent evidence is not evidence of absence.
-        //
-        // This used to read `if (io.settingsIds && io.settingsIds().has(ta.id))`, which quietly
-        // made the whole guard conditional on that set being populated. It is not a constant: the
-        // embedder builds it from a settings read at boot (shell-runtime.js), that read can fail,
-        // its catch repairs only the pref map, and the whole thing sits inside Promise.allSettled
-        // — so a failed read still mounts a fully working child whose settingsIds is empty. From
-        // then on `.has()` answered false for every id and `settings_write: false` protected
-        // nothing. Nothing threw, nothing logged, and every assertion around it stayed green,
-        // because they all supplied a populated set. (Measured 2026-07-29; the fifth shape of
-        // guard failure we hit that week — the predicate's DATA SOURCE being empty.)
-        //
-        // So: this guard's job is to RECOGNISE settings rows, and it can only do that job when it
-        // has the list. No list, or an empty one, means it cannot tell — and a guard that cannot
-        // tell must refuse, not wave through. The cost of that reading is bounded and points the
-        // safe way: an app that lacks settings_write cannot write FOREIGN ids during the window
-        // where settings has not loaded. Its own bound collection is untouched (guarded by `coll`
-        // above), and apps holding settings_write are unaffected entirely.
-        const known = io.settingsIds ? io.settingsIds() : null;
-        if (!known || known.size === 0 || known.has(ta.id)) settingsGuard("settings");
-        if (caps.cross_collection_write !== true && !inScope(ta.id)) throw new Error("out of scope");
-      }
-      if (tn === "data_delete_item") confirmDelete();
-    }
+    if (DATA_WRITE_TOOLS.has(tn)) return dataWrite(tn, ta, { bound: false });
     const r = await io.callTool(tn, ta);
-    // Upload-id bookkeeping rides the RESULT, because the id is minted server-side. commit/abort
-    // consume the upload either way (files.mjs contract), so the id is retired on both.
+    // Upload-id bookkeeping rides the RESULT, because the id is minted server-side. A commit
+    // consumes the upload either way (files.mjs contract), so the id is retired with it.
     if (tn === "file_write_begin") { const id = r && r.structuredContent && r.structuredContent.upload_id; if (id) myUploads.add(String(id)); }
-    else if (tn === "file_write_commit" || tn === "file_write_abort") myUploads.delete(String(ta.upload_id == null ? "" : ta.upload_id));
+    else if (tn === "file_write_commit") myUploads.delete(String(ta.upload_id == null ? "" : ta.upload_id));
     return r;
+  }
+
+  // ONE write policy for both doors (elegance A16): the typed verbs and the generic data_*
+  // names stamp, guard and forward through this single body — provenance, the settings wall,
+  // scope, and delete confirmation live exactly once. `bound: true` is the typed door: always
+  // the bound collection, always in-scope, whatever the caps say (a typed verb IS the widget
+  // acting on its own UI). The generic door consults cross_collection_write.
+  //
+  // 🔴 Inside: the settings-recognition guard treats an ABSENT or EMPTY settingsIds set as
+  // "cannot tell", and a guard that cannot tell refuses (measured 2026-07-29: a failed boot
+  // read left the set empty and `settings_write: false` protected nothing).
+  async function dataWrite(tn, ta, { bound }) {
+    ta.actor = "human";   // runner-stamped provenance
+    ta.via = via();       // shadow edge — forced, never child-supplied
+    if (tn === "data_add_item") {
+      if (bound || caps.cross_collection_write !== true) ta.collection = coll;
+      settingsGuard(ta.collection);
+    } else {
+      settingsGuard(coll);
+      const known = io.settingsIds ? io.settingsIds() : null;
+      if (!known || known.size === 0 || known.has(ta.id)) settingsGuard("settings");
+      if ((bound || caps.cross_collection_write !== true) && !inScope(ta.id)) throw new Error("out of scope");
+    }
+    if (tn === "data_delete_item") { deleteGate(ta); return confirmable(tn, ta); }
+    return io.callTool(tn, ta);
   }
 
   // ---- the three presets share one skeleton ----
   async function live(method, a) {
     switch (method) {
       case "addItem":
-        rate("writes"); settingsGuard(coll);
-        return io.callTool("data_add_item", { command_id: uuid(), collection: coll, group: a.group || "", fields: a.fields || {}, position: a.position, actor: "human", via: via() });
+        return dataWrite("data_add_item", { command_id: uuid(), collection: coll, group: a.group || "", fields: a.fields || {}, position: a.position }, { bound: true });
       case "updateItem":
-        rate("writes"); settingsGuard(coll);
-        if (!inScope(a.id)) throw new Error("out of scope");
-        return io.callTool("data_update_item", { command_id: uuid(), id: a.id, fields: a.fields, actor: "human", via: via() });
+        return dataWrite("data_update_item", { command_id: uuid(), id: a.id, fields: a.fields }, { bound: true });
       case "moveItem":
-        rate("writes"); settingsGuard(coll);
-        if (!inScope(a.id)) throw new Error("out of scope");
-        return io.callTool("data_move_item", { command_id: uuid(), id: a.id, group: a.group, position: a.position, actor: "human", via: via() });
+        return dataWrite("data_move_item", { command_id: uuid(), id: a.id, group: a.group, position: a.position }, { bound: true });
       case "deleteItem":
-        rate("writes"); settingsGuard(coll);
-        if (!inScope(a.id)) throw new Error("out of scope");
-        confirmDelete();
-        return io.callTool("data_delete_item", { command_id: uuid(), id: a.id, actor: "human", via: via() });
+        return dataWrite("data_delete_item", { command_id: uuid(), id: a.id }, { bound: true });
       case "refresh":
-        rate("refresh");
         return io.readCollection(coll);
       case "readCollection": {
-        rate("refresh");
         const c = caps.cross_collection_read === true ? String(a.collection || coll) : coll;
-        return io.readCollection(c, a.opts);
+        return io.readCollection(c);
       }
       case "filesList":
         if (caps.file_read !== true) throw new Error("file read denied by policy");
-        rate("refresh");
         return io.callTool("file_list", { app: name });
       case "filesRead":
         if (caps.file_read !== true) throw new Error("file read denied by policy");
-        rate("refresh");
         return io.readFile(name, String(a.path || ""));
-      case "callFunction":
-        return guardCallTool({ name: "call_function", args: { function: a.function, args: a.args } });
       case "setPref":
         // setPref writes the child's OWN group in the settings collection — still a settings
         // WRITE, gated on caps.settings_write (unreviewed default: DENY).
         if (caps.settings_write !== true) throw new Error("setPref denied by policy");
-        rate("writes");
         return proxySetPref(a || {});
       case "callTool":
         return guardCallTool(a || {});
@@ -451,53 +666,22 @@ export function makeGuard(cfg) {
           notify('App "' + name + '" tried to send a chat message — denied by policy.');
           return { isError: true, content: [{ type: "text", text: "sendMessage denied by policy" }] };
         }
-        rate("messages");
         return io.sendMessage(a.text);
-      case "updateContext":
-        if (caps.update_context !== true) return null;   // silent deny by design (§5 v0.2)
-        rate("messages");
-        return io.updateContext(a.text);
       default:
         throw new Error("unknown " + method);
     }
   }
 
-  // Read-only preview (library thumbnails): reads answer from the cached snapshot or a
-  // narrow allowlist; every write path refuses. Local-tier children keep the three-tool
-  // browse allowance (system apps preview richly); everything else gets exactly a
-  // bound data_list.
-  async function readonly(method, a) {
-    switch (method) {
-      case "refresh":
-        return snap();
-      case "readCollection": {
-        rate("refresh");
-        if (tier === "local") return io.readCollection(String(a.collection || coll), a.opts);
-        return io.readCollection(coll, a.opts);
-      }
-      case "callTool": {
-        const tn = String((a && a.name) || "").trim();
-        const tl = tn.toLowerCase();
-        if (isControlPlaneTool(tl)) refuseControlPlane(tn);
-        if (tier === "local" && READONLY_LOCAL_TOOLS.has(tn)) { rate("refresh"); return io.callTool(tn, Object.assign({}, a.args || {})); }
-        if (tn === "data_list") { rate("refresh"); const ta = Object.assign({}, a.args || {}); ta.collection = coll; return io.callTool(tn, ta); }
-        throw new Error('tool "' + tn + '" not available in a read-only preview');
-      }
-      case "sendMessage":
-      case "updateContext":
-        return null;   // silent no-op — previews must not reach the chat
-      default:
-        throw new Error("read-only preview");
-    }
-  }
+  // (The "readonly" preset retired 2026-08-04, elegance A8: zero live callers — thumbnails
+  // moved to inert long ago and settings' drawer runs live. Two presets, both real.)
 
-  // Inert (library fixtures): ZERO host IO. Writes pretend to succeed so demo apps
+  // Inert (App Store fixtures): ZERO host IO. Writes pretend to succeed so demo apps
   // animate; reads answer from the fixed snapshot; everything else resolves empty.
   //
   // Multi-collection apps made "answer from the snapshot" load-bearing: they self-fetch every
   // collection they render (data_list via callTool / readCollection — the GUIDE's canonical
   // pattern), and the old empty-envelope callTool answer read as corrupt data — five of the
-  // library's sixteen previews opened on their own error banner. Fixture rows carry a
+  // the App Store's sixteen previews opened on their own error banner. Fixture rows carry a
   // `collection` key (the multi-collection fixtures convention); serve each read the rows it
   // asked for, in the real item shape (raw fixtures ship {collection, group, fields} only).
   const fxRows = (c) => {
@@ -541,14 +725,14 @@ export function makeGuard(cfg) {
         }
         return { content: [], structuredContent: {} };
       }
-      case "sendMessage": case "updateContext":
+      case "sendMessage":
         return null;
       default:
         return { isError: true, content: [{ type: "text", text: "not available in this preview" }] };
     }
   }
 
-  return preset === "inert" ? inert : preset === "readonly" ? readonly : live;
+  return preset === "inert" ? inert : live;
 }
 
 /** Stub window.oma for a STANDALONE inert preview document (no embedder, no bridge): a
@@ -556,15 +740,25 @@ export function makeGuard(cfg) {
  *  document carries an inert oma seeded with a fixture snapshot — reads answer from it,
  *  writes resolve harmlessly, callTool answers empty, and the CSP above kills the network.
  *  This is the parentless twin of the guard's "inert" preset, and the ONE copy of the stub
- *  (its predecessors lived in library.html and the hosted data plane, hand-synced).
+ *  (its predecessors lived in the App Store app and the hosted data plane, hand-synced).
  *  The close tag is split so this source never contains a literal one; JSON's "</" become
  *  "<\/" (an identity escape in JS strings) so fixture data can't break out of the tag. */
-export function stubOmaScript(name, items, apps) {
+export function stubOmaScript(name, items, apps, prefs) {
   const snap = { collection: name, items: items || [], version: 1, app: name, host: "library-preview",
     ...(apps && apps.length ? { apps } : {}) };
   return "<script>window.oma=(function(){var S=" +
     JSON.stringify(snap).replace(/<\//g, "<\\/") +
+    ";var P=" + JSON.stringify(prefs && typeof prefs === "object" ? prefs : {}).replace(/<\//g, "<\\/") +
     ";var ok=Promise.resolve({ok:true});" +
+    // Public previews need one deterministic "today" so a story dated 2026-08-06 does not
+    // render as the visitor's next day. This shim is opt-in through preview_date and only lives
+    // in the inert preview document; the live app runtime never receives this preference.
+    "if(P&&typeof(P.preview_date)==='string'&&/^\\d{4}-\\d{2}-\\d{2}$/.test(P.preview_date)){(function(){" +
+    "var N=Date,F=new N(P.preview_date+'T12:00:00');if(isNaN(F.getTime()))return;" +
+    "function C(a){switch(a.length){case 0:return new N(F.getTime());case 1:return new N(a[0]);case 2:return new N(a[0],a[1]);case 3:return new N(a[0],a[1],a[2]);case 4:return new N(a[0],a[1],a[2],a[3]);case 5:return new N(a[0],a[1],a[2],a[3],a[4]);case 6:return new N(a[0],a[1],a[2],a[3],a[4],a[5]);default:return new N(a[0],a[1],a[2],a[3],a[4],a[5],a[6]);}}" +
+    "function D(){if(!(this instanceof D))return new N(F.getTime()).toString();return C(Array.prototype.slice.call(arguments));}" +
+    "D.prototype=N.prototype;try{Object.setPrototypeOf(D,N)}catch(e){}D.now=function(){return F.getTime()};D.parse=N.parse;D.UTC=N.UTC;window.Date=D;" +
+    "})();}" +
     // Serve the fetch paths from the SAME fixture rows the snapshot carries — the parentless
     // twin of the guard's fxRows, and for the identical reason. It used to answer every
     // readCollection with {items:[]} and every callTool with {}, on the theory that an app
@@ -589,7 +783,7 @@ export function stubOmaScript(name, items, apps) {
     "for(var i=0;i<S.items.length;i++){var c=(S.items[i]&&S.items[i].collection)||b;m[c]=(m[c]||0)+1;}" +
     "for(var k in m)o.push({collection:k,items:m[k]});return o;}" +
     "return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){}," +
-    "pref:function(k,f){return f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok}," +
+    "pref:function(k,f){return Object.prototype.hasOwnProperty.call(P,k)?P[k]:f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok}," +
     "deleteItem:function(){return ok},refresh:function(){return Promise.resolve(R())}," +
     // The same two answers the parented inert guard gives. This is the machine that composes
     // PUBLIC preview pages (hosted /library today, share pages next), and a meta app asks
@@ -599,9 +793,9 @@ export function stubOmaScript(name, items, apps) {
     ":n==='data_collections'?{content:[],structuredContent:{collections:C()}}" +
     ":n==='list_apps'?{content:[],structuredContent:{apps:S.apps||[]}}" +
     ":{content:[],structuredContent:{}})}," +
-    "readCollection:function(c){return Promise.resolve(R(c))},callFunction:function(){return ok}," +
+    "readCollection:function(c){return Promise.resolve(R(c))}," +
     "files:{list:function(){return Promise.resolve({files:[]})},read:function(){return Promise.reject(new Error(\"not available in this preview\"))},url:function(){return Promise.reject(new Error(\"not available in this preview\"))}}," +
-    "sendMessage:function(){return ok},updateContext:function(){return ok},toolInput:{app:S.app,collection:S.collection},host:S.host,standalone:true};})();</scr" +
+    "sendMessage:function(){return ok},toolInput:{app:S.app,collection:S.collection},standalone:true};})();</scr" +
     "ipt>";
 }
 
@@ -611,21 +805,19 @@ export function stubOmaScript(name, items, apps) {
  *  a hand-synced copy of every piece of this. */
 // A preview iframe is `sandbox="allow-scripts"` with no `allow-same-origin` — deliberately, so the
 // embedder cannot read `contentDocument.scrollHeight` and must be TOLD the height. The live runner
-// has said so since it existed (HEIGHT_BROADCAST below), and this document, which is the one every
-// gallery and store page actually embeds, did not — so an embedder had no choice but to guess a
-// fixed window, and a taller app got cut off with no way to know it had been. Same message, same
-// shape, one source: an embedder that handles `omaRunHeight` handles both documents.
+// has said so since it existed, and this document, which is the one every gallery and store page
+// actually embeds, did not — so an embedder had no choice but to guess a fixed window, and a
+// taller app got cut off with no way to know it had been. Same message, same shape, and now
+// literally the same source: an embedder that handles `omaRunHeight` handles both documents,
+// and neither can drift into observing less than the other again.
 const HEIGHT_BROADCAST =
-  "<scr" + "ipt>(function(){var s=function(){try{parent.postMessage({omaRunHeight:true," +
-  'h:document.documentElement.scrollHeight},"*")}catch(e){}};' +
-  "if(typeof ResizeObserver==='function'){var ro=new ResizeObserver(s);" +
-  'window.addEventListener("load",function(){ro.observe(document.body);s()})}' +
-  'else window.addEventListener("load",s);})();</scr' + "ipt>";
+  "<scr" + "ipt>(function(){" + HEIGHT_BROADCAST_SOURCE +
+  "omaWatchHeight(omaSendHeight);})();</scr" + "ipt>";
 
-export function composePreviewDoc(html, { name, items = [], apps = [], tokenCss = "", kitCss = "" } = {}) {
+export function composePreviewDoc(html, { name, items = [], apps = [], prefs = {}, tokenCss = "", kitCss = "" } = {}) {
   return "<!doctype html><html><head>" + RUNNER_CSP +
     '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, apps) + "</head><body>" + html +
+    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, apps, prefs) + "</head><body>" + html +
     HEIGHT_BROADCAST + "</body></html>";
 }
 

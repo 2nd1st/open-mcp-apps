@@ -1,0 +1,116 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "portrait_motion",
+      "type": "boolean",
+      "label": "Portrait breathing motion",
+      "default": true
+    },
+    {
+      "key": "memory_order",
+      "type": "enum",
+      "label": "Memory order",
+      "options": [
+        {
+          "value": "latest",
+          "label": "Newest first"
+        },
+        {
+          "value": "oldest",
+          "label": "Oldest first"
+        }
+      ],
+      "default": "latest"
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density",
+    "confirm_delete",
+    "user_name"
+  ],
+  "collections": {
+    "companion-profile": {
+      "label_field": "name",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "persona": {
+          "type": "string",
+          "required": true
+        },
+        "portrait": {
+          "type": "string"
+        },
+        "image_data": {
+          "type": "string"
+        },
+        "topics": {
+          "type": "array"
+        },
+        "status_line": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "companion-memories": {
+      "label_field": "what_we_talked",
+      "fields": {
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "what_we_talked": {
+          "type": "string",
+          "required": true
+        },
+        "my_thought": {
+          "type": "string",
+          "required": true
+        },
+        "mood": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "companion-knows": {
+      "label_field": "text",
+      "fields": {
+        "kind": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "like",
+            "dislike",
+            "observation",
+            "date",
+            "busy",
+            "must_remember",
+            "goal"
+          ]
+        },
+        "text": {
+          "type": "string",
+          "required": true
+        },
+        "date_value": {
+          "type": "string"
+        },
+        "starred": {
+          "type": "boolean"
+        }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "ambient-viral"
+  }
+}

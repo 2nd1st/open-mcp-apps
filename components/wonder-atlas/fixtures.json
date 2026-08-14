@@ -1,0 +1,148 @@
+{
+  "items": [
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313101",
+      "group": "Sky",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "question": "Why does the Moon follow me?",
+        "short_answer": "The Moon is so far away that your movement barely changes the direction you see it in. Nearby trees sweep past your view, but the Moon seems to keep pace.",
+        "category": "Sky",
+        "scene": "moon",
+        "big_idea": "Faraway things shift less across your view than nearby things. That difference is called parallax.",
+        "try_it": "Hold up one finger and walk sideways while looking past it at a distant building. Your finger jumps across the view; the building hardly moves.",
+        "try_note": "Stand still first, then try it somewhere safely away from roads and stairs.",
+        "related_prompt": "Show me, step by step, how parallax makes the Moon look like it follows us.",
+        "explored": true,
+        "rank": 1
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313102",
+      "group": "Sky",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "question": "Why is the sky blue?",
+        "short_answer": "Sunlight contains many colors. Tiny molecules in the atmosphere scatter blue light strongly in every direction, so blue light reaches your eyes from across the sky.",
+        "category": "Sky",
+        "scene": "blue-sky",
+        "big_idea": "The sky is not painted blue; the air redirects part of sunlight before it reaches you.",
+        "try_it": "Add one or two drops of milk to a clear glass of water and shine a flashlight through it from the side. Look at the beam from the side, not into the light.",
+        "try_note": "Ask an adult to help with the glass and wipe up any spills.",
+        "related_prompt": "Explain why sunsets look red using the same idea that makes the sky blue.",
+        "explored": false,
+        "rank": 2
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313103",
+      "group": "Sky",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "question": "Where does a rainbow end?",
+        "short_answer": "A rainbow has no fixed end on the ground. It is light reaching your eyes at a particular angle, so when you move, the rainbow you see moves too.",
+        "category": "Sky",
+        "scene": "rainbow",
+        "big_idea": "Each observer sees a slightly different rainbow centered on their own viewpoint.",
+        "try_it": "After rain, stand with the Sun behind you and look toward the darker part of the sky. Notice how the bow stays opposite the Sun as you change position.",
+        "try_note": "Never look directly at the Sun.",
+        "related_prompt": "Why can two people standing apart see different rainbows?",
+        "explored": true,
+        "rank": 3
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313104",
+      "group": "Animals",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "question": "How do birds know where to go?",
+        "short_answer": "Migrating birds combine several clues. Depending on the species, they may use the Sun, stars, landmarks, smells, and signals from Earth’s magnetic field.",
+        "category": "Animals",
+        "scene": "migration",
+        "big_idea": "Navigation is not one built-in map. It is a toolkit that different birds use in different ways.",
+        "try_it": "From one quiet spot, watch birds for ten minutes and draw the direction each one travels. Repeat at another time of day and compare your map.",
+        "try_note": "Watch from a distance; do not chase, touch, or feed wild birds.",
+        "related_prompt": "Tell me about one bird that navigates by stars and how scientists tested it.",
+        "explored": false,
+        "rank": 4
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313105",
+      "group": "Plants",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "question": "Why do leaves change color?",
+        "short_answer": "As days shorten, many trees stop replacing green chlorophyll. Yellow and orange pigments become easier to see, and some leaves also make red pigments.",
+        "category": "Plants",
+        "scene": "autumn-leaf",
+        "big_idea": "Autumn color is not one switch. It is the changing balance of several pigments inside a leaf.",
+        "try_it": "Collect only fallen leaves and arrange them from green to yellow, orange, red, and brown. Revisit the same tree a week later and compare.",
+        "try_note": "Leave living leaves on the tree and wash your hands after handling plants.",
+        "related_prompt": "Why do some trees turn red while others mostly turn yellow?",
+        "explored": false,
+        "rank": 5
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313106",
+      "group": "Everyday",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "question": "Why can I hear the ocean in a shell?",
+        "short_answer": "The shell is not storing ocean sound. Its hollow shape emphasizes some of the ordinary sounds already around you, including room noise and sounds from your own body.",
+        "category": "Everyday",
+        "scene": "shell-sound",
+        "big_idea": "A shape can make certain frequencies louder by resonance.",
+        "try_it": "Compare a shell, an empty cup, and your curved hand beside your ear in a quiet room and then a noisier room. Listen for what changes.",
+        "try_note": "Hold objects beside your ear rather than pressing them tightly against it.",
+        "related_prompt": "What is resonance, and where else can I hear it at home?",
+        "explored": true,
+        "rank": 6
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313107",
+      "group": "Everyday",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "question": "Why can I see my breath when it is cold?",
+        "short_answer": "Warm breath contains invisible water vapor. Cold air cools it quickly, so some vapor condenses into tiny droplets that scatter light and make a little cloud.",
+        "category": "Everyday",
+        "scene": "cold-breath",
+        "big_idea": "The cloud you see is condensed water droplets, not the water vapor itself.",
+        "try_it": "Breathe gently onto a cool mirror and watch a mist appear, then disappear as the droplets evaporate.",
+        "try_note": "Use an ordinary cool mirror, not frozen or heated glass.",
+        "related_prompt": "Why does the little cloud disappear again after I breathe out?",
+        "explored": false,
+        "rank": 7
+      }
+    },
+    {
+      "id": "20f4aa20-7685-4f1b-b79d-f0e631313108",
+      "group": "Plants",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "question": "How does a seed know which way is up?",
+        "short_answer": "A sprouting seed senses gravity. Roots usually grow with gravity, while shoots grow against it and later bend toward useful light.",
+        "category": "Plants",
+        "scene": "seed-direction",
+        "big_idea": "Plants can change their growth direction in response to gravity and light without having a brain.",
+        "try_it": "Sprout a dry bean against a damp paper towel in a clear jar. Once a root appears, turn the jar sideways and sketch how the root changes direction.",
+        "try_note": "Keep the towel damp, not soaked; discard the experiment if mold appears and wash your hands afterward.",
+        "related_prompt": "How can a root sense gravity when it has no eyes or ears?",
+        "explored": false,
+        "rank": 8
+      }
+    }
+  ]
+}

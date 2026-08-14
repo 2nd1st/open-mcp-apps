@@ -18,17 +18,21 @@ import { homedir, platform } from "node:os";
 import { join, dirname } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
-import { readDeclaration } from "./manifest-block.mjs";
+import { readDeclaration, stripDeclarationBlock, mentionsDeclarationTag } from "./manifest-block.mjs";
+import { functionsJoinError, FN_NAME_RE, MAX_FUNCTIONS } from "./functions.mjs";
 // tierOf only, and deliberately from the module that owns the security model rather than a second
 // copy of the author→tier partition living here: the disease this codebase watches for is DIALECTS,
 // and two places deciding what "local" means is exactly one. contracts.mjs imports nothing but zod,
 // so this direction adds no cycle.
 import { tierOf } from "./contracts.mjs";
+import { CONFIRMATION_CLASSES, createRequestStateCodec, deletePreview, storeSecret } from "./confirmation.mjs";
+// The renderer's own value coercion — see confirmPrefOn (one answer to "what does this row mean").
+import { coercePref, latestPref } from "./runtime-core.mjs";
 
 // Migration-format pin: stamped into PRAGMA user_version AND every change_event payload (`sv`).
 // Export/import + SaaS sync read this to know which event shape they are looking at — bump it on
 // any breaking payload/schema change and translate old values on read. Never reuse a number.
-export const SCHEMA_VERSION = 4;
+export const SCHEMA_VERSION = 6;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS item (
@@ -38,11 +42,6 @@ CREATE TABLE IF NOT EXISTS item (
   position   REAL NOT NULL DEFAULT 0,
   fields     TEXT NOT NULL DEFAULT '{}',   -- JSON object, app-defined shape
   version    INTEGER NOT NULL DEFAULT 1,
-  -- E13f/g: WHO owns this row. NULL is today's meaning — shared across the org — and stays the
-  -- default forever. Reserved now because principal has to cover member / guest / anon in ONE
-  -- definition: a guest is authenticated but not a member, so a scheme that only knows members
-  -- cannot be widened to hold one later.
-  principal  TEXT,
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL
 );
@@ -54,31 +53,29 @@ CREATE INDEX IF NOT EXISTS idx_item_coll_grp_pos ON item(collection, grp, positi
 CREATE TABLE IF NOT EXISTS app (
   name        TEXT PRIMARY KEY,             -- [a-z][a-z0-9-]*; with OMA_DYNAMIC_TOOLS=1 it also surfaces as an open_<name> tool (flag defaults OFF — cache)
   version     INTEGER NOT NULL DEFAULT 1,
-  html        TEXT NOT NULL,
+  ui          TEXT NOT NULL,                -- the ui SLOT: a complete HTML document (v6: no embedded declaration block)
   description TEXT NOT NULL DEFAULT '',
   author      TEXT NOT NULL DEFAULT 'agent',
-  scene       TEXT,                         -- JSON {category_id, tags?} | NULL — Library taxonomy metadata
-  manifest    TEXT,                         -- JSON {collections:{<coll>:{fields:{..},strict?}}} | NULL — declared field contracts, enforced in core()
-  -- E4 shape reservations, added early because a column added later cannot describe rows that
-  -- already exist. Two have since been claimed by current law: kind (list_apps filters on
-  -- it) and visibility (listing + archive_app live on it). kit_version and server_script
-  -- remain reservations — written and read by nothing yet.
-  kind        TEXT NOT NULL DEFAULT 'app',  -- app | visual | primitive — lets list_apps stop listing non-apps
+  scene       TEXT,                         -- projection of manifest.scene (App Store taxonomy) — derived, rebuildable
+  manifest    TEXT,                         -- JSON | NULL — the AUTHORITATIVE declaration (v6/W-N: no longer a projection of an in-document block)
+  kind        TEXT NOT NULL DEFAULT 'app',  -- projection of manifest.kind — lets list_apps filter without parsing JSON
   visibility  TEXT NOT NULL DEFAULT 'listed', -- featured | listed | unlisted | archived (archive, curation and the long tail, in one field)
-  kit_version TEXT,                         -- which inlined kit build this app carries (L4)
-  server_script TEXT,                       -- E13d: server-side functions. Reserved now so they never have to live inside the html column
   updated_at  TEXT NOT NULL
 );
+-- The REVISION table (v6): every save snapshots BOTH slots, so a restore/undo target is always a
+-- coherent (ui, manifest) pair — never a document from one save paired with a declaration from
+-- another. version = the writing event's ledger seq, exactly as before.
 CREATE TABLE IF NOT EXISTS app_history (
-  name    TEXT NOT NULL,
-  version INTEGER NOT NULL,
-  html    TEXT NOT NULL,
-  ts      TEXT NOT NULL,
+  name     TEXT NOT NULL,
+  version  INTEGER NOT NULL,
+  ui       TEXT NOT NULL,
+  manifest TEXT,                            -- JSON | NULL — this revision's declaration, verbatim
+  ts       TEXT NOT NULL,
   PRIMARY KEY (name, version)
 );
 
--- File plane (scope b — user files; design: scratchpad/FILE-STORAGE-design.md). Bytes live in a
--- SWAPPABLE backend (src/files.mjs — local folder now, remote later), NEVER here; this table is the
+-- File plane (scope b — user files). Bytes live on disk beside the db (src/files.mjs — a local
+-- content-addressed folder), NEVER here; this table is the
 -- per-app ref index that drives quota + versioning + audit. Isolation is a KEY, not a convention:
 -- PRIMARY KEY (app, path) + WHERE app=? on every read make cross-app addressing impossible.
 CREATE TABLE IF NOT EXISTS file (
@@ -87,8 +84,7 @@ CREATE TABLE IF NOT EXISTS file (
   sha256     TEXT NOT NULL,               -- content address → files/<app>/<sha256>.blob in the backend
   size       INTEGER NOT NULL,            -- LOGICAL bytes (drives quota; content-addressed dedup cannot bypass)
   mime       TEXT NOT NULL DEFAULT 'application/octet-stream',
-  version    INTEGER NOT NULL DEFAULT 1,  -- +1 per overwrite (OCC token, mirrors item.version)
-  backend    TEXT NOT NULL DEFAULT 'local', -- remote seam: 'local' | 'remote' (per-row, mid-migration transparent)
+  version    INTEGER NOT NULL DEFAULT 1,  -- the writing event's ledger seq (OCC token, mirrors item.version — it JUMPS, never +1)
   created_at TEXT NOT NULL,
   updated_at TEXT NOT NULL,
   PRIMARY KEY (app, path)
@@ -102,11 +98,7 @@ CREATE TABLE IF NOT EXISTS change_event (
   command_id   TEXT NOT NULL UNIQUE,        -- idempotency key
   event_type   TEXT NOT NULL,               -- item_added|item_updated|item_moved|item_deleted|component_saved|component_deleted
   payload      TEXT NOT NULL,               -- JSON (app html NOT included — it's in app_history)
-  actor        TEXT NOT NULL,             -- see ACTORS: the CLASS that wrote this
-  -- 🔴 The one genuinely irreversible reservation. The ledger only grows, so if anonymous writes
-  -- ever land without a dimension that distinguishes them, the history can never be sorted into
-  -- "the owner did this" and "a stranger did this" — not a missing feature, unrecoverable data.
-  principal    TEXT,
+  actor        TEXT NOT NULL,             -- see ACTORS: the CLASS that wrote this (E13b closed set — the wall that keeps anonymous writes from ever landing mislabelled)
   host         TEXT,
   ts           TEXT NOT NULL
 );
@@ -126,24 +118,6 @@ CREATE INDEX IF NOT EXISTS idx_event_file ON change_event(seq)
 CREATE INDEX IF NOT EXISTS idx_event_collection
   ON change_event(json_extract(payload, '$.collection'), seq);
 
--- WHERE THE LEDGER STOPS BEING A COMPLETE ACCOUNT OF A COLLECTION.
---
--- Retention deletes a collection's OLDEST events, and one question in this store reads exactly
--- those: "was this collection created FOR this app, or was it already here?" is answered by
--- comparing earliest events, and pruning moves that answer forward. The judge cannot see the gap
--- from the inside — the rows it needs are the rows that are gone — so pruning writes down that it
--- happened, and the judge reads the note instead of guessing.
---
--- Deliberately NOT a change_event: the mark has to outlive the very operation that removes events.
--- Additive and idempotent (CREATE IF NOT EXISTS), so an existing database gains it on next open
--- with nothing to migrate — a database that has never pruned simply has no rows here, which is the
--- correct reading of "nothing was truncated".
-CREATE TABLE IF NOT EXISTS ledger_truncation (
-  collection TEXT PRIMARY KEY,
-  before_seq INTEGER NOT NULL,     -- events strictly below this are no longer accounted for
-  ts         TEXT NOT NULL
-);
-
 `;
 
 // The CLASS that performed a write. Closed on purpose (E13b): `actor` used to be free text, so an
@@ -151,217 +125,11 @@ CREATE TABLE IF NOT EXISTS ledger_truncation (
 // the owner's edits from a stranger's. The ledger only grows, so that mislabelling is permanent —
 // this is the one reservation that cannot be fixed after the fact. 'guest' and 'anon' are reserved
 // NOW and rejected nowhere: no code path produces them yet, and when one does it must say so.
-// version N here runs when upgrading a database stamped at N-1. Empty until the first bump; the
-// SHAPE is what E4a is for. Exported as a pure lookup so it can be tested without one.
-// The app table is called `component` in every database old enough to need migration 2 or 3, and
-// `app` in one fresh enough to skip them (v4 renamed it) — and a FRESH store runs this whole ladder
-// too, against empty tables. So the historical steps resolve the name instead of hard-coding either
-// one: hard-coding `app` would make them query a table a v1 file does not have, and hard-coding
-// `component` would break every new install. The v4 step below needs no such care — by the time it
-// runs, renameLegacyTables() has already made the names uniform.
-const eraNames = (db) =>
-  db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='component'").get()
-    ? { app: "component", hist: "component_history", fileApp: "component" }
-    : { app: "app", hist: "app_history", fileApp: "app" };
-
-export const MIGRATIONS = {
-  // v2 — ONE ordinal axis. Three separate counters (item.version, app.version, file.version)
-  // become positions on the ledger, which is the only clock every plane already shares. What this
-  // buys: `expected_version` means the same number everywhere, a delta's `seq` is directly usable as
-  // the OCC token for the row it describes, and "is my copy current?" stops needing a per-plane
-  // answer. What it costs: version numbers stop being small and consecutive (v3 becomes v41782),
-  // and for one moment after the upgrade an in-flight caller holding an old small number gets one
-  // conflict and retries. Both were signed for.
-  //
-  // Each row is stamped with the seq of the LAST event that touched it — its true position in the
-  // history — and rows with no event (seeded before the ledger, or written by an older build) keep
-  // a monotonic stand-in derived from the current head, so every OCC check still compares like
-  // with like. (An entirely empty ledger stamps 0 — with nothing on the axis yet, nothing collides.)
-  2(db) {
-    const head = db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event").get().v;
-    // item: last ITEM event for this id. The type restriction is load-bearing: aggregate_id is a
-    // shared namespace, and an item whose id happens to equal an app's name must not inherit
-    // the app's seq.
-    db.exec(`UPDATE item SET version = COALESCE(
-               (SELECT MAX(e.seq) FROM change_event e WHERE e.aggregate_id = item.id
-                  AND e.event_type IN ('item_added','item_updated','item_moved')), ${head})`);
-    // app: last component_saved for this name. app_history is keyed (name, version), so
-    // it is rewritten in the same pass — otherwise restore_app would look up a version that
-    // no longer exists on the row.
-    const T = eraNames(db);
-    const comps = db.prepare(`SELECT name, version FROM ${T.app}`).all();
-    const lastSave = db.prepare(
-      "SELECT MAX(seq) AS v FROM change_event WHERE event_type = 'component_saved' AND aggregate_id = ?");
-    const setComp = db.prepare(`UPDATE ${T.app} SET version = ? WHERE name = ?`);
-    const rekeyHist = db.prepare(`UPDATE ${T.hist} SET version = ? WHERE name = ? AND version = ?`);
-    for (const c of comps) {
-      const seq = lastSave.get(c.name).v ?? head;
-      // History rows for OTHER versions of this app keep their old numbers: they are historical
-      // positions that no longer collide with anything live, and rewriting them would need an event
-      // per version, which the ledger does not have for pre-ledger saves. The CURRENT version is the
-      // one that has to agree with the row, because that is the one restore/auto-revert reads.
-      rekeyHist.run(seq, c.name, c.version);
-      setComp.run(seq, c.name);
-    }
-    // file: last file_written for app/path.
-    db.exec(`UPDATE file SET version = COALESCE((SELECT MAX(e.seq) FROM change_event e
-               WHERE e.event_type = 'file_written'
-                 AND e.aggregate_id = file.${T.fileApp} || '/' || file.path), ${head})`);
-  },
-  // v3 — the library rename (gallery → library, v0.3.0). Two facts move: the PROVENANCE stamp
-  // (author 'gallery' → 'library', which tierOf reads — without this, rows installed by v0.2.0
-  // would fall to the strictest tier under a build whose tierOf no longer knows the old word),
-  // and the SYSTEM app's NAME (the seeder would otherwise add 'library' beside a stale
-  // 'gallery' row that nothing locks or lists any more). The LEDGER is deliberately untouched:
-  // events are history, history happened under the old name, and rewriting payloads would forge
-  // the past — a reader of old events sees 'gallery' and that is the truth of when they occurred.
-  3(db) {
-    const T = eraNames(db);
-    db.exec(`UPDATE ${T.app} SET author = 'library' WHERE author = 'gallery'`);
-    // Rename the system row only when the new name is free — a collision would mean a v0.3 build
-    // already seeded 'library' into this store, and then the stale row is dropped, not renamed
-    // (its html is the OLD build's browse surface; keeping two library UIs helps nobody).
-    const hasNew = db.prepare(`SELECT 1 FROM ${T.app} WHERE name = 'library'`).get();
-    const hasOld = db.prepare(`SELECT 1 FROM ${T.app} WHERE name = 'gallery'`).get();
-    if (hasOld && !hasNew) {
-      db.exec(`UPDATE ${T.app} SET name = 'library' WHERE name = 'gallery'`);
-      db.exec(`UPDATE ${T.hist} SET name = 'library' WHERE name = 'gallery'`);
-    } else if (hasOld && hasNew) {
-      db.exec(`DELETE FROM ${T.hist} WHERE name = 'gallery'`);
-      db.exec(`DELETE FROM ${T.app} WHERE name = 'gallery'`);
-    }
-  },
-  // v4 — the component → app rename (v0.4.0). The STRUCTURAL half (both tables, the `file` owner
-  // column, the index name) already ran in renameLegacyTables(), BEFORE the schema DDL — see there
-  // for why it cannot live in this ladder. What is left is the half that touches ROWS.
-  //
-  // `app` only became a reserved name in v0.3.2, and a reserved name is refused at CREATE time —
-  // it was never enforced against rows that already existed. So a store older than that can own an
-  // app literally called `app`, and v0.4 makes that word the house vocabulary: its document would
-  // claim the universal loader's own resource URI. v0.3.2 shipped a guard that keeps the engine
-  // BOOTING in that case (the app silently loses direct embedding); this moves the name out of the
-  // way instead, which is the fix the guard was buying time for.
-  //
-  // And it is WRITTEN DOWN. A name that changes under the user without a record is indistinguishable
-  // from the app having been deleted — the one reading of it we must not leave available.
-  4(db) {
-    // WHAT COUNTS AS TAKEN. Deleting an app is TOMBSTONE semantics (see delete_app): the registry
-    // row goes and the app_history rows, the file rows and the entire ledger stay. So a name that
-    // "does not exist" according to the live table can still own a (name, version) primary key in
-    // app_history — and moving a user's app onto it does one of two things, both measured:
-    //
-    //   · the versions clash (near-certain: anything ever saved has a version 1) →
-    //     SQLITE_CONSTRAINT_PRIMARYKEY. The ladder's transaction rolls the rows back, so
-    //     user_version stays 3 — but renameLegacyTables() ran BEFORE it and outside it, so the
-    //     tables are already v4-shaped. Every subsequent open replays the same step and hits the
-    //     same collision. NOT a failed upgrade: a store that never opens again, and retrying
-    //     cannot help because retrying is exactly what is failing.
-    //   · the versions happen not to clash → SILENT MERGE. Two apps' histories and files live
-    //     under one name, and restoring a version hands the user somebody else's app.
-    //
-    // Hence: a name is taken if it exists ANYWHERE a name can exist, not just where it is alive.
-    const live = new Set(db.prepare("SELECT name FROM app").all().map((r) => r.name));
-    const taken = new Set(live);
-    for (const [sql, col] of [
-      ["SELECT DISTINCT name AS n FROM app_history", "n"],
-      ["SELECT DISTINCT app AS n FROM file", "n"],
-      // The ledger keys app events by name and never forgets. An app that inherits a dead one's
-      // events inherits its LIVES: lifeStart is "the most recent deletion followed by a save",
-      // which is what checkpoint numbering and delete disposition are both computed from. This is
-      // the third home, and the only one that fails without a primary key to stop it.
-      [`SELECT DISTINCT aggregate_id AS n FROM change_event
-          WHERE event_type IN ('component_saved','component_deleted','component_archived','component_renamed')`, "n"],
-    ]) for (const r of db.prepare(sql).all()) taken.add(r[col]);
-
-    const ins = db.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts)"
-      + " VALUES (?, ?, ?, ?, ?, ?)");
-    for (const from of RESERVED_RENAMES) {
-      if (!live.has(from)) continue;          // a tombstone under this name is not ours to move
-      let to = null;
-      for (let i = 1; i <= 1000; i++) { const c = `${from}-${i}`; if (!taken.has(c)) { to = c; break; } }
-      // FAIL OPEN, never throw. Throwing here is the failure mode described above — the store
-      // stops opening and no retry can fix it. Leaving the app under its reserved name is strictly
-      // better: v0.3.2 already ships the guard that keeps the engine BOOTING in that case (the app
-      // loses its per-app resource and still opens through open_app). A degraded app beats a store
-      // nobody can open.
-      if (!to) { try { console.warn(`[oma] v4: no free name near "${from}" — leaving it; it opens through open_app`); } catch {} continue; }
-      db.prepare("UPDATE app SET name = ? WHERE name = ?").run(to, from);
-      db.prepare("UPDATE app_history SET name = ? WHERE name = ?").run(to, from);
-      db.prepare("UPDATE file SET app = ? WHERE app = ?").run(to, from);
-      live.delete(from); live.add(to); taken.add(to);
-      // `component_renamed`, not `app_renamed`: the ledger's event vocabulary is frozen at the
-      // pre-rename word on purpose (see EVENT_TYPES). ONE vocabulary means a later reader who
-      // filters on the wrong word gets zero rows on their own machine instead of silently missing
-      // history on a user's.
-      ins.run(to, randomUUID(), "component_renamed",
-        JSON.stringify({ from, to, reason: "reserved_name", sv: SCHEMA_VERSION }),
-        "seed", new Date().toISOString());
-    }
-  },
-};
-
-// Names v4 moves out of the way, in the order it tries them. Not read from RESERVED_APP_NAMES:
-// that set is current law and will keep changing, while a migration must do the same thing in ten
-// years that it does today — a migration whose behaviour drifts with an unrelated edit is a
-// migration nobody can reason about.
-const RESERVED_RENAMES = ["app", "component", "loader"];
-
-// v3 → v4 · the STRUCTURAL half of the component → app rename.
-//
-// Why it is not MIGRATIONS[4]: openStore runs db.exec(SCHEMA) and the addColumn() guards BEFORE
-// the migration ladder, and both name the v4 tables — `CREATE INDEX ... ON file(app)` fails
-// outright against a v3 `file` table, and addColumn("app", …) has no table to alter. The rename
-// therefore has to precede them.
-//
-// Idempotent by inspection of sqlite_master. It no longer carries its own transaction: openStore
-// runs it INSIDE the one transaction that also stamps user_version, so the table shape and the
-// version number now live or die together. That closes the window this used to call "forward
-// harmless" — v4 tables stamped v3 was survivable alone, but an OLDER build opening that store
-// re-created the v3 tables beside the v4 ones and left it unopenable by BOTH builds, with the
-// user's rows sitting intact and unreachable inside it.
-//
-// CALL IT INSIDE A TRANSACTION. It has none of its own by design; openStore is the only caller
-// that matters and it supplies one. (The two callers in test/ pass a bare handle ON PURPOSE —
-// producing the half state is the thing they are simulating.)
-export function renameLegacyTables(db) {
-  const has = (n) => !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name = ?").get(n);
-  const empty = (n) => !has(n) || !db.prepare(`SELECT 1 FROM ${n} LIMIT 1`).get();
-  // Both names present is not a store with two lives — it is that wreckage. An older build's
-  // `CREATE TABLE IF NOT EXISTS` re-made the v3 tables next to the v4 ones and then died on an
-  // index it could not build, so one side is EMPTY. Which side that is says which is the residue,
-  // and dropping an empty table is not a guess. Refusing here forever was the harm: it stranded
-  // data that was never lost. Only two POPULATED sides are genuinely ambiguous, and that one still
-  // refuses — with the recovery procedure named, not just the refusal.
-  if (has("component") && has("app")) {
-    if (empty("component") && empty("component_history")) {
-      db.exec("DROP TABLE IF EXISTS component_history");
-      db.exec("DROP TABLE IF EXISTS component");
-      return false;                                    // the v4 side is the live one; nothing to rename
-    }
-    if (empty("app") && empty("app_history")) {
-      db.exec("DROP TABLE IF EXISTS app_history");
-      db.exec("DROP TABLE IF EXISTS app");              // …and fall through: the v3 side is live
-    } else {
-      throw new Error("store has both `component` and `app` tables and BOTH hold rows — refusing to guess " +
-        "which is live. Recovery procedure: KNOWN-ISSUES.md § \"A store that neither build will open\".");
-    }
-  }
-  if (!has("component")) return false;                 // already v4-shaped, or a fresh database
-  db.exec("ALTER TABLE component RENAME TO app");
-  db.exec("ALTER TABLE component_history RENAME TO app_history");
-  db.exec("ALTER TABLE file RENAME COLUMN component TO app");
-  // SQLite carries an index's DEFINITION through a column rename but not its NAME, and
-  // idx_file_component is the implementation of a security property (see the `file` DDL) — a
-  // stale name on that one is exactly what a later reader "tidies up" without knowing what it
-  // holds up. Drop it; the DDL below recreates it as idx_file_app.
-  db.exec("DROP INDEX IF EXISTS idx_file_component");
-  return true;
-}
-export function migrationsBetween(from, to) {
-  const steps = [];
-  for (let v = from + 1; v <= to; v++) if (MIGRATIONS[v]) steps.push(MIGRATIONS[v]);
-  return steps;
-}
+// The pre-v4 migration ladder (eraNames / MIGRATIONS 2-4 / renameLegacyTables /
+// migrationsBetween, ~220 lines) retired 2026-08-04 (elegance A1): no store older than the last
+// public release exists outside tests, and those steps were manufactured solely by tests. Two
+// rungs remain, chained in openStore — v4 (v0.4.2, the last released store) → v5 → v6. Anything
+// older refuses with the way forward named.
 
 export const ACTORS = new Set(["agent", "human", "seed", "library", "guest", "anon"]);
 
@@ -408,7 +176,7 @@ export const ITEM_WRITE_KEYS = {
   add_item: ["collection", "group", "fields", "position"],
   update_item: ["id", "fields", "expected_version"],
   move_item: ["id", "group", "position", "expected_version"],
-  delete_item: ["id", "expected_version"],
+  delete_item: ["id", "expected_version", "request_state", "require_confirmation"],
 };
 /** Envelope keys a batch command may carry — the historical set, unchanged. */
 export const BATCH_ENVELOPE_KEYS = ["command_id", "actor", "host"];
@@ -433,6 +201,8 @@ export const ITEM_WRITE_SHAPES = {
   fields: plainObject,
   position: finiteNumber,
   expected_version: finiteNumber,
+  request_state: (v) => typeof v === "string",
+  require_confirmation: (v) => v === true || v === false,
 };
 /** …and the SINGLE-tool envelope, which adds `via`: the widget's shadow provenance stamp is the
  *  reason those four schemas are passthrough at all, so the wall has to let it through. Kept apart
@@ -468,6 +238,15 @@ export const MAX_TOTAL_FILE_COUNT = 200_000;                 // global file-coun
 // and neither implies the other. Requiring `fields` is what made stewardship unaffordable to
 // declare, which is why the collection↔app edge appeared not to exist at all.
 export const MANIFEST_FIELD_TYPES = new Set(["string", "number", "boolean", "object", "array"]);
+// ONE spec grammar for a declared value — collection fields and function params speak it
+// identically (ruled: no second schema language). `where` names the seat in the refusal.
+function fieldSpecError(f, where) {
+  if (!f || typeof f !== "object" || Array.isArray(f)) return `${where} must be an object`;
+  if (!MANIFEST_FIELD_TYPES.has(f.type)) return `${where}.type must be one of ${[...MANIFEST_FIELD_TYPES].join("|")}`;
+  if (f.required != null && typeof f.required !== "boolean") return `${where}.required must be a boolean`;
+  if (f.enum != null && (!Array.isArray(f.enum) || f.enum.length === 0)) return `${where}.enum must be a non-empty array`;
+  return null;
+}
 export function manifestShapeError(m) {
   if (!m || typeof m !== "object" || Array.isArray(m)) return "manifest must be an object";
   // `collections` is OPTIONAL at the top level. An app's declaration is mostly about itself —
@@ -495,10 +274,31 @@ export function manifestShapeError(m) {
       if (spec.fields == null) continue;   // stewardship-only declaration
       if (typeof spec.fields !== "object" || Array.isArray(spec.fields)) return `collections.${coll}.fields must be an object`;
       for (const [fname, f] of Object.entries(spec.fields)) {
-        if (!f || typeof f !== "object" || Array.isArray(f)) return `field ${coll}.${fname} must be an object`;
-        if (!MANIFEST_FIELD_TYPES.has(f.type)) return `field ${coll}.${fname}.type must be one of ${[...MANIFEST_FIELD_TYPES].join("|")}`;
-        if (f.required != null && typeof f.required !== "boolean") return `field ${coll}.${fname}.required must be a boolean`;
-        if (f.enum != null && (!Array.isArray(f.enum) || f.enum.length === 0)) return `field ${coll}.${fname}.enum must be a non-empty array`;
+        const err2 = fieldSpecError(f, `field ${coll}.${fname}`);
+        if (err2) return err2;
+      }
+    }
+  }
+  // The function roster (W3). Signatures only — the BODY lives in the document and the two are
+  // joined at the save door (functionsJoinError), so a declaration here is never a silent no-op.
+  // `public` is validated and stored but consumed by NOTHING yet: it is the reserved shape for the
+  // anonymous-write gate (B2 wave) — a declared-public function is the ONLY thing that face will
+  // ever expose, so the word has to exist before the wave that reads it.
+  if (m.functions != null) {
+    if (typeof m.functions !== "object" || Array.isArray(m.functions)) return "manifest.functions must be an object";
+    const names = Object.keys(m.functions);
+    if (names.length > MAX_FUNCTIONS) return `manifest.functions declares ${names.length} functions, limit ${MAX_FUNCTIONS}`;
+    for (const [fname, spec] of Object.entries(m.functions)) {
+      if (!FN_NAME_RE.test(fname)) return `function name "${fname}" — lowercase letters, digits and underscores, starting with a letter (max 64 chars)`;
+      if (!spec || typeof spec !== "object" || Array.isArray(spec)) return `functions.${fname} must be an object`;
+      if (spec.description != null && typeof spec.description !== "string") return `functions.${fname}.description must be a string`;
+      if (spec.public != null && typeof spec.public !== "boolean") return `functions.${fname}.public must be a boolean`;
+      if (spec.params != null) {
+        if (typeof spec.params !== "object" || Array.isArray(spec.params)) return `functions.${fname}.params must be an object`;
+        for (const [pname, p] of Object.entries(spec.params)) {
+          const err2 = fieldSpecError(p, `functions.${fname}.params.${pname}`);
+          if (err2) return err2;
+        }
       }
     }
   }
@@ -619,6 +419,15 @@ const EVENT_TYPES = {
   write_file: "file_written", delete_file: "file_deleted",
 };
 
+// Totality check for the confirmation policy (W-S): the two tables must cover each other
+// EXACTLY, at module load. A new command added without deciding whether it needs the user's
+// confirmation is a boot failure, not a silent exemption — that turn-the-question-around is
+// the whole point of the policy layer (§2.5-A: "forgot" must mean "refused", never "lost data").
+for (const t of Object.keys(EVENT_TYPES))
+  if (!CONFIRMATION_CLASSES[t]) throw new Error(`store command "${t}" is not classified in CONFIRMATION_CLASSES (confirmation.mjs) — every command must state whether it needs user confirmation`);
+for (const t of Object.keys(CONFIRMATION_CLASSES))
+  if (!EVENT_TYPES[t]) throw new Error(`CONFIRMATION_CLASSES entry "${t}" matches no store command — remove it or add the command`);
+
 // The store lives in a FIXED per-user data dir, decoupled from the clone location, so every
 // host (Claude Desktop, Claude Code, Codex) and every clone opens the SAME db — apps and
 // data stay in sync instead of forking one db per install (the #1 cause of "the two hosts don't
@@ -632,6 +441,223 @@ export function defaultDbDir() {
 }
 export function defaultDbPath() { return join(defaultDbDir(), "open-mcp-apps.db"); }
 
+// ─────────────────────────────────────────────────────── v4 → v5: the reservations leave the shape
+// The v4 shape carried reservations nothing ever consumed: `principal` on item and change_event,
+// `kit_version` and `server_script` on app, `backend` on file, and the ledger_truncation /
+// report_watermark side tables, whose only readers retired with retention and the server-held
+// watermark. This step removes exactly those and touches nothing else — no row is read, no value is
+// rewritten, so every row crosses the line byte-identical and the step cannot fail on data.
+//
+// DROP COLUMN is admissible for precisely these five: none appears in a primary key, a unique
+// constraint, a CHECK, or any index — including the partial and expression indexes over
+// change_event, which name only `seq`, `event_type` and json_extract(payload, …). The pragma guard
+// is not defensive dressing: SQLite has no DROP COLUMN IF EXISTS, and a v4 store hand-repaired with
+// a later build can legitimately be missing one.
+//
+// Runs inside openStore's single immediate transaction, ahead of the v5 → v6 step: a v4 store
+// climbs both rungs in one open, and an interruption at either leaves it whole at v4.
+function migrateV4toV5(db) {
+  for (const [t, c] of [["item", "principal"], ["change_event", "principal"],
+    ["app", "kit_version"], ["app", "server_script"], ["file", "backend"]])
+    if (db.pragma(`table_info(${t})`).some((x) => x.name === c)) db.exec(`ALTER TABLE ${t} DROP COLUMN ${c}`);
+  db.exec("DROP TABLE IF EXISTS ledger_truncation");
+  db.exec("DROP TABLE IF EXISTS report_watermark");
+}
+
+// ───────────────────────────────────────────────── v5 → v6: the declaration leaves the document
+// W-N (wn-manifest-commit-2026-08-05.md). Before v6 an app declared itself in an embedded
+// #oma-manifest block and the manifest column was a projection of it; from v6 the column IS the
+// declaration and documents carry no block. This step moves every stored revision across that
+// line: derive each revision's manifest by replaying the OLD reader's four-state semantics over
+// the app's history (absent = inherit the previous revision — so a revision without a block does
+// NOT mean "no manifest", and the walk must restart at nothing across a delete→recreate boundary),
+// then strip the block bytes out of every document, head rows included.
+//
+// STRICT ON PURPOSE: any revision whose block cannot be read cleanly (bad JSON, duplicate,
+// shape-invalid — all reachable via the old salvage paths) fails the WHOLE migration and the file
+// stays v5, byte-identical, with the offending revisions listed. Quarantining or auto-clearing
+// would decide what the author meant; with no installed base, refusing is both safe and honest.
+// Runs inside openStore's single immediate transaction — user_version is stamped after, by the
+// caller, so an interruption anywhere rolls the store back to v5 whole.
+//
+// STRICT ABOUT WHAT, THOUGH — the line moved once, on evidence. A rehearsal against a read-only
+// copy of six real v0.4.2 stores refused five of them, and not one refusal was corruption: the
+// step was strict about its own ASSUMPTIONS (that a revision is addressed by (aggregate_id, seq),
+// that the manifest column is a faithful projection) rather than about the data. Both assumptions
+// are now checked against the store instead of presumed, and the two REAL refusals — a save event
+// with no revision anywhere, and two sides that both declare and disagree — are untouched. The
+// rule that survived: refuse what is ambiguous, never what is merely unfamiliar.
+function migrateV5toV6(db) {
+  // Shape first: rename the slot column, add the revision manifest. ALTERs, not a table rebuild —
+  // every other column, index and rowid is untouched by construction.
+  db.exec("ALTER TABLE app RENAME COLUMN html TO ui");
+  db.exec("ALTER TABLE app_history RENAME COLUMN html TO ui");
+  db.exec("ALTER TABLE app_history ADD COLUMN manifest TEXT");
+  db.exec(SCHEMA);
+  // Oversize guard in SQL before anything is pulled into JS — a hand-edited row cannot force the
+  // migration to hold an unbounded string just to refuse it.
+  const big = db.prepare(`SELECT name, version FROM app_history WHERE length(CAST(ui AS BLOB)) > ${MAX_APP_HTML * 4}`).all();
+  if (big.length) throw new Error(`v5→v6 migration refused — oversized history revision(s): ${big.map((b) => `${b.name}@${b.version}`).join(", ")}`);
+
+  const failures = [];
+  const events = db.prepare(
+    "SELECT seq, aggregate_id AS name, event_type, ts FROM change_event WHERE event_type IN ('component_saved','component_deleted') ORDER BY seq ASC").all();
+  const saves = events.filter((e) => e.event_type === "component_saved");
+  const revisions = db.prepare("SELECT name, version, ts FROM app_history").all();
+  const { revisionOf, alias } = resolveRevisions(saves, revisions);
+
+  const readRev = db.prepare("SELECT ui FROM app_history WHERE name = ? AND version = ?");
+  const writeRev = db.prepare("UPDATE app_history SET ui = @ui, manifest = @manifest WHERE name = @name AND version = @version");
+  const setRevManifest = db.prepare("UPDATE app_history SET manifest = @manifest WHERE name = @name AND version = @version");
+  const inherit = new Map();      // name → manifest JSON string | null, within the CURRENT life
+  const lastSaved = new Map();    // name → manifest of the newest save seen (head cross-check)
+  const headRev = new Map();      // name → the revision row the newest save wrote
+  for (const ev of events) {
+    if (ev.event_type === "component_deleted") { inherit.delete(alias.get(ev.name) ?? ev.name); continue; }
+    const at = revisionOf.get(ev.seq);
+    if (!at) { failures.push({ name: ev.name, version: ev.seq, error: "save_event_without_revision" }); continue; }
+    const rev = readRev.get(at.name, at.version);
+    const m = deriveLegacyManifest(rev.ui, inherit.has(at.name) ? inherit.get(at.name) : null);
+    if (m.error) { failures.push({ name: at.name, version: at.version, error: m.error }); continue; }
+    inherit.set(at.name, m.manifest);
+    lastSaved.set(at.name, m.manifest);
+    headRev.set(at.name, at);
+    writeRev.run({ name: at.name, version: at.version, ui: stripDeclarationBlock(rev.ui).html, manifest: m.manifest });
+  }
+  // Head rows: strip the block, and cross-check the derived head manifest against the projection
+  // the old engine materialised. Where the two disagree, reconcileHead decides whether one side is
+  // simply the only one that ever spoke — refusal is reserved for the case where BOTH speak.
+  const setHead = db.prepare("UPDATE app SET ui = @ui, manifest = @manifest WHERE name = @name");
+  for (const a of db.prepare("SELECT name, ui, manifest FROM app").all()) {
+    // An app row with no save event in the ledger cannot be replayed — derive from the row itself
+    // (same four states; absent keeps the materialised column, which is all the truth there is).
+    const derived = lastSaved.has(a.name)
+      ? { manifest: lastSaved.get(a.name) }
+      : deriveLegacyManifest(a.ui, a.manifest ?? null);
+    if (derived.error) { failures.push({ name: a.name, version: "head", error: derived.error }); continue; }
+    const want = derived.manifest ?? null, have = a.manifest ?? null;
+    let adopted = have;             // agreement: the column's own bytes cross the line untouched
+    if (!manifestsAgree(want, have)) {
+      const r = reconcileHead(want, have);
+      if (r.error) { failures.push({ name: a.name, version: "head", error: r.error }); continue; }
+      adopted = r.manifest;
+      // The column won, so the newest REVISION must carry it too. Not cosmetics: an omitted
+      // manifest slot inherits from the head revision (see the save command), so leaving that row
+      // null would make the app's next ui-only edit silently clear a declaration this very step
+      // just decided to keep. Older revisions stay as derived — what they declared is not knowable.
+      if (r.fromColumn && headRev.has(a.name))
+        setRevManifest.run({ manifest: adopted, ...headRev.get(a.name) });
+    }
+    setHead.run({ name: a.name, ui: stripDeclarationBlock(a.ui).html, manifest: adopted });
+  }
+  if (failures.length)
+    throw new Error("v5→v6 migration refused — revision(s) with unreadable declarations (fix or delete these apps " +
+      "with the previous release, then retry; the store is untouched):\n" +
+      failures.map((f) => `  ${f.name}@${f.version}: ${f.error}`).join("\n"));
+}
+
+/** Which app_history row did each save event write?
+ *
+ *  The primary key is (aggregate_id, seq): from v0.4.x a save stamps the app's version with the
+ *  event's own seq and writes the revision under it, so the pair is exact. It is not exact all the
+ *  way back, and a v4 FILE can be much older than the v4 SHAPE — the ladder migrates the file it is
+ *  handed, whatever engine started it. Two drifts appear in real v0.4.2 stores, both in seed-era
+ *  rows: revisions numbered by a per-app counter (settings@1, settings@2) instead of the seq, and
+ *  the system app renamed in place (the ledger still says `gallery`, the tables say `library`).
+ *
+ *  So when the key misses, fall back to the one thing the two rows provably share: the event and
+ *  its revision are written in ONE transaction from ONE clock read, so the timestamps are equal to
+ *  the millisecond. That is a JOIN KEY, not a tolerance — it finds a row that exists and never
+ *  invents one. It is consulted only after the primary key misses, it must land on exactly one
+ *  revision bearing that timestamp, and that revision must not already belong to another event.
+ *  Anything else stays unresolved, and an unresolved save event is still fatal.
+ *
+ *  Returns {revisionOf: Map(seq → {name, version}), alias: Map(ledgerName → tableName)} — the alias
+ *  is how a `component_deleted` for the old name still cuts the inheritance chain of the new one. */
+function resolveRevisions(saves, revisions) {
+  const key = (name, version) => `${name}\u0000${version}`;   // NUL separator: an app name can never hold one, so the pair is unambiguous
+  const known = new Set(), byTs = new Map();
+  for (const r of revisions) {
+    known.add(key(r.name, r.version));
+    const at = byTs.get(r.ts);
+    if (at) at.push(r); else byTs.set(r.ts, [r]);
+  }
+  const revisionOf = new Map(), alias = new Map(), claimed = new Set();
+  // Exact matches first, ALL of them: a timestamp fallback must never take a row that the primary
+  // key already addresses, whichever order the events happen to be in.
+  for (const ev of saves)
+    if (known.has(key(ev.name, ev.seq))) {
+      revisionOf.set(ev.seq, { name: ev.name, version: ev.seq });
+      claimed.add(key(ev.name, ev.seq));
+    }
+  for (const ev of saves) {
+    if (revisionOf.has(ev.seq)) continue;
+    const cand = byTs.get(ev.ts) || [];
+    if (cand.length !== 1 || claimed.has(key(cand[0].name, cand[0].version))) continue;
+    revisionOf.set(ev.seq, { name: cand[0].name, version: cand[0].version });
+    claimed.add(key(cand[0].name, cand[0].version));
+    if (cand[0].name !== ev.name) alias.set(ev.name, cand[0].name);
+  }
+  return { revisionOf, alias };
+}
+
+/** Do the document's declaration and the materialised column say the SAME thing? Both are JSON
+ *  strings; key order and whitespace are not a disagreement. A column that will not parse is not a
+ *  statement at all — it says "no" here and reconcileHead gives it the refusal, rather than
+ *  throwing out of the middle of a migration. */
+function manifestsAgree(want, have) {
+  if (want === have) return true;
+  if (want == null || have == null) return false;
+  try { return JSON.stringify(JSON.parse(want)) === JSON.stringify(JSON.parse(have)); }
+  catch { return false; }
+}
+
+/** The head slot's value when the document and the column disagree.
+ *
+ *  v0.4.2 materialised the column as a PROJECTION of the document's block, and the projection had
+ *  gaps in BOTH directions — neither of which is a corrupt store:
+ *
+ *    · document declares, column NULL. v0.4.2 never projected a declaration carrying no
+ *      `collections` key — the `uses_shared`-only form every App Store app ships. Any store that ever
+ *      installed one has this, which is to say nearly every real one.
+ *    · document silent, column set. The old upsert's CASE could carry a previous projection forward
+ *      across a save whose document dropped the block.
+ *
+ *  Under the v5 rules the block is the authority and the column is its view, so where only ONE side
+ *  ever spoke, that side IS the declaration and refusing would delete a real one. Where BOTH speak
+ *  and differ, no rule can elect a winner without deciding what the author meant — that stays fatal,
+ *  and it is the case the cross-check was written for. "Refuse rather than guess" applies to genuine
+ *  ambiguity; a one-sided statement is not ambiguous. */
+function reconcileHead(want, have) {
+  if (have == null) return { manifest: want };     // the projection gap: the document declared, the column never caught it
+  if (want != null) return { error: "projection_mismatch" };   // both speak, and they differ
+  // The column is the only record that this app ever declared anything. It is adopted at the HEAD
+  // slot alone — what the older revisions declared cannot be recovered from here, and inventing it
+  // is the one thing this step must not do. Evidence has to be well-formed to count: a value this
+  // build would refuse at the save door is not a declaration to keep.
+  let v;
+  try { v = JSON.parse(have); } catch { return { error: "projection_mismatch" }; }
+  if (!v || typeof v !== "object" || Array.isArray(v)) return { error: "projection_mismatch" };
+  if (Object.keys(v).length === 0) return { manifest: null };   // `{}` and NULL are one statement ("nothing declared"), not a disagreement
+  if (manifestShapeError(v)) return { error: "projection_mismatch" };
+  return { manifest: have, fromColumn: true };
+}
+
+/** One legacy revision's manifest, by the OLD four-state reading. Returns {manifest: string|null}
+ *  (JSON, ready for the revision column) or {error}. `inherited` is the previous revision's value
+ *  within the same life — what `absent` resolves to. */
+function deriveLegacyManifest(ui, inherited) {
+  const decl = readDeclaration(ui);
+  if (decl.state === "bad") return { error: decl.error };
+  if (decl.state === "present") {
+    const err = manifestShapeError(decl.value);
+    if (err) return { error: `bad_manifest: ${err}` };
+    return { manifest: JSON.stringify(decl.value) };
+  }
+  if (decl.state === "empty") return { manifest: null };
+  return { manifest: inherited };   // absent — the document says nothing, the previous value stands
+}
+
 // `readOnly` opens an EXISTING store to look at, and is the door a caller takes when it has
 // promised to write nothing. It is not a convenience: opening for write runs the migration ladder,
 // and the v3→v4 climb is ONE-WAY, so `install-app --dry-run` and `install-app --list` both used to
@@ -644,8 +670,24 @@ export function openStore(path, { readOnly = false } = {}) {
   if (readOnly && !existsSync(dbPath)) return null;
   if (!readOnly) mkdirSync(dirname(dbPath), { recursive: true });
   const db = new Database(dbPath, readOnly ? { readonly: true } : {});
-  if (!readOnly) db.pragma("journal_mode = WAL");
   db.pragma("busy_timeout = 5000");   // N hosts share ONE db → wait out a busy writer instead of throwing SQLITE_BUSY
+  // The version gate runs BEFORE the WAL switch: a refusal must leave the file byte-identical,
+  // and `journal_mode = WAL` rewrites the header even when nothing else is ever written.
+  if (!readOnly) {
+    const uvGate = db.pragma("user_version", { simple: true });
+    const hasTables = !!db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='item'").get();
+    if (uvGate > SCHEMA_VERSION) {
+      db.close();
+      throw new Error(`store schema is v${uvGate}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
+    }
+    if (hasTables && uvGate !== 4 && uvGate !== 5 && uvGate !== SCHEMA_VERSION) {
+      db.close();
+      throw new Error(`store schema is v${uvGate} — this build migrates v4 (the last released store) and v5, and opens v${SCHEMA_VERSION}. ` +
+        `For an older store: read what matters out with the release that wrote it, then start fresh. ` +
+        `(Nothing is touched by this refusal — the file is exactly as it was.)`);
+    }
+    db.pragma("journal_mode = WAL");
+  }
   if (readOnly) {
     // The read-only door stops here: no rename, no DDL, no climb. A schema this build does not
     // speak is a refusal with the way forward in it, never a silent one-way upgrade.
@@ -656,51 +698,40 @@ export function openStore(path, { readOnly = false } = {}) {
         `does not migrate it. Install an app (any command that writes) to upgrade the store, once and one-way.`);
     }
   } else {
-    // ONE transaction for the whole open: the structural rename, the DDL and the user_version stamp.
-    // They used to be three separate writes, so a failure anywhere in the middle left v4-shaped tables
-    // stamped v3 — a half state that survives, and that an older build turns into a store neither
-    // build will open. Together they are all-or-nothing: a store is either fully v3 or fully v4.
+    // ONE transaction for the whole open: DDL, the retained migrations and the user_version stamp
+    // live or die together — an interrupted open leaves rows, table shape AND version alike
+    // untouched, at whichever version the file arrived. Four states are spoken here, and only four:
+    //   · a FRESH file (no tables) gets the current schema;
+    //   · v4 — the last RELEASED store (v0.4.2) — climbs v4→v5→v6 in this one open;
+    //   · v5 — released by nobody, but the shape a mid-development store carries — takes v5→v6;
+    //   · v6 — current — runs the idempotent DDL and proceeds.
+    // Anything older refuses with the way forward named. The ladder reaches back to the last public
+    // release and no further: that is the whole compatibility promise, and it is a CHAIN — a rung
+    // is written once and every older store climbs through it, never one direct step per origin.
+    // `.immediate()` takes the write lock up front: the v5→v6 step reads before it writes, and a
+    // deferred transaction could observe another process's writes between the two.
     db.transaction(() => {
-      // Before ANY DDL: the v3 tables have to answer to their v4 names first, or the schema below
-      // indexes a column that does not exist yet. See renameLegacyTables().
-      renameLegacyTables(db);
-      db.exec(SCHEMA);
-      // The server-held delta watermark is gone: it was keyed by (collection, host) and hostName turned
-      // out to be unstable (one claude.ai user presents three clientInfo names — measured), on top of
-      // being shared across conversations. The mark lives with the CALLER now (data_changes since /
-      // next_since). The table described itself as rebuildable side state holding no truth, which is
-      // exactly what makes dropping it in place safe — no version bump, nothing to migrate.
-      db.exec("DROP TABLE IF EXISTS report_watermark");
-      // Additive migrations: SQLite has no ADD COLUMN IF NOT EXISTS, so guard by pragma. Every entry is
-      // nullable or defaulted, which is what makes it safe to run against a live database — existing
-      // rows acquire the default and no reader has to change.
-      const addColumn = (table, column, decl) => {
-        if (!db.pragma(`table_info(${table})`).some((c) => c.name === column))
-          db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${decl}`);
-      };
-      addColumn("app", "scene", "TEXT");
-      addColumn("app", "manifest", "TEXT");
-      addColumn("app", "kind", "TEXT NOT NULL DEFAULT 'app'");
-      addColumn("app", "visibility", "TEXT NOT NULL DEFAULT 'listed'");
-      addColumn("app", "kit_version", "TEXT");
-      addColumn("app", "server_script", "TEXT");
-      addColumn("item", "principal", "TEXT");
-      addColumn("change_event", "principal", "TEXT");
-      // Stamp the migration-format version. 0 = pre-versioned db (same layout as v1) → claim it as v1.
-      // A FUTURE-versioned db must not be opened by older code that would write old-shaped events into it.
+      // The gate above already refused everything but fresh / v4 / v5 / v6 — re-read, don't re-judge.
       const uv = db.pragma("user_version", { simple: true });
-      if (uv > SCHEMA_VERSION) throw new Error(`store schema is v${uv}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
-      else if (uv < SCHEMA_VERSION) {
-        // 0 = pre-versioned (same layout as v1) → claim it. 0 < uv < current = a real forward
-        // migration. The branch and its registry exist BEFORE the first bump on purpose: the moment a
-        // payload shape changes is the worst possible moment to also be inventing the mechanism.
-        // The climb no longer opens a transaction of its own — the one wrapping this whole block is
-        // what makes an interrupted migration leave the rows, the table shape AND user_version alike
-        // untouched, instead of only the rows.
-        for (const step of migrationsBetween(uv, SCHEMA_VERSION)) step(db);
+      const fresh = !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='item'").get();
+      if (fresh) {
+        db.exec(SCHEMA);
         db.pragma(`user_version = ${SCHEMA_VERSION}`);
+      } else if (uv === 4 || uv === 5) {
+        try {
+          if (uv === 4) migrateV4toV5(db);
+          migrateV5toV6(db);
+        } catch (e) {
+          // A v4 reader has never heard of v5 — name the store they actually have before the
+          // rung's own verdict. The refusal semantics stay the rung's; only the address is added.
+          if (uv === 4) e.message = `your store is v4 (written by v0.4.2), which climbs v4→v5→v6 in one open — the second rung refused: ${e.message}`;
+          throw e;
+        }
+        db.pragma(`user_version = ${SCHEMA_VERSION}`);
+      } else {
+        db.exec(SCHEMA);
       }
-    })();
+    }).immediate();
   }
 
   const q = {
@@ -713,8 +744,8 @@ export function openStore(path, { readOnly = false } = {}) {
     // turning every concurrent write anywhere into a spurious refresh here.
     collSeq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
     appendEvent: db.prepare(
-      `INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, principal, host, ts)
-       VALUES (@aggregate_id, @command_id, @event_type, @payload, @actor, @principal, @host, @ts)`),
+      `INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, host, ts)
+       VALUES (@aggregate_id, @command_id, @event_type, @payload, @actor, @host, @ts)`),
 
     // Ledger reads for delta reporting. Ordered seq ASC + LIMIT: the window is the CONTIGUOUS run
     // right after `since`, never a sample with a gap. That ordering is what makes a caller-held mark
@@ -722,21 +753,46 @@ export function openStore(path, { readOnly = false } = {}) {
     // still strictly after it. (The old shape served the NEWEST window and skipped the middle; a
     // mark advanced over a skipped event lost it forever — read-plane audit D4.)
     changesSince: db.prepare(
-      `SELECT seq, aggregate_id, event_type, payload, actor, principal, host, ts FROM change_event
+      `SELECT seq, aggregate_id, event_type, payload, actor, host, ts FROM change_event
        WHERE json_extract(payload, '$.collection') = @c AND seq > @since
        ORDER BY seq ASC LIMIT @n`),
     countChangesSince: db.prepare(
       "SELECT COUNT(*) AS n FROM change_event WHERE json_extract(payload,'$.collection') = @c AND seq > @since"),
 
     itemById: db.prepare("SELECT * FROM item WHERE id = ?"),
-    itemsByCollection: db.prepare("SELECT * FROM item WHERE collection = ? ORDER BY grp, position, created_at"),
-    itemsByCollGrp: db.prepare("SELECT * FROM item WHERE collection = ? AND grp = ? ORDER BY position, created_at"),
+    // ONE total order for a collection's rows: (grp, position, id), shared with the paged read
+    // (queryItems) and with runtime-core's local apply. Rows sharing a position are ordinary in
+    // `settings`, and the confirm_delete resolver reads last-wins — so any divergence here is a
+    // UI-says-ask / engine-doesn't-ask split.
+    itemsByCollection: db.prepare("SELECT * FROM item WHERE collection = ? ORDER BY grp, position, id"),
     maxPos: db.prepare("SELECT COALESCE(MAX(position),0) AS p FROM item WHERE collection = ? AND grp = ?"),
 
     // Paged read path (queryItems) — keyset pagination over (grp, position, id), served by
     // idx_item_coll_grp_pos so a page never sorts the whole collection. id is the uniqueness
     // tiebreaker (position collisions are legal).
     countColl: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = ?"),
+    // Ownership evidence for deleteDisposition (cascade — elegance B1's return, W1). Manifests
+    // are read whole (the registry is small, a manifest is one JSON blob); via is dug out of the
+    // event payload because change_event has no via column — it rides inside the payload, by
+    // design (the shadow edge is not a schema field).
+    allCompManifests: db.prepare("SELECT name, manifest FROM app WHERE manifest IS NOT NULL"),
+    viaByCollection: db.prepare(
+      `SELECT DISTINCT json_extract(payload, '$.collection') AS collection,
+                       json_extract(payload, '$.via.app') AS via
+         FROM change_event
+        WHERE event_type LIKE 'item_%'
+          AND json_extract(payload, '$.via.app') IS NOT NULL
+          AND json_extract(payload, '$.collection') IS NOT NULL`),
+    countSettingsGroup: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = 'settings' AND grp = ?"),
+    // "Did this collection exist before this app did?" — the cheap question that separates the
+    // app's own rows from rows that were already there when an app of the same name showed up.
+    // Both answers come off the ledger, which never goes backwards — and since retention/prune
+    // retired (elegance A2, append-only unbounded), the ledger is COMPLETE, so the old
+    // truncation-makes-this-unknowable branch (N9) has nothing left to guard.
+    firstCollEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
+    firstCompEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE aggregate_id = ? AND event_type = 'component_saved' AND seq > ?"),
+    delSettingsGroup: db.prepare("DELETE FROM item WHERE collection = 'settings' AND grp = @grp"),
+    delCollectionRows: db.prepare("DELETE FROM item WHERE collection = @collection"),
     countCollGrp: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = ? AND grp = ?"),
     pageAllFirst: db.prepare("SELECT * FROM item WHERE collection = @c ORDER BY grp, position, id LIMIT @n"),
     pageAllAfter: db.prepare(
@@ -765,29 +821,6 @@ export function openStore(path, { readOnly = false } = {}) {
       "SELECT collection, COUNT(*) AS items, MAX(updated_at) AS last_activity FROM item GROUP BY collection ORDER BY last_activity DESC"
     ),
     compByName: db.prepare("SELECT * FROM app WHERE name = ?"),
-    // Ownership evidence for deleteDisposition. Manifests are read whole (the registry is small and
-    // a manifest is one JSON blob); via is dug out of the event payload because change_event has no
-    // via column — it rides inside the payload, by design (the shadow edge is not a schema field).
-    allCompManifests: db.prepare("SELECT name, manifest FROM app WHERE manifest IS NOT NULL"),
-    viaByCollection: db.prepare(
-      `SELECT DISTINCT json_extract(payload, '$.collection') AS collection,
-                       json_extract(payload, '$.via.app') AS via
-         FROM change_event
-        WHERE event_type LIKE 'item_%'
-          AND json_extract(payload, '$.via.app') IS NOT NULL
-          AND json_extract(payload, '$.collection') IS NOT NULL`),
-    countSettingsGroup: db.prepare("SELECT COUNT(*) AS n FROM item WHERE collection = 'settings' AND grp = ?"),
-    // "Did this collection exist before this app did?" — the cheap question that separates the
-    // app's own rows from rows that were already there when an app of the same name showed up.
-    // Both answers come off the ledger, which never goes backwards.
-    // ⚠️ THIS ONE ASSUMES THE LEDGER IS COMPLETE, and pruneLedger() can make that false. It drops a
-    // collection's OLDEST events, so a collection that predates its app can come out looking newer
-    // than it — and cascade would then judge the user's older rows "created for this app". Harmless
-    // today and verified so: retention defaults to unbounded, pruneLedger is never automatic, and
-    // the only callers in the tree are tests. It stops being harmless the day retention ships, so
-    // whoever wires that has to bring an ownership answer that survives a pruned tail (a claim
-    // recorded on the ROW, not re-derived from history). Tracked as N9.
-    firstCollEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
     // WHERE THIS APP'S CURRENT LIFE BEGINS — 0 if it has only ever had one.
     //
     // A delete is a tombstone, so the ledger and app_history keep everything the PREVIOUS
@@ -807,69 +840,58 @@ export function openStore(path, { readOnly = false } = {}) {
           AND EXISTS (SELECT 1 FROM change_event s
                        WHERE s.aggregate_id = d.aggregate_id
                          AND s.event_type = 'component_saved' AND s.seq > d.seq)`),
-    firstCompEvent: db.prepare("SELECT COALESCE(MIN(seq), 0) AS v FROM change_event WHERE aggregate_id = ? AND event_type = 'component_saved' AND seq > ?"),
-    histSince: db.prepare("SELECT version, ts, length(html) AS html_size FROM app_history WHERE name = ? AND version > ? ORDER BY version DESC"),
-    delSettingsGroup: db.prepare("DELETE FROM item WHERE collection = 'settings' AND grp = @grp"),
-    delCollectionRows: db.prepare("DELETE FROM item WHERE collection = @collection"),
+    histSince: db.prepare("SELECT version, ts, length(ui) AS ui_size FROM app_history WHERE name = ? AND version > ? ORDER BY version DESC"),
     // "Is there an app outside this set?" — EXISTS stops at the first row instead of scanning
     // the registry, and json_each keeps ONE prepared statement for any set, so the store never has
     // to know WHICH apps are the engine's own. That stays an engine-level concept.
     hasCompOutside: db.prepare(
       "SELECT EXISTS(SELECT 1 FROM app WHERE name NOT IN (SELECT value FROM json_each(?))) AS v"
     ),
-    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, kind, visibility, kit_version, updated_at, length(html) AS html_size FROM app ORDER BY name"),
+    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, kind, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
+    // v6: the slots resolve BEFORE this statement runs (save_app's tri-state manifest and slot
+    // inheritance live in the command handler), so every column here is written outright — the
+    // old scene_set/manifest_set three-state and the kind COALESCE retired with the block:
+    // projections are recomputed from the resolved manifest on every save, never carried.
     insComp: db.prepare(
-      `INSERT INTO app (name, version, html, description, author, scene, manifest, kind, visibility, updated_at)
-       VALUES (@name, @version, @html, @description, @author, @scene, @manifest,
-               COALESCE(@kind, 'app'), COALESCE(@visibility, 'listed'), @ts)
-       ON CONFLICT(name) DO UPDATE SET version = @version, html = @html,
+      `INSERT INTO app (name, version, ui, description, author, scene, manifest, kind, visibility, updated_at)
+       VALUES (@name, @version, @ui, @description, @author, @scene, @manifest, @kind,
+               COALESCE(@visibility, 'listed'), @ts)
+       ON CONFLICT(name) DO UPDATE SET version = @version, ui = @ui,
          description = CASE WHEN @description = '' THEN app.description ELSE @description END,
-         author = @author,
-         scene = CASE WHEN @scene_set = 1 THEN @scene ELSE app.scene END,
-         manifest = CASE WHEN @manifest_set = 1 THEN @manifest ELSE app.manifest END,
-         -- three-state, like scene/manifest: absent keeps what is there, present replaces it. A
-         -- plain re-save must never silently reset an app's kind or visibility.
-         kind = COALESCE(@kind, app.kind),
+         author = @author, scene = @scene, manifest = @manifest, kind = @kind,
          visibility = COALESCE(@visibility, app.visibility),
          updated_at = @ts`),
-    insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, html, ts) VALUES (@name, @version, @html, @ts)"),
-    compHist: db.prepare("SELECT version, ts, length(html) AS html_size FROM app_history WHERE name = ? ORDER BY version DESC"),
-    compVersion: db.prepare("SELECT name, version, html, ts FROM app_history WHERE name = ? AND version = ?"),
+    insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, ui, manifest, ts) VALUES (@name, @version, @ui, @manifest, @ts)"),
+    compHist: db.prepare("SELECT version, ts, length(ui) AS ui_size FROM app_history WHERE name = ? ORDER BY version DESC"),
+    compVersion: db.prepare("SELECT name, version, ui, manifest, ts FROM app_history WHERE name = ? AND version = ?"),
+    // Head revision — what an omitted slot inherits (W-N). From the REVISION table, never the
+    // projection columns: projections are rebuildable caches, and inheriting from one would
+    // quietly promote it to a second source.
+    headRev: db.prepare("SELECT ui, manifest FROM app_history WHERE name = ? ORDER BY version DESC LIMIT 1"),
     delComp: db.prepare("DELETE FROM app WHERE name = ?"),
     setCompVisibility: db.prepare("UPDATE app SET visibility = @visibility, version = @version, updated_at = @ts WHERE name = @name"),
 
-    // File plane — ref index only (bytes are the backend's job). All reads are app-scoped.
+    // File plane — ref index only (bytes live on disk, the channel's job). All reads are app-scoped.
     fileByKey: db.prepare("SELECT * FROM file WHERE app = ? AND path = ?"),
-    filesByApp: db.prepare("SELECT app, path, sha256, size, mime, version, backend, created_at, updated_at FROM file WHERE app = ? ORDER BY path"),
+    filesByApp: db.prepare("SELECT app, path, sha256, size, mime, version, created_at, updated_at FROM file WHERE app = ? ORDER BY path"),
     fileUsageStmt: db.prepare("SELECT COALESCE(SUM(size),0) AS bytes, COUNT(*) AS count FROM file WHERE app = ?"),
     fileUsageTotalStmt: db.prepare("SELECT COALESCE(SUM(size),0) AS bytes, COUNT(*) AS count FROM file"),
     blobRefcountStmt: db.prepare("SELECT COUNT(*) AS n FROM file WHERE app = ? AND sha256 = ?"),
     filesSeq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event WHERE event_type = 'file_written' OR event_type = 'file_deleted'"),
     insFile: db.prepare(
-      `INSERT INTO file (app, path, sha256, size, mime, version, backend, created_at, updated_at)
-       VALUES (@app, @path, @sha256, @size, @mime, @version, @backend, @ts, @ts)
+      `INSERT INTO file (app, path, sha256, size, mime, version, created_at, updated_at)
+       VALUES (@app, @path, @sha256, @size, @mime, @version, @ts, @ts)
        ON CONFLICT(app, path) DO UPDATE SET sha256 = @sha256, size = @size, mime = @mime,
-         version = @version, backend = @backend, updated_at = @ts`),
+         version = @version, updated_at = @ts`),
     delFile: db.prepare("DELETE FROM file WHERE app = @app AND path = @path"),
 
-    // Undo/retention reads. lastEventFor is served by the PK index on seq (DESC scan, LIMIT 1).
+    // Undo reads. lastEventFor is served by the PK index on seq (DESC scan, LIMIT 1).
     lastEventFor: db.prepare("SELECT seq, aggregate_id, event_type, payload FROM change_event WHERE aggregate_id = ? ORDER BY seq DESC LIMIT 1"),
     // Data-pane ledger window (newest first) — the internal read that keeps `via`.
-    recentEventsAll: db.prepare("SELECT seq, event_type, aggregate_id, actor, principal, host, ts, payload FROM change_event ORDER BY seq DESC LIMIT @n"),
-    recentEventsColl: db.prepare("SELECT seq, event_type, aggregate_id, actor, principal, host, ts, payload FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @n"),
-    compHistory: db.prepare("SELECT version, html FROM app_history WHERE name = ? ORDER BY version DESC"),
+    recentEventsAll: db.prepare("SELECT seq, event_type, aggregate_id, actor, host, ts, payload FROM change_event ORDER BY seq DESC LIMIT @n"),
+    recentEventsColl: db.prepare("SELECT seq, event_type, aggregate_id, actor, host, ts, payload FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @n"),
+    compHistory: db.prepare("SELECT version, ui, manifest FROM app_history WHERE name = ? ORDER BY version DESC"),
     settingByKey: db.prepare("SELECT fields FROM item WHERE collection = 'settings' AND json_extract(fields,'$.key') = ?"),
-    // Keep the newest @keep events of a collection; delete what is older. Written as a NOT IN over
-    // the kept window rather than an OFFSET delete so it is one statement and one plan.
-    pruneColl: db.prepare(`DELETE FROM change_event WHERE json_extract(payload,'$.collection') = @c
-      AND seq NOT IN (SELECT seq FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @keep)`),
-    // The mark pruning leaves behind, and the one read that consumes it. MAX() so a second prune
-    // can only ever move the boundary FORWARD — a truncation is not undone by a later, smaller one.
-    markTruncated: db.prepare(`INSERT INTO ledger_truncation (collection, before_seq, ts)
-      VALUES (@c, @seq, @ts)
-      ON CONFLICT(collection) DO UPDATE SET before_seq = MAX(before_seq, @seq), ts = @ts`),
-    truncatedAt: db.prepare("SELECT before_seq AS v FROM ledger_truncation WHERE collection = ?"),
-    oldestCollEvent: db.prepare("SELECT COALESCE(MIN(seq),0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
   };
 
   const rowToItem = (r) => ({
@@ -933,75 +955,6 @@ export function openStore(path, { readOnly = false } = {}) {
     files_version: q.filesSeq.get().v,
   }));
 
-  /** Aggregate over a collection WITHOUT sending the rows anywhere.
-   *
-   *  This exists because of a measurement, not a hunch: asked for a per-category total, two
-   *  different models on two different hosts each pulled the rows into their context, copied them
-   *  out into a sandbox file, and ran python — roughly 145,000 tokens and four minutes apiece, with
-   *  a transcription step in the middle that could silently mis-copy a number. They were right to
-   *  outsource the arithmetic; they just had no server-side place to outsource it TO.
-   *
-   *  So the answer travels instead of the data, and it travels with its own audit trail: `matched`
-   *  says how many rows went into the number, which is the one fact that makes an aggregate checkable
-   *  by the reader rather than trusted blindly.
-   */
-  function aggregate(collection, { group, match, group_by, metrics } = {}) {
-    const coll = String(collection);
-    const grp = group != null ? String(group) : null;
-    const wantMatch = match && typeof match === "object" && !Array.isArray(match) && Object.keys(match).length ? match : null;
-    if (wantMatch) { const bad = unknownOps(wantMatch); if (bad.length) return { error: "unknown_operator", detail: bad.join(", ") }; }
-    const specs = Array.isArray(metrics) && metrics.length ? metrics : [{ op: "count" }];
-    for (const m of specs) {
-      if (!["count", "sum", "min", "max", "avg"].includes(m.op)) return { error: "unknown_metric", detail: String(m.op) };
-      if (m.op !== "count" && !m.field) return { error: "metric_needs_field", detail: m.op };
-    }
-
-    const buckets = new Map();
-    let scanned = 0, matched = 0;
-    // Read transaction, so a bucket count and the `matched` total describe the SAME instant. Without
-    // it a concurrent write lands between two statements and the audit number stops adding up.
-    const walk = db.transaction(() => {
-      for (const row of (grp != null ? q.itemsByCollGrp.all(coll, grp) : q.itemsByCollection.all(coll))) {
-        scanned++;
-        const fields = JSON.parse(row.fields);
-        if (wantMatch && !itemMatches(fields, wantMatch)) continue;
-        matched++;
-        const key = group_by ? String(fields[group_by] ?? "") : "";
-        let b = buckets.get(key);
-        if (!b) { b = { key, n: 0, acc: specs.map(() => ({ n: 0, sum: 0, min: null, max: null })) }; buckets.set(key, b); }
-        b.n++;
-        specs.forEach((m, i) => {
-          const a = b.acc[i];
-          if (m.op === "count") { a.n++; return; }
-          const v = asNumExport(fields[m.field]);
-          if (v == null) return;                       // a non-numeric value is not counted, and `n` says so
-          a.n++; a.sum += v;
-          a.min = a.min == null ? v : Math.min(a.min, v);
-          a.max = a.max == null ? v : Math.max(a.max, v);
-        });
-      }
-    });
-    walk();
-
-    const shape = (b) => {
-      const out = { ...(group_by ? { [group_by]: b.key } : {}), count: b.n };
-      specs.forEach((m, i) => {
-        const a = b.acc[i];
-        if (m.op === "count") return;
-        const name = `${m.op}_${m.field}`;
-        out[name] = m.op === "sum" ? a.sum : m.op === "avg" ? (a.n ? a.sum / a.n : null) : m.op === "min" ? a.min : a.max;
-        // How many rows actually carried a number for this metric. A sum over 3 of 40 rows is a
-        // different fact from a sum over 40, and only this number tells them apart.
-        if (a.n !== b.n) out[`${name}_from`] = a.n;
-      });
-      return out;
-    };
-    const rows = [...buckets.values()].map(shape);
-    // Biggest bucket first: a grouped answer is nearly always read as a ranking.
-    rows.sort((x, y) => y.count - x.count);
-    return { collection: coll, ...(grp != null ? { group: grp } : {}), scanned, matched, groups: rows };
-  }
-
   // Validate a command's `via` stamp into the frozen object form, or drop it. App names
   // follow the registry rule; `function` (write-set F's second key) is carried when present so
   // the shape never has to change again once function writes start stamping it.
@@ -1014,8 +967,61 @@ export function openStore(path, { readOnly = false } = {}) {
     return fn ? { app, function: fn } : { app };
   };
 
+  // ---- confirmation-policy gate (W-S, §2.5-A/B — the chokepoint every destructive command hits).
+  // Lives INSIDE the store because the store is the only layer every write path shares: the tool
+  // face, the batch, the runner bridge and any future caller all pass through core(), so there is
+  // no route around it and no second copy of the rule anywhere. `privileged` (the ledger-reverse /
+  // undo path and security_set) is exempt: a reversal is itself the user's explicit act on a fact
+  // the ledger holds. Agent-actor commands are exempt in W-S — the conversation is the model's
+  // confirmation channel today; W1 pilots delivering the same demand over MRTR.
+  const requestState = createRequestStateCodec({ secret: storeSecret(dbPath, { readOnly }) });
+  // The user's answer to "ask me before deleting", resolved from the SAME rows in the SAME
+  // order with the SAME coercion the renderer uses — deliberately reusing the snapshot query
+  // rather than asking SQL a cleverer question. A resolver of its own is how the store came to
+  // read `"FALSE"` as off, and rowid order as precedence, while the settings UI showed the
+  // opposite: the UI promising a confirmation the engine had already decided not to ask for
+  // (codex review, both halves reproduced). Merge order is oma.pref's: app override ▸ global
+  // ▸ catalog default, later rows winning inside each layer.
+  //
+  // PRESENCE and VALUE are tracked apart, because the renderer's Map keeps them apart: it does
+  // `map.set(key, row.fields.value)`, so a row whose `value` is missing still makes `has(key)`
+  // true and OVERRIDES the global layer. Collapsing the two into `value !== undefined` made a
+  // valueless app row fall through to a global `false` while the UI showed the app's own layer
+  // resolving to the default ON — a second UI-says-ask / engine-doesn't-ask split (codex review,
+  // reproduced). Merge order is oma.pref's: app override ▸ global ▸ catalog default.
+  const confirmPrefOn = (viaApp) => {
+    const rows = q.itemsByCollection.all(SETTINGS_COLLECTION).map(rowToItem);
+    const own = viaApp ? latestPref(rows, "confirm_delete", viaApp) : undefined;
+    const global = latestPref(rows, "confirm_delete");
+    return coercePref(own ? own.fields.value : global ? global.fields.value : undefined, true);
+  };
+  function confirmationGate(command, privileged, via, { target, version, preview, collection }) {
+    if (privileged || !CONFIRMATION_CLASSES[command.type].confirm || command.actor !== "human") return null;
+    const viaApp = (via && via.app) || "";
+    // `require_confirmation` is how a CALLER raises the bar on itself — the embedder's
+    // `delete_items: "confirm"` tier speaks through it. It can only ever add a confirmation,
+    // never remove one, which is why it is safe to accept from an untrusted child.
+    if (command.require_confirmation !== true && !confirmPrefOn(viaApp)) return null;
+    const binding = { type: command.type, caller: command.actor + "|" + viaApp, target, version };
+    if (command.request_state != null) {
+      const v = requestState.verify(String(command.request_state), binding);
+      // Verified = the user saw THIS row at THIS version and said yes. Consumption is the
+      // execution itself: versions are ledger seqs and never recur (see confirmation.mjs).
+      if (v.ok) return null;
+      return { ok: false, error: v.error, id: target, collection };
+    }
+    const issued = requestState.issue(binding);
+    // A DEMAND, not an error — so it carries a boolean discriminator and no `error` name, exactly
+    // the shape `conflict` has had all along (store says `conflict: true`; the tool layer mints the
+    // wire word "version_conflict"). It briefly carried BOTH, which made one fact answer to three
+    // names — `error`, the boolean, and the wire `reason` — with the `error` one also claiming
+    // something untrue. An unverifiable state IS a failure and keeps its `error`.
+    return { ok: false, confirmation_required: true, id: target, collection,
+             request_state: issued.state, expires_at: issued.expires_at, preview: preview() };
+  }
+
   function core(command, privileged) {
-    const { type, command_id, actor = "agent", host = null, principal = null } = command;
+    const { type, command_id, actor = "agent", host = null } = command;
     // `actor` means two different things, and only one of them is a closed set.
     //   · on a DATA write it is the class that wrote (E13b) — closed, so an anonymous write can
     //     never land labelled "human" and become permanently unattributable in the ledger;
@@ -1052,12 +1058,14 @@ export function openStore(path, { readOnly = false } = {}) {
         if (APP_CMDS) {
           out.name = seen.aggregate_id;
           if (type !== "delete_app") out.version = seen.seq;
-          // WHICH delete this was. `delete_app` has two dispositions and only one of them is
-          // irreversible, so "yes, that command ran" is not a sufficient answer to a retry: a
-          // command_id previously used for a KEEP delete answered yes to a cascade retry, and the
-          // caller was told its irreversible act had completed while every row was still on disk.
-          // The original payload already records it — a cascade stamps `cascaded`, a keep does not.
-          if (type === "delete_app" && payload.cascaded) out.cascaded = payload.cascaded;
+          // A replayed cascade must describe what THAT delete took (cascade retired 2026-08-04,
+          // returned in W1) — the payload records it, and a keep-delete's replay must NOT answer
+          // yes to a cascade retry. Echoed in the LIVE receipt's shape (cascaded = the collection
+          // list, settings_keys beside it), so a retry and its original read identically.
+          if (type === "delete_app" && payload.cascaded) {
+            out.cascaded = payload.cascaded.collections || payload.cascaded;
+            if (payload.cascaded.settings_keys !== undefined) out.settings_keys = payload.cascaded.settings_keys;
+          }
           // The ORIGINAL flip's outcome, not the current column — an archive replayed after a later
           // unarchive must describe what the archive did, or the retry reads current state as its own.
           if (type === "archive_app" && payload.to) out.visibility = payload.to;
@@ -1106,7 +1114,7 @@ export function openStore(path, { readOnly = false } = {}) {
     // An opaque id therefore costs nothing and removes the shared namespace entirely.
     const emit = (aggregate_id, event_type, payload, extraReceipt) => {
       const prev = payload.collection != null ? q.collSeq.get(payload.collection).v : q.seq.get().v;
-      const info = q.appendEvent.run({ aggregate_id, command_id: extraReceipt ? randomUUID() : command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, principal, host, ts });
+      const info = q.appendEvent.run({ aggregate_id, command_id: extraReceipt ? randomUUID() : command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, host, ts });
       return { seq: Number(info.lastInsertRowid), prev_collection_seq: prev };
     };
 
@@ -1202,6 +1210,12 @@ export function openStore(path, { readOnly = false } = {}) {
         return { ok: false, conflict: true, expected: row.version, id: row.id, collection: row.collection, item: rowToItem(row) };
       if (row.collection === SETTINGS_COLLECTION && !privileged && RESERVED_KEY_RE.test(String(JSON.parse(row.fields).key ?? "")))
         return { ok: false, error: "reserved_key" };
+      // Last check before execution, first-refusal order preserved: a stale caller learns about
+      // the conflict, a forbidden caller about the policy, and only a permitted, current delete
+      // is asked to confirm. The gate binds row.version, so verifying IS re-authorizing.
+      const demand = confirmationGate(command, privileged, via,
+        { target: row.id, collection: row.collection, version: row.version, preview: () => deletePreview(JSON.parse(row.fields)) });
+      if (demand) return demand;
       q.delItem.run({ id: row.id });
       // On a delete the WHOLE row is the pre-image: nothing else survives to reconstruct it from.
       const m = emit(row.id, "item_deleted", { collection: row.collection, was: JSON.parse(row.fields), group: row.grp, position: row.position, ...(via ? { via } : {}) });
@@ -1212,17 +1226,7 @@ export function openStore(path, { readOnly = false } = {}) {
     if (type === "save_app") {
       const name = String(command.name || "").trim();
       if (!APP_NAME_RE.test(name)) return { ok: false, error: "bad_name" };
-      const html = String(command.html || "");
-      // Every atom has a face. `empty_html` is a VALIDITY rule, not a size floor: an app is
-      // something a person opens, so an app with nothing to render is malformed — while a
-      // 1-char app is merely small, and small is reversible. The old 50-char floor caught
-      // neither case honestly (a 74-char stub sailed through it); the real defence against a stub
-      // overwriting a live app is that every save is recoverable (history + undo) and the
-      // ack reports its size delta out loud. There is no exemption and no flag: "code with no UI"
-      // is what a plain sandbox already does, and a plain sandbox is not this product.
-      if (!html.trim()) return { ok: false, error: "empty_html" };
-      if (html.length > MAX_APP_HTML) return { ok: false, error: "html_too_large" };
-      // OCC before any declaration work: the conflict answer carries the version it actually found,
+      // OCC before any slot work: the conflict answer carries the version it actually found,
       // which is everything a retry needs. Same contract as an item write — one vocabulary.
       const existing = q.compByName.get(name);
       // Fail CLOSED against a missing row too: the token said "on top of vN" and the row is gone —
@@ -1231,7 +1235,7 @@ export function openStore(path, { readOnly = false } = {}) {
       if (command.expected_version != null && !existing)
         return { ok: false, conflict: true, expected: null, deleted: true, name };
       if (command.expected_version != null && existing && existing.version !== command.expected_version)
-        return { ok: false, conflict: true, expected: existing.version, name, size: existing.html.length };
+        return { ok: false, conflict: true, expected: existing.version, name, size: existing.ui.length };
       // PROVENANCE IS NOT OVERWRITABLE. The row's `author` column is what tierOf() reads to decide
       // whether an app runs DIRECT with the AI's own trust or behind the sandboxed runner, and
       // the insert below stamps it from this command's actor. Without this line a save on top of an
@@ -1241,8 +1245,8 @@ export function openStore(path, { readOnly = false } = {}) {
       //
       // It sits HERE, in the store, because six paths write app html and every one of them
       // would need its own copy of the check otherwise: save_app, edit_app,
-      // restore_app, the render-health auto-revert, install_from_library, and undo — the last
-      // one from inside this file. install_from_library already carries the tool-level twin of this
+      // restore_app, the render-health auto-revert, install_from_app_store, and undo — the last
+      // one from inside this file. install_from_app_store already carries the tool-level twin of this
       // rule ("already exists as a %s-authored app"); this is the wall the other five were missing.
       //
       // The rule is SYMMETRIC (tier must not change), not just anti-escalation: a demotion cannot
@@ -1253,73 +1257,91 @@ export function openStore(path, { readOnly = false } = {}) {
       // it stays available, and a same-tier ingress can overwrite it normally.
       if (existing && tierOf(existing.author) !== tierOf(actor))
         return { ok: false, error: "provenance_locked", name, author: existing.author, tier: tierOf(existing.author) };
-      // ── the declaration face ───────────────────────────────────────────────────────────────────
-      // Read from the DOCUMENT, here, in the command handler — not in the tool. Four paths write
-      // html without ever touching the save_app tool (restore_app, the render-health
-      // auto-revert, install_from_library, and later edit_app); extracting anywhere else
-      // would let those paths leave the materialised column describing a source that no longer
-      // exists, which is exactly the decoupling this design removes.
-      const decl = readDeclaration(html);
-      let manifestSet = 0, manifestJson = null, sceneSet = 0, scene = null, declNote = null;
-      let kind = null;
-      if (decl.state === "bad") {
-        // Tiered ON PURPOSE. An author who wrote a broken declaration must hear about it loudly —
-        // silence here means "I declared something and nothing happened", the worst outcome. But a
-        // REPLAY (rollback, auto-revert, library install) is a rescue path: the render-health revert
-        // is the only thing standing between a user and a permanently broken app, so it must
-        // not be blockable by the content of the html it is trying to restore. Salvage there:
-        // clear the declaration, keep the rescue, and say so.
-        if ((command.declaration_policy || "strict") === "strict")
-          return { ok: false, error: decl.error, detail: decl.detail };
-        // Clearing means ALL of it: the projections (scene, kind) must not outlive the declaration
-        // they project, or the Library keeps filing a document that no longer says anything.
-        manifestSet = 1; sceneSet = 1; kind = "app";
-        declNote = `The restored document's declaration could not be read (${decl.error}) — it was cleared (scene and kind reset too). The html was restored anyway.`;
-      } else if (decl.state === "present") {
-        const err = manifestShapeError(decl.value);
-        if (err) {
-          if ((command.declaration_policy || "strict") === "strict") return { ok: false, error: "bad_manifest", detail: err };
-          manifestSet = 1; sceneSet = 1; kind = "app";
-          declNote = `The restored document's declaration was not valid (${err}) — it was cleared (scene and kind reset too).`;
-        } else {
-          manifestSet = 1;
-          manifestJson = JSON.stringify(decl.value);
-          // `scene` and `kind` live in the declaration but keep their own columns: the Library reads
-          // scene, list_apps filters on kind, and neither should have to parse JSON to do it.
-          // The column is a projection of the declaration, never a second source for it.
-          if (decl.value.scene !== undefined) { sceneSet = 1; scene = decl.value.scene && typeof decl.value.scene === "object" ? JSON.stringify(decl.value.scene) : null; }
-          if (decl.value.kind !== undefined) kind = String(decl.value.kind);
-        }
-      } else if (decl.state === "empty") {
-        // An empty block ("" or {}) is a statement, not an omission: clear what was declared —
-        // the column, the scene filing, and kind back to its default. Leaving any projection
-        // behind would have the Library describing a declaration that no longer exists.
-        manifestSet = 1; sceneSet = 1; kind = "app";
+      // ── the two slots (W-N) ────────────────────────────────────────────────────────────────────
+      // A save addresses the app's slots — `ui` (the document) and `manifest` (the declaration,
+      // now a structured value and the AUTHORITY, not a projection of anything). Slot semantics,
+      // frozen in wn-manifest-commit-2026-08-05.md:
+      //   · an omitted slot INHERITS the head revision's value — read from app_history, never from
+      //     the projection columns, which are rebuildable caches and must not become a second source;
+      //   · manifest is tri-state: omitted = inherit, null = clear, object = replace whole;
+      //     {} is refused — it reads as both "a legal empty declaration" and the legacy
+      //     "empty block clears", and one spelling must not carry two meanings;
+      //   · creating needs a ui; touching neither slot on an overwrite is a no-op asked wrongly.
+      // This lives HERE, in the command handler, because six paths write apps without the save_app
+      // tool (edit_app, restore_app, install_from_app_store, undo, seed) and every one of them gets
+      // the same slot contract by construction.
+      const hasUi = command.ui !== undefined;
+      const hasManifest = "manifest" in command;
+      if (!existing && !hasUi) return { ok: false, error: "ui_required_on_create" };
+      if (existing && !hasUi && !hasManifest) return { ok: false, error: "no_slots_provided" };
+      const head = existing ? q.headRev.get(name) : null;
+
+      let ui;
+      if (hasUi) {
+        ui = String(command.ui || "");
+        // Every atom has a face. `empty_ui` is a VALIDITY rule, not a size floor: an app is
+        // something a person opens, so an app with nothing to render is malformed — while a
+        // 1-char app is merely small, and small is reversible. The real defence against a stub
+        // overwriting a live app is that every save is recoverable (history + undo) and the
+        // ack reports its size delta out loud.
+        if (!ui.trim()) return { ok: false, error: "empty_ui" };
+        if (ui.length > MAX_APP_HTML) return { ok: false, error: "ui_too_large" };
+        // A document still carrying the legacy #oma-manifest block is a caller transcribing pre-v6
+        // examples. Refused LOUDLY: accepted as inert bytes it would be "I declared something and
+        // nothing happened" — the worst outcome the old reader was built to prevent.
+        if (mentionsDeclarationTag(ui)) return { ok: false, error: "embedded_manifest_block" };
       } else {
-        // absent: the document says nothing about its declaration, so we say nothing either — the
-        // stored declaration stays. Callers are told, because "my edit dropped my settings" and
-        // "my edit kept settings I deleted from the file" are both surprises worth one sentence.
-        if (existing && existing.manifest) declNote = "This document has no #oma-manifest block, so the stored declaration was kept. Add an empty block to clear it.";
+        if (!head) return { ok: false, error: "no_revision" };   // existing without history — impossible by construction, refuse over guessing
+        ui = head.ui;
       }
+
+      let manifestJson, manifestAction;
+      if (hasManifest) {
+        const mv = command.manifest;
+        if (mv === null) { manifestJson = null; manifestAction = "cleared"; }
+        else if (typeof mv === "object" && !Array.isArray(mv)) {
+          if (Object.keys(mv).length === 0) return { ok: false, error: "empty_manifest_use_null" };
+          const err = manifestShapeError(mv);
+          if (err) return { ok: false, error: "bad_manifest", detail: err };
+          manifestJson = JSON.stringify(mv);
+          manifestAction = "replaced";
+        } else return { ok: false, error: "bad_manifest", detail: "manifest must be a JSON object or null" };
+      } else {
+        manifestJson = head ? (head.manifest ?? null) : null;
+        manifestAction = "inherited";
+      }
+      // Projections — recomputed from the resolved manifest on EVERY save, never carried forward
+      // by column-level COALESCE: the columns exist so the App Store and list_apps need not parse
+      // JSON, and staying derived is what keeps them rebuildable instead of a second source.
+      const mObj = manifestJson ? JSON.parse(manifestJson) : null;
+      // The function JOIN, on the RESOLVED pair — either slot may be inherited, and the invariant
+      // is about what the app IS after this save: every declared function has its body block,
+      // every body block is declared. Both directions refuse loudly (functions.mjs header: each
+      // is the same silence wearing a different hat). Validated here in the command so all six
+      // app-writing paths (save_app, edit_app, restore, install, undo, seed) get the same door.
+      const fnErr = functionsJoinError(mObj, ui);
+      if (fnErr) return { ok: false, error: "bad_functions", detail: fnErr };
+      const kind = mObj && mObj.kind != null ? String(mObj.kind) : "app";
+      if (!APP_KINDS.has(kind)) return { ok: false, error: "unknown_kind" };
+      const scene = mObj && mObj.scene && typeof mObj.scene === "object" ? JSON.stringify(mObj.scene) : null;
       const existed = existing;
       const visibility = command.visibility === undefined ? null : String(command.visibility);
-      if (kind !== null && !APP_KINDS.has(kind)) return { ok: false, error: "unknown_kind" };
       if (visibility !== null && !VISIBILITIES.has(visibility)) return { ok: false, error: "unknown_visibility" };
       // Append first, then stamp the row with this event's seq — same rule as an item write. It also
       // retires the old "continue from the tombstoned history's MAX(version)" dance: version
       // continuity across delete/recreate is now free, because the ledger never goes backwards.
-      const m = emit(name, "component_saved", { name, size: html.length, created: !existed });
+      const m = emit(name, "component_saved", { name, size: ui.length, created: !existed, manifest_action: manifestAction });
       const version = m.seq;
-      q.insComp.run({ name, version, html, description: String(command.description || ""), author: actor, scene, scene_set: sceneSet, manifest: manifestJson, manifest_set: manifestSet, kind, visibility, ts });
+      q.insComp.run({ name, version, ui, description: String(command.description || ""), author: actor, scene, manifest: manifestJson, kind, visibility, ts });
       const comp = q.compByName.get(name);
-      q.insCompHist.run({ name, version: comp.version, html, ts });
-      const notes = declNote ? [declNote] : [];
+      q.insCompHist.run({ name, version: comp.version, ui, manifest: manifestJson, ts });
+      const notes = [];
       // Declaration-quality notes ride the ack and are computed AFTER the row is written, because
       // both need the saved state: the union a shared collection now resolves to, and whether this
       // label_field names a declared field. Warnings, not rejections — a shared collection stays
       // shared, and a fuzzy label falls back to the heuristic instead of blocking the save.
-      if (decl.state === "present" && decl.value.collections && typeof decl.value.collections === "object") {
-        for (const [coll, spec] of Object.entries(decl.value.collections)) {
+      if (manifestAction === "replaced" && mObj.collections && typeof mObj.collections === "object") {
+        for (const [coll, spec] of Object.entries(mObj.collections)) {
           if (!spec || typeof spec !== "object") continue;
           if (spec.label_field && spec.fields && !(spec.label_field in spec.fields))
             notes.push(`Collection "${coll}": label_field "${spec.label_field}" is not among its declared fields — summaries will fall back to the built-in heuristic.`);
@@ -1329,65 +1351,90 @@ export function openStore(path, { readOnly = false } = {}) {
         }
       }
       // The size pair travels on EVERY save, unconditionally — that is what makes a suspicious
-      // shrink (82,623 → 74 chars) announce itself instead of waiting to be asked. Reporting it
-      // only past some threshold would put the interesting case behind a guess.
-      return { ok: true, name, version: comp.version, created: !existed, size: html.length,
-        prev_size: existed ? existed.html.length : null,
-        declaration: decl.state, ...(notes.length ? { note: notes.join(" ") } : {}) };
+      // shrink (82,623 → 74 chars) announce itself instead of waiting to be asked. `manifest`
+      // rides back so tool-side diagnostics (suggested_kind) read the RESOLVED declaration
+      // instead of re-deriving inheritance.
+      return { ok: true, name, version: comp.version, created: !existed, size: ui.length,
+        prev_size: existed ? existing.ui.length : null, kind: comp.kind,
+        manifest_action: manifestAction, manifest: manifestJson,
+        ...(notes.length ? { note: notes.join(" ") } : {}) };
     }
 
     if (type === "delete_app") {
       const name = String(command.name || "").trim();
       const existed = q.compByName.get(name);
       if (!existed) return { ok: false, error: "not_found" };
-      // Two dispositions, and the caller has to have said which (the tool defaults to "keep", i.e.
-      // exactly the behaviour that shipped before this existed).
-      //
+      // Two dispositions, caller-stated (the tool defaults to "keep"):
       //   keep    — tombstone semantics: only the registry row goes. app_history rows are
-      //             RETAINED (the delete stays auditable, the html recoverable) and so are the
-      //             settings items; the settings app's Orphaned section is the janitor.
-      //   cascade — "delete means delete" (Leo 2026-07-28). Takes the rows this app is provably
-      //             the only user of, plus its own settings group. NOT undoable, and that is not a
-      //             gap: component_deleted has no undo branch today either (it falls through to
-      //             not_undoable), so this widens what a permanent act removes, it does not make a
-      //             reversible act irreversible. Archive is the "keep everything" verb.
-      //
-      // 🔴 The eligible set is RECOMPUTED here and the caller's list is only used to INTERSECT it.
-      // A list that arrives naming a shared collection cannot widen the blast radius — the worst a
-      // stale or hostile plan can do is delete less than it claimed.
-      const cascade = command.cascade === true;
-      const removed = [];
-      let settingsRemoved = 0;
-      if (cascade) {
-        const asked = Array.isArray(command.cascade_collections) ? new Set(command.cascade_collections.map(String)) : null;
-        for (const coll of computeDisposition(name).exclusive) {
-          if (asked && !asked.has(coll)) continue;
+      //             RETAINED (the delete stays auditable, the ui recoverable) and so are the data
+      //             rows and settings items; the settings app's Orphaned section is the janitor.
+      //   cascade — "delete means delete" (Leo 2026-07-28, delete-cascade-design.md; returned in
+      //             W1 after elegance B1 removed the bespoke plan_token protocol). Takes the rows
+      //             this app is PROVABLY the only user of, plus its own settings group. NOT
+      //             undoable, and that is not a gap: component_deleted has no undo branch either,
+      //             so this widens what a permanent act removes — it does not make a reversible
+      //             act irreversible. Archive is the "keep everything" verb.
+      const disposition = command.data == null ? "keep" : String(command.data);
+      if (disposition !== "keep" && disposition !== "cascade") return { ok: false, error: "bad_data_disposition" };
+      let cascaded = null;
+      if (disposition === "cascade") {
+        const plan = computeDisposition(name);
+        if (!privileged) {
+          // Cascade demands confirmation UNCONDITIONALLY — every actor, regardless of the
+          // confirm_delete preference. The pref tunes friction on recoverable row deletes; this
+          // destroys whole collections with no undo, and the demand doubles as the channel that
+          // carries the disposition plan to whoever faces the user. Delivery is W-S branch ②
+          // (fail-closed two-step) — the request_state codec, not a bespoke plan token: the
+          // binding's `version` is the WORLD the user was shown (app version + every candidate
+          // collection's ledger position + the settings stream), so any write that could change
+          // the plan invalidates the answer. verify() failing here means "the world moved" —
+          // the caller re-sends WITHOUT the state and gets a fresh plan (plan_changed, two steps).
+          const world = existed.version + "|" +
+            plan.collections.map((c) => c.collection + ":" + c.seq).join(",") + "|s:" + plan.settings_seq;
+          const binding = { type: "delete_app#cascade", caller: actor + "|" + ((via && via.app) || ""), target: name, version: world };
+          if (command.request_state != null) {
+            const v = requestState.verify(String(command.request_state), binding);
+            if (!v.ok) return { ok: false, error: v.error, name };
+          } else {
+            const issued = requestState.issue(binding);
+            const rows = plan.collections.filter((c) => c.verdict === "exclusive").reduce((s, c) => s + c.rows, 0);
+            return { ok: false, confirmation_required: true, name,
+                     request_state: issued.state, expires_at: issued.expires_at,
+                     preview: name + " and its data — " + plan.exclusive.length + " collection(s), " + rows + " row(s), " + plan.settings_keys + " setting(s); shared/unknown collections are kept",
+                     plan: plan.collections, settings_keys: plan.settings_keys };
+          }
+        }
+        // 🔴 The eligible set is what computeDisposition says NOW — recomputed in this very
+        // transaction, never taken from the caller. `shared` and `unknown` are always kept: the
+        // asymmetry decides it — deleting too little leaves rows a user can remove again;
+        // deleting too much silently breaks a second app and the data is gone.
+        const removed = [];
+        for (const coll of plan.exclusive) {
           const n = q.countColl.get(coll).n;
           q.delCollectionRows.run({ collection: coll });
           removed.push({ collection: coll, rows: n });
           // A receipt IN THAT COLLECTION'S STREAM. component_deleted alone was not enough: the
-          // per-collection ledger reads filter on payload.collection, so a widget or a
-          // data_changes call scoped to this collection was told "nothing changed" while every
-          // row in it had just been destroyed. One event per cleared collection keeps the cascade
-          // one decision while making each collection's own history tell the truth.
+          // per-collection ledger reads filter on payload.collection, so a data_changes call
+          // scoped to this collection would be told "nothing changed" while every row in it had
+          // just been destroyed. One event per cleared collection keeps the cascade one decision
+          // while making each collection's own history tell the truth.
           if (n) emit(coll, "rows_cleared", { collection: coll, rows: n, app: name }, true);
         }
-        settingsRemoved = q.countSettingsGroup.get(name).n;
+        const settingsRemoved = q.countSettingsGroup.get(name).n;
         if (settingsRemoved) {
           q.delSettingsGroup.run({ grp: name });
           // Same for the settings collection — and this one also has to land, because
           // settings_version is derived from events carrying collection:"settings".
           emit(SETTINGS_COLLECTION, "rows_cleared", { collection: SETTINGS_COLLECTION, group: name, rows: settingsRemoved, app: name }, true);
         }
+        cascaded = { collections: removed, settings_keys: settingsRemoved };
       }
       q.delComp.run(name);
-      // ONE event for the whole act — the ledger's aggregate_id has always been documented as
-      // "item id | app name | collection name", and a cascade is one decision, not N.
-      // What it took is IN the payload, so the audit trail can answer "where did those rows go".
-      emit(name, "component_deleted", { name, version: existed.version,
-        ...(cascade ? { cascaded: { collections: removed, settings_keys: settingsRemoved } } : {}) });
+      // ONE event for the whole act — a cascade is one decision, not N. What it took is IN the
+      // payload, so the audit trail can answer "where did those rows go".
+      emit(name, "component_deleted", { name, version: existed.version, ...(cascaded ? { cascaded } : {}) });
       return { ok: true, name, version: existed.version,
-        ...(cascade ? { cascaded: removed, settings_keys: settingsRemoved } : {}) };
+               ...(cascaded ? { cascaded: cascaded.collections, settings_keys: cascaded.settings_keys } : {}) };
     }
 
     if (type === "archive_app") {
@@ -1409,7 +1456,7 @@ export function openStore(path, { readOnly = false } = {}) {
       return { ok: true, name, visibility: to, was: existed.visibility, version: m.seq, seq: m.seq };
     }
 
-    // ---- File plane: bytes are handled by the channel/backend BEFORE this tx; here we only
+    // ---- File plane: bytes are handled by the channel BEFORE this tx; here we only
     // manage the ref index (idempotency + OCC + authoritative in-tx quota + versioning + ledger).
     if (type === "write_file") {
       const app = String(command.app || ""); // NO trim — keep it raw so the stored key, the emitted aggregate_id, the idempotency replay-target, and statFile/listFiles all agree; APP_NAME_RE rejects whitespace anyway
@@ -1422,7 +1469,6 @@ export function openStore(path, { readOnly = false } = {}) {
       if (!Number.isInteger(size) || size < 0) return { ok: false, error: "bad_size" };
       if (size > MAX_FILE_BYTES) return { ok: false, error: "file_too_large" };
       const mime = String(command.mime || "application/octet-stream").slice(0, 255);
-      const backend = String(command.backend || "local");
       const existing = q.fileByKey.get(app, path);
       // OCC must fail closed against a MISSING row too — else a guarded write silently RESURRECTS a file
       // another actor deleted between the caller's read and this write (a lost-delete). expected:0 = "no such version".
@@ -1438,9 +1484,9 @@ export function openStore(path, { readOnly = false } = {}) {
       if (totalU.count + (existing ? 0 : 1) > MAX_TOTAL_FILE_COUNT) return { ok: false, error: "total_too_many_files" };
       // Same rule as items and apps: append first, stamp the row with this event's seq.
       const m = emit(app + "/" + path, "file_written", { app, path, sha256, size, mime });
-      q.insFile.run({ app, path, sha256, size, mime, version: m.seq, backend, ts });
+      q.insFile.run({ app, path, sha256, size, mime, version: m.seq, ts });
       const row = q.fileByKey.get(app, path);
-      const meta = { app, path, sha256, size, mime, version: row.version, backend, created_at: row.created_at, updated_at: row.updated_at };
+      const meta = { app, path, sha256, size, mime, version: row.version, created_at: row.created_at, updated_at: row.updated_at };
       return { ok: true, meta, created: !existing, freed_sha: existing && existing.sha256 !== sha256 ? existing.sha256 : null };
     }
 
@@ -1451,6 +1497,11 @@ export function openStore(path, { readOnly = false } = {}) {
       if (!row) return { ok: false, error: "not_found" };
       if (command.expected_version != null && command.expected_version !== row.version)
         return { ok: false, conflict: true, expected: row.version };
+      // Classified destructive, gate wired, actor face dormant — the file tools publish no
+      // `actor`, so this can only fire once file deletes carry human provenance (confirmation.mjs).
+      const demand = confirmationGate(command, privileged, via,
+        { target: app + "/" + path, collection: null, version: row.version, preview: () => path });
+      if (demand) return demand;
       q.delFile.run({ app, path });
       emit(app + "/" + path, "file_deleted", { app, path, sha256: row.sha256, version: row.version });
       return { ok: true, deleted: true, freed_sha: row.sha256 };
@@ -1545,13 +1596,15 @@ export function openStore(path, { readOnly = false } = {}) {
         // never rides an AI-facing read (row #8: the ledger's attribution stays internal; the
         // Data pane reads it through recentEvents on the /rpc internal path instead).
         const { collection: _c, sv: _sv, via: _via, ...rest } = payload;
-        return { seq: r.seq, type: r.event_type, id: r.aggregate_id, actor: r.actor, principal: r.principal ?? undefined, host: r.host, ts: r.ts, ...rest };
+        return { seq: r.seq, type: r.event_type, id: r.aggregate_id, actor: r.actor, host: r.host, ts: r.ts, ...rest };
       }),
     };
   });
   const notify = (result, command) => {
     if (result && result.ok) {
-      try { events.emit("change", { seq: q.seq.get().v, type: command?.type }); } catch {}
+      // `name` rides for the APP-plane commands: the invalidation bridge needs to say WHICH
+      // ui:// resource went stale, and the command is the only place that knows.
+      try { events.emit("change", { seq: q.seq.get().v, type: command?.type, name: command?.name }); } catch {}
     }
     return result;
   };
@@ -1582,7 +1635,7 @@ export function openStore(path, { readOnly = false } = {}) {
   // carrying none of the per-tool guards, which is the exact disease test/tool-surface.mjs names.
   // Same wall for arguments: a command carries what the single-write tools publish plus the
   // envelope keys the tool layer derives, never whatever core() happens to read — an unpublished
-  // key reaching core() through a batch (principal, declaration_policy, an explicit add id, …)
+  // key reaching core() through a batch (declaration_policy, an explicit add id, …)
   // is the same door ajar.
   const BATCH_COMMANDS = ITEM_WRITE_KEYS;
   const BATCH_ENVELOPE = BATCH_ENVELOPE_KEYS;
@@ -1622,95 +1675,86 @@ export function openStore(path, { readOnly = false } = {}) {
     return { ok: true, count: results.length, results };
   };
 
+  /** What deleting `name` would take with it, and — just as important — what it would LEAVE.
+   *
+   *  This exists because the honest answer to "which collections belong to this app" is
+   *  "we cannot always tell", and the shape of a destructive act has to say so out loud rather
+   *  than guess. Three signals, measured strength in delete-cascade-design.md §1:
+   *    · the manifest's `collections` key — the GUIDE's lifecycle claim; used here to find
+   *      OTHER claimants, never to grant one (real-world adoption was zero);
+   *    · the ledger's `via.app` — stamped only on widget writes; its ABSENCE proves nothing
+   *      (the model's own writes carry none), so it too only counts in one direction:
+   *      someone else's via is evidence of sharing;
+   *    · the name — a collection called exactly like the app, and PROVABLY born after it
+   *      (ledger order, scoped to this app's current life so a reused name cannot inherit a
+   *      previous holder's claim). Produces `exclusive` only when the other two find nobody.
+   *  The asymmetry is the whole design: deleting too little leaves rows a user can delete
+   *  again; deleting too much silently breaks a SECOND app and the data is gone. So `shared`
+   *  and `unknown` are kept, always, and the caller is told what was kept and why. */
   function computeDisposition(name) {
-        const comp = String(name || "").trim();
-        // Who ELSE claims a collection by declaring it? (Parsed defensively: a manifest is data.)
-        const claimants = new Map();   // collection -> Set(app)
-        const claim = (coll, by) => {
-          if (!coll) return;
-          if (!claimants.has(coll)) claimants.set(coll, new Set());
-          claimants.get(coll).add(by);
-        };
-        for (const row of q.allCompManifests.all()) {
-          if (!row.manifest) continue;
-          try {
-            const cols = JSON.parse(row.manifest).collections;
-            if (cols && typeof cols === "object") for (const c of Object.keys(cols)) claim(c, row.name);
-          } catch { /* an unparseable manifest claims nothing */ }
-        }
-        // Who has WRITTEN through a widget? via lives inside the event payload (no column), which is
-        // fine at registry scale and is exactly why this is a read and not an index.
-        for (const row of q.viaByCollection.all()) claim(row.collection, row.via);
+    const comp = String(name || "").trim();
+    // Who ELSE claims a collection by declaring it? (Parsed defensively: a manifest is data.)
+    const claimants = new Map();   // collection -> Set(app)
+    const claim = (coll, by) => {
+      if (!coll) return;
+      if (!claimants.has(coll)) claimants.set(coll, new Set());
+      claimants.get(coll).add(by);
+    };
+    for (const row of q.allCompManifests.all()) {
+      if (!row.manifest) continue;
+      try {
+        const cols = JSON.parse(row.manifest).collections;
+        if (cols && typeof cols === "object") for (const c of Object.keys(cols)) claim(c, row.name);
+      } catch { /* an unparseable manifest claims nothing */ }
+    }
+    // Who has WRITTEN through a widget? via lives inside the event payload (no column), which is
+    // fine at registry scale and is exactly why this is a read and not an index.
+    for (const row of q.viaByCollection.all()) claim(row.collection, row.via);
 
-        // Sharing a NAME is not evidence of owning the ROWS. A user whose "notes" collection has
-        // been filling for months, who then installs an app called "notes", must not lose those rows
-        // because the two are spelled alike — and since the AI writes most rows with no `via`,
-        // "nobody else wrote here" is not evidence either. The ledger answers what actually
-        // matters: a collection whose first event predates the app's first save was not
-        // created for it, whatever it is called.
-        //
-        // …and "the app's first save" has to mean THIS app's. A name can be reused, and
-        // the tombstone keeps the previous holder's events, so an unscoped MIN reached back into a
-        // life this app never had: delete the app, let the user write rows into the same-named
-        // collection while nothing owned it, recreate an app under that name, and those rows were
-        // judged "created after the app" and deleted. Scoping to the current life makes the sentence
-        // the user is shown true again — it claims the collection was created FOR THIS APP.
-        const life = q.lifeStart.get(comp).v;
-        const compBorn = q.firstCompEvent.get(comp, life).v;
-        const bornAfterTheApp = (c) => {
-          // A TRUNCATED HISTORY CANNOT ANSWER THIS QUESTION, and must say so rather than answer it
-          // wrongly. Retention deletes a collection's oldest events — exactly the ones proving it
-          // predates the app that shares its name — so after pruning the earliest SURVIVING event
-          // can sit after the app's first save while the collection itself is far older. The reading
-          // would be "created for this app": provably wrong, and the direction that deletes data.
-          // The asymmetry decides it (docs/wo/delete-cascade-design.md): deleting too little leaves
-          // rows a user can remove again; deleting too much breaks a second app and the data is gone.
-          // So an unaccounted-for gap makes this UNKNOWABLE, and unknowable means kept.
-          if (q.truncatedAt.get(c)) return false;
-          const collBorn = q.firstCollEvent.get(c).v;
-          return compBorn > 0 && collBorn > 0 && collBorn > compBorn;
-        };
+    // Sharing a NAME is not evidence of owning the ROWS. A user whose "notes" collection has
+    // been filling for months, who then installs an app called "notes", must not lose those rows
+    // because the two are spelled alike. The ledger answers what actually matters: a collection
+    // whose first event predates THIS APP'S first save (this life — a name can be reused, and
+    // the tombstone keeps the previous holder's events) was not created for it.
+    const life = q.lifeStart.get(comp).v;
+    const compBorn = q.firstCompEvent.get(comp, life).v;
+    const bornAfterTheApp = (c) => {
+      const collBorn = q.firstCollEvent.get(c).v;
+      return compBorn > 0 && collBorn > 0 && collBorn > compBorn;
+    };
 
-        const candidates = new Set();
-        if (q.countColl.get(comp).n > 0 || q.collections.all().some((c) => c.collection === comp)) candidates.add(comp);
-        for (const [coll, who] of claimants) if (who.has(comp)) candidates.add(coll);
+    const candidates = new Set();
+    if (q.countColl.get(comp).n > 0 || q.collections.all().some((c) => c.collection === comp)) candidates.add(comp);
+    for (const [coll, who] of claimants) if (who.has(comp)) candidates.add(coll);
 
-        const collections = [];
-        for (const coll of [...candidates].sort()) {
-          const others = [...(claimants.get(coll) || new Set())].filter((w) => w !== comp).sort();
-          const rows = q.countColl.get(coll).n;
-          // `seq` is the collection's position on the ledger, and it is here so that CONFIRMING a
-          // plan can mean what the two-step promised: "the world still looks like what you were
-          // shown". The plan's token is a hash of this list, and a list carrying only a row COUNT
-          // pins the wrong thing — delete two rows and add two others between the plan and the
-          // confirmation and the token still matched, so cascade destroyed rows that had never
-          // appeared in any plan a human read. Between those two calls there is a whole
-          // conversational turn, and a widget can write in it. One number closes it, because the
-          // ledger never goes backwards: any write to this collection moves it.
-          const seq = q.collSeq.get(coll).v;
-          if (others.length) {
-            collections.push({ collection: coll, verdict: "shared", rows, seq,
-              why: `also used by ${others.join(", ")} — kept, so deleting this app cannot break another one` });
-          } else if (coll === comp && bornAfterTheApp(coll)) {
-            collections.push({ collection: coll, verdict: "exclusive", rows, seq,
-              why: "named after this app, created after it, and no other app declares it or has written to it" });
-          } else if (coll === comp && q.truncatedAt.get(coll)) {
-            // Say WHICH unknowable this is. "Nothing proves it is the only one" would be a wrong
-            // explanation here: the evidence existed and was discarded by a retention policy.
-            collections.push({ collection: coll, verdict: "unknown", rows, seq,
-              why: "named after this app, but this collection's early history has been pruned — whether it predates the app can no longer be established, so it is kept" });
-          } else {
-            collections.push({ collection: coll, verdict: "unknown", rows, seq,
-              why: "this app uses it, but nothing proves it is the only one — kept" });
-          }
-        }
-        return {
-          collections,
-          settings_keys: q.countSettingsGroup.get(comp).n,
-          // The settings collection gets the same treatment: settings_keys is a count too.
-          settings_seq: q.collSeq.get(SETTINGS_COLLECTION).v,
-          exclusive: collections.filter((c) => c.verdict === "exclusive").map((c) => c.collection),
-        };
+    const collections = [];
+    for (const coll of [...candidates].sort()) {
+      const others = [...(claimants.get(coll) || new Set())].filter((w) => w !== comp).sort();
+      const rows = q.countColl.get(coll).n;
+      // `seq` is the collection's position on the ledger, and it is here so that CONFIRMING a
+      // plan can mean what the two-step promises: "the world still looks like what you were
+      // shown". A row COUNT pins the wrong thing — delete two rows and add two others between
+      // the plan and the confirmation and the count still matches. One ledger number closes it,
+      // because the ledger never goes backwards: any write to this collection moves it.
+      const seq = q.collSeq.get(coll).v;
+      if (others.length) {
+        collections.push({ collection: coll, verdict: "shared", rows, seq,
+          why: `also used by ${others.join(", ")} — kept, so deleting this app cannot break another one` });
+      } else if (coll === comp && bornAfterTheApp(coll)) {
+        collections.push({ collection: coll, verdict: "exclusive", rows, seq,
+          why: "named after this app, created after it, and no other app declares it or has written to it" });
+      } else {
+        collections.push({ collection: coll, verdict: "unknown", rows, seq,
+          why: "this app uses it, but nothing proves it is the only one — kept" });
+      }
+    }
+    return {
+      collections,
+      settings_keys: q.countSettingsGroup.get(comp).n,
+      // The settings collection gets the same treatment: settings_keys is a count too.
+      settings_seq: q.collSeq.get(SETTINGS_COLLECTION).v,
+      exclusive: collections.filter((c) => c.verdict === "exclusive").map((c) => c.collection),
+    };
   }
 
   return {
@@ -1721,12 +1765,11 @@ export function openStore(path, { readOnly = false } = {}) {
     events,
     snapshot,
     queryItems,
-    aggregate,
     // One cheap read answering "did anything change?" — the adaptive-poll / SSE-fallback probe.
     dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION }),
     getApp: (name) => q.compByName.get(name) || null,
     // No arguments = every row, exactly as before: the registry's own consumers (the settings
-    // library pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's
+    // App Store pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's
     // choice, and the model-facing tool is the caller that has a default.
     listApps: ({ kinds, visibilities, name } = {}) => {
       let rows = q.allComps.all();
@@ -1738,7 +1781,7 @@ export function openStore(path, { readOnly = false } = {}) {
     /** Any app whose name is not in `names`. The engine passes its own seeded set and reads
      *  this as "the user has something of their own" — see buildInstructions in engine.mjs. */
     hasAppOutside: (names) => q.hasCompOutside.get(JSON.stringify([...names])).v === 1,
-    /** [{version, ts, html_size, checkpoint}] — never raw html.
+    /** [{version, ts, ui_size, checkpoint}] — never the raw document.
      *
      *  `checkpoint` is this app's OWN 1..N counter, derived here and stored nowhere. It
      *  exists because `version` IS the ledger seq (save_app stamps the row with the event's
@@ -1760,7 +1803,7 @@ export function openStore(path, { readOnly = false } = {}) {
       const n = rows.length;
       return rows.map((r, i) => ({ ...r, checkpoint: n - i }));
     },
-    getAppVersion: (name, version) => q.compVersion.get(name, version) || null, // {name, version, html, ts} | null — the ONE path that reads OLD html (for restore/diff)
+    getAppVersion: (name, version) => q.compVersion.get(name, version) || null, // {name, version, ui, manifest, ts} | null — the ONE path that reads an OLD revision (for restore/diff)
 
     listCollections: () => q.collections.all(),
 
@@ -1795,28 +1838,12 @@ export function openStore(path, { readOnly = false } = {}) {
      *  the size without a single row travelling. */
     countItems: (collection) => q.countColl.get(String(collection)).n,
 
-    /** What deleting `name` would take with it, and — just as important — what it would LEAVE.
-     *
-     *  This exists because the honest answer to "which collections belong to this app" is
-     *  "we cannot always tell", and the shape of a destructive tool has to say so out loud rather
-     *  than guess. The three signals, with their measured strength (2026-07-28, docs/wo/
-     *  delete-cascade-design.md):
-     *    · the manifest's `collections` key — the GUIDE calls this THE lifecycle claim, and its
-     *      real-world adoption is ZERO: 19 of our own apps declare settings and uses_shared,
-     *      none declares a collection. Used here to find OTHER claimants, never to grant one.
-     *    · the ledger's `via.app` — stamped only on writes that came through a widget. The
-     *      model's own writes (the dominant path) carry none, so its ABSENCE proves nothing. Used
-     *      here in one direction only: someone else's via is evidence of sharing.
-     *    · the name — a collection called exactly like the app. Weak on its own, which is
-     *      why it only produces `exclusive` when BOTH of the above find no other claimant.
-     *
-     *  The asymmetry is the whole design: deleting too little leaves rows a user can delete again;
-     *  deleting too much silently breaks a SECOND app and the data is gone. So `shared` and
-     *  `unknown` are kept, always, and the caller is told what was kept and why.
-     *
-     *  Returns { collections: [{collection, verdict, rows, why}], settings_keys, exclusive: [names] }
-     *  where verdict is "exclusive" | "shared" | "unknown". Read-only. */
+    /** Read-only twin of the cascade plan — { collections: [{collection, verdict, rows, seq,
+     *  why}], settings_keys, settings_seq, exclusive } where verdict is "exclusive" | "shared"
+     *  | "unknown". The delete_app command recomputes this inside its own transaction; this
+     *  export exists for previews and tests, never as an input to the delete. */
     deleteDisposition: computeDisposition,
+
 
     /** The keyset cursor that continues AFTER this item — exposed so a caller that shrinks a page
      *  to fit a budget can hand out a cursor that matches the rows it actually kept. */
@@ -1828,7 +1855,7 @@ export function openStore(path, { readOnly = false } = {}) {
     // OMA_DB / an explicit path (test isolation) and sits beside whatever db is open.
     statFile: (app, path) => {
       const r = q.fileByKey.get(app, path);
-      return r ? { app, path, sha256: r.sha256, size: r.size, mime: r.mime, version: r.version, backend: r.backend, created_at: r.created_at, updated_at: r.updated_at } : null;
+      return r ? { app, path, sha256: r.sha256, size: r.size, mime: r.mime, version: r.version, created_at: r.created_at, updated_at: r.updated_at } : null;
     },
     listFiles: (app, prefix) => {
       const rows = q.filesByApp.all(app);
@@ -1901,14 +1928,17 @@ export function openStore(path, { readOnly = false } = {}) {
             visibility: payload.was, actor: "human" }, true) };
         }
         if (ev.event_type === "component_saved") {
-          // The previous version's html is the pre-image, and rolling FORWARD to it (rather than
-          // deleting the current row) is what keeps history honest: you can undo the undo.
+          // The previous REVISION is the pre-image — BOTH slots, verbatim, because a revision is a
+          // coherent (ui, manifest) pair and restoring one without the other would manufacture a
+          // state that never existed. Rolling FORWARD to it (rather than deleting the current row)
+          // is what keeps history honest: you can undo the undo.
           // The event's own seq IS the version it created (one ordinal axis), so the payload does not
           // carry one and does not need to — "the version before this event" is just "below its seq".
           const hist = q.compHistory.all(ev.aggregate_id);
           const prev = hist.find((h) => h.version < ev.seq);
           if (!prev) return { done: { ok: false, error: "no_previous_version" } };
-          return { type: "save_app", result: core({ type: "save_app", declaration_policy: "salvage", command_id: cid, name: ev.aggregate_id, html: prev.html, actor: "human" }, true) };
+          return { type: "save_app", result: core({ type: "save_app", command_id: cid, name: ev.aggregate_id,
+            ui: prev.ui, manifest: prev.manifest ? JSON.parse(prev.manifest) : null, actor: "human" }, true) };
         }
         return { done: { ok: false, error: "not_undoable", event_type: ev.event_type } };
       });
@@ -1933,48 +1963,14 @@ export function openStore(path, { readOnly = false } = {}) {
         const { sv: _sv, ...rest } = payload;
         const last = q.lastEventFor.get(r.aggregate_id);
         return { seq: r.seq, type: r.event_type, id: r.aggregate_id, actor: r.actor,
-          principal: r.principal ?? undefined, host: r.host, ts: r.ts,
+          host: r.host, ts: r.ts,
           undoable: !!(last && last.seq === r.seq), ...rest };
       });
     },
 
-    /** How much history to keep, as a POLICY VALUE rather than a feature: `policy:retention.events`
-     *  in the settings collection, writable only through the privileged path. The engine's default is
-     *  the smallest honest one — keep everything, prune nothing — because an OSS install has no one
-     *  to bill for storage and a silent pruner is the worst kind of data loss. A deployment that
-     *  wants a bound sets the key; a tier that sells a longer one sets it higher. No code branches
-     *  on which product this is.
-     *
-     *  Returns null for "unbounded", a positive integer for "keep this many events per collection". */
-    retentionEvents() {
-      const row = q.settingByKey.get("policy:retention.events");
-      if (!row) return null;
-      const n = Number(JSON.parse(row.fields).value);
-      return Number.isFinite(n) && n > 0 ? Math.floor(n) : null;
-    },
-
-    /** Apply the retention policy: drop the OLDEST events of a collection beyond the kept window.
-     *  Explicit, never automatic on write — pruning inside a write transaction would make the cost
-     *  of one user's edit depend on how much history someone else made. The caller (a maintenance
-     *  pass, the Data pane) decides when. */
-    pruneLedger(collection) {
-      const keep = this.retentionEvents();
-      if (!keep) return { ok: true, pruned: 0, policy: "unbounded" };
-      const c = String(collection);
-      const info = q.pruneColl.run({ c, keep });
-      // WRITE DOWN THAT HISTORY WAS LOST, in the same breath as losing it.
-      //
-      // deleteDisposition decides whether a collection was created FOR an app by comparing earliest
-      // events, and the events this just deleted are the ones that prove a collection is OLDER than
-      // the app sharing its name. Without a note, the judge reads a truncated history as a complete
-      // one and concludes the user's own older rows belong to the app — then cascade deletes them.
-      // The gap is invisible from the inside, so it has to be recorded from here, where it is made.
-      // Only when something was actually removed: a no-op prune truncates nothing.
-      if (info.changes > 0) {
-        q.markTruncated.run({ c, seq: q.oldestCollEvent.get(c).v, ts: new Date().toISOString() });
-      }
-      return { ok: true, pruned: info.changes, policy: `keep ${keep}` };
-    },
+    // retention/pruneLedger retired 2026-08-04 (elegance A2): zero production callers — the
+    // ledger is append-only and unbounded until a real maintenance caller exists. (Its one
+    // structural consumer, cascade's ownership judge, retired the same day.)
 
     close: () => db.close(),
   };

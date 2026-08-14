@@ -7,12 +7,15 @@
 
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "@modelcontextprotocol/ext-apps/server";
+import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "../mcp-apps.mjs";
+import { LOADER } from "../cache-hints.mjs";
 import { APP_NAME_RE } from "../store.mjs";
 import { wrapApp, wrapLoader } from "../shell.mjs";
 import { GUIDE, guideChapter } from "../guide.mjs";
-import { readDeclaration } from "../manifest-block.mjs";
 import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, answer, toMcp, textWindow } from "../contracts.mjs";
+import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
+import { makeFunctionHost } from "../functions.mjs";
+import { editTelemetry } from "../edit-telemetry.mjs";
 
 // "Does this document actually talk to the API?" — the shapes a real app reaches it by.
 // The original test was the literal `oma.` alone, which fired on working code: `const OMA =
@@ -21,6 +24,19 @@ import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SE
 // miss it prevents, so the bar is "any plausible reference", not "the one spelling we expected".
 // Exported so the false-positive cases stay pinned in test/server-smoke.
 export const OMA_REFERENCE_RE = /\boma\s*[.[]|window\s*\.\s*oma\b|window\s*\[\s*["']oma["']\s*\]|\{[^{}]*\boma\b[^{}]*\}\s*=/;
+
+// suggested_kind (§8-R3) — a DIAGNOSTIC, never a decision. "app" when the document binds
+// persistent state (the oma data/file verbs, the data_*/file_* tools, or declared collections);
+// "visual" otherwise. `oma.pref` is deliberately NOT a binding — theming a one-shot visual does
+// not make it a keeper. The arbitration forbids this value from influencing enumeration, closure,
+// export or retention, and from ever upgrading anything by itself — which is why it ships as a
+// prose sentence and never as a structured field: a ban is easiest to hold on a value no program
+// can reach.
+const BINDS_RE = /\boma\s*\.\s*(addItem|updateItem|moveItem|deleteItem|onChange|readCollection|refresh|files)\b|\bdata_(add_item|update_item|move_item|delete_item|list|query|batch|collections|changes|version)\b|\bfile_(write|read|list|delete)\b/;
+export const suggestedKind = (ui, manifest) =>
+  ((manifest && manifest.collections && typeof manifest.collections === "object"
+    && Object.keys(manifest.collections).length > 0) || BINDS_RE.test(String(ui ?? "")))
+    ? "app" : "visual";
 
 // The universal opener's document. Module-level because cache-hints.mjs has to tell it apart from
 // the per-app resources: this one is built from the engine binary alone (same bytes for every
@@ -36,7 +52,7 @@ const saveAckSchema = {
   created: z.boolean().optional(),
   size: z.number().optional(),
   prev_size: z.number().nullable().optional(),
-  declaration: z.string().optional(),
+  manifest_action: z.string().optional(),
   applied: z.number().optional(),
   expected_version: z.number().optional(),
   reason: z.string().optional(),
@@ -52,9 +68,15 @@ export function register(ctx) {
   // the same reason: a URL that 404s teaches the user the thing is broken, which is worse than no
   // URL. Where it matters most is a terminal host, where an app can be built and never drawn: the
   // widget channel is the only way to SEE it, and a CLI does not have one.
-  const viewUrl = (name) => (viewBase && /^https?:\/\//.test(viewBase)
-    ? `${String(viewBase).replace(/\/+$/, "")}/view/${encodeURIComponent(name)}`
-    : null);
+  const viewRoot = viewBase && /^https?:\/\//.test(viewBase)
+    ? `${String(viewBase).replace(/\/+$/, "")}/view/`
+    : null;
+  const viewUrl = (name) => (viewRoot ? viewRoot + encodeURIComponent(name) : null);
+
+  // R1 tripwire data source (W-E): one JSONL line per editing event, sidecar next to the DB.
+  // recordEdit returns a count when a REPORT_EVERY boundary is crossed — that becomes a
+  // one-line milestone note in the ack, and a human (Leo) runs the report; nothing automatic.
+  const recordEdit = editTelemetry(store.dataDir);
 
 
   // ---------------------------------------------------------------- widget security declaration
@@ -116,20 +138,26 @@ export function register(ctx) {
       return;
     }
 
+    // No cacheHint: the SDK default ({ttlMs: 0, cacheScope: "private"}) IS the store-derived
+    // answer — stated once in cache-hints.mjs, inherited here rather than restated (elegance A18).
     registerAppResource(server, `app-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: UI_SECURITY }, async () => {
       const comp = store.getApp(name);
       if (!comp) throw new Error(`app ${name} not found`);
       // Tier gate (docs/security-model.md §2.3): this per-app resource serves DIRECT mode
-      // (wrapApp = the real window.oma, full trust) and has no runner branch — the
-      // loader's runnerMount covers only the open_app path. Non-local tiers fail closed
-      // to the placeholder; every app today is local, so nothing changes until one isn't.
+      // (wrapApp = the real window.oma, full trust) and has no runner branch — the loader's
+      // tier branch (shell.mjs, via oma.embed) covers only the open_app path. Non-local tiers
+      // fail closed to the placeholder; every app today is local, so nothing changes until one isn't.
       if (tierOf(comp.author) !== "local")
         return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: RUNNER_REQUIRED_HTML, _meta: UI_SECURITY }] };
       // The binding rides IN the document: Claude Desktop's dynamic-tools mode delivers neither
       // toolinput nor a collection through its pushes (live-test 2026-07-28, writes bounced as
       // collection:null), and this resource knows its app at serve time — the one place
       // the open_app loader path can't know it.
-      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(comp.html, { app: name, version: comp.version, collection: defaultCollectionFor(comp) }), _meta: UI_SECURITY }] };
+      // viewRoot rides along for the same reason the binding does — this document runs in an
+      // opaque origin and cannot derive it. It is what makes the system badge's "Open in browser"
+      // exist (and oma.viewBase absolute) inside a host; an engine without a viewer stamps
+      // nothing, and the item is not drawn (D-13 ②).
+      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(comp.ui, { app: name, collection: defaultCollectionFor(comp), viewBase: viewRoot }), _meta: UI_SECURITY }] };
     });
 
     if (!DYNAMIC_TOOLS) return;
@@ -175,8 +203,18 @@ export function register(ctx) {
   }
 
   // ------------------------------------------------- the universal opener (static tool)
-  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, _meta: UI_SECURITY },
-    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader(), _meta: UI_SECURITY }] }));
+  // Loader cache scope, decided here because both inputs are knobs of THIS engine: public only
+  // while the document really is the same answer for everybody, and widgetDomain / the viewer
+  // redirect origin make it deployment-specific. Doctrine + the measured stg incident behind
+  // ttlMs: 0 live in cache-hints.mjs (LOADER).
+  // Deployment-derived security fields present ⇒ the answer is tenant-specific ⇒ OMIT the hint
+  // and inherit the SDK's private/zero default; only the truly-universal loader declares public.
+  // The two conditions still cover it now that the document itself may carry the viewer URL:
+  // `redirects` is non-empty on exactly the engines that stamp one, so a loader carrying a
+  // deployment's viewer base can never be the one declaring itself publicly cacheable.
+  const loaderHint = (widgetDomain || redirects.length) ? {} : { cacheHint: LOADER };
+  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, ...loaderHint, _meta: UI_SECURITY },
+    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader({ viewBase: viewRoot }), _meta: UI_SECURITY }] }));
 
   registerAppTool(
     server,
@@ -224,15 +262,12 @@ export function register(ctx) {
       title: "App HTML (internal)",
       annotations: RO,
       description: "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
-      inputSchema: {
-        name: z.string(),
-        offset: z.number().optional().describe("window the html (same grammar as get_app); omit for the whole document"),
-        length: z.number().optional(),
-      },
+      inputSchema: { name: z.string() },
       outputSchema: {
         name: z.string(), version: z.number(), html: z.string(),
         author: z.string(),
-        tier: z.enum(["local", "library-reviewed", "unreviewed"]),
+        tier: z.enum(["local", "unreviewed"]),
+        locked: z.boolean().describe("a fixed system app (settings renders these read-only)"),
         // WHAT THIS APP OPENS ON, computed by the one function that owns that question
         // (contracts.mjs defaultCollectionFor — /view mounts by the same rule, and a second copy is
         // a second answer waiting to disagree). It is here because the generic loader document
@@ -250,35 +285,25 @@ export function register(ctx) {
         // in the browser to find it, which meant two parsers over the same untrusted document and
         // two chances to disagree about what an app declared. One source, read once, at save.
         declaration: z.record(z.string(), z.any()).nullable().optional(),
-        offset: z.number().optional(), next_offset: z.number().nullable().optional(),
-        returned: z.number().optional(), total: z.number().optional(), eot: z.string().optional(),
       },
     },
     async (a) => {
       const comp = store.getApp(a.name);
       if (!comp) return fail(`No app "${a.name}".`);
       const tier = tierOf(comp.author);
-      const meta = { name: comp.name, version: comp.version, author: comp.author, tier,
-        collection: defaultCollectionFor(comp),
-        caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null };
-      // Windowed ONLY on request. The zero-parameter call is the loader widget's mount source and
-      // MUST carry the whole document — the widget cannot assemble windows, and the host↔widget
-      // bridge is the one channel measured intact well past the model-facing cut (≥120K). The
-      // budget discipline therefore deliberately does not apply to it; a model reading source has
-      // get_app, which windows by default.
-      if (a.offset == null && a.length == null) {
-        return {
-          content: [{ type: "text", text: `(app "${comp.name}" v${comp.version}, ${comp.html.length} chars, tier ${tier} — consumed by the loader widget)` }],
-          structuredContent: { ...meta, html: comp.html },
-        };
-      }
-      const w = textWindow(comp.html, { offset: a.offset, length: a.length },
-        (t) => ({ ...meta, html: t, offset: 0, next_offset: 0, returned: t.length, total: comp.html.length, eot: "·eot" }));
-      return toMcp(answer.chunk(
-        { ...meta, html: w.text, offset: w.offset, next_offset: w.next_offset },
-        { returned: w.text.length, total: w.total,
-          text: `(app "${comp.name}" v${comp.version} — html chars ${w.offset}–${w.offset + w.text.length} of ${w.total}${w.next_offset != null ? `, continue at offset ${w.next_offset}` : ", end"})` },
-      ));
+      // Always the whole document. This call is the loader widget's mount source — the widget
+      // cannot assemble windows, and the host↔widget bridge is the one channel measured intact
+      // well past the model-facing cut (≥120K). The budget discipline therefore deliberately does
+      // not apply here; a model reading source has get_app, which windows by default.
+      // `html` stays the FIELD name here — it names the payload's format for the loader widget
+      // (shell-runtime reads r.html), not the registry slot. The value is the ui slot.
+      return {
+        content: [{ type: "text", text: `(app "${comp.name}" v${comp.version}, ${comp.ui.length} chars, tier ${tier} — consumed by the loader widget)` }],
+        structuredContent: { name: comp.name, version: comp.version, author: comp.author, tier,
+          locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp),
+          caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
+          html: comp.ui },
+      };
     },
   );
 
@@ -306,15 +331,13 @@ export function register(ctx) {
       title: "List apps",
       annotations: RO,
       description: "List UI apps in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
-      // Four params, frozen with this publish: name (the "open my X" lookup — exact match, so a
+      // Three params, frozen with this publish: name (the "open my X" lookup — exact match, so a
       // registry of any size answers in one call), kind and visibility (the two columns that decide
-      // what is an app and what is retired/long-tail), limit (a floor under the reply, not a page:
-      // the count is always reported so a truncated list can never read as the whole registry).
+      // what is an app and what is retired/long-tail).
       inputSchema: {
         name: z.string().optional().describe("exact app name — the fastest way to answer \"open my X\""),
         kind: z.enum(["app", "visual", "primitive", "any"]).optional().describe("default app: what a person opens and reuses"),
         visibility: z.enum(["featured", "listed", "unlisted", "archived", "any"]).optional().describe("default featured+listed; archived/unlisted are retired or long-tail"),
-        limit: z.number().int().positive().optional().describe("cap the rows listed (the total is always reported)"),
       },
     },
     async (a = {}) => {
@@ -326,7 +349,7 @@ export function register(ctx) {
         kinds: a.kind === "any" ? undefined : a.kind ? [a.kind] : a.name ? undefined : ["app"],
         visibilities: a.visibility === "any" ? undefined : a.visibility ? [a.visibility] : a.name ? undefined : ["featured", "listed"],
       });
-      const comps = a.limit ? all.slice(0, a.limit) : all;
+      const comps = all;
       const own = comps.filter((c) => !SEEDED_APPS.has(c.name));
       // E10: the "→ open_<name>" pointer is only true when per-app tools are registered,
       // and they are OPT-IN. With the default configuration those tools do not exist, so printing
@@ -345,13 +368,10 @@ export function register(ctx) {
       // never fire, and the model saw three perfectly plausible apps and opened one instead. The
       // instructions already forbid exactly that, in prose. Prose lost. The fact now lives in the
       // data the model is looking at when it decides.
-      // A filtered or capped list must never read as the whole registry. `total` says how many
-      // matched and `shown` how many are printed, both before the rows — the same reason a page
-      // reports the collection's size and not its own length.
+      // A filtered list must never read as the whole registry. `total` says how many matched,
+      // before the rows — the same reason a page reports the collection's size and not its own length.
       const scoped = a.name || a.kind || a.visibility;
-      const capped = comps.length < all.length;
-      const head = capped ? `${all.length} match, showing ${comps.length}:`
-        : scoped ? `${all.length} match:` : null;
+      const head = scoped ? `${all.length} match:` : null;
       const empty = a.name
         ? `No app named "${a.name}". Call list_apps with no arguments to see what exists.`
         : scoped
@@ -363,7 +383,10 @@ export function register(ctx) {
             "an answer to what they want. Build one: get_app_guide, then save_app, then open_app."]
             .filter(Boolean).join("\n")
         : empty;
-      return { content: [{ type: "text", text }], structuredContent: { total: all.length, shown: comps.length, apps: comps } };
+      // `locked` rides each row so the settings pane can tell fixed system UI apart without a
+      // second tool (app_permissions retired 2026-08-04 — app_html carries the per-app caps).
+      return { content: [{ type: "text", text }], structuredContent: { total: all.length, shown: comps.length,
+        apps: comps.map((c) => ({ ...c, locked: LOCKED_APPS.has(c.name) })) } };
     },
   );
 
@@ -372,28 +395,53 @@ export function register(ctx) {
     {
       title: "Get app source",
       annotations: RO,
-      description: "Read an app's HTML source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app.",
+      description: "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
       inputSchema: {
         name: z.string(),
-        offset: z.number().optional().describe("character offset to read from (default 0)"),
-        length: z.number().optional().describe("max characters for this window (default fits the result budget)"),
+        slot: z.enum(["ui", "manifest"]).optional().describe("default ui; manifest returns {manifest: object|null} whole"),
+        offset: z.number().optional().describe("character offset to read from (default 0; ui slot only)"),
+        length: z.number().optional().describe("max characters for this window (default fits the result budget; ui slot only)"),
+        node: z.string().optional().describe("read the element marked data-oma-node=\"<node>\" — the window (and its hash) covers exactly that element (ui slot only)"),
       },
       outputSchema: {
         name: z.string(), version: z.number(),
         returned: z.number().optional(), total: z.number().optional(),
-        offset: z.number(), text: z.string(), next_offset: z.number().nullable().optional(),
+        offset: z.number().optional(), text: z.string().optional(), hash: z.string().optional(),
+        next_offset: z.number().nullable().optional(),
+        manifest: z.record(z.string(), z.any()).nullable().optional(),
         eot: z.string().optional(),
       },
     },
     async (a) => {
       const comp = store.getApp(a.name);
       if (!comp) return fail(`No app "${a.name}". list_apps shows what exists.`);
-      const w = textWindow(comp.html, { offset: a.offset, length: a.length },
-        (t) => ({ name: comp.name, version: comp.version, offset: 0, next_offset: 0, total: comp.html.length, returned: t.length, text: t, eot: "·eot" }));
-      const head = `// ${comp.name} v${comp.version} — chars ${w.offset}–${w.offset + w.text.length} of ${w.total}` +
+      // The manifest slot is small and structured — it returns WHOLE, with the same version
+      // (the OCC token covers both slots, because a version snapshots both).
+      if (a.slot === "manifest") {
+        const manifest = comp.manifest ? JSON.parse(comp.manifest) : null;
+        return toMcp(answer.chunk(
+          { name: comp.name, version: comp.version, manifest },
+          { text: `// ${comp.name} v${comp.version} — manifest slot\n${JSON.stringify(manifest, null, 2)}` },
+        ));
+      }
+      // node resolves to a span at READ time — edit_app never runs a locator, so ambiguity
+      // (missing/duplicated marker, broken markup) surfaces here, where re-asking is cheap.
+      let want = { offset: a.offset, length: a.length }, nodeNote = "";
+      if (a.node != null) {
+        const span = locateNode(comp.ui, a.node);
+        if (!span.ok) return fail(`data-oma-node lookup failed: ${span.detail}`);
+        want = { offset: span.offset, length: span.length };
+        nodeNote = ` — <${span.tag} data-oma-node="${a.node}">`;
+      }
+      const w = textWindow(comp.ui, want,
+        (t) => ({ name: comp.name, version: comp.version, offset: 0, next_offset: 0, total: comp.ui.length, returned: t.length, text: t, eot: "·eot" }));
+      // The hash covers EXACTLY the returned text: a range edit of {offset, returned, hash}
+      // round-trips without the model ever computing anything.
+      const hash = sliceHash(w.text);
+      const head = `// ${comp.name} v${comp.version} — chars ${w.offset}–${w.offset + w.text.length} of ${w.total}${nodeNote} — hash ${hash}` +
         (w.next_offset != null ? ` (continue at offset ${w.next_offset})` : " (end)");
       return toMcp(answer.chunk(
-        { name: comp.name, version: comp.version, offset: w.offset, next_offset: w.next_offset, text: w.text },
+        { name: comp.name, version: comp.version, offset: w.offset, hash, next_offset: w.next_offset, text: w.text },
         { returned: w.text.length, total: w.total, text: `${head}\n${w.text}` },
       ));
     },
@@ -404,29 +452,23 @@ export function register(ctx) {
     {
       title: "Save app",
       annotations: WRITE,
-      description: "Create or update a UI app in the persistent registry. The HTML must follow the contract from get_app_guide (single self-contained HTML using window.oma; no external resources). After saving, open it IMMEDIATELY with open_app. Saving an existing name creates a new version (history kept).",
+      description: "Create or update a UI app in the persistent registry. Two slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block) — and manifest, the app's declaration as a JSON object (kind, collections, settings, scene; keys in get_app_guide). manifest: null clears the declaration. Creating needs ui. Every save snapshots both slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
       inputSchema: {
         name: z.string().describe("app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')"),
-        html: z.string().describe("complete self-contained HTML document using window.oma"),
+        ui: z.string().optional().describe("complete self-contained HTML document using window.oma; omit on update to keep the current one"),
+        // A WIDE object on purpose: declaring the manifest's known keys here would put every new
+        // vocabulary word into the resident tools/list bytes AND let the SDK strip unknown keys —
+        // breaking the "a newer document must still save on an older engine" contract. Depth is
+        // validated by the store (manifestShapeError), which preserves what it does not know.
+        manifest: z.record(z.string(), z.any()).nullable().optional().describe("declaration object (whole-value replace), null to clear, omit to keep"),
         description: z.string().optional().describe("one line: what this app shows and what data fields it uses"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
         expected_version: z.number().optional().describe("REQUIRED when overwriting an existing app: the version you read (get_app). Creating a new name needs none"),
-        // RETIRED, and deliberately still declared: a typed input schema STRIPS keys it does not
-        // list, so removing these outright would make an old caller's declaration vanish in
-        // silence. Declared as anything-and-refused, they cost a few bytes to tell one published
-        // fork where the declaration lives now. Delete both at the next breaking version.
-        manifest: z.any().optional().describe("RETIRED — declare inside the html (see get_app_guide)"),
-        scene: z.any().optional().describe("RETIRED — declare inside the html (see get_app_guide)"),
       },
       outputSchema: saveAckSchema,
     },
     async (a) => {
       if (!APP_NAME_RE.test(a.name || "")) return fail("Invalid name: must match ^[a-z][a-z0-9-]{0,31}$ (lowercase, digits, hyphens).");
-      // These moved INTO the document. Rejecting is the only honest answer: silently ignoring them
-      // would drop a declaration the caller believes it made, and this engine has exactly one
-      // published fork whose old calls must hear why rather than lose data.
-      if (a.manifest !== undefined || a.scene !== undefined)
-        return fail("manifest/scene are no longer parameters — an app declares itself INSIDE its html, in a <script type=\"application/json\" id=\"oma-manifest\"> block, which the engine reads on save. See get_app_guide.");
       // The list is READ from the set, not retyped beside it. The hand-kept copy listed the
       // original six and silently went stale when `app`, `app` and `loader` were added — so a
       // user naming an app `app` was told it clashed with a settings group, which is not why it was
@@ -455,28 +497,28 @@ export function register(ctx) {
       const existing = store.getApp(a.name);
       if (existing && a.expected_version == null)
         return toMcp(answer.fail("expected_version_required", { name: a.name, version: existing.version },
-          `"${a.name}" already exists at v${existing.version} (${existing.html.length.toLocaleString()} chars). Overwriting requires expected_version — read it first (get_app) and pass expected_version: ${existing.version}. A NEW app needs a different name.`), { isError: true });
+          `"${a.name}" already exists at v${existing.version} (${existing.ui.length.toLocaleString()} chars). Overwriting requires expected_version — read it first (get_app) and pass expected_version: ${existing.version}. A NEW app needs a different name.`), { isError: true });
       const warnings = [];
       const notes = [];
-      // The scene's CATEGORY check moved here from the old parameter path: the declaration now
-      // arrives inside the html, so this reads it the same way the store will and warns before the
-      // save rather than after. An unknown slug is a warning, not a rejection — the taxonomy is ours
-      // and an app that guesses a category wrong is still an app worth saving.
-      const declared = readDeclaration(a.html);
-      if (declared.state === "present" && declared.value.scene && declared.value.scene.category_id != null
-          && !SCENE_CATEGORIES.has(declared.value.scene.category_id))
-        warnings.push(`Unknown scene.category_id "${declared.value.scene.category_id}" in the manifest block — it is stored as declared but the Library will not file it. Valid: ${[...SCENE_CATEGORIES].join(", ")}.`);
+      // Slot-scoped lint: each warning fires only when its slot actually travels on THIS call —
+      // a manifest-only save must not re-lint a document it is not touching.
+      if (a.manifest && a.manifest.scene && a.manifest.scene.category_id != null
+          && !SCENE_CATEGORIES.has(a.manifest.scene.category_id))
+        warnings.push(`Unknown scene.category_id "${a.manifest.scene.category_id}" — it is stored as declared but the Library will not file it. Valid: ${[...SCENE_CATEGORIES].join(", ")}.`);
       // Accept every shape a real app reaches the API by, not just the literal `oma.`:
       // `window.oma`, an alias (`const OMA = window.oma`), bracket access, and destructuring all
       // count. The narrow test fired on working code — one measured author re-sent an entire 33KB
       // document to silence it — and a warning that cries wolf costs more than the miss it prevents.
-      if (!OMA_REFERENCE_RE.test(a.html))
-        warnings.push("HTML never references the oma API — it will render but won't load or save any data.");
-      if (/src\s*=\s*["']https?:|href\s*=\s*["']https?:|@import|fetch\s*\(/i.test(a.html)) warnings.push("External URLs detected — the sandbox CSP blocks all external resources; the app may break. Inline everything.");
-      if (/React\.createElement|ReactDOM|from\s+["']react["']|import\s+React|@babel\/standalone|text\/babel/.test(a.html)) warnings.push("React/JSX/Babel detected — widgets have no React runtime or JSX compiler (this is not claude.ai Artifacts). Rewrite with vanilla DOM per get_app_guide.");
+      if (a.ui !== undefined) {
+        if (!OMA_REFERENCE_RE.test(a.ui))
+          warnings.push("The ui never references the oma API — it will render but won't load or save any data.");
+        if (/src\s*=\s*["']https?:|href\s*=\s*["']https?:|@import|fetch\s*\(/i.test(a.ui)) warnings.push("External URLs detected — the sandbox CSP blocks all external resources; the app may break. Inline everything.");
+        if (/React\.createElement|ReactDOM|from\s+["']react["']|import\s+React|@babel\/standalone|text\/babel/.test(a.ui)) warnings.push("React/JSX/Babel detected — widgets have no React runtime or JSX compiler (this is not claude.ai Artifacts). Rewrite with vanilla DOM per get_app_guide.");
+      }
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
-        name: a.name, html: a.html, description: a.description || "", actor: "agent", host: hostName(),
+        name: a.name, ...(a.ui !== undefined ? { ui: a.ui } : {}), ...("manifest" in a ? { manifest: a.manifest } : {}),
+        description: a.description || "", actor: "agent", host: hostName(),
         expected_version: a.expected_version,
       });
       if (!r.ok) {
@@ -487,6 +529,10 @@ export function register(ctx) {
           return toMcp(answer.fail("version_conflict",
             { name: a.name, ...(r.expected != null ? { expected_version: r.expected } : {}) }, why), { isError: true });
         }
+        if (r.error === "embedded_manifest_block")
+          return fail("The document carries a legacy #oma-manifest block. Declarations moved out of the html: remove the block and pass its JSON as the `manifest` parameter instead (entity-escape the tag if the app genuinely displays it as text).");
+        if (r.error === "empty_manifest_use_null")
+          return fail("manifest: {} is ambiguous (empty declaration vs clear) — pass manifest: null to clear the declaration, or omit the key to keep it.");
         return fail(r.error === "bad_manifest" ? `Invalid manifest: ${r.detail}.` : failNote(r));
       }
       // A replay's receipt has no size/declaration facts (they belong to the original response) —
@@ -495,14 +541,11 @@ export function register(ctx) {
         return toMcp(answer.ack({ ok: true, name: a.name, version: r.version, note: "already saved (idempotent replay)" },
           `Already saved — "${a.name}" is at v${r.version} from this same command_id.`));
       registerApp(a.name);
-      // A manifest set over collections with EXISTING rows: warn about rows that don't conform.
-      // (Writes stay possible — the store delta-validates, so legacy rows can be edited but never
-      // made worse — but the author should know the contract isn't fully met yet.)
       // A field contract set over collections that ALREADY have rows: warn about the rows that do
       // not conform. Writes stay possible (the store delta-validates, so legacy rows can be edited
       // but never made worse) — the author just deserves to know the contract is not met yet.
-      if (declared.state === "present" && declared.value.collections) {
-        for (const [collName, spec] of Object.entries(declared.value.collections)) {
+      if (a.manifest && a.manifest.collections) {
+        for (const [collName, spec] of Object.entries(a.manifest.collections)) {
           if (!spec || !spec.fields) continue;   // stewardship-only declaration validates nothing
           try {
             const bad = store.snapshot(collName).items.filter((i) => {
@@ -519,16 +562,29 @@ export function register(ctx) {
           } catch { /* collection may not exist yet — nothing to warn about */ }
         }
       }
-      // What the engine actually read out of the document, said out loud. A declaration that was
-      // kept, cleared, or absent is a fact about this save, and the author's next edit depends on it.
+      // What this save did to the declaration, said out loud — a manifest-only save must never
+      // read as "nothing changed", and an inherited declaration is a fact the next edit depends on.
       if (r.note) notes.push(r.note);
-      else if (r.declaration === "present") notes.push("Declaration read from the document's #oma-manifest block.");
-      else if (r.declaration === "empty") notes.push("Empty #oma-manifest block — the stored declaration was cleared.");
+      if (r.manifest_action === "replaced") notes.push("Declaration replaced.");
+      else if (r.manifest_action === "cleared") notes.push("Declaration cleared (kind and Library filing reset too).");
+      // The one place suggested_kind speaks on a save: a "visual" that binds persistent data has
+      // outgrown its declaration. One sentence, fired only on the divergence with an action
+      // attached — the reverse case (an app with no bindings yet) is every half-built app and
+      // would be noise on each save. Reads the RESOLVED slots from the receipt, so an inherited
+      // slot is judged by what it actually is, not by what this call happened to carry.
+      const savedUi = a.ui !== undefined ? a.ui : null;
+      if (r.kind === "visual" && savedUi !== null && suggestedKind(savedUi, r.manifest ? JSON.parse(r.manifest) : null) === "app")
+        notes.push(`suggested_kind: app — this "visual" binds persistent data. Nothing changes by itself; promote_app {name: "${a.name}"} upgrades it in place if it has become a keeper.`);
       // Size pair on every save, unconditionally: a 82,623 → 74 char overwrite has to be visible
       // in the reply that caused it, not discoverable afterwards.
       const sizeNote = r.prev_size == null
         ? `${r.size.toLocaleString()} chars.`
         : `${r.prev_size.toLocaleString()} → ${r.size.toLocaleString()} chars.`;
+      // A ui rewrite over an EXISTING app is the "full rewrite" the R1 tripwire divides by: every
+      // one of these is an edit that did not go through edit_app. Creations are not edits, and a
+      // manifest-only save touches no document — both skip.
+      if (!r.created && a.ui !== undefined) recordEdit({ host: hostName(), app: a.name, mode: "rewrite", edits: 1,
+        req_bytes: a.ui.length, changed_bytes: a.ui.length, doc_bytes: r.size, outcome: "ok" });
       const lines = [
         `Saved "${a.name}" v${r.version}${r.created ? " (new app)" : " (updated)"} — ${sizeNote}`,
         ...notes,
@@ -539,7 +595,7 @@ export function register(ctx) {
       ];
       return toMcp(answer.ack(
         { ok: true, name: a.name, version: r.version, created: r.created, size: r.size,
-          prev_size: r.prev_size ?? null, declaration: r.declaration,
+          prev_size: r.prev_size ?? null, manifest_action: r.manifest_action,
           ...(notes.length ? { note: notes.join(" ") } : {}) },
         lines.join("\n"),
       ));
@@ -551,7 +607,7 @@ export function register(ctx) {
     {
       title: "Edit app source",
       annotations: WRITE,
-      description: "Surgical edits to an app WITHOUT round-tripping the whole source: each edit replaces old_string (which must match exactly once, or set replace_all) with new_string. All edits apply together against expected_version, or nothing applies. No pre-read needed for source you just saved — your copy is byte-exact and your receipt carries the version; get_app is for source you did not write. The #oma-manifest block is re-read on save.",
+      description: "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The #oma-manifest block is re-read on save.",
       inputSchema: {
         ...cmdArgs,
         // `app`, not `name` — save_app/get_app take `name`, and the split is
@@ -560,10 +616,13 @@ export function register(ctx) {
         app: z.string().describe("app name (this tool says `app`; save_app and get_app say `name`)"),
         expected_version: z.number().describe("REQUIRED — the version the edits were authored against (from get_app)"),
         edits: z.array(z.object({
-          old_string: z.string(),
+          old_string: z.string().optional().describe("STRING form: exact match including whitespace"),
           new_string: z.string(),
           replace_all: z.boolean().optional(),
-        })).describe("applied in order; exact string match including whitespace"),
+          offset: z.number().optional().describe("RANGE form: from get_app's offset"),
+          length: z.number().optional().describe("RANGE form: get_app's returned"),
+          expect_hash: z.string().optional().describe("RANGE form: get_app's hash for that window"),
+        })).describe("each item is RANGE (offset+length+expect_hash) or STRING (old_string)"),
       },
       outputSchema: saveAckSchema,
     },
@@ -586,80 +645,234 @@ export function register(ctx) {
       }
       const comp = store.getApp(a.app);
       if (!comp) return fail(`No app "${a.app}". list_apps shows what exists.`);
-      if (comp.version !== a.expected_version)
+      // Telemetry wrapper: every exit path of the apply below records ONE line (the R1 tripwire
+      // counts failures as first-class data — a structural-ambiguity error unrecorded is a
+      // tripwire that can never fire). `tel` closes over the request's fixed facts.
+      const edits = Array.isArray(a.edits) ? a.edits : [];
+      const rangeEdits = edits.filter((e) => e && (e.offset != null || e.length != null || e.expect_hash != null));
+      const stringEdits = edits.filter((e) => e && !(e.offset != null || e.length != null || e.expect_hash != null));
+      const mode = rangeEdits.length && stringEdits.length ? "mixed" : rangeEdits.length ? "range" : "string";
+      const changed = edits.reduce((s, e) => s + Math.max(e?.old_string?.length ?? e?.length ?? 0, e?.new_string?.length ?? 0), 0);
+      const tel = (outcome) => recordEdit({ host: hostName(), app: a.app, mode, edits: edits.length,
+        req_bytes: JSON.stringify(a.edits ?? "").length, changed_bytes: changed, doc_bytes: comp.ui.length, outcome });
+      if (comp.version !== a.expected_version) {
+        tel("version_conflict");
         return toMcp(answer.fail("version_conflict", { name: a.app, expected_version: comp.version },
           `"${a.app}" is at v${comp.version}, not v${a.expected_version} — re-read the region you are editing and re-apply.`), { isError: true });
-      const edits = Array.isArray(a.edits) ? a.edits : [];
-      if (!edits.length) return fail("No edits given — pass edits: [{old_string, new_string}].");
-      let html = comp.html;
-      for (let i = 0; i < edits.length; i++) {
-        const e = edits[i] || {};
+      }
+      if (!edits.length) return fail("No edits given — pass edits: [{offset, length, expect_hash, new_string}] (range) or [{old_string, new_string}] (string).");
+      for (let i = 0; i < rangeEdits.length; i++) {
+        const e = rangeEdits[i];
+        if (e.offset == null || e.length == null || !e.expect_hash) {
+          tel("bad_range");
+          return fail(`Edit ${edits.indexOf(e)}: a range edit needs ALL of offset, length and expect_hash (get_app returns all three). NOTHING was applied.`);
+        }
+      }
+      // Ranges first, against the ORIGINAL expected_version document (offsets never shift);
+      // string edits after, in order, on the intermediate result.
+      let html = comp.ui;
+      if (rangeEdits.length) {
+        const r = applyRangeEdits(html, rangeEdits);
+        if (!r.ok) { tel(r.error); return fail(`${r.detail}. NOTHING was applied.`); }
+        html = r.html;
+      }
+      for (let i = 0; i < stringEdits.length; i++) {
+        const e = stringEdits[i] || {};
         const oldS = String(e.old_string ?? "");
-        if (!oldS) return fail(`Edit ${i}: old_string is empty. NOTHING was applied.`);
+        if (!oldS) { tel("empty_old_string"); return fail(`Edit ${edits.indexOf(e)}: old_string is empty. NOTHING was applied.`); }
         const n = html.split(oldS).length - 1;
-        if (n === 0) return fail(`Edit ${i}: old_string not found (0 matches) — read that region again (get_app with offset) and match it exactly, including whitespace. NOTHING was applied.`);
-        if (n > 1 && !e.replace_all) return fail(`Edit ${i}: old_string matches ${n} times — add surrounding context to pin ONE occurrence, or set replace_all: true. NOTHING was applied.`);
+        if (n === 0) { tel("no_match"); return fail(`Edit ${edits.indexOf(e)}: old_string not found (0 matches) — read that region again (get_app with offset) and match it exactly, including whitespace. NOTHING was applied.`); }
+        if (n > 1 && !e.replace_all) { tel("multi_match"); return fail(`Edit ${edits.indexOf(e)}: old_string matches ${n} times — add surrounding context to pin ONE occurrence, or set replace_all: true. NOTHING was applied.`); }
         html = e.replace_all ? html.split(oldS).join(String(e.new_string ?? "")) : html.replace(oldS, String(e.new_string ?? ""));
       }
       // The apply is pure and the save is OCC-guarded, so read→apply→save is transaction-equivalent:
       // a concurrent save between the read above and this write turns into a version conflict, never
-      // a lost update. Empty description preserves the existing one (the store's '' rule).
+      // a lost update. Empty description preserves the existing one (the store's '' rule); the
+      // manifest slot is NOT passed — edit_app edits the ui, the declaration is inherited.
       const r = store.execute({
-        type: "save_app", command_id: a.command_id, name: a.app, html,
+        type: "save_app", command_id: a.command_id, name: a.app, ui: html,
         description: "", actor: a.actor || "agent", host: hostName(), expected_version: a.expected_version,
       });
       if (!r.ok) {
-        if (r.conflict) return toMcp(answer.fail("version_conflict", { name: a.app, expected_version: r.expected },
-          `Version conflict: "${a.app}" moved to v${r.expected} while editing — re-read and re-apply. NOTHING was applied.`), { isError: true });
+        if (r.conflict) {
+          tel("version_conflict");
+          return toMcp(answer.fail("version_conflict", { name: a.app, expected_version: r.expected },
+            `Version conflict: "${a.app}" moved to v${r.expected} while editing — re-read and re-apply. NOTHING was applied.`), { isError: true });
+        }
+        tel(r.error || "store_error");
         return fail(r.error === "bad_manifest" ? `The edited document's declaration is invalid: ${r.detail}. NOTHING was applied — fix the edit and retry.`
           : `${failNote(r)} NOTHING was applied.`);
       }
       if (r.idempotent)
         return toMcp(answer.ack({ ok: true, name: a.app, version: r.version, applied: edits.length, note: "already applied (idempotent replay)" },
           `Already applied — "${a.app}" is at v${r.version} from this same command_id.`));
+      const milestone = tel("ok");
+      // Same divergence sentence save_app fires, because an edit is just as capable of adding the
+      // first binding to a "visual" — and the author deserves the hint at the moment it happened.
+      // The manifest is the RESOLVED (inherited) one from the receipt, not something re-parsed.
+      const sk = r.kind === "visual" && suggestedKind(html, r.manifest ? JSON.parse(r.manifest) : null) === "app"
+        ? `suggested_kind: app — this "visual" now binds persistent data. Nothing changes by itself; promote_app {name: "${a.app}"} upgrades it in place if it has become a keeper.` : null;
       return toMcp(answer.ack(
         { ok: true, name: a.app, version: r.version, size: r.size, prev_size: r.prev_size ?? null,
-          applied: edits.length, declaration: r.declaration, ...(r.note ? { note: r.note } : {}) },
+          applied: edits.length, manifest_action: r.manifest_action, ...(r.note ? { note: r.note } : {}) },
         `Edited "${a.app}" — ${edits.length} edit(s) applied, v${a.expected_version} → v${r.version}, ${(r.prev_size ?? 0).toLocaleString()} → ${r.size.toLocaleString()} chars.` +
-          (r.note ? `\n${r.note}` : ""),
+          (r.note ? `\n${r.note}` : "") +
+          (sk ? `\n${sk}` : "") +
+          (milestone ? `\n[telemetry] ${milestone} qualified edits — time for the R1 tripwire report: node scripts/edit-telemetry-report.mjs (reviewer: Leo)` : ""),
       ));
     },
   );
 
   server.registerTool(
-    "archive_app",
+    "promote_app",
     {
-      title: "Archive / restore an app",
+      title: "Promote visual to app",
       annotations: WRITE,
-      description: "Flip an app out of (or back into) the default listing. Archived apps stay fully intact — data, files, history, still openable by name — they just stop occupying the shelf. list_apps {visibility: \"archived\"} shows them. This is the KEEP-everything half of the pair: to remove an app and the data only it used, delete_app with data:\"cascade\" (permanent).",
-      inputSchema: { ...cmdArgs, app: z.string(), archived: z.boolean().describe("true = archive; false = bring it back (listed)") },
+      description: "Upgrade a kind:\"visual\" app to a full app in ONE atomic step: the engine flips `kind` in the stored manifest, keeping every other declared key, and saves a new version (OCC-guarded, history kept). Already an app is a no-op; downgrades are refused — demoting is an author edit (save_app with the manifest), not a lifecycle verb.",
+      inputSchema: {
+        name: z.string().describe("an existing app with kind \"visual\" (list_apps {kind:\"visual\"} shows them)"),
+        command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
+      },
+      // The promote receipt: state facts only. `suggested_kind` never appears here or anywhere
+      // structured — see the diagnostic's comment at the top of this file.
       outputSchema: {
-        ok: z.boolean(), name: z.string().optional(), visibility: z.string().optional(),
-        version: z.number().optional(), reason: z.string().optional(), note: z.string().optional(), eot: z.string().optional(),
+        ok: z.boolean(), name: z.string().optional(), version: z.number().optional(),
+        kind: z.string().optional(), was: z.string().optional(),
+        reason: z.string().optional(), note: z.string().optional(), eot: z.string().optional(),
       },
     },
     async (a) => {
-      if (LOCKED_APPS.has(a.app)) return fail(`"${a.app}" is a system app — it stays.`);
-      const r = run({ ...a, name: a.app }, "archive_app");
-      if (!r.ok) return fail(failNote(r));
-      const vis = r.visibility ?? store.getApp(a.app)?.visibility;
-      const note = r.unchanged ? `already ${vis}` : r.idempotent ? "already applied (idempotent replay)" : undefined;
+      if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — its UI ships with the engine.`);
+      // Replay first, same rule as save/edit: the original promote consumed the "visual" state it
+      // needs, so a retry re-run from scratch would answer "already an app" instead of reaching
+      // the store's replay branch — a receipt, not a shrug.
+      if (a.command_id) {
+        const prior = store.priorReceipt(a.command_id);
+        if (prior) {
+          if (prior.event_type !== "component_saved" || prior.aggregate_id !== a.name)
+            return fail(failNote({ error: "command_id_reused" }));
+          return toMcp(answer.ack(
+            { ok: true, name: a.name, version: prior.seq, kind: "app", note: "already promoted (idempotent replay)" },
+            `Already promoted — "${a.name}" is at v${prior.seq} from this same command_id.`));
+        }
+      }
+      const comp = store.getApp(a.name);
+      if (!comp) return fail(`No app "${a.name}". list_apps {kind:"visual"} shows what can be promoted.`);
+      if (comp.kind === "app")
+        return toMcp(answer.ack(
+          { ok: true, name: a.name, version: comp.version, kind: "app", note: "already an app — nothing to do" },
+          `"${a.name}" is already kind "app" (v${comp.version}) — nothing to do.`));
+      if (comp.kind !== "visual")
+        return fail(`"${a.name}" is kind "${comp.kind}" — promote_app only upgrades "visual" to "app" ("primitive" is a reserved kind with no lifecycle verbs).`);
+      // The transaction (§8-R3): read the authoritative manifest, flip its kind, save it back as a
+      // whole-slot replacement — every OTHER key rides along untouched, which is exactly why this
+      // verb exists (a caller replacing the manifest by hand must first read and re-transmit it,
+      // and a forgotten key is a deleted key). The ui slot is inherited; OCC turns a concurrent
+      // save into a clean conflict, never a half-promoted app. Riding the save_app command — not
+      // a new one — is what makes provenance, undo, history and the invalidation bridge all hold
+      // without a second copy of any rule.
+      const manifest = comp.manifest ? JSON.parse(comp.manifest) : {};
+      const r = store.execute({
+        type: "save_app", command_id: a.command_id || randomUUID(), name: a.name,
+        manifest: { ...manifest, kind: "app" },
+        description: "", actor: "agent", host: hostName(), expected_version: comp.version,
+      });
+      if (!r.ok) {
+        if (r.conflict)
+          return toMcp(answer.fail("version_conflict",
+            { name: a.name, ...(r.expected != null ? { expected_version: r.expected } : {}) },
+            `"${a.name}" changed while promoting (now v${r.expected}) — call promote_app again; it re-reads.`), { isError: true });
+        return fail(failNote(r));
+      }
       return toMcp(answer.ack(
-        { ok: true, name: r.name ?? a.app, visibility: vis, version: r.version, ...(note ? { note } : {}) },
-        note ? `"${a.app}" — ${note} (v${r.version}).` : `"${a.app}" is now ${vis} (v${r.version}).`,
+        { ok: true, name: a.name, version: r.version, kind: "app", was: "visual" },
+        `Promoted "${a.name}" — kind visual → app, v${comp.version} → v${r.version}. Same ui, same declaration but for kind; history keeps every version.`,
       ));
     },
   );
 
-  // call_function has NO seat until the function pillar ships (OMA_FUNCTIONS, write-set F).
-  // The seat was briefly registered "up front so the surface never changes" — but a surface only
-  // changes at a release boundary anyway, and until then the seat was a schema every conversation
-  // paid for and a tool whose only behaviour was to refuse. Pulled 2026-07-27 (Leo: retire what
-  // is not in use). When F lands the seat returns WITH its executor, priced as one release-time
-  // cache break. The widget-side verb (oma.callFunction → rawCall) and the runner's shaping for
-  // it stay in place — they are the contract F plugs into, and they cost the surface nothing.
+  // archive_app's SEAT retired 2026-08-04 (elegance B2, Leo: remove now, re-add when an entry
+  // exists). The CONCEPT stays signed (visibility 'archived', the store's archive_app command,
+  // its ledger vocabulary and replay semantics — all intact and tested in ledger-smoke): today no
+  // surface offers an archive action, so the seat was 1,171 resident bytes with only tests as
+  // callers. The day settings grows an Archive button, the seat hooks straight back onto the
+  // store command — one release-time cache break, same as any seat arrival.
+
+  // call_function — the function pillar's single dispatcher (W3). The seat returned WITH its
+  // executor (the 2026-07-27 retirement's own condition: a registered tool whose only behaviour
+  // is to refuse is a schema every conversation pays for). It is OPT-IN per engine (ctx.functions):
+  // the local entrypoints turn it on, a hosted multi-tenant plane must never inherit same-process
+  // execution by accident — functions.mjs's header carries the whole §2.5-D mapping.
+  if (ctx.functions) {
+    const fnHost = makeFunctionHost(store);
+    server.registerTool(
+      "call_function",
+      {
+        title: "Call an app function",
+        // WRITE, not NOT_IDEMPOTENT: inner command_ids are derived from this call's command_id in
+        // issue order, so a retried call replays into the ledger's dedup instead of writing twice.
+        annotations: WRITE,
+        description: "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
+        // Passthrough for the same reason the item writes are: the runner stamps `via` (and forces
+        // `app`) on a widget's call, and a strip-mode schema would eat the stamp in transit.
+        // W5 (redesign B2, VOCAB): app and function mirror into Mcp-Param-App / Mcp-Param-Function
+        // so an EDGE can route and meter the inner operation without parsing the body — behind the
+        // dispatcher, Mcp-Name only ever says "call_function". The MUST-verify obligation
+        // (header↔body mismatch → -32020) is the SDK's on the modern wire (createMcpHandler),
+        // not ours; enforcement itself (rate limits, quotas) is the BFF's, never the header's.
+        inputSchema: z.object({
+          ...cmdArgs,
+          app: z.string().meta({ "x-mcp-header": "App" }),
+          function: z.string().meta({ "x-mcp-header": "Function" }),
+          args: z.record(z.string(), z.any()).optional(),
+        }).passthrough(),
+        outputSchema: {
+          ok: z.boolean(),
+          result: z.any().optional(),
+          writes: z.array(z.object({ op: z.string(), id: z.string(), collection: z.string(), seq: z.number(), idempotent: z.boolean().optional() })).optional(),
+          reason: z.string().optional(),
+          available: z.array(z.string()).optional(),
+          violations: z.array(z.string()).optional(),
+          note: z.string().optional(),
+          eot: z.string().optional(),
+        },
+      },
+      async (a) => {
+        const r = fnHost.call({
+          app: a.app, function: a.function, args: a.args,
+          actor: a.actor || "agent", host: hostName(),
+          command_id: a.command_id || randomUUID(),
+        });
+        if (r.ok) {
+          const wrote = r.writes.length
+            ? ` — ${r.writes.length} write${r.writes.length === 1 ? "" : "s"} (${r.writes.map((w) => `${w.op} ${w.id}`).join(", ")})`
+            : " — no writes";
+          return toMcp(answer.ack(
+            { ok: true, ...(r.result === null ? {} : { result: r.result }), writes: r.writes },
+            `Ran ${a.app}.${a.function}${wrote}.`));
+        }
+        const teach =
+          r.error === "no_such_function"
+            ? (r.available.length
+              ? `"${a.function}" is not declared by "${a.app}" — its functions are: ${r.available.join(", ")}.`
+              : `"${a.app}" declares no functions. An app declares them in manifest.functions with a matching body block — get_app_guide {topic: "functions"}.`)
+          : r.error === "bad_args"
+            ? `Arguments rejected: ${r.violations.join("; ")}. Declared params: ${JSON.stringify(r.params)}.`
+          : r.error === "no_such_app" ? `No app named "${a.app}" — list_apps shows what exists.`
+          : r.detail || r.error;
+        const body = {};
+        if (r.available) body.available = r.available;
+        if (r.violations) body.violations = r.violations;
+        if (r.writes && r.writes.length) body.writes = r.writes;
+        return toMcp(answer.fail(r.error, body, teach), { isError: true });
+      },
+    );
+  }
 
   // Handed back so engine.mjs can put it in ctx: library install and restore need to wire
   // an app that did not exist when this module ran.
-  return { registerApp };
+  // `hasApp` is the same Set, read-only: the invalidation bridge has to tell a FIRST save (the
+  // resource list grew) from a re-save (one resource's content moved), and this closure is the
+  // only place that knows which registrations exist.
+  return { registerApp, hasApp: (name) => registered.has(name) };
 }

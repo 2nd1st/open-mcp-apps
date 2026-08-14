@@ -47,9 +47,9 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ![Claude——新对话里打开同一个 reading list,已经攒到八本](.github/screenshots/host-claude.webp)
 
-内置 library 自带 17 个现成 app——真实可交互的活预览,一键安装:
+内置 App Store 自带 21 个现成 app——真实可交互的活预览,一键安装:
 
-![组件库——现成 app 的活预览](.github/screenshots/library.webp)
+![App Store——现成 app 的活预览](.github/screenshots/app-store.webp)
 
 | | |
 |---|---|
@@ -151,15 +151,15 @@ PORT=9000      # 换个地方起
 | `src/shell.mjs` | 在提供时用 runtime + design-token 兜底包裹存储的 HTML |
 | `src/guide.mjs` | AI 生成组件前读的 authoring 契约 |
 | `install-app.mjs` | 安装你自己写的 app(从文件)——唯一一扇不经过 AI 的注册表入口 |
-| `components/` | seed 时装 3 个 system 组件(settings、dashboard、library)+ 17 个 library app——不自动安装;在 library app 里浏览、带示例数据实时预览、一键安装 |
+| `components/` | seed 时装 3 个 system 组件(settings、dashboard、app-store)+ 21 个 App Store app——不自动安装;在 app-store app 里浏览、带示例数据实时预览、一键安装 |
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 419 条断言,走真实 stdio——含运行时组件创建
-node test/http-smoke.mjs     #  53 条断言,走 HTTP transport(含 SSE /events、viewer)
+node test/server-smoke.mjs   # 421 条断言,走真实 stdio——含运行时组件创建
+node test/http-smoke.mjs     #  61 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验组件 author(信任层)不可被覆写
-node test/seed-smoke.mjs     #  14 条断言,验 seed / design-kit 流水线
-node test/files-smoke.mjs    #  45 条断言,验 per-app 文件存储(分块上传、GC 竞态)
+node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
+node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
 ```
 
 ### 自己写一个 app(场外开发)
@@ -197,7 +197,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 一个沙箱化的 `srcdoc` iframe,CSP-first 文档 + 最小只读 bridge——作为任何非本地可信组件的强制执行模式;
 另有保留的 `security:*` / `policy:*` 配置 key(通用 data 写入碰不到)和一个 out-of-band 特权写入器。
 
-**诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 library 的 app(全部第一方出品)——
+**诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 App Store 的 app(全部第一方出品)——
 都以 direct mode 全信任本地运行;目前还没有任何第三方内容需要沙箱。runner *已建成并测试过,但处于休眠*:
 它是将来共享/发布组件的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
 [`SECURITY.md`](SECURITY.md)。
@@ -225,7 +225,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 验证。
 
 - [x] 引擎:registry + shell + 通用 data command + ledger
-- [x] 只装 system 组件(settings、dashboard、library);17 个 library app 可在 library 里浏览预览、一键安装
+- [x] 只装 system 组件(settings、dashboard、app-store);21 个 App Store app 可在 app-store 里浏览预览、一键安装
 - [x] AI 组件创建循环(guide → save → 动态 tool)
 - [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key

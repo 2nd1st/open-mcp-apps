@@ -1,0 +1,1745 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Savings Goals</title>
+  <meta name="description" content="Savings goals with progress bars, targets, and projected finish dates.">
+  <meta name="oma-category" content="Money">
+  <style>
+  * { box-sizing: border-box; }
+
+  :root {
+    color-scheme: light dark;
+    --accent: var(--color-text-info, var(--color-ring-primary));
+    --success: var(--color-text-success);
+    --warning: var(--color-text-warning, var(--accent));
+    --danger: var(--color-text-danger);
+    --ease: cubic-bezier(.2, .8, .3, 1);
+  }
+
+  body {
+    margin: 0;
+    padding: 14px;
+    overflow: hidden;
+    color: var(--color-text-primary);
+    background: transparent;
+    font-family: var(--font-sans);
+    font-size: var(--font-text-md-size);
+  }
+
+  button,
+  input {
+    font: inherit;
+  }
+
+  button {
+    cursor: pointer;
+  }
+
+  button:focus-visible,
+  input:focus-visible {
+    outline: 2px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+
+  button:disabled {
+    cursor: default;
+    opacity: .38;
+  }
+
+  #shell {
+    width: min(100%, 920px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+
+  .topbar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 68px;
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-width: 0;
+  }
+
+  .brand > div:last-child {
+    min-width: 0;
+  }
+
+  .brand-mark {
+    display: grid;
+    place-items: center;
+    width: 37px;
+    height: 37px;
+    flex: 0 0 auto;
+    border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(
+      145deg,
+      color-mix(in oklab, var(--accent) 16%, var(--color-background-primary)),
+      color-mix(in oklab, var(--success) 7%, var(--color-background-primary))
+    );
+    color: var(--accent);
+  }
+
+  .brand-mark svg {
+    width: 21px;
+    height: 21px;
+  }
+
+  .kicker {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: .11em;
+    text-transform: uppercase;
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.01em;
+  }
+
+  #shellSummary {
+    margin-top: 3px;
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+
+  .top-actions {
+    display: flex;
+    gap: 8px;
+    margin-left: auto;
+  }
+
+  .button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    min-height: 36px;
+    padding: 8px 12px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-md);
+    color: var(--color-text-primary);
+    background: var(--color-background-primary);
+    font-size: var(--font-text-sm-size);
+    font-weight: 650;
+    line-height: 1;
+    white-space: nowrap;
+  }
+
+  .button svg {
+    width: 15px;
+    height: 15px;
+    flex: 0 0 auto;
+  }
+
+  .button.with-icon {
+    display: inline-flex;
+  }
+
+  .button.primary {
+    border-color: color-mix(in oklab, var(--accent) 32%, var(--color-border-primary));
+    color: var(--color-text-inverse);
+    background: var(--accent);
+    box-shadow: 0 4px 12px color-mix(in oklab, var(--accent) 20%, transparent);
+  }
+
+  .button.ghost {
+    background: var(--color-background-primary);
+  }
+
+  .overview {
+    display: grid;
+    grid-template-columns: minmax(200px, 1.35fr) repeat(3, minmax(100px, .55fr));
+    gap: 12px;
+    padding: 14px 16px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--accent) 5%, var(--color-background-secondary));
+    font-variant-numeric: tabular-nums;
+  }
+
+  .overview-primary {
+    min-width: 0;
+    padding-right: 16px;
+    border-right: 1px solid var(--color-border-secondary);
+  }
+
+  .overview-label,
+  .stat-label {
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    font-weight: 750;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .overview-value {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 3px;
+  }
+
+  #portfolioPercent {
+    font-size: clamp(32px, 6vw, 42px);
+    line-height: 1;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.045em;
+  }
+
+  #portfolioCaption {
+    overflow: hidden;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .stat {
+    min-width: 0;
+    align-self: center;
+  }
+
+  .stat-value {
+    display: block;
+    overflow: hidden;
+    margin-top: 5px;
+    font-size: 15px;
+    font-weight: 800;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .composer {
+    display: none;
+    padding: 14px 18px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-background-secondary) 76%, transparent);
+  }
+
+  #shell.composing .composer {
+    display: block;
+  }
+
+  .composer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+
+  .composer-head strong {
+    font-size: 13px;
+  }
+
+  .close-composer {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    border: 0;
+    border-radius: var(--border-radius-full);
+    color: var(--color-text-secondary);
+    background: transparent;
+    font-size: 19px;
+  }
+
+  #goalForm {
+    display: grid;
+    grid-template-columns: minmax(150px, 1.5fr) repeat(2, minmax(96px, .65fr)) 82px minmax(132px, .8fr) 74px auto;
+    gap: 8px;
+  }
+
+  .field {
+    min-width: 0;
+  }
+
+  .field label {
+    display: block;
+    margin: 0 0 5px 2px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    font-weight: 750;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+  }
+
+  .field input {
+    width: 100%;
+    min-width: 0;
+    height: 37px;
+    padding: 8px 9px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-sm);
+    color: var(--color-text-primary);
+    background: var(--color-background-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .form-submit {
+    align-self: end;
+    height: 37px;
+  }
+
+  #goalScroll {
+    max-height: none;
+    overflow: visible;
+    overscroll-behavior: auto;
+  }
+
+  #shell.composing #goalScroll {
+    max-height: none;
+  }
+
+  .goal-section {
+    padding: 0 17px 16px;
+  }
+
+  .section-head {
+    position: sticky;
+    z-index: 4;
+    top: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 43px;
+    padding: 12px 2px 8px;
+    color: var(--color-text-secondary);
+    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
+    backdrop-filter: blur(12px);
+  }
+
+  .section-head::after {
+    height: 1px;
+    flex: 1;
+    margin-left: 4px;
+    content: "";
+    background: var(--color-border-secondary);
+  }
+
+  .section-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: var(--border-radius-full);
+    background: var(--accent);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--accent) 10%, transparent);
+  }
+
+  .reached-section .section-dot {
+    background: var(--success);
+    box-shadow: 0 0 0 4px color-mix(in oklab, var(--success) 11%, transparent);
+  }
+
+  .section-name {
+    color: var(--color-text-primary);
+    font-size: 12px;
+    font-weight: 850;
+    letter-spacing: .07em;
+    text-transform: uppercase;
+  }
+
+  .section-count {
+    font: 700 11px/1 var(--font-mono);
+    color: var(--color-text-tertiary);
+  }
+
+  .goal-list {
+    display: grid;
+    gap: 9px;
+  }
+
+  .goal-card {
+    --goal-accent: var(--accent);
+    position: relative;
+    display: grid;
+    grid-template-columns: 58px 90px minmax(0, 1fr) 178px;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    padding: 14px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    background:
+      linear-gradient(
+        110deg,
+        color-mix(in oklab, var(--goal-accent) 5%, var(--color-background-primary)),
+        var(--color-background-primary) 45%
+      );
+    box-shadow: var(--shadow-sm);
+  }
+
+  .goal-card::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    content: "";
+    background: var(--goal-accent);
+    opacity: .72;
+  }
+
+  .goal-card.priority-secondary {
+    --goal-accent: color-mix(in oklab, var(--accent) 70%, var(--color-text-secondary));
+  }
+
+  .goal-card.priority-tertiary {
+    --goal-accent: color-mix(in oklab, var(--accent) 48%, var(--color-text-tertiary));
+  }
+
+  .goal-card.reached {
+    --goal-accent: var(--success);
+    border-color: color-mix(in oklab, var(--success) 24%, var(--color-border-primary));
+    background:
+      linear-gradient(
+        110deg,
+        color-mix(in oklab, var(--success) 9%, var(--color-background-primary)),
+        var(--color-background-primary) 48%
+      );
+  }
+
+  .rank {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    border-right: 1px solid var(--color-border-secondary);
+  }
+
+  .rank-label {
+    color: var(--color-text-tertiary);
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  .rank-number {
+    margin: 2px 0 4px;
+    font: 850 19px/1 var(--font-mono);
+    color: var(--goal-accent);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rank-buttons {
+    display: flex;
+    gap: 2px;
+  }
+
+  .rank-button,
+  .remove-button {
+    display: grid;
+    place-items: center;
+    height: 25px;
+    padding: 0 6px;
+    border: 0;
+    border-radius: var(--border-radius-sm);
+    color: var(--color-text-tertiary);
+    background: transparent;
+    font-size: 12px;
+  }
+
+  .ring-wrap {
+    position: relative;
+    width: 84px;
+    height: 84px;
+    color: var(--goal-accent);
+  }
+
+  .ring-svg {
+    display: block;
+    width: 84px;
+    height: 84px;
+    overflow: visible;
+    transform: rotate(-90deg);
+  }
+
+  .ring-track,
+  .ring-value {
+    fill: none;
+    stroke-width: 7;
+  }
+
+  .ring-track {
+    stroke: color-mix(in oklab, var(--goal-accent) 13%, transparent);
+  }
+
+  .ring-value {
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-dasharray: 226.2;
+    stroke-dashoffset: var(--dash);
+    filter: drop-shadow(0 3px 5px color-mix(in oklab, var(--goal-accent) 22%, transparent));
+  }
+
+  .ring-label {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    font: 850 16px/1 var(--font-mono);
+    color: var(--color-text-primary);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .sparkles {
+    position: absolute;
+    inset: -5px;
+    pointer-events: none;
+  }
+
+  .sparkle {
+    position: absolute;
+    color: var(--success);
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .sparkle:nth-child(1) { top: 0; right: 9px; }
+  .sparkle:nth-child(2) { right: -1px; bottom: 17px; font-size: 8px; }
+  .sparkle:nth-child(3) { bottom: -1px; left: 13px; font-size: 9px; }
+
+  .goal-details {
+    min-width: 0;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 0;
+  }
+
+  .title-row h3 {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    font-size: 16px;
+    line-height: 1.25;
+    letter-spacing: -.012em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .status-pill {
+    flex: 0 0 auto;
+    padding: 4px 7px;
+    border-radius: var(--border-radius-full);
+    color: var(--goal-accent);
+    background: color-mix(in oklab, var(--goal-accent) 10%, transparent);
+    font-size: 9px;
+    font-weight: 850;
+    letter-spacing: .06em;
+    text-transform: uppercase;
+  }
+
+  .amount-row {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    margin-top: 7px;
+    min-width: 0;
+  }
+
+  .amount-current {
+    font-size: 19px;
+    font-weight: 850;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -.025em;
+  }
+
+  .amount-target {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .goal-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 13px;
+    margin-top: 8px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+  }
+
+  .meta-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+
+  .meta-item svg {
+    width: 12px;
+    height: 12px;
+    flex: 0 0 auto;
+    color: var(--color-text-tertiary);
+  }
+
+  .meta-item strong {
+    color: var(--color-text-primary);
+    font-weight: 750;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .goal-action {
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 7px;
+    min-width: 0;
+  }
+
+  .fund-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 6px;
+  }
+
+  .fund-input {
+    width: 100%;
+    min-width: 0;
+    height: 34px;
+    padding: 7px 8px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-sm);
+    color: var(--color-text-primary);
+    background: var(--color-background-primary);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .fund-button {
+    min-width: 51px;
+    height: 34px;
+    padding: 0 9px;
+    border: 0;
+    border-radius: var(--border-radius-sm);
+    color: var(--color-text-inverse);
+    background: var(--goal-accent);
+    font-size: 11px;
+    font-weight: 850;
+  }
+
+  .action-foot {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 25px;
+  }
+
+  .action-hint {
+    overflow: hidden;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .complete-note {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 42px;
+    padding: 9px 10px;
+    border: 1px solid color-mix(in oklab, var(--success) 23%, transparent);
+    border-radius: var(--border-radius-md);
+    color: var(--success);
+    background: color-mix(in oklab, var(--success) 8%, transparent);
+    font-size: 12px;
+    font-weight: 800;
+  }
+
+  .complete-note svg {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 auto;
+  }
+
+  .remove-button {
+    margin-left: auto;
+  }
+
+  .empty {
+    margin: 17px;
+    padding: 38px 22px;
+    border: 1px dashed var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    text-align: center;
+    color: var(--color-text-secondary);
+    background: color-mix(in oklab, var(--color-background-secondary) 52%, transparent);
+  }
+
+  .empty-mark {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    margin: 0 auto 11px;
+    border-radius: var(--border-radius-full);
+    color: var(--accent);
+    background: color-mix(in oklab, var(--accent) 10%, transparent);
+    font-size: 22px;
+  }
+
+  .empty strong {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--color-text-primary);
+  }
+
+  .empty span {
+    font-size: var(--font-text-sm-size);
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .button,
+    .rank-button,
+    .remove-button,
+    .goal-card,
+    .fund-button,
+    .close-composer {
+      transition:
+        transform 180ms var(--ease),
+        border-color 180ms var(--ease),
+        background-color 180ms var(--ease),
+        box-shadow 180ms var(--ease);
+    }
+
+    .button:hover,
+    .goal-card:hover {
+      transform: translateY(-2px);
+    }
+
+    .goal-card:hover {
+      border-color: color-mix(in oklab, var(--goal-accent) 30%, var(--color-border-primary));
+      box-shadow: var(--shadow-md, var(--shadow-sm));
+    }
+
+    .button:active,
+    .rank-button:active,
+    .remove-button:active,
+    .fund-button:active,
+    .close-composer:active {
+      transform: scale(.96);
+    }
+
+    .rank-button:hover,
+    .remove-button:hover,
+    .close-composer:hover {
+      color: var(--color-text-primary);
+      background: color-mix(in oklab, var(--color-text-primary) 6%, transparent);
+    }
+
+    .ring-value {
+      animation: ring-draw 760ms var(--ease) both;
+    }
+
+    .just-funded {
+      animation: save-pop 480ms cubic-bezier(.34, 1.56, .64, 1);
+    }
+
+    .sparkle {
+      animation: celebrate 850ms cubic-bezier(.34, 1.56, .64, 1) both;
+    }
+
+    .sparkle:nth-child(2) { animation-delay: 90ms; }
+    .sparkle:nth-child(3) { animation-delay: 160ms; }
+
+    @keyframes ring-draw {
+      from { stroke-dashoffset: 226.2; }
+      to { stroke-dashoffset: var(--dash); }
+    }
+
+    @keyframes save-pop {
+      0% { transform: scale(.985); }
+      52% { transform: scale(1.012); box-shadow: 0 10px 28px color-mix(in oklab, var(--goal-accent) 18%, transparent); }
+      100% { transform: scale(1); }
+    }
+
+    @keyframes celebrate {
+      0% { opacity: 0; transform: scale(.25) rotate(-18deg); }
+      55% { opacity: 1; transform: scale(1.25) rotate(8deg); }
+      100% { opacity: .82; transform: scale(1) rotate(0); }
+    }
+  }
+
+  @media (max-width: 760px) {
+    .overview {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .overview-primary {
+      grid-column: 1 / -1;
+      padding: 0 0 12px;
+      border-right: 0;
+      border-bottom: 1px solid var(--color-border-secondary);
+    }
+
+    #goalForm {
+      grid-template-columns: repeat(3, 1fr);
+    }
+
+    .title-field,
+    .date-field {
+      grid-column: span 2;
+    }
+
+    .form-submit {
+      width: 100%;
+    }
+
+    .goal-card {
+      grid-template-columns: 54px 84px minmax(0, 1fr);
+    }
+
+    .goal-action {
+      grid-column: 3;
+      width: min(100%, 250px);
+    }
+  }
+
+  @media (max-width: 640px) {
+    body {
+      padding: 8px;
+    }
+
+    .topbar {
+      min-height: 60px;
+      padding: 11px 12px;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+    }
+
+    .brand-mark svg {
+      width: 20px;
+      height: 20px;
+    }
+
+    #shellSummary {
+      max-width: 180px;
+      display: -webkit-box;
+      overflow: hidden;
+      line-height: 1.3;
+      white-space: normal;
+      -webkit-box-orient: vertical;
+      -webkit-line-clamp: 2;
+    }
+
+    #addGoalButton span {
+      display: none;
+    }
+
+    #addGoalButton {
+      width: 36px;
+      padding: 0;
+    }
+
+    .overview {
+      gap: 10px;
+      padding: 12px;
+    }
+
+    .stat-value {
+      font-size: 13px;
+    }
+
+    .composer {
+      padding: 13px;
+    }
+
+    #goalForm {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .title-field,
+    .date-field {
+      grid-column: 1 / -1;
+    }
+
+    .goal-section {
+      padding-inline: 9px;
+    }
+
+    .goal-card {
+      grid-template-columns: 46px 72px minmax(0, 1fr);
+      gap: 9px;
+      padding: 11px 10px;
+    }
+
+    .rank {
+      margin-left: -2px;
+    }
+
+    .ring-wrap,
+    .ring-svg {
+      width: 70px;
+      height: 70px;
+    }
+
+    .ring-label {
+      font-size: 13px;
+    }
+
+    .title-row {
+      flex-wrap: wrap;
+      gap: 5px;
+    }
+
+    .title-row h3 {
+      width: 100%;
+      font-size: 14px;
+    }
+
+    .amount-current {
+      font-size: 16px;
+    }
+
+    .amount-target,
+    .goal-meta {
+      font-size: 10px;
+    }
+
+    .goal-action {
+      grid-column: 2 / -1;
+      width: 100%;
+      padding-left: 2px;
+    }
+  }
+
+  @media (max-width: 410px) {
+    .topbar {
+      gap: 8px;
+    }
+
+    .top-actions {
+      gap: 6px;
+    }
+
+    #planButton span {
+      display: none;
+    }
+
+    #planButton {
+      width: 36px;
+      padding: 0;
+    }
+
+    .overview {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .overview-primary {
+      grid-column: 1 / -1;
+    }
+
+    .stat:last-child {
+      grid-column: 1 / -1;
+    }
+
+    .goal-card {
+      grid-template-columns: 43px 1fr;
+    }
+
+    .ring-wrap {
+      grid-column: 2;
+    }
+
+    .goal-details,
+    .goal-action {
+      grid-column: 1 / -1;
+    }
+
+    .rank {
+      grid-row: 1;
+      border-right: 0;
+    }
+  }
+</style>
+
+</head>
+<body>
+<div id="shell">
+  <header class="topbar">
+    <div class="brand">
+      <div class="brand-mark" aria-hidden="true">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7.5 6.5h9M8.5 4h7M6.5 9.5h11l1 9A1.5 1.5 0 0 1 17 20H7a1.5 1.5 0 0 1-1.5-1.5l1-9Z"/>
+          <path d="M9 13.5h6M12 11v5"/>
+        </svg>
+      </div>
+      <div>
+        <div class="kicker">MONEY GOALS</div>
+        <h1>Savings runway</h1>
+        <div id="shellSummary">Prioritized targets, clear progress</div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button id="planButton" class="button ghost with-icon" type="button" aria-label="Plan with AI">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M5 17.5 3.5 21l3.8-1.2A9 9 0 1 0 5 17.5Z"/>
+          <path d="M8 12h8M8 8.5h5"/>
+        </svg>
+        <span>Plan with AI</span>
+      </button>
+      <button id="addGoalButton" class="button primary with-icon" type="button" aria-label="Add goal" aria-expanded="false" aria-controls="goalComposer">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+          <path d="M12 5v14M5 12h14"/>
+        </svg>
+        <span>Add goal</span>
+      </button>
+    </div>
+  </header>
+
+  <section class="overview" aria-label="Savings overview">
+    <div class="overview-primary">
+      <div class="overview-label">Portfolio progress</div>
+      <div class="overview-value">
+        <span id="portfolioPercent">0%</span>
+        <span id="portfolioCaption">Getting started</span>
+      </div>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Saved</span>
+      <span id="savedStat" class="stat-value">—</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Active</span>
+      <span id="activeStat" class="stat-value">0 goals</span>
+    </div>
+    <div class="stat">
+      <span class="stat-label">Next target</span>
+      <span id="dueStat" class="stat-value">—</span>
+    </div>
+  </section>
+
+  <section id="goalComposer" class="composer" aria-label="Add a savings goal">
+    <div class="composer-head">
+      <strong>Set a new target</strong>
+      <button id="closeComposer" class="close-composer" type="button" aria-label="Close goal form">×</button>
+    </div>
+    <form id="goalForm">
+      <div class="field title-field">
+        <label for="goalTitle">Goal</label>
+        <input id="goalTitle" maxlength="80" placeholder="Emergency cushion" autocomplete="off" required>
+      </div>
+      <div class="field">
+        <label for="goalTarget">Target</label>
+        <input id="goalTarget" type="number" min="0.01" step="0.01" placeholder="10000" required>
+      </div>
+      <div class="field">
+        <label for="goalCurrent">Saved</label>
+        <input id="goalCurrent" type="number" min="0" step="0.01" value="0" required>
+      </div>
+      <div class="field">
+        <label for="goalCurrency">Currency</label>
+        <input id="goalCurrency" maxlength="3" value="USD" aria-label="Three-letter currency code" required>
+      </div>
+      <div class="field date-field">
+        <label for="goalDate">Target date</label>
+        <input id="goalDate" type="date" required>
+      </div>
+      <div class="field">
+        <label for="goalPriority">Priority</label>
+        <input id="goalPriority" type="number" min="1" step="1" value="1" required>
+      </div>
+      <button class="button primary form-submit" type="submit">Save goal</button>
+    </form>
+  </section>
+
+  <main id="goalScroll" aria-live="polite"></main>
+</div>
+
+<script type="module">
+  let latestState = { items: [] };
+  let seedStarted = false;
+  let justFundedId = "";
+  let popTimer = null;
+
+  const shell = document.getElementById("shell");
+  const goalScroll = document.getElementById("goalScroll");
+  const addGoalButton = document.getElementById("addGoalButton");
+  const goalCurrency = document.getElementById("goalCurrency");
+
+  function cleanCurrency(value) {
+    const code = String(value || oma.pref("currency", "USD")).trim().toUpperCase();
+    return /^[A-Z]{3}$/.test(code) ? code : "USD";
+  }
+
+  function locale() {
+    const value = oma.pref("locale", "auto");
+    return value === "auto" ? navigator.language : value;
+  }
+
+  function amount(item, key) {
+    return Math.max(0, Number(item.fields[key]) || 0);
+  }
+
+  function priority(item) {
+    return Math.max(1, Math.round(Number(item.fields.priority) || 999));
+  }
+
+  function progress(item) {
+    const target = amount(item, "target_amount");
+    return target > 0 ? Math.min(100, Math.max(0, amount(item, "current_amount") / target * 100)) : 0;
+  }
+
+  function formatMoney(value, currency, compact = false) {
+    const code = cleanCurrency(currency);
+    try {
+      return new Intl.NumberFormat(locale(), {
+        style: "currency",
+        currency: code,
+        notation: compact && Math.abs(value) >= 10000 ? "compact" : "standard",
+        maximumFractionDigits: compact && Math.abs(value) >= 10000 ? 1 : 2
+      }).format(Number(value) || 0);
+    } catch {
+      return `${code} ${(Number(value) || 0).toLocaleString(locale(), { maximumFractionDigits: 2 })}`;
+    }
+  }
+
+  function parseDate(value) {
+    const date = new Date(`${String(value || "")}T12:00:00`);
+    return Number.isNaN(date.getTime()) ? null : date;
+  }
+
+  function formatDate(value) {
+    const date = parseDate(value);
+    if (!date) return "No date";
+    const preference = oma.pref("date_format", "auto");
+    if (preference === "yyyy-mm-dd") return String(value);
+    const day = String(date.getDate()).padStart(2, "0");
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    if (preference === "dd/mm/yyyy") return `${day}/${month}/${date.getFullYear()}`;
+    if (preference === "mm/dd/yyyy") return `${month}/${day}/${date.getFullYear()}`;
+    return new Intl.DateTimeFormat(locale(), { day: "numeric", month: "short", year: "numeric" }).format(date);
+  }
+
+  function daysUntil(value) {
+    const date = parseDate(value);
+    if (!date) return null;
+    const now = new Date();
+    now.setHours(0, 0, 0, 0);
+    return Math.ceil((date.getTime() - now.getTime()) / 86400000);
+  }
+
+  function deadlineText(value) {
+    const days = daysUntil(value);
+    if (days === null) return "No target date";
+    if (days < 0) return `${Math.abs(days)}d past target`;
+    if (days === 0) return "Due today";
+    if (days === 1) return "1 day left";
+    if (days < 60) return `${days} days left`;
+    return `${Math.ceil(days / 30.44)} months left`;
+  }
+
+  function paceText(item) {
+    const remaining = Math.max(0, amount(item, "target_amount") - amount(item, "current_amount"));
+    const days = daysUntil(item.fields.target_date);
+    if (!remaining) return "Fully funded";
+    if (days === null || days <= 0) return "Target date passed";
+    const months = Math.max(days / 30.44, 1);
+    return `${formatMoney(remaining / months, item.fields.currency, true)}/mo pace`;
+  }
+
+  function sortGoals(items) {
+    return [...items].sort((a, b) =>
+      priority(a) - priority(b) ||
+      String(a.fields.target_date || "").localeCompare(String(b.fields.target_date || "")) ||
+      a.position - b.position
+    );
+  }
+
+  function icon(path) {
+    const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("fill", "none");
+    svg.setAttribute("stroke", "currentColor");
+    svg.setAttribute("stroke-width", "1.9");
+    svg.setAttribute("aria-hidden", "true");
+    svg.innerHTML = path;
+    return svg;
+  }
+
+  function createMeta(svgPath, content) {
+    const element = document.createElement("span");
+    element.className = "meta-item";
+    element.append(icon(svgPath), content);
+    return element;
+  }
+
+  async function nudgePriority(item, direction) {
+    const group = item.group === "reached" ? "reached" : "active";
+    const peers = sortGoals(latestState.items.filter(candidate =>
+      (candidate.group === "reached" ? "reached" : "active") === group
+    ));
+    const index = peers.findIndex(candidate => candidate.id === item.id);
+    const destination = index + direction;
+    if (index < 0 || destination < 0 || destination >= peers.length) return;
+
+    const other = peers[destination];
+    const itemPriority = priority(item);
+    const otherPriority = priority(other);
+    await Promise.all([
+      oma.updateItem(item.id, {
+        priority: itemPriority === otherPriority ? destination + 1 : otherPriority
+      }),
+      oma.updateItem(other.id, {
+        priority: itemPriority === otherPriority ? index + 1 : itemPriority
+      })
+    ]);
+  }
+
+  function createRank(item, index, count) {
+    const rank = document.createElement("div");
+    rank.className = "rank";
+
+    const label = document.createElement("span");
+    label.className = "rank-label";
+    label.textContent = "Priority";
+
+    const number = document.createElement("span");
+    number.className = "rank-number";
+    number.textContent = `#${priority(item)}`;
+
+    const controls = document.createElement("div");
+    controls.className = "rank-buttons";
+
+    const up = document.createElement("button");
+    up.type = "button";
+    up.className = "rank-button";
+    up.textContent = "↑";
+    up.title = "Increase priority";
+    up.setAttribute("aria-label", `Move ${item.fields.title || "goal"} up`);
+    up.disabled = index === 0;
+    up.onclick = () => nudgePriority(item, -1);
+
+    const down = document.createElement("button");
+    down.type = "button";
+    down.className = "rank-button";
+    down.textContent = "↓";
+    down.title = "Decrease priority";
+    down.setAttribute("aria-label", `Move ${item.fields.title || "goal"} down`);
+    down.disabled = index === count - 1;
+    down.onclick = () => nudgePriority(item, 1);
+
+    controls.append(up, down);
+    rank.append(label, number, controls);
+    return rank;
+  }
+
+  function createRing(item) {
+    const percent = progress(item);
+    const dash = 226.2 * (1 - percent / 100);
+    const ring = document.createElement("div");
+    ring.className = "ring-wrap";
+    ring.innerHTML = `
+      <svg class="ring-svg" viewBox="0 0 84 84" role="img" aria-label="${Math.round(percent)} percent saved">
+        <circle class="ring-track" cx="42" cy="42" r="36"></circle>
+        <circle class="ring-value" cx="42" cy="42" r="36" style="--dash:${dash.toFixed(2)}"></circle>
+      </svg>
+      <span class="ring-label">${Math.round(percent)}%</span>
+    `;
+
+    if (percent >= 100 || item.group === "reached") {
+      const sparkles = document.createElement("span");
+      sparkles.className = "sparkles";
+      sparkles.setAttribute("aria-hidden", "true");
+      for (let i = 0; i < 3; i++) {
+        const sparkle = document.createElement("span");
+        sparkle.className = "sparkle";
+        sparkle.textContent = "✦";
+        sparkles.appendChild(sparkle);
+      }
+      ring.appendChild(sparkles);
+    }
+    return ring;
+  }
+
+  function createDetails(item, reached) {
+    const details = document.createElement("div");
+    details.className = "goal-details";
+
+    const titleRow = document.createElement("div");
+    titleRow.className = "title-row";
+
+    const title = document.createElement("h3");
+    title.textContent = item.fields.title || "Untitled goal";
+
+    const status = document.createElement("span");
+    status.className = "status-pill";
+    status.textContent = reached ? "Reached" : "Active";
+    titleRow.append(title, status);
+
+    const amountRow = document.createElement("div");
+    amountRow.className = "amount-row";
+
+    const current = document.createElement("span");
+    current.className = "amount-current";
+    current.textContent = formatMoney(amount(item, "current_amount"), item.fields.currency, true);
+
+    const target = document.createElement("span");
+    target.className = "amount-target";
+    target.textContent = `of ${formatMoney(amount(item, "target_amount"), item.fields.currency, true)}`;
+    amountRow.append(current, target);
+
+    const remaining = Math.max(0, amount(item, "target_amount") - amount(item, "current_amount"));
+    const meta = document.createElement("div");
+    meta.className = "goal-meta";
+
+    const remainingValue = document.createElement("span");
+    remainingValue.innerHTML = reached
+      ? "<strong>Complete</strong>"
+      : `<strong>${formatMoney(remaining, item.fields.currency, true)}</strong> to go`;
+
+    const dateValue = document.createElement("span");
+    dateValue.textContent = `${formatDate(item.fields.target_date)} · ${deadlineText(item.fields.target_date)}`;
+
+    const paceValue = document.createElement("span");
+    paceValue.textContent = paceText(item);
+
+    meta.append(
+      createMeta('<path d="M12 2v20M17 5.5H9.5a3 3 0 0 0 0 6h5a3 3 0 0 1 0 6H6"/>', remainingValue),
+      createMeta('<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/>', dateValue),
+      createMeta('<path d="m4 17 5-5 4 4 7-8"/><path d="M15 8h5v5"/>', paceValue)
+    );
+
+    details.append(titleRow, amountRow, meta);
+    return details;
+  }
+
+  function createAction(item, reached) {
+    const action = document.createElement("div");
+    action.className = "goal-action";
+
+    if (reached) {
+      const complete = document.createElement("div");
+      complete.className = "complete-note";
+      complete.append(
+        icon('<circle cx="12" cy="12" r="9"/><path d="m8 12 2.5 2.5L16.5 8.5"/>'),
+        document.createTextNode("Target reached")
+      );
+      action.appendChild(complete);
+    } else {
+      const form = document.createElement("form");
+      form.className = "fund-form";
+
+      const input = document.createElement("input");
+      input.className = "fund-input";
+      input.type = "number";
+      input.min = "0.01";
+      input.step = "0.01";
+      input.placeholder = "Add funds";
+      input.setAttribute("aria-label", `Add funds to ${item.fields.title || "goal"}`);
+
+      const add = document.createElement("button");
+      add.type = "submit";
+      add.className = "fund-button";
+      add.textContent = "Add";
+
+      form.append(input, add);
+      form.onsubmit = async event => {
+        event.preventDefault();
+        const contribution = Number(input.value);
+        if (!Number.isFinite(contribution) || contribution <= 0) return;
+
+        const previous = amount(item, "current_amount");
+        const next = Math.round((previous + contribution) * 100) / 100;
+        const target = amount(item, "target_amount");
+
+        justFundedId = item.id;
+        clearTimeout(popTimer);
+        popTimer = setTimeout(() => { justFundedId = ""; }, 1200);
+
+        await oma.updateItem(item.id, { current_amount: next });
+        if (target > 0 && next >= target && item.group !== "reached") {
+          await oma.moveItem(item.id, "reached");
+        }
+      };
+      action.appendChild(form);
+    }
+
+    const foot = document.createElement("div");
+    foot.className = "action-foot";
+
+    const hint = document.createElement("span");
+    hint.className = "action-hint";
+    hint.textContent = reached ? "A milestone worth celebrating" : cleanCurrency(item.fields.currency);
+
+    const remove = document.createElement("button");
+    remove.type = "button";
+    remove.className = "remove-button";
+    remove.textContent = "×";
+    remove.title = "Remove goal";
+    remove.setAttribute("aria-label", "Remove goal");
+    remove.onclick = () => oma.deleteItem(item.id);
+
+    foot.append(hint, remove);
+    action.appendChild(foot);
+    return action;
+  }
+
+  function createCard(item, index, count, reached) {
+    const card = document.createElement("article");
+    const priorityClass = priority(item) === 1
+      ? ""
+      : priority(item) === 2
+        ? " priority-secondary"
+        : " priority-tertiary";
+    card.className = `goal-card${priorityClass}${reached ? " reached" : ""}${item.id === justFundedId ? " just-funded" : ""}`;
+    card.append(
+      createRank(item, index, count),
+      createRing(item),
+      createDetails(item, reached),
+      createAction(item, reached)
+    );
+    return card;
+  }
+
+  function appendSection(items, reached) {
+    if (!items.length) return;
+
+    const section = document.createElement("section");
+    section.className = `goal-section${reached ? " reached-section" : ""}`;
+
+    const head = document.createElement("div");
+    head.className = "section-head";
+
+    const dot = document.createElement("span");
+    dot.className = "section-dot";
+
+    const name = document.createElement("span");
+    name.className = "section-name";
+    name.textContent = reached ? "Reached" : "Active goals";
+
+    const count = document.createElement("span");
+    count.className = "section-count";
+    count.textContent = String(items.length);
+
+    head.append(dot, name, count);
+
+    const list = document.createElement("div");
+    list.className = "goal-list";
+    items.forEach((item, index) => list.appendChild(createCard(item, index, items.length, reached)));
+
+    section.append(head, list);
+    goalScroll.appendChild(section);
+  }
+
+  function updateHero(active, reached, all) {
+    const currencies = new Set(all.map(item => cleanCurrency(item.fields.currency)));
+    const sameCurrency = currencies.size === 1;
+    const totalTarget = all.reduce((sum, item) => sum + amount(item, "target_amount"), 0);
+    const totalCurrent = all.reduce((sum, item) =>
+      sum + Math.min(amount(item, "current_amount"), amount(item, "target_amount")), 0
+    );
+
+    const overall = !all.length
+      ? 0
+      : sameCurrency && totalTarget > 0
+        ? totalCurrent / totalTarget * 100
+        : all.reduce((sum, item) => sum + progress(item), 0) / all.length;
+
+    const rounded = Math.round(Math.min(100, overall));
+    document.getElementById("portfolioPercent").textContent = `${rounded}%`;
+    document.getElementById("portfolioCaption").textContent = sameCurrency && all.length
+      ? `${formatMoney(totalCurrent, all[0].fields.currency, true)} of ${formatMoney(totalTarget, all[0].fields.currency, true)}`
+      : all.length ? `Average across ${currencies.size} currencies` : "Getting started";
+
+    document.getElementById("savedStat").textContent = sameCurrency && all.length
+      ? formatMoney(totalCurrent, all[0].fields.currency, true)
+      : all.length ? `${currencies.size} currencies` : "—";
+
+    document.getElementById("activeStat").textContent =
+      `${active.length} goal${active.length === 1 ? "" : "s"}`;
+
+    const next = [...active]
+      .filter(item => parseDate(item.fields.target_date))
+      .sort((a, b) => parseDate(a.fields.target_date) - parseDate(b.fields.target_date))[0];
+
+    document.getElementById("dueStat").textContent =
+      next ? formatDate(next.fields.target_date) : reached.length ? "All reached" : "—";
+  }
+
+  function render(state) {
+    latestState = state;
+    const active = sortGoals(state.items.filter(item => item.group !== "reached"));
+    const reached = sortGoals(state.items.filter(item => item.group === "reached"));
+
+    updateHero(active, reached, [...active, ...reached]);
+    goalScroll.innerHTML = "";
+
+    if (!state.items.length) {
+      const empty = document.createElement("div");
+      empty.className = "empty";
+      empty.innerHTML = `
+        <div class="empty-mark" aria-hidden="true">◎</div>
+        <strong>No savings targets yet</strong>
+        <span>Add your first goal, or ask the AI to help turn your priorities into targets.</span>
+      `;
+      goalScroll.appendChild(empty);
+    } else {
+      appendSection(active, false);
+      appendSection(reached, true);
+    }
+
+  }
+
+  function localDateAfterMonths(months) {
+    const date = new Date();
+    date.setMonth(date.getMonth() + months);
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0")
+    ].join("-");
+  }
+
+  async function seed(state) {
+    if (seedStarted || state.items.length) return;
+    seedStarted = true;
+    const currency = cleanCurrency(oma.pref("currency", "USD"));
+    const samples = [
+      {
+        group: "active",
+        fields: {
+          title: "Emergency cushion",
+          target_amount: 12000,
+          current_amount: 7350,
+          currency,
+          target_date: localDateAfterMonths(5),
+          priority: 1
+        }
+      },
+      {
+        group: "active",
+        fields: {
+          title: "Japan spring trip",
+          target_amount: 6500,
+          current_amount: 2680,
+          currency,
+          target_date: localDateAfterMonths(9),
+          priority: 2
+        }
+      },
+      {
+        group: "reached",
+        fields: {
+          title: "New laptop",
+          target_amount: 2400,
+          current_amount: 2400,
+          currency,
+          target_date: localDateAfterMonths(2),
+          priority: 3
+        }
+      }
+    ];
+    for (const sample of samples) await oma.addItem(sample);
+  }
+
+  function setComposer(open) {
+    shell.classList.toggle("composing", open);
+    addGoalButton.setAttribute("aria-expanded", String(open));
+    addGoalButton.setAttribute("aria-label", open ? "Close goal form" : "Add goal");
+    addGoalButton.innerHTML = open
+      ? `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg><span>Close</span>`
+      : `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span>Add goal</span>`;
+    if (open) {
+      const highest = latestState.items.reduce((max, item) => Math.max(max, priority(item)), 0);
+      document.getElementById("goalPriority").value = String(highest + 1);
+      document.getElementById("goalTitle").focus();
+    }
+  }
+
+  const UI_COPY = {
+    "MONEY GOALS": "储蓄目标",
+    "Savings runway": "储蓄进度",
+    "Prioritized targets, clear progress": "按优先级管理目标，清楚看到进度",
+    "Plan with AI": "让 AI 规划",
+    "Add goal": "添加目标",
+    "Close": "关闭",
+    "Portfolio progress": "总体进度",
+    "Getting started": "刚刚开始",
+    "Saved": "已储蓄",
+    "Active": "进行中",
+    "goals": "个目标",
+    "Next target": "下一个目标",
+    "All reached": "全部达成",
+    "Set a new target": "设置新目标",
+    "Goal": "目标",
+    "Target": "目标金额",
+    "Currency": "货币",
+    "Target date": "目标日期",
+    "Priority": "优先级",
+    "Save goal": "保存目标",
+    "Emergency cushion": "应急储备",
+    "Emergency fund": "紧急储备金",
+    "Japan spring trip": "日本春季之旅",
+    "Japan trip": "日本旅行",
+    "New laptop": "新笔记本电脑",
+    "No savings targets yet": "还没有储蓄目标",
+    "Add your first goal, or ask the AI to help turn your priorities into targets.": "添加第一个目标，或让 AI 帮你把优先事项变成具体目标。",
+    "ACTIVE GOALS": "进行中的目标",
+    "Active goals": "进行中的目标",
+    "REACHED": "已达成",
+    "Reached": "已达成",
+    "ACTIVE": "进行中",
+    "PRIORITY": "优先级",
+    "to go": "还差",
+    "months left": "个月剩余",
+    "month left": "个月剩余",
+    "pace": "每月进度",
+    "Add funds": "添加金额",
+    "Add": "添加",
+    "Complete": "已完成",
+    "past target": "已超过目标日期",
+    "Fully funded": "已全额储蓄",
+    "Target reached": "目标已达成",
+    "A milestone worth celebrating": "值得庆祝的里程碑",
+    "No date": "未设置日期",
+    "No target date": "未设置目标日期",
+    "Target date passed": "目标日期已过",
+    "Due today": "今天到期",
+    "currencies": "种货币",
+    "Average across": "平均覆盖"
+  };
+  const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
+  const isZhUi = () => locale().toLowerCase().startsWith("zh");
+  const localizeText = (value) => {
+    const zh = isZhUi();
+    let next = (zh ? UI_COPY : UI_COPY_ZH)[value] || value;
+    if (zh) {
+      next = next.replace(/^(\d+) goal(?:s)?$/i, "$1 个目标");
+      next = next.replace(/^(\d+) months? left$/i, "剩余 $1 个月");
+      next = next.replace(/^(\d+) days? past target$/i, "已超过目标日期 $1 天");
+      next = next.replace(/^(\d+)d past target$/i, "已超过目标日期 $1 天");
+      next = next.replace(/^(.* · )(\d+) months? left$/i, "$1剩余 $2 个月");
+      next = next.replace(/^(.* · )(\d+)d past target$/i, "$1已超过目标日期 $2 天");
+      next = next.replace(/^(.+) of (.+)$/i, "$1 / $2");
+      next = next.replace(/^of\s+(.+)$/i, "目标 $1");
+      next = next.replace(/^(.+)\/mo pace$/i, "每月需 $1");
+      next = next.replace(/^Average across (\d+) currencies$/i, "覆盖 $1 种货币的平均进度");
+      next = next.replace(/^Move (.+) (up|down)$/i, (_, name, direction) => `${direction === "up" ? "上移" : "下移"} ${UI_COPY[name] || name}`);
+      next = next.replace(/^Add funds to (.+)$/i, (_, name) => `为 ${UI_COPY[name] || name} 增加储蓄`);
+      next = next.replace(/^Remove goal$/i, "删除目标");
+      next = next.replace(/^(\d+) percent saved$/i, "已储蓄 $1%");
+    }
+    return next;
+  };
+  function applyUiLocale() {
+    const zh = isZhUi();
+    document.documentElement.lang = zh ? "zh-CN" : "en";
+    document.title = zh ? "储蓄进度" : "Savings Goals";
+    document.querySelectorAll("body *:not(script):not(style)").forEach((element) => {
+      for (const node of element.childNodes) {
+        if (node.nodeType !== Node.TEXT_NODE) continue;
+        const raw = node.nodeValue || "";
+        const trimmed = raw.trim();
+        if (!trimmed) continue;
+        const translated = localizeText(trimmed);
+        if (translated !== trimmed) node.nodeValue = raw.replace(trimmed, translated);
+      }
+      for (const attribute of ["aria-label", "title", "placeholder"]) {
+        const value = element.getAttribute(attribute);
+        if (!value) continue;
+        const translated = localizeText(value);
+        if (translated !== value) element.setAttribute(attribute, translated);
+      }
+    });
+  }
+
+  oma.ready(state => {
+    goalCurrency.value = cleanCurrency(oma.pref("currency", "USD"));
+    render(state);
+    applyUiLocale();
+    // App Store apps install EMPTY — sample data lives only in the oma-fixtures block (store preview).
+  });
+  oma.onChange((state) => { render(state); applyUiLocale(); });
+  oma.onPrefChange(() => { render(latestState); applyUiLocale(); });
+
+  addGoalButton.onclick = () => setComposer(!shell.classList.contains("composing"));
+  document.getElementById("closeComposer").onclick = () => setComposer(false);
+
+  document.getElementById("goalForm").onsubmit = async event => {
+    event.preventDefault();
+    const title = document.getElementById("goalTitle").value.trim();
+    const target = Number(document.getElementById("goalTarget").value);
+    const current = Number(document.getElementById("goalCurrent").value);
+    const currency = cleanCurrency(goalCurrency.value);
+    const targetDate = document.getElementById("goalDate").value;
+    const goalPriority = Math.max(1, Math.round(Number(document.getElementById("goalPriority").value) || 1));
+
+    if (!title || !Number.isFinite(target) || target <= 0 ||
+        !Number.isFinite(current) || current < 0 || !targetDate) return;
+
+    await oma.addItem({
+      group: current >= target ? "reached" : "active",
+      fields: {
+        title,
+        target_amount: Math.round(target * 100) / 100,
+        current_amount: Math.round(current * 100) / 100,
+        currency,
+        target_date: targetDate,
+        priority: goalPriority
+      }
+    });
+
+    event.currentTarget.reset();
+    document.getElementById("goalCurrent").value = "0";
+    goalCurrency.value = currency;
+    setComposer(false);
+  };
+
+  // Keep this visible in standalone: oma.sendMessage falls back to the clipboard outside a chat host.
+  document.getElementById("planButton").onclick = () => {
+    const goals = sortGoals(latestState.items).map(item => {
+      const remaining = Math.max(0, amount(item, "target_amount") - amount(item, "current_amount"));
+      return `priority ${priority(item)}: ${item.fields.title || "Untitled goal"} — ` +
+        `${formatMoney(amount(item, "current_amount"), item.fields.currency)} saved of ` +
+        `${formatMoney(amount(item, "target_amount"), item.fields.currency)}, ` +
+        `${formatMoney(remaining, item.fields.currency)} remaining, target date ${item.fields.target_date || "not set"}, ` +
+        `status ${item.group === "reached" ? "reached" : "active"}`;
+    }).join("; ");
+
+    oma.sendMessage(
+      `Please propose a practical savings pace and plan to hit my goals by their target dates, ` +
+      `respecting the priority order. Suggest weekly and monthly contributions, call out any timing ` +
+      `conflicts, and recommend how to split available savings between active goals. Current goals: ${goals || "none yet"}.`
+    );
+  };
+</script>
+</body>
+</html>

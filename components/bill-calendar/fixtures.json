@@ -1,0 +1,95 @@
+{
+  "items": [
+    {
+      "id": "be717d86-a052-4655-8ec1-c4aae9326d80",
+      "group": "overdue",
+      "position": 1,
+      "fields": {
+        "name": "Gym membership",
+        "amount": 34.5,
+        "currency": "USD",
+        "due_date": "2026-08-04",
+        "frequency": "monthly",
+        "autopay": false,
+        "paid_date": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "12f8faeb-c155-4ca8-97c9-fb0917d10439",
+      "group": "paid",
+      "position": 1,
+      "fields": {
+        "name": "Rent",
+        "amount": 1850,
+        "currency": "USD",
+        "due_date": "2026-08-01",
+        "frequency": "monthly",
+        "autopay": true,
+        "paid_date": "2026-07-31",
+        "preview_date": "2026-08-06"
+      },
+      "version": 1
+    },
+    {
+      "id": "a553cab1-d92b-42fc-b216-e2950e7a18ab",
+      "group": "paid",
+      "position": 2,
+      "fields": {
+        "name": "Home internet",
+        "amount": 79.99,
+        "currency": "USD",
+        "due_date": "2026-08-03",
+        "frequency": "monthly",
+        "autopay": true,
+        "paid_date": "2026-08-03"
+      },
+      "version": 1
+    },
+    {
+      "id": "84e1febd-fe69-4799-84d7-bd61722fa81a",
+      "group": "upcoming",
+      "position": 1,
+      "fields": {
+        "name": "Electricity",
+        "amount": 126.4,
+        "currency": "USD",
+        "due_date": "2026-08-06",
+        "frequency": "quarterly",
+        "autopay": false,
+        "paid_date": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "8e2b9f5e-42c2-4db4-9caa-fb5f8c55ed16",
+      "group": "upcoming",
+      "position": 2,
+      "fields": {
+        "name": "Car insurance",
+        "amount": 92.75,
+        "currency": "USD",
+        "due_date": "2026-08-08",
+        "frequency": "monthly",
+        "autopay": true,
+        "paid_date": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "7b1092b7-512c-480b-bc14-4f2f2e1e736f",
+      "group": "upcoming",
+      "position": 3,
+      "fields": {
+        "name": "Cloud storage",
+        "amount": 34.5,
+        "currency": "USD",
+        "due_date": "2026-08-10",
+        "frequency": "monthly",
+        "autopay": true,
+        "paid_date": ""
+      },
+      "version": 1
+    }
+  ]
+}

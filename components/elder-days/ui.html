@@ -1,0 +1,2380 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Care Daybook · Daily Care</title>
+<meta name="oma-category" content="Health & Habits">
+<meta name="description" content="A clear daily care record for today's medicines, a 14-day blood-pressure trend, medicine supply, and family hand-off.">
+
+<style>
+  body {
+    max-width: 760px;
+    margin-inline: auto;
+    color: var(--color-text-primary);
+    background: transparent;
+    font-size: 17px;
+    line-height: 1.5;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button:focus-visible,
+  input:focus-visible,
+  textarea:focus-visible,
+  summary:focus-visible {
+    outline: 3px solid var(--color-ring-primary);
+    outline-offset: 2px;
+  }
+
+  [hidden] {
+    display: none !important;
+  }
+
+  .app {
+    display: grid;
+    gap: var(--k-s3);
+  }
+
+  .app-bar {
+    min-height: 64px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  .app-mark {
+    display: grid;
+    width: 44px;
+    height: 44px;
+    flex: none;
+    place-items: center;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-sm, 6px);
+    color: var(--color-text-info, var(--color-ring-primary));
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, transparent);
+  }
+
+  .app-mark .k-icon {
+    width: 26px;
+    height: 26px;
+  }
+
+  .identity {
+    min-width: 0;
+  }
+
+  .eyebrow {
+    margin: 0;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0;
+    text-transform: uppercase;
+  }
+
+  .identity h1 {
+    margin: 1px 0 0;
+    font-size: 22px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+
+  .time-badge {
+    margin-left: auto;
+    white-space: nowrap;
+  }
+
+  .calendar-sheet {
+    position: relative;
+    overflow: hidden;
+    padding: 0 16px 28px;
+    border: 1px solid var(--color-border-primary);
+    /* No torn-paper clip-path here: at this width 5-6px teeth read as a broken scale, not as paper — calm wins for these readers. */
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .calendar-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.15fr) minmax(244px, .85fr);
+    gap: 24px;
+    align-items: center;
+    padding-top: 20px;
+  }
+
+  .today-label {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    margin-bottom: 4px;
+    color: var(--color-text-info, var(--color-ring-primary));
+    font-weight: 750;
+  }
+
+  .date-line {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: baseline;
+    margin: 0;
+  }
+
+  .date-main {
+    font-size: 39px;
+    font-weight: 760;
+    line-height: 1.05;
+    letter-spacing: 0;
+  }
+
+  .weekday {
+    color: var(--color-text-secondary);
+    font-size: 20px;
+    font-weight: 650;
+  }
+
+  .honesty {
+    max-width: 35em;
+    margin: 12px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 16px;
+  }
+
+  .day-progress {
+    display: grid;
+    grid-template-columns: 94px minmax(0, 1fr);
+    gap: 16px;
+    align-items: center;
+    min-width: 0;
+    padding-left: 20px;
+    border-left: 1px solid var(--color-border-secondary);
+  }
+
+  .progress-ring {
+    position: relative;
+    width: 94px;
+    aspect-ratio: 1;
+  }
+
+  .progress-ring svg {
+    width: 100%;
+    height: 100%;
+    rotate: -90deg;
+  }
+
+  .progress-track,
+  .progress-fill {
+    fill: none;
+    stroke-width: 8;
+  }
+
+  .progress-track {
+    stroke: var(--color-border-secondary);
+  }
+
+  .progress-fill {
+    stroke: var(--color-text-success, var(--color-ring-primary));
+    stroke-linecap: round;
+    stroke-dasharray: 251.2;
+    stroke-dashoffset: 251.2;
+  }
+
+  .ring-label {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-content: center;
+    text-align: center;
+    line-height: 1.05;
+  }
+
+  .ring-label strong {
+    font-size: 25px;
+  }
+
+  .ring-label span {
+    margin-top: 5px;
+    color: var(--color-text-tertiary);
+    font-size: 12px;
+  }
+
+  .remaining-line {
+    margin: 0;
+    color: var(--color-text-secondary);
+  }
+
+  .remaining-line strong {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--color-text-primary);
+    font-size: 26px;
+    line-height: 1.12;
+    letter-spacing: 0;
+  }
+
+  .main-tabs {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    width: 100%;
+    gap: 8px;
+    overflow: visible;
+  }
+
+  .main-tabs .k-tab {
+    min-width: 0;
+    min-height: 48px;
+    justify-content: center;
+    font-size: 15.5px;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+
+  .status-strip {
+    margin: 0 2px;
+  }
+
+  .status-strip .k-badge {
+    width: 100%;
+    min-height: 46px;
+    justify-content: flex-start;
+    padding: 9px 12px;
+    white-space: normal;
+    font-size: 14.5px;
+  }
+
+  .content-scroll {
+    padding: 2px 2px 12px;
+  }
+
+  .panel {
+    display: grid;
+    gap: 14px;
+  }
+
+  .section-head {
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    justify-content: space-between;
+    padding-inline: 2px;
+  }
+
+  .section-head h2 {
+    margin: 0;
+    font-size: 21px;
+    line-height: 1.25;
+    letter-spacing: 0;
+  }
+
+  .section-note {
+    margin: 4px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 16px;
+  }
+
+  .schedule {
+    display: grid;
+    gap: 12px;
+  }
+
+  .slot-block {
+    display: grid;
+    grid-template-columns: 102px minmax(0, 1fr);
+    gap: 12px;
+    align-items: start;
+    padding: 12px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: color-mix(in oklab, var(--color-text-primary) 2%, var(--color-background-primary));
+  }
+
+  .slot-block.current {
+    border: 2px solid var(--color-ring-primary);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 6%, var(--color-background-primary));
+  }
+
+  .slot-name {
+    display: grid;
+    gap: 3px;
+    padding: 8px 4px;
+  }
+
+  .slot-name strong {
+    font-size: 19px;
+  }
+
+  .slot-name span {
+    color: var(--color-text-tertiary);
+    font-size: 14px;
+  }
+
+  .slot-meds {
+    display: grid;
+    gap: 8px;
+  }
+
+  .med-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    min-height: 76px;
+    padding: 10px 12px;
+  }
+
+  .med-row.done {
+    border-color: var(--color-text-success, var(--color-ring-primary));
+    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 9%, var(--color-background-primary));
+  }
+
+  .med-row.late {
+    border-color: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 55%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 8%, var(--color-background-primary));
+  }
+
+  .med-copy {
+    min-width: 0;
+  }
+
+  .med-copy strong {
+    display: block;
+    font-size: 18.5px;
+    line-height: 1.25;
+  }
+
+  .med-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px 9px;
+    align-items: center;
+    margin-top: 6px;
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+  }
+
+  .med-state {
+    margin-top: 7px;
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+    font-weight: 700;
+  }
+
+  .med-state.ok {
+    color: var(--color-text-success, var(--color-ring-primary));
+  }
+
+  .med-state.warn {
+    color: var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .med-action {
+    min-width: 126px;
+    min-height: 50px;
+    padding-inline: 15px;
+    font-size: 16.5px;
+    font-weight: 750;
+  }
+
+  .med-action.taken {
+    color: var(--color-text-success, var(--color-ring-primary));
+    border-color: var(--color-text-success, var(--color-ring-primary));
+    background: transparent;
+  }
+
+  .empty-large {
+    min-height: 280px;
+    padding: 30px 20px;
+  }
+
+  .empty-large svg {
+    width: 78px;
+    height: 78px;
+  }
+
+  .empty-large b {
+    max-width: 18em;
+    font-size: 25px;
+    line-height: 1.35;
+  }
+
+  .empty-large span {
+    max-width: 30em;
+    color: var(--color-text-secondary);
+    font-size: 16px;
+  }
+
+  .empty-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    justify-content: center;
+  }
+
+  .empty-actions .k-btn,
+  .form-actions .k-btn,
+  .supply-actions .k-btn {
+    min-height: 50px;
+    font-size: 15px;
+  }
+
+  details.editor {
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-secondary);
+  }
+
+  details.editor summary {
+    display: flex;
+    min-height: 50px;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 14px;
+    cursor: pointer;
+    list-style: none;
+    font-size: 18px;
+    font-weight: 700;
+  }
+
+  details.editor summary::-webkit-details-marker {
+    display: none;
+  }
+
+  details.editor[open] summary {
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+
+  #reading-editor {
+    width: max-content;
+    max-width: 100%;
+    justify-self: start;
+    background: transparent;
+  }
+
+  #reading-editor[open] {
+    width: 100%;
+    justify-self: stretch;
+    background: var(--color-background-secondary);
+  }
+
+  #reading-editor:not([open]) summary {
+    font-size: 17px;
+  }
+
+  .editor-body {
+    display: grid;
+    gap: 12px;
+    padding: 14px;
+  }
+
+  .editor-copy {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 17px;
+  }
+
+  .editor-copy .k-btn {
+    min-height: 44px;
+    margin-left: 6px;
+  }
+
+  .field-grid {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .field-block {
+    min-width: 0;
+  }
+
+  .field-block label {
+    display: block;
+    margin-bottom: 5px;
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+    font-weight: 700;
+  }
+
+  .field-block .k-field {
+    width: 100%;
+    min-height: 50px;
+    font-size: 16px;
+  }
+
+  .medicine-import textarea {
+    width: 100%;
+    min-height: 126px;
+    resize: vertical;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .form-actions {
+    justify-content: flex-end;
+  }
+
+  .bp-board {
+    --sys-line: var(--color-text-info, var(--color-ring-primary));
+    --dia-line: var(--color-text-success, var(--color-ring-primary));
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-sm, 6px);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-sm);
+  }
+
+  .bp-summary {
+    display: grid;
+    grid-template-columns: minmax(210px, .9fr) minmax(0, 1.1fr);
+    gap: 18px;
+    align-items: end;
+    padding: 16px 18px 10px;
+  }
+
+  .latest-reading-label {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 15px;
+  }
+
+  .latest-reading {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 4px;
+  }
+
+  .latest-reading strong {
+    font-size: 42px;
+    line-height: 1;
+    letter-spacing: 0;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .latest-reading span {
+    color: var(--color-text-tertiary);
+    font-size: 16px;
+  }
+
+  .pulse-reading {
+    margin: 9px 0 0;
+    color: var(--color-text-secondary);
+    font-size: 15px;
+  }
+
+  .pulse-reading strong {
+    margin-inline: 5px;
+    color: var(--color-text-primary);
+    font-size: 20px;
+  }
+
+  .chart-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    justify-content: flex-end;
+    color: var(--color-text-secondary);
+    font-size: 13.5px;
+  }
+
+  .legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .legend-line {
+    width: 24px;
+    height: 3px;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--sys-line);
+  }
+
+  .legend-line.dia {
+    background: var(--dia-line);
+  }
+
+  .legend-band {
+    width: 24px;
+    height: 11px;
+    border: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 8%, transparent);
+  }
+
+  .chart-wrap {
+    position: relative;
+    min-height: 300px;
+    padding: 0 8px 6px;
+  }
+
+  .bp-chart {
+    display: block;
+    width: 100%;
+    height: 300px;
+    overflow: visible;
+  }
+
+  .chart-grid {
+    stroke: var(--color-border-secondary);
+    stroke-width: 1;
+    stroke-dasharray: 3 5;
+  }
+
+  .chart-axis-text,
+  .chart-range-text,
+  .chart-empty-text {
+    fill: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+  }
+
+  .chart-range-text {
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .chart-range.sys {
+    fill: color-mix(in oklab, var(--sys-line) 8%, transparent);
+  }
+
+  .chart-range.dia {
+    fill: color-mix(in oklab, var(--dia-line) 8%, transparent);
+  }
+
+  .chart-path {
+    fill: none;
+    stroke: var(--sys-line);
+    stroke-width: 3;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+  }
+
+  .chart-path.dia {
+    stroke: var(--dia-line);
+  }
+
+  .chart-dot {
+    fill: var(--color-background-primary);
+    stroke: var(--sys-line);
+    stroke-width: 2.5;
+  }
+
+  .chart-dot.dia {
+    stroke: var(--dia-line);
+  }
+
+  .chart-dot.latest {
+    stroke-width: 4;
+  }
+
+  .trend-badge {
+    min-height: 30px;
+    align-self: flex-start;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .supply-list {
+    display: grid;
+    gap: 10px;
+  }
+
+  .supply-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 14px;
+    align-items: center;
+    padding: 15px;
+  }
+
+  .supply-copy {
+    min-width: 0;
+  }
+
+  .supply-title {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    align-items: center;
+  }
+
+  .supply-title strong {
+    font-size: 18.5px;
+  }
+
+  .supply-days {
+    margin-top: 7px;
+    font-size: 27px;
+    font-weight: 750;
+    line-height: 1.1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .supply-meta {
+    margin-top: 4px;
+    color: var(--color-text-secondary);
+    font-size: 14.5px;
+  }
+
+  .supply-track {
+    height: 12px;
+    margin-top: 12px;
+    overflow: hidden;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-secondary);
+  }
+
+  .supply-fill {
+    width: 0;
+    height: 100%;
+    border-radius: inherit;
+    background: var(--color-text-success, var(--color-ring-primary));
+  }
+
+  .supply-fill.low {
+    background: var(--color-text-warning, var(--color-text-secondary));
+  }
+
+  .restock-button {
+    min-width: 150px;
+    min-height: 50px;
+    font-size: 15.5px;
+    font-weight: 750;
+  }
+
+  .supply-actions {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  body[data-density="compact"] .app,
+  body[data-density="compact"] .panel,
+  body[data-density="compact"] .schedule,
+  body[data-density="compact"] .supply-list {
+    gap: 8px;
+  }
+
+  @media (prefers-reduced-motion: no-preference) {
+    .progress-fill,
+    .supply-fill {
+      transition: stroke-dashoffset 360ms cubic-bezier(.2, .8, .3, 1), width 360ms cubic-bezier(.2, .8, .3, 1);
+    }
+
+    .slot-block.current {
+      animation: current-breathe 2.4s cubic-bezier(.2, .8, .3, 1) infinite;
+    }
+
+    .med-action,
+    .restock-button,
+    details.editor summary {
+      transition: transform 180ms cubic-bezier(.2, .8, .3, 1), border-color 180ms cubic-bezier(.2, .8, .3, 1), background 180ms cubic-bezier(.2, .8, .3, 1);
+    }
+
+    .med-action:hover,
+    .restock-button:hover,
+    details.editor summary:hover {
+      transform: translateY(-1px);
+    }
+
+    .med-action:active,
+    .restock-button:active,
+    details.editor summary:active {
+      transform: scale(.98);
+    }
+
+    .med-row.done .med-action,
+    .supply-row.just-restocked {
+      animation: saved-pop 260ms cubic-bezier(.34, 1.56, .64, 1);
+    }
+
+    @keyframes current-breathe {
+      0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-ring-primary) 0%, transparent); }
+      50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-ring-primary) 10%, transparent); }
+    }
+
+    @keyframes saved-pop {
+      0% { transform: scale(.94); }
+      100% { transform: scale(1); }
+    }
+  }
+
+  @media (max-width: 620px) {
+    body {
+      font-size: 15.5px;
+      line-height: 1.45;
+    }
+
+    .app {
+      gap: 12px;
+    }
+
+    .app-bar {
+      min-height: 56px;
+      padding: 9px 12px;
+    }
+
+    .app-mark {
+      width: 38px;
+      height: 38px;
+    }
+
+    .app-mark .k-icon {
+      width: 22px;
+      height: 22px;
+    }
+
+    .identity h1 {
+      font-size: 19px;
+    }
+
+    .calendar-sheet {
+      padding: 0 12px 18px;
+    }
+
+    .calendar-main {
+      grid-template-columns: 1fr;
+      gap: 11px;
+      padding-top: 15px;
+    }
+
+    .day-progress {
+      grid-template-columns: 70px minmax(0, 1fr);
+      gap: 10px;
+      padding-top: 10px;
+      padding-left: 0;
+      border-top: 1px solid var(--color-border-secondary);
+      border-left: 0;
+    }
+
+    .progress-ring {
+      width: 70px;
+    }
+
+    .date-main {
+      font-size: 31px;
+    }
+
+    .weekday {
+      font-size: 17px;
+    }
+
+    .today-label {
+      min-height: 24px;
+      font-size: 14px;
+    }
+
+    .honesty {
+      margin-top: 7px;
+      font-size: 14.5px;
+      line-height: 1.5;
+    }
+
+    .ring-label strong {
+      font-size: 20px;
+    }
+
+    .ring-label span {
+      margin-top: 3px;
+      font-size: 10px;
+    }
+
+    .remaining-line {
+      font-size: 13.5px;
+    }
+
+    .remaining-line strong {
+      font-size: 21px;
+    }
+
+    .main-tabs {
+      gap: 6px;
+    }
+
+    .main-tabs .k-tab {
+      min-height: 46px;
+      font-size: 14px;
+    }
+
+    .status-strip .k-badge {
+      min-height: 44px;
+      padding: 8px 10px;
+      font-size: 14px;
+    }
+
+    .content-scroll {
+      padding: 0 0 8px;
+    }
+
+    .panel {
+      gap: 10px;
+    }
+
+    .section-head {
+      gap: 8px;
+    }
+
+    .section-head h2 {
+      font-size: 19px;
+    }
+
+    .section-note {
+      margin-top: 3px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    .schedule,
+    .slot-meds,
+    .supply-list {
+      gap: 8px;
+    }
+
+    .slot-block {
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 10px;
+    }
+
+    .slot-name {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      padding: 0 2px;
+    }
+
+    .slot-name strong {
+      font-size: 18px;
+    }
+
+    .slot-name span {
+      font-size: 13px;
+    }
+
+    .med-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      min-height: 68px;
+      padding: 9px 10px;
+    }
+
+    .med-copy strong {
+      font-size: 17px;
+    }
+
+    .med-meta,
+    .med-state {
+      font-size: 13.5px;
+    }
+
+    .med-action {
+      min-width: 104px;
+      min-height: 48px;
+      padding-inline: 12px;
+      font-size: 15px;
+    }
+
+    details.editor summary {
+      min-height: 46px;
+      padding: 8px 11px;
+      font-size: 15.5px;
+    }
+
+    .editor-body {
+      gap: 10px;
+      padding: 11px;
+    }
+
+    .editor-copy,
+    .latest-reading-label,
+    .pulse-reading {
+      font-size: 14px;
+    }
+
+    .field-block label {
+      font-size: 13.5px;
+    }
+
+    .field-block .k-field {
+      min-height: 46px;
+      font-size: 15.5px;
+    }
+
+    .bp-summary {
+      grid-template-columns: 1fr;
+      gap: 8px;
+      padding: 12px 13px 8px;
+    }
+
+    .latest-reading strong {
+      font-size: 37px;
+    }
+
+    .latest-reading span {
+      font-size: 14px;
+    }
+
+    .pulse-reading strong {
+      font-size: 18px;
+    }
+
+    .chart-legend {
+      justify-content: flex-start;
+      font-size: 12.5px;
+    }
+
+    .chart-wrap,
+    .bp-chart {
+      min-height: 235px;
+      height: 235px;
+    }
+
+    .supply-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      padding: 10px;
+    }
+
+    .supply-title strong {
+      font-size: 17px;
+    }
+
+    .supply-days {
+      margin-top: 5px;
+      font-size: 24px;
+    }
+
+    .supply-meta {
+      font-size: 13.5px;
+    }
+
+    .supply-track {
+      height: 10px;
+      margin-top: 9px;
+    }
+
+    .restock-button {
+      min-width: 118px;
+      min-height: 48px;
+      font-size: 15px;
+    }
+
+    .field-grid {
+      grid-template-columns: 1fr 1fr;
+    }
+
+    .field-block:first-child {
+      grid-column: 1 / -1;
+    }
+  }
+
+  @media (max-width: 500px) {
+    .app-bar,
+    .calendar-sheet {
+      padding-inline: 12px;
+    }
+
+    .time-badge {
+      display: none;
+    }
+
+    .main-tabs .k-tab {
+      gap: 6px;
+      padding-inline: 7px;
+      font-size: 14px;
+      line-height: 1.15;
+      white-space: normal;
+    }
+
+    .supply-actions .k-btn {
+      width: 100%;
+    }
+  }
+
+  @media (max-width: 390px) {
+    .identity h1 {
+      font-size: 18px;
+    }
+
+    .date-main {
+      font-size: 29px;
+    }
+
+    .remaining-line strong {
+      font-size: 20px;
+    }
+
+    .main-tabs {
+      gap: 4px;
+    }
+
+    .main-tabs .k-icon {
+      display: none;
+    }
+
+    .field-grid {
+      grid-template-columns: 1fr;
+    }
+
+    .field-block:first-child {
+      grid-column: auto;
+    }
+  }
+
+  @media (max-width: 340px) {
+    .day-progress {
+      grid-template-columns: 62px minmax(0, 1fr);
+    }
+
+    .progress-ring {
+      width: 62px;
+    }
+
+    .med-row,
+    .supply-row {
+      grid-template-columns: 1fr;
+    }
+
+    .med-action,
+    .restock-button {
+      width: 100%;
+    }
+  }
+</style>
+</head>
+<body>
+<main class="app" aria-labelledby="app-title">
+  <header class="app-bar k-row">
+    <div class="app-mark" aria-hidden="true">
+      <svg class="k-icon" viewBox="0 0 24 24">
+        <path d="M7 3v3M17 3v3M4 8h16M5 5h14a1 1 0 0 1 1 1v13a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a1 1 0 0 1 1-1zM8 12h3v3H8zM15 11v5M12.5 13.5h5"/>
+      </svg>
+    </div>
+    <div class="identity k-grow">
+      <p class="eyebrow" id="eyebrow">DAILY CARE</p>
+      <h1 id="app-title">Care Daybook</h1>
+    </div>
+    <span class="k-badge info time-badge" id="time-badge">Local time</span>
+  </header>
+
+  <section class="calendar-sheet" aria-labelledby="today-date">
+    <div class="calendar-main">
+      <div>
+        <span class="today-label" id="today-label">Today</span>
+        <h2 class="date-line" id="today-date">
+          <span class="date-main" id="date-main"></span>
+          <span class="weekday" id="weekday"></span>
+        </h2>
+        <p class="honesty" id="honesty">This view cannot send background notifications. Open it anytime to see what still needs attention today.</p>
+      </div>
+      <div class="day-progress">
+        <div class="progress-ring" id="progress-ring" role="img" aria-label="Today's medicine progress">
+          <svg viewBox="0 0 96 96" aria-hidden="true">
+            <circle class="progress-track" cx="48" cy="48" r="40"></circle>
+            <circle class="progress-fill" id="progress-fill" cx="48" cy="48" r="40"></circle>
+          </svg>
+          <div class="ring-label"><strong class="k-num" id="progress-count">0/0</strong><span id="progress-label">recorded</span></div>
+        </div>
+        <p class="remaining-line"><strong class="k-num" id="remaining-title">Loading</strong><span id="remaining-note">Reading today's plan</span></p>
+      </div>
+    </div>
+  </section>
+
+  <nav class="k-tabs main-tabs" role="tablist" aria-label="Daily care sections" id="main-tabs">
+    <button class="k-tab on" id="tab-meds" role="tab" aria-selected="true" aria-controls="panel-meds" data-tab="meds" type="button">
+      <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5 2.5h6a2.5 2.5 0 0 1 0 5H5a2.5 2.5 0 0 1 0-5zM8 2.5v5M5 8.5h6a2.5 2.5 0 0 1 0 5H5a2.5 2.5 0 0 1 0-5z"/></svg>
+      <span id="tab-meds-label">Medicines</span>
+    </button>
+    <button class="k-tab" id="tab-vitals" role="tab" aria-selected="false" aria-controls="panel-vitals" data-tab="vitals" type="button">
+      <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8h3l1.4-3.5L8.2 12l1.7-4h4.6M3 2.5h10v11H3z"/></svg>
+      <span id="tab-vitals-label">Blood pressure</span>
+    </button>
+    <button class="k-tab" id="tab-supply" role="tab" aria-selected="false" aria-controls="panel-supply" data-tab="supply" type="button">
+      <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 2.5h8v11H4zM6 5h4M6 8h4M6 11h2M2.5 4.5H4M12 4.5h1.5"/></svg>
+      <span id="tab-supply-label">Supply</span>
+    </button>
+  </nav>
+
+  <div class="status-strip" id="status-strip" hidden>
+    <span class="k-badge" id="status-message" role="status"></span>
+  </div>
+
+  <div class="content-scroll" id="content-scroll">
+    <section class="panel" id="panel-meds" role="tabpanel" aria-labelledby="tab-meds">
+      <div class="section-head">
+        <div>
+          <h2 id="meds-title">Today's medicines</h2>
+          <p class="section-note" id="meds-note">One large button records a dose. The current time period has a breathing outline.</p>
+        </div>
+      </div>
+      <div class="schedule" id="schedule"></div>
+      <details class="editor medicine-import" id="medicine-import" hidden>
+        <summary>
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11"/></svg>
+          <span id="medicine-import-summary">Paste medicines</span>
+        </summary>
+        <div class="editor-body">
+          <p class="editor-copy" id="medicine-import-help">One per line: name | morning,noon,evening | dose | pills left | daily use | note</p>
+          <textarea class="k-field" id="medicine-import-input" maxlength="6000" placeholder="Metformin | morning,evening | 500 mg · 1 tablet | 30 | 2 | Take with food"></textarea>
+          <div class="form-actions k-row">
+            <button class="k-btn" id="medicine-import-button" type="button">Add medicines</button>
+          </div>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" id="panel-vitals" role="tabpanel" aria-labelledby="tab-vitals" hidden>
+      <div class="section-head">
+        <div>
+          <h2 id="vitals-title">Blood pressure</h2>
+          <p class="section-note" id="vitals-note">The chart shows 14 calendar days. Missing days stay empty instead of becoming zero.</p>
+        </div>
+        <span class="k-badge info trend-badge" id="trend-badge">Waiting for readings</span>
+      </div>
+
+      <article class="bp-board" aria-labelledby="vitals-title">
+        <div class="bp-summary">
+          <div>
+            <p class="latest-reading-label" id="latest-reading-label">Latest reading</p>
+            <div class="latest-reading"><strong id="latest-reading">—/—</strong><span>mmHg</span></div>
+            <p class="pulse-reading"><span id="pulse-label">Pulse</span><strong id="latest-pulse">—</strong><span id="pulse-unit">bpm</span></p>
+          </div>
+          <div class="chart-legend" aria-label="Chart legend" id="chart-legend">
+            <span class="legend-item"><span class="legend-line"></span><span id="legend-systolic">Systolic</span></span>
+            <span class="legend-item"><span class="legend-line dia"></span><span id="legend-diastolic">Diastolic</span></span>
+            <span class="legend-item"><span class="legend-band"></span><span id="legend-range">Reference bands</span></span>
+          </div>
+        </div>
+        <div class="chart-wrap">
+          <svg class="bp-chart" id="bp-chart" viewBox="0 0 700 300" role="img" aria-label="14-day blood pressure trend"></svg>
+        </div>
+      </article>
+
+      <details class="editor" id="reading-editor">
+        <summary>
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 2.5v11M2.5 8h11"/></svg>
+          <span id="reading-summary">Add reading</span>
+        </summary>
+        <div class="editor-body">
+          <p class="editor-copy"><span id="reading-helper">Ask family or the AI to log readings.</span><button class="k-btn ghost" id="ask-ai-reading" type="button">Ask AI</button></p>
+          <form id="reading-form">
+            <div class="field-grid">
+              <div class="field-block">
+                <label for="reading-date" id="reading-date-label">Date</label>
+                <input class="k-field" id="reading-date" type="date" required>
+              </div>
+              <div class="field-block">
+                <label for="reading-systolic" id="reading-systolic-label">Systolic</label>
+                <input class="k-field" id="reading-systolic" type="number" min="40" max="260" inputmode="numeric" required>
+              </div>
+              <div class="field-block">
+                <label for="reading-diastolic" id="reading-diastolic-label">Diastolic</label>
+                <input class="k-field" id="reading-diastolic" type="number" min="30" max="180" inputmode="numeric" required>
+              </div>
+              <div class="field-block">
+                <label for="reading-pulse" id="reading-pulse-label">Pulse</label>
+                <input class="k-field" id="reading-pulse" type="number" min="25" max="220" inputmode="numeric">
+              </div>
+            </div>
+            <div class="form-actions k-row" style="margin-top:12px">
+              <button class="k-btn" id="save-reading" type="submit">Save reading</button>
+            </div>
+          </form>
+        </div>
+      </details>
+    </section>
+
+    <section class="panel" id="panel-supply" role="tabpanel" aria-labelledby="tab-supply" hidden>
+      <div class="section-head">
+        <div>
+          <h2 id="supply-title">Medicine supply</h2>
+          <p class="section-note" id="supply-note">Days left are calculated now from pills left ÷ daily use.</p>
+        </div>
+      </div>
+      <div class="supply-list" id="supply-list"></div>
+      <div class="supply-actions" id="supply-actions" hidden>
+        <button class="k-btn sec" id="ask-restock" type="button">
+          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2.5h12v8H8l-3.5 3v-3H2zM5 6.5h6"/></svg>
+          <span id="ask-restock-label">Draft a family restock message</span>
+        </button>
+      </div>
+    </section>
+  </div>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+  const SVG_NS = "http://www.w3.org/2000/svg";
+  const MEDS_COLLECTION = "elder-meds";
+  const CHECKS_COLLECTION = "elder-checks";
+  const VITALS_COLLECTION = "elder-vitals";
+  const SLOT_ORDER = ["morning", "noon", "evening"];
+  const CIRCUMFERENCE = 251.2;
+
+  const STR = {
+    en: {
+      eyebrow: "DAILY CARE",
+      appName: "Care Daybook",
+      metaDescription: "A clear daily care record for medicines, a 14-day blood-pressure trend, medicine supply, and family hand-off.",
+      today: "Today",
+      snapshot: "Snapshot · {date}",
+      honesty: "This view cannot send background notifications. Open it anytime to see what still needs attention today.",
+      snapshotHonesty: "This saved view reflects {date}. Open the live app to see what needs attention now.",
+      recorded: "recorded",
+      localPeriod: "{slot} · local time",
+      snapshotPeriod: "Snapshot · {slot}",
+      tabsAria: "Daily care sections",
+      medsTab: "Medicines",
+      vitalsTab: "Blood pressure",
+      supplyTab: "Supply",
+      medsTitle: "Today's medicines",
+      snapshotMedsTitle: "Medicines · {date}",
+      medsNote: "One large button records a dose. The current time period has a breathing outline.",
+      snapshotMedsNote: "Completed doses and the remaining open slot are shown exactly as saved.",
+      noMedicineTitle: "Start with the real medicine list",
+      noMedicineBody: "Ask family or the AI to add the names, times, doses and current supply. Nothing is invented here.",
+      askAiSetup: "Ask AI to set it up",
+      pasteMedicines: "Paste medicines",
+      importHelp: "One per line: name | morning,noon,evening | dose | pills left | daily use | note",
+      importPlaceholder: "Metformin | morning,evening | 500 mg · 1 tablet | 30 | 2 | Take with food",
+      addMedicines: "Add medicines",
+      morning: "Morning",
+      morningHint: "Wake-up to lunch",
+      noon: "Noon",
+      noonHint: "Around lunch",
+      evening: "Evening",
+      eveningHint: "Dinner to bedtime",
+      taken: "Taken",
+      takeButton: "I took it",
+      openSnapshot: "Not recorded",
+      saving: "Saving…",
+      currentPeriod: "This is the current time period",
+      notYet: "Not yet",
+      laterToday: "Later today",
+      laterSnapshot: "Open in this snapshot",
+      noPlanTitle: "No medicines yet",
+      noPlanNote: "Ask family or the AI to add the medicine list",
+      allDoneTitle: "All recorded today",
+      allDoneTitleSnapshot: "All recorded on {date}",
+      allDoneNote: "{count} doses recorded",
+      oneRemainingTitle: "1 dose left",
+      remainingTitle: "{count} doses left",
+      remainingNote: "{done} of {total} recorded today",
+      remainingNoteSnapshot: "{done} of {total} recorded on {date}",
+      progressAria: "Today: {done} of {total} medicine doses recorded",
+      progressAriaSnapshot: "Snapshot for {date}: {done} of {total} medicine doses recorded",
+      vitalsTitle: "Blood pressure",
+      vitalsNote: "The chart shows 14 calendar days. Missing days stay empty instead of becoming zero.",
+      latestReading: "Latest reading · {date}",
+      noReading: "No reading yet",
+      pulse: "Pulse",
+      bpm: "bpm",
+      systolic: "Systolic",
+      diastolic: "Diastolic",
+      referenceBands: "Reference bands",
+      chartAria: "Blood pressure over the last 14 calendar days",
+      chartEmpty: "No readings in this 14-day window",
+      sysRange: "SYS 90–120",
+      diaRange: "DIA 60–80",
+      trendSteady: "Steady this week",
+      trendHigher: "A bit higher than last week",
+      trendLower: "A bit lower than last week",
+      trendNew: "A new baseline this week",
+      trendNone: "No readings this week",
+      addReading: "Add reading",
+      readingHelper: "Ask family or the AI to log readings.",
+      askAi: "Ask AI",
+      date: "Date",
+      saveReading: "Save reading",
+      supplyTitle: "Medicine supply",
+      supplyNote: "Days left are calculated now from pills left ÷ daily use.",
+      noSupplyTitle: "Supply appears with the medicine list",
+      noSupplyBody: "Add pills left and daily use to see a live days-left bar.",
+      daysLeft: "{count} days left",
+      oneDayLeft: "1 day left",
+      supplyUnknown: "Supply not entered",
+      supplyMeta: "{pills} pills · {daily} per day",
+      restockBadge: "Time to restock",
+      restockedButton: "Restocked +30",
+      restocking: "Updating…",
+      askRestock: "Draft a family restock message",
+      statusRefreshFailed: "Could not refresh all three data sets: {message}",
+      statusTakenSaved: "Dose recorded and supply updated.",
+      statusTakenNoSupply: "Dose recorded. Supply is not tracked for this medicine yet.",
+      statusTakenPartial: "Dose was recorded, but the supply count was not reduced. Ask family or the AI to reconcile it.",
+      statusTakenFailed: "This dose was not recorded: {message}",
+      statusReadingSaved: "Reading saved. The 14-day chart has been recalculated.",
+      statusReadingFailed: "Reading was not saved: {message}",
+      statusRestocked: "{name} now includes 30 more pills.",
+      statusRestockFailed: "Supply was not updated: {message}",
+      statusImportEmpty: "Paste at least one medicine line first.",
+      statusImportLimit: "Add at most 20 medicines at a time.",
+      statusImportFormat: "Line {line} needs a name and at least one slot: morning, noon or evening.",
+      statusImportPartial: "Added {count} medicines, then stopped: {message}",
+      statusImportDone: "Added {count} medicines.",
+      setupPrompt: "Please help set up Care Daybook. Ask me or a family member for the real medicine names, morning/noon/evening slots, dose, pills left, daily use and notes, then write them to elder-meds. Do not invent any medicine or instruction.",
+      readingPrompt: "Please help log a blood-pressure reading in elder-vitals. Ask me for the absolute date, systolic, diastolic and optional pulse, repeat the numbers back for confirmation, then save exactly what I provide.",
+      restockPrompt: "Please help draft a short family message about these medicines that need restocking: {list}. Ask who should handle it first. Keep the message as a draft, and do not mark anything restocked until I explicitly confirm it.",
+      unknownError: "Unknown error"
+    },
+    zh: {
+      eyebrow: "日常照护",
+      appName: "安心日常",
+      metaDescription: "清楚查看服药记录、14 天血压趋势、剩余药量与家庭交接。",
+      today: "今天",
+      snapshot: "快照 · {date}",
+      honesty: "这里不会在后台发通知。每次打开，都能清楚看到今天还有什么需要留意。",
+      snapshotHonesty: "这是 {date} 的保存快照。打开实时 App 才能看到现在仍需留意的事项。",
+      recorded: "已记录",
+      localPeriod: "{slot} · 本地时间",
+      snapshotPeriod: "快照 · {slot}",
+      tabsAria: "日常照护分区",
+      medsTab: "今天的药",
+      vitalsTab: "血压",
+      supplyTab: "药量",
+      medsTitle: "今天的药",
+      snapshotMedsTitle: "{date} 的药",
+      medsNote: "一个大按钮记录一次服药；当前时段会有呼吸描边。",
+      snapshotMedsNote: "已完成与未记录的时段，均按这份快照原样显示。",
+      noMedicineTitle: "先放进真实药单",
+      noMedicineBody: "请家人或 AI 补上药名、时段、剂量和现有药量。这里不会自行编药。",
+      askAiSetup: "叫 AI 帮忙建档",
+      pasteMedicines: "批量粘贴药单",
+      importHelp: "每行：药名 | morning,noon,evening | 剂量 | 剩余片数 | 每日用量 | 备注",
+      importPlaceholder: "二甲双胍 | morning,evening | 500 mg · 1片 | 30 | 2 | 随餐服用",
+      addMedicines: "加入这些药",
+      morning: "早晨",
+      morningHint: "起床到午饭前",
+      noon: "中午",
+      noonHint: "午饭前后",
+      evening: "晚上",
+      eveningHint: "晚饭后到睡前",
+      taken: "已服",
+      takeButton: "我吃了",
+      openSnapshot: "未记录",
+      saving: "正在记录…",
+      currentPeriod: "现在是这个时段",
+      notYet: "还没记录",
+      laterToday: "今天稍后",
+      laterSnapshot: "快照中尚未记录",
+      noPlanTitle: "还没有药单",
+      noPlanNote: "请家人或 AI 帮忙放进来",
+      allDoneTitle: "今天都记好了",
+      allDoneTitleSnapshot: "{date} 都已记录",
+      allDoneNote: "共记录 {count} 次",
+      oneRemainingTitle: "还剩 1 次药",
+      remainingTitle: "还剩 {count} 次药",
+      remainingNote: "今天已记录 {done}/{total}",
+      remainingNoteSnapshot: "{date} 已记录 {done}/{total}",
+      progressAria: "今天服药已记录 {done} 次，共 {total} 次",
+      progressAriaSnapshot: "{date} 快照中，服药已记录 {done} 次，共 {total} 次",
+      vitalsTitle: "血压",
+      vitalsNote: "图表覆盖最近 14 个自然日；缺测日留空，不会补成零。",
+      latestReading: "最近读数 · {date}",
+      noReading: "还没有血压记录",
+      pulse: "脉搏",
+      bpm: "次/分",
+      systolic: "收缩压",
+      diastolic: "舒张压",
+      referenceBands: "参考区间",
+      chartAria: "最近 14 个自然日的血压趋势",
+      chartEmpty: "这 14 天内还没有读数",
+      sysRange: "收缩 90–120",
+      diaRange: "舒张 60–80",
+      trendSteady: "本周较平稳",
+      trendHigher: "比上周略高",
+      trendLower: "比上周略低",
+      trendNew: "本周建立了新基线",
+      trendNone: "本周没有读数",
+      addReading: "添加读数",
+      readingHelper: "请家人或 AI 代为记录。",
+      askAi: "叫 AI 记录",
+      date: "日期",
+      saveReading: "保存读数",
+      supplyTitle: "药量",
+      supplyNote: "剩余天数此刻由剩余片数 ÷ 每日用量计算。",
+      noSupplyTitle: "药单建好后会显示药量",
+      noSupplyBody: "补上剩余片数和每日用量，就能看到实时天数条。",
+      daysLeft: "还剩 {count} 天",
+      oneDayLeft: "还剩 1 天",
+      supplyUnknown: "尚未填写药量",
+      supplyMeta: "剩 {pills} 片 · 每天 {daily}",
+      restockBadge: "该补药了",
+      restockedButton: "已补货 +30",
+      restocking: "正在更新…",
+      askRestock: "整理一条家庭补药消息",
+      statusRefreshFailed: "三份数据没有读完整：{message}",
+      statusTakenSaved: "服药已记录，剩余药量也已扣减。",
+      statusTakenNoSupply: "服药已记录；这份药还没有维护剩余药量。",
+      statusTakenPartial: "服药已经记上，但剩余药量没有扣减。请家人或 AI 帮忙核对。",
+      statusTakenFailed: "这次没有记上：{message}",
+      statusReadingSaved: "读数已保存，14 天趋势已重新计算。",
+      statusReadingFailed: "读数没有保存：{message}",
+      statusRestocked: "{name} 已增加 30 片。",
+      statusRestockFailed: "药量没有更新：{message}",
+      statusImportEmpty: "请先粘贴至少一行药单。",
+      statusImportLimit: "一次最多加入 20 种药。",
+      statusImportFormat: "第 {line} 行需要药名和至少一个时段：morning、noon 或 evening。",
+      statusImportPartial: "已加入 {count} 种药，随后停止：{message}",
+      statusImportDone: "已加入 {count} 种药。",
+      setupPrompt: "请帮我设置“安心日常”。先向我或家人问清真实药名、早中晚时段、剂量、剩余片数、每日用量和备注，再写入 elder-meds；不要编造任何药物或服药说明。",
+      readingPrompt: "请帮我把血压记录到 elder-vitals。先问我绝对日期、收缩压、舒张压和可选脉搏，复述数字确认后，再原样保存。",
+      restockPrompt: "请帮我整理一条家庭补药消息，涉及这些需要补货的药：{list}。先问由谁处理，只保留为消息草稿；除非我明确确认，不要把任何药标成已补货。",
+      unknownError: "未知错误"
+    }
+  };
+
+  let fixturePreview = false;
+  let previewClockDate = null;
+  const clockNow = () => previewClockDate ? new Date(previewClockDate) : new Date();
+  const actualToday = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const today    = () => { const n = clockNow(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);   // negative = overdue
+  // Next occurrence of an anchor repeating every N days — derived, nothing stored, DST-safe:
+  const nextOccurrence = (anchorIso, everyDays) => {
+    const a = dateOnly(anchorIso);
+    const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
+    return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
+  };
+
+  let data = { meds: [], checks: [], vitals: [] };
+  let activeTab = "meds";
+  let refreshTask = null;
+  let refreshQueued = false;
+  let statusState = null;
+  let statusTimer = 0;
+  let justRestocked = "";
+
+  function uiLanguage() {
+    const pref = String(oma.pref("locale", "auto") || "auto");
+    const resolved = pref === "auto" ? String(navigator.language || "en") : pref;
+    return resolved.toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
+
+  function t(key, vars = {}) {
+    let value = STR[uiLanguage()][key] ?? STR.en[key] ?? key;
+    for (const [name, replacement] of Object.entries(vars)) {
+      value = value.replaceAll(`{${name}}`, String(replacement));
+    }
+    return value;
+  }
+
+  function locale() {
+    const pref = oma.pref("locale", "auto");
+    const candidate = pref === "auto" ? navigator.language : pref;
+    try {
+      new Intl.DateTimeFormat(candidate);
+      return candidate;
+    } catch {
+      return navigator.language || "en-US";
+    }
+  }
+
+  function el(tag, className, text) {
+    const node = document.createElement(tag);
+    if (className) node.className = className;
+    if (text !== undefined) node.textContent = text;
+    return node;
+  }
+
+  function svgNode(tag, attributes = {}) {
+    const node = document.createElementNS(SVG_NS, tag);
+    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
+    return node;
+  }
+
+  function icon(path) {
+    const svg = svgNode("svg", { class: "k-icon", viewBox: "0 0 16 16", "aria-hidden": "true" });
+    svg.append(svgNode("path", { d: path }));
+    return svg;
+  }
+
+  function localIso(date = clockNow()) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  }
+
+  function snapshotContext() {
+    const iso = localIso(today());
+    const active = fixturePreview && iso !== localIso(actualToday());
+    return { active, iso, date: formatDate(iso, { month: "short", day: "numeric" }) };
+  }
+
+  function numberText(value, maximumFractionDigits = 1) {
+    return new Intl.NumberFormat(locale(), { maximumFractionDigits }).format(Number(value));
+  }
+
+  function formatDate(iso, options = { year: "numeric", month: "short", day: "numeric" }) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso || "");
+    const mode = oma.pref("date_format", "auto");
+    const [year, month, day] = String(iso).split("-");
+    if (mode === "yyyy-mm-dd") return String(iso);
+    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
+    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
+    return new Intl.DateTimeFormat(locale(), options).format(dateOnly(iso));
+  }
+
+  function dateParts(date) {
+    const iso = localIso(date);
+    const mode = oma.pref("date_format", "auto");
+    const weekday = new Intl.DateTimeFormat(locale(), { weekday: "long" }).format(date);
+    if (mode === "yyyy-mm-dd") return { main: iso, weekday };
+    if (mode === "dd/mm/yyyy") return { main: `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}`, weekday };
+    if (mode === "mm/dd/yyyy") return { main: `${iso.slice(5, 7)}/${iso.slice(8, 10)}/${iso.slice(0, 4)}`, weekday };
+    return { main: new Intl.DateTimeFormat(locale(), { month: "long", day: "numeric" }).format(date), weekday };
+  }
+
+  function safeError(error) {
+    return String(error?.message || error || t("unknownError"));
+  }
+
+  function toolFailure(response, fallback) {
+    const structured = response?.structuredContent;
+    const payload = structured || response;
+    if (!response || response.isError || response.ok === false || payload?.ok === false) {
+      const message = payload?.note || payload?.reason || response?.note || response?.reason || response?.content?.[0]?.text || fallback;
+      throw new Error(message);
+    }
+    return payload || {};
+  }
+
+  async function readCollectionItems(collection) {
+    const reply = await oma.callTool("data_list", { collection, limit: 500 });
+    toolFailure(reply, `Unable to read ${collection}.`);
+    const items = reply?.structuredContent?.items;
+    if (!Array.isArray(items)) throw new Error(`${collection} returned invalid data.`);
+    return items;
+  }
+
+  function refreshCollections() {
+    refreshQueued = true;
+    if (refreshTask) return refreshTask;
+    refreshTask = (async () => {
+      while (refreshQueued) {
+        refreshQueued = false;
+        const [meds, checks, vitals] = await Promise.all([
+          readCollectionItems(MEDS_COLLECTION),
+          readCollectionItems(CHECKS_COLLECTION),
+          readCollectionItems(VITALS_COLLECTION)
+        ]);
+        data = { meds, checks, vitals };
+        render();
+      }
+    })().finally(() => {
+      refreshTask = null;
+    });
+    return refreshTask;
+  }
+
+  function fixtureRows(items) {
+    return {
+      meds: (items || []).filter((item) => item.collection === MEDS_COLLECTION),
+      checks: (items || []).filter((item) => item.collection === CHECKS_COLLECTION),
+      vitals: (items || []).filter((item) => item.collection === VITALS_COLLECTION)
+    };
+  }
+
+  function previewDateOf(rows) {
+    const dates = [...rows.checks, ...rows.vitals]
+      .map((item) => String(item.fields?.date || ""))
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .sort();
+    if (!dates.length) return null;
+    const date = dateOnly(dates.at(-1));
+    date.setHours(12, 0, 0, 0);
+    return date;
+  }
+
+  function requestRefresh(state) {
+    const preview = fixtureRows(state?.items);
+    if (preview.meds.length || preview.checks.length || preview.vitals.length) {
+      fixturePreview = true;
+      previewClockDate = previewDateOf(preview);
+      data = preview;
+      render();
+      return;
+    }
+    if (state?.items) {
+      fixturePreview = false;
+      previewClockDate = null;
+    }
+    void refreshCollections().catch((error) => {
+      showStatus("statusRefreshFailed", "bad", { message: safeError(error) }, true);
+    });
+  }
+
+  function applyStatus() {
+    const strip = document.getElementById("status-strip");
+    const badge = document.getElementById("status-message");
+    strip.hidden = !statusState;
+    if (!statusState) return;
+    badge.className = `k-badge ${statusState.tone}`;
+    badge.textContent = t(statusState.key, statusState.vars);
+  }
+
+  function showStatus(key, tone = "ok", vars = {}, persistent = false) {
+    statusState = { key, tone, vars };
+    applyStatus();
+    clearTimeout(statusTimer);
+    if (!persistent) {
+      statusTimer = setTimeout(() => {
+        statusState = null;
+        applyStatus();
+      }, 4200);
+    }
+  }
+
+  async function writeTool(name, args) {
+    const response = await oma.callTool(name, {
+      command_id: crypto.randomUUID(),
+      actor: "human",
+      ...args
+    });
+    return toolFailure(response, `${name} failed.`);
+  }
+
+  function currentSlot() {
+    const morningEnd = Math.max(6, Math.min(14, Number(oma.pref("morning_end_hour", 11))));
+    const eveningPref = Math.max(15, Math.min(22, Number(oma.pref("evening_start_hour", 17))));
+    const eveningStart = Math.max(morningEnd + 1, eveningPref);
+    const hour = clockNow().getHours();
+    if (hour < morningEnd) return "morning";
+    if (hour < eveningStart) return "noon";
+    return "evening";
+  }
+
+  function slotLabel(slot) {
+    return t(slot);
+  }
+
+  function safeSlots(value) {
+    if (Array.isArray(value)) return value.map(String).filter((slot) => SLOT_ORDER.includes(slot));
+    if (typeof value !== "string") return [];
+    try {
+      const parsed = JSON.parse(value);
+      if (Array.isArray(parsed)) return parsed.map(String).filter((slot) => SLOT_ORDER.includes(slot));
+    } catch {
+      return value.split(/[,，、\s]+/).map((slot) => slot.trim()).filter((slot) => SLOT_ORDER.includes(slot));
+    }
+    return [];
+  }
+
+  function medicineRows() {
+    return data.meds.filter((item) => String(item.fields?.name || "").trim())
+      .sort((a, b) => (a.position || 0) - (b.position || 0));
+  }
+
+  function dueEntries() {
+    const rows = [];
+    for (const med of medicineRows()) {
+      for (const slot of safeSlots(med.fields.slots)) rows.push({ med, slot });
+    }
+    return rows;
+  }
+
+  function todayCheckMap() {
+    const iso = localIso(today());
+    const map = new Map();
+    for (const check of data.checks) {
+      if (String(check.fields?.date) !== iso) continue;
+      const med = String(check.fields?.med || "");
+      const slot = String(check.fields?.slot || "");
+      if (med && SLOT_ORDER.includes(slot)) map.set(`${med}\u0000${slot}`, check);
+    }
+    return map;
+  }
+
+  function doseStatus(slot, done) {
+    if (done) return "done";
+    if (snapshotContext().active) return "future";
+    const currentIndex = SLOT_ORDER.indexOf(currentSlot());
+    const slotIndex = SLOT_ORDER.indexOf(slot);
+    if (slotIndex < currentIndex) return "late";
+    if (slotIndex === currentIndex) return "current";
+    return "future";
+  }
+
+  function renderStaticText() {
+    document.documentElement.lang = uiLanguage() === "zh" ? "zh-CN" : "en";
+    document.title = t("appName");
+    document.body.dataset.density = oma.pref("density", "comfortable");
+    const pairs = [
+      ["eyebrow", "eyebrow"],
+      ["app-title", "appName"],
+      ["today-label", "today"],
+      ["honesty", "honesty"],
+      ["progress-label", "recorded"],
+      ["tab-meds-label", "medsTab"],
+      ["tab-vitals-label", "vitalsTab"],
+      ["tab-supply-label", "supplyTab"],
+      ["meds-title", "medsTitle"],
+      ["meds-note", "medsNote"],
+      ["medicine-import-summary", "pasteMedicines"],
+      ["medicine-import-help", "importHelp"],
+      ["medicine-import-button", "addMedicines"],
+      ["vitals-title", "vitalsTitle"],
+      ["vitals-note", "vitalsNote"],
+      ["pulse-label", "pulse"],
+      ["pulse-unit", "bpm"],
+      ["legend-systolic", "systolic"],
+      ["legend-diastolic", "diastolic"],
+      ["legend-range", "referenceBands"],
+      ["reading-summary", "addReading"],
+      ["reading-helper", "readingHelper"],
+      ["ask-ai-reading", "askAi"],
+      ["reading-date-label", "date"],
+      ["reading-systolic-label", "systolic"],
+      ["reading-diastolic-label", "diastolic"],
+      ["reading-pulse-label", "pulse"],
+      ["save-reading", "saveReading"],
+      ["supply-title", "supplyTitle"],
+      ["supply-note", "supplyNote"],
+      ["ask-restock-label", "askRestock"]
+    ];
+    for (const [id, key] of pairs) document.getElementById(id).textContent = t(key);
+    const snapshot = snapshotContext();
+    document.getElementById("today-label").textContent = snapshot.active ? t("snapshot", { date: snapshot.date }) : t("today");
+    document.getElementById("honesty").textContent = snapshot.active ? t("snapshotHonesty", { date: snapshot.date }) : t("honesty");
+    document.getElementById("meds-title").textContent = snapshot.active ? t("snapshotMedsTitle", { date: snapshot.date }) : t("medsTitle");
+    document.getElementById("meds-note").textContent = snapshot.active ? t("snapshotMedsNote") : t("medsNote");
+    document.getElementById("main-tabs").setAttribute("aria-label", t("tabsAria"));
+    document.getElementById("medicine-import-input").placeholder = t("importPlaceholder");
+    document.getElementById("bp-chart").setAttribute("aria-label", t("chartAria"));
+    document.getElementById("chart-legend").setAttribute("aria-label", t("referenceBands"));
+    applyStatus();
+  }
+
+  function renderDateAndProgress() {
+    const now = clockNow();
+    const snapshot = snapshotContext();
+    const parts = dateParts(now);
+    document.getElementById("date-main").textContent = parts.main;
+    document.getElementById("weekday").textContent = parts.weekday;
+    document.getElementById("time-badge").textContent = t(snapshot.active ? "snapshotPeriod" : "localPeriod", { slot: slotLabel(currentSlot()) });
+
+    const due = dueEntries();
+    const checks = todayCheckMap();
+    const done = due.filter(({ med, slot }) => checks.has(`${med.fields.name}\u0000${slot}`)).length;
+    const total = due.length;
+    const remaining = Math.max(0, total - done);
+    const ratio = total ? done / total : 0;
+    document.getElementById("progress-count").textContent = `${numberText(done, 0)}/${numberText(total, 0)}`;
+    document.getElementById("progress-fill").style.strokeDashoffset = String(CIRCUMFERENCE * (1 - ratio));
+    document.getElementById("progress-ring").setAttribute("aria-label", t(snapshot.active ? "progressAriaSnapshot" : "progressAria", { done, total, date: snapshot.date }));
+    if (!total) {
+      document.getElementById("remaining-title").textContent = t("noPlanTitle");
+      document.getElementById("remaining-note").textContent = t("noPlanNote");
+    } else if (!remaining) {
+      document.getElementById("remaining-title").textContent = t(snapshot.active ? "allDoneTitleSnapshot" : "allDoneTitle", { date: snapshot.date });
+      document.getElementById("remaining-note").textContent = t("allDoneNote", { count: numberText(total, 0) });
+    } else {
+      document.getElementById("remaining-title").textContent = t(remaining === 1 ? "oneRemainingTitle" : "remainingTitle", { count: numberText(remaining, 0) });
+      document.getElementById("remaining-note").textContent = t(snapshot.active ? "remainingNoteSnapshot" : "remainingNote", { done: numberText(done, 0), total: numberText(total, 0), date: snapshot.date });
+    }
+  }
+
+  function renderMedicineEmpty(root) {
+    const box = el("div", "k-empty empty-large");
+    const svg = svgNode("svg", { viewBox: "0 0 72 72", fill: "none", "aria-hidden": "true" });
+    svg.append(svgNode("path", { stroke: "var(--color-text-tertiary)", "stroke-width": 2, d: "M18 11h36v50H18zM27 5v12M45 5v12M18 23h36M27 34h18M27 44h18" }));
+    svg.append(svgNode("path", { stroke: "var(--color-text-info, var(--color-ring-primary))", "stroke-width": 2, d: "M9 52h18M18 43v18" }));
+    box.append(svg, el("b", "", t("noMedicineTitle")), el("span", "", t("noMedicineBody")));
+    const actions = el("div", "empty-actions");
+    const ask = el("button", "k-btn", t("askAiSetup"));
+    ask.type = "button";
+    ask.onclick = () => oma.sendMessage(t("setupPrompt"));
+    const paste = el("button", "k-btn sec", t("pasteMedicines"));
+    paste.type = "button";
+    paste.onclick = () => {
+      const details = document.getElementById("medicine-import");
+      details.open = true;
+      requestAnimationFrame(() => document.getElementById("medicine-import-input").focus());
+    };
+    actions.append(ask, paste);
+    box.append(actions);
+    root.replaceChildren(box);
+  }
+
+  function renderMedicines() {
+    const root = document.getElementById("schedule");
+    const due = dueEntries();
+    const importBox = document.getElementById("medicine-import");
+    importBox.hidden = due.length > 0;
+    if (!due.length) {
+      renderMedicineEmpty(root);
+      return;
+    }
+
+    root.innerHTML = "";
+    const checks = todayCheckMap();
+    const snapshot = snapshotContext();
+    const nowSlot = snapshot.active ? "" : currentSlot();
+    for (const slot of SLOT_ORDER) {
+      const entries = due.filter((entry) => entry.slot === slot);
+      if (!entries.length) continue;
+      const block = el("section", `slot-block${slot === nowSlot ? " current" : ""}`);
+      const heading = el("div", "slot-name");
+      heading.append(el("strong", "", slotLabel(slot)), el("span", "", t(`${slot}Hint`)));
+      const list = el("div", "slot-meds");
+      for (const { med } of entries) {
+        const key = `${med.fields.name}\u0000${slot}`;
+        const checked = checks.has(key);
+        const status = doseStatus(slot, checked);
+        const row = el("article", `k-card med-row${status === "done" ? " done" : status === "late" ? " late" : ""}`);
+        const copy = el("div", "med-copy");
+        copy.append(el("strong", "", med.fields.name));
+        const meta = el("div", "med-meta");
+        if (med.fields.dose) meta.append(el("span", "k-badge static", String(med.fields.dose)));
+        if (med.fields.note) meta.append(el("span", "", String(med.fields.note)));
+        copy.append(meta);
+        const state = el("div", `med-state${status === "done" ? " ok" : status === "late" ? " warn" : ""}`);
+        if (status === "done") state.textContent = t("taken");
+        if (status === "late") state.textContent = t("notYet");
+        if (status === "current") state.textContent = t("currentPeriod");
+        if (status === "future") state.textContent = t(snapshot.active ? "laterSnapshot" : "laterToday");
+        copy.append(state);
+        row.append(copy);
+        const snapshotOpen = snapshot.active && status !== "done";
+        const button = el("button", `k-btn${status === "done" ? " sec med-action taken" : " med-action"}`, status === "done" ? t("taken") : snapshotOpen ? t("openSnapshot") : t("takeButton"));
+        button.type = "button";
+        button.disabled = status === "done" || snapshotOpen;
+        if (status === "done") button.prepend(icon("M2.5 8.5l3.5 3.5 7.5-8.5"));
+        else button.onclick = () => markTaken(med, slot, button);
+        row.append(button);
+        list.append(row);
+      }
+      block.append(heading, list);
+      root.append(block);
+    }
+  }
+
+  function decrementPerCheck(med) {
+    const daily = Number(med.fields.daily_use);
+    const slots = safeSlots(med.fields.slots).length;
+    if (!Number.isFinite(daily) || daily <= 0 || !slots) return null;
+    return daily / slots;
+  }
+
+  async function markTaken(med, slot, button) {
+    button.disabled = true;
+    button.textContent = t("saving");
+    const iso = localIso(today());
+    try {
+      await writeTool("data_add_item", {
+        collection: CHECKS_COLLECTION,
+        group: iso,
+        fields: { med: String(med.fields.name), date: iso, slot }
+      });
+    } catch (error) {
+      showStatus("statusTakenFailed", "bad", { message: safeError(error) }, true);
+      requestRefresh();
+      return;
+    }
+
+    const pillsLeft = Number(med.fields.pills_left);
+    const decrement = decrementPerCheck(med);
+    if (!Number.isFinite(pillsLeft) || decrement === null) {
+      showStatus("statusTakenNoSupply", "warn");
+      requestRefresh();
+      return;
+    }
+
+    const nextPills = Math.max(0, Math.round((pillsLeft - decrement) * 100) / 100);
+    try {
+      await writeTool("data_update_item", {
+        id: med.id,
+        expected_version: med.version,
+        fields: { pills_left: nextPills }
+      });
+      showStatus("statusTakenSaved", "ok");
+    } catch {
+      showStatus("statusTakenPartial", "bad", {}, true);
+    }
+    requestRefresh();
+  }
+
+  function validVitalRows() {
+    return data.vitals.filter((item) => {
+      const iso = String(item.fields?.date || "");
+      const systolic = Number(item.fields?.systolic);
+      const diastolic = Number(item.fields?.diastolic);
+      return /^\d{4}-\d{2}-\d{2}$/.test(iso) && Number.isFinite(systolic) && Number.isFinite(diastolic);
+    }).sort((a, b) => String(a.fields.date).localeCompare(String(b.fields.date)) || (a.position || 0) - (b.position || 0));
+  }
+
+  function readingByDate(rows) {
+    const map = new Map();
+    for (const item of rows) map.set(String(item.fields.date), item);
+    return map;
+  }
+
+  function dateWindow(days) {
+    const base = today();
+    return Array.from({ length: days }, (_, index) => {
+      const offset = index - (days - 1);
+      return new Date(base.getFullYear(), base.getMonth(), base.getDate() + offset);
+    });
+  }
+
+  function trendKey(rows) {
+    const base = today();
+    const currentStart = new Date(base.getFullYear(), base.getMonth(), base.getDate() - 6);
+    const previousStart = new Date(base.getFullYear(), base.getMonth(), base.getDate() - 13);
+    const previousEnd = new Date(base.getFullYear(), base.getMonth(), base.getDate() - 7);
+    const current = rows.filter((item) => {
+      const date = dateOnly(item.fields.date);
+      return date >= currentStart && date <= base;
+    });
+    const previous = rows.filter((item) => {
+      const date = dateOnly(item.fields.date);
+      return date >= previousStart && date <= previousEnd;
+    });
+    if (!current.length) return "trendNone";
+    if (!previous.length) return "trendNew";
+    const average = (items, key) => items.reduce((sum, item) => sum + Number(item.fields[key]), 0) / items.length;
+    const systolicDelta = average(current, "systolic") - average(previous, "systolic");
+    const diastolicDelta = average(current, "diastolic") - average(previous, "diastolic");
+    const combined = systolicDelta + diastolicDelta * .7;
+    if (combined > 4) return "trendHigher";
+    if (combined < -4) return "trendLower";
+    return "trendSteady";
+  }
+
+  function chartPath(points) {
+    return points.map((point, index) => `${index ? "L" : "M"}${point.x.toFixed(1)} ${point.y.toFixed(1)}`).join(" ");
+  }
+
+  function renderVitals() {
+    const rows = validVitalRows();
+    const latest = rows.at(-1);
+    document.getElementById("trend-badge").textContent = t(trendKey(rows));
+    if (latest) {
+      document.getElementById("latest-reading-label").textContent = t("latestReading", { date: formatDate(latest.fields.date) });
+      document.getElementById("latest-reading").textContent = `${numberText(latest.fields.systolic, 0)}/${numberText(latest.fields.diastolic, 0)}`;
+      document.getElementById("latest-pulse").textContent = Number.isFinite(Number(latest.fields.pulse)) ? numberText(latest.fields.pulse, 0) : "—";
+    } else {
+      document.getElementById("latest-reading-label").textContent = t("noReading");
+      document.getElementById("latest-reading").textContent = "—/—";
+      document.getElementById("latest-pulse").textContent = "—";
+    }
+    renderBloodPressureChart(rows);
+  }
+
+  function renderBloodPressureChart(rows) {
+    const svg = document.getElementById("bp-chart");
+    svg.innerHTML = "";
+    const width = 700;
+    const height = 300;
+    const left = 50;
+    const right = 18;
+    const top = 24;
+    const bottom = 42;
+    const plotWidth = width - left - right;
+    const plotHeight = height - top - bottom;
+    const days = dateWindow(14);
+    const byDate = readingByDate(rows);
+    const visible = days.map((date) => ({ date, iso: localIso(date), item: byDate.get(localIso(date)) || null }));
+    const values = visible.flatMap(({ item }) => item ? [Number(item.fields.systolic), Number(item.fields.diastolic)] : []);
+    const minimum = Math.min(50, ...(values.length ? values : [50]));
+    const maximum = Math.max(180, ...(values.length ? values : [180]));
+    const yMin = Math.floor((minimum - 10) / 10) * 10;
+    const yMax = Math.ceil((maximum + 10) / 10) * 10;
+    const y = (value) => top + ((yMax - value) / (yMax - yMin)) * plotHeight;
+    const x = (index) => left + index * (plotWidth / 13);
+
+    const addBand = (low, high, className, labelKey) => {
+      const bandTop = y(high);
+      const bandHeight = y(low) - bandTop;
+      svg.append(svgNode("rect", { class: `chart-range ${className}`, x: left, y: bandTop, width: plotWidth, height: bandHeight }));
+      const label = svgNode("text", { class: "chart-range-text", x: left + 6, y: bandTop + 12 });
+      label.textContent = t(labelKey);
+      svg.append(label);
+    };
+    addBand(90, 120, "sys", "sysRange");
+    addBand(60, 80, "dia", "diaRange");
+
+    const ticks = [60, 90, 120, 150, 180].filter((value) => value >= yMin && value <= yMax);
+    for (const value of ticks) {
+      const lineY = y(value);
+      svg.append(svgNode("line", { class: "chart-grid", x1: left, y1: lineY, x2: width - right, y2: lineY }));
+      const label = svgNode("text", { class: "chart-axis-text", x: left - 8, y: lineY + 4, "text-anchor": "end" });
+      label.textContent = numberText(value, 0);
+      svg.append(label);
+    }
+
+    const xLabelIndexes = new Set([0, 3, 6, 9, 13]);
+    visible.forEach(({ iso }, index) => {
+      if (!xLabelIndexes.has(index)) return;
+      const label = svgNode("text", { class: "chart-axis-text", x: x(index), y: height - 14, "text-anchor": "middle" });
+      label.textContent = formatDate(iso, { month: "numeric", day: "numeric" });
+      svg.append(label);
+    });
+
+    const systolicPoints = [];
+    const diastolicPoints = [];
+    visible.forEach(({ item }, index) => {
+      if (!item) return;
+      systolicPoints.push({ x: x(index), y: y(Number(item.fields.systolic)), item });
+      diastolicPoints.push({ x: x(index), y: y(Number(item.fields.diastolic)), item });
+    });
+
+    if (!systolicPoints.length) {
+      const label = svgNode("text", { class: "chart-empty-text", x: width / 2, y: height / 2, "text-anchor": "middle" });
+      label.textContent = t("chartEmpty");
+      svg.append(label);
+      return;
+    }
+
+    svg.append(svgNode("path", { class: "chart-path", d: chartPath(systolicPoints) }));
+    svg.append(svgNode("path", { class: "chart-path dia", d: chartPath(diastolicPoints) }));
+    const latestVisibleId = systolicPoints.at(-1).item.id;
+    for (const point of systolicPoints) {
+      const dot = svgNode("circle", { class: `chart-dot${point.item.id === latestVisibleId ? " latest" : ""}`, cx: point.x, cy: point.y, r: point.item.id === latestVisibleId ? 4.5 : 3.2 });
+      const title = svgNode("title");
+      title.textContent = `${formatDate(point.item.fields.date)} · ${numberText(point.item.fields.systolic, 0)}/${numberText(point.item.fields.diastolic, 0)} mmHg`;
+      dot.append(title);
+      svg.append(dot);
+    }
+    for (const point of diastolicPoints) {
+      const dot = svgNode("circle", { class: `chart-dot dia${point.item.id === latestVisibleId ? " latest" : ""}`, cx: point.x, cy: point.y, r: point.item.id === latestVisibleId ? 4.5 : 3.2 });
+      svg.append(dot);
+    }
+  }
+
+  async function saveReading(form) {
+    const fields = {
+      date: document.getElementById("reading-date").value,
+      systolic: Number(document.getElementById("reading-systolic").value),
+      diastolic: Number(document.getElementById("reading-diastolic").value)
+    };
+    const pulseRaw = document.getElementById("reading-pulse").value.trim();
+    if (pulseRaw) fields.pulse = Number(pulseRaw);
+    if (!fields.date || !Number.isFinite(fields.systolic) || !Number.isFinite(fields.diastolic) || (pulseRaw && !Number.isFinite(fields.pulse))) {
+      form.reportValidity();
+      return;
+    }
+    const button = document.getElementById("save-reading");
+    button.disabled = true;
+    button.textContent = t("saving");
+    try {
+      await writeTool("data_add_item", { collection: VITALS_COLLECTION, group: "reading", fields });
+      showStatus("statusReadingSaved", "ok");
+      form.reset();
+      document.getElementById("reading-date").value = localIso(today());
+      document.getElementById("reading-editor").open = false;
+      await refreshCollections();
+    } catch (error) {
+      showStatus("statusReadingFailed", "bad", { message: safeError(error) }, true);
+    } finally {
+      button.disabled = false;
+      button.textContent = t("saveReading");
+    }
+  }
+
+  function supplyFacts(med) {
+    const pills = Number(med.fields.pills_left);
+    const daily = Number(med.fields.daily_use);
+    if (!Number.isFinite(pills) || !Number.isFinite(daily) || daily <= 0) return { known: false, pills, daily, days: null };
+    return { known: true, pills: Math.max(0, pills), daily, days: Math.floor(Math.max(0, pills) / daily) };
+  }
+
+  function renderSupplyEmpty(root) {
+    const box = el("div", "k-empty empty-large");
+    const svg = svgNode("svg", { viewBox: "0 0 72 72", fill: "none", "aria-hidden": "true" });
+    svg.append(svgNode("path", { stroke: "var(--color-text-tertiary)", "stroke-width": 2, d: "M22 10h28v52H22zM27 21h18M27 31h18M27 41h12" }));
+    svg.append(svgNode("path", { stroke: "var(--color-text-info, var(--color-ring-primary))", "stroke-width": 2, d: "M12 51h22M23 40v22" }));
+    box.append(svg, el("b", "", t("noSupplyTitle")), el("span", "", t("noSupplyBody")));
+    root.replaceChildren(box);
+  }
+
+  function renderSupply() {
+    const root = document.getElementById("supply-list");
+    const meds = medicineRows();
+    if (!meds.length) {
+      renderSupplyEmpty(root);
+      document.getElementById("supply-actions").hidden = true;
+      return;
+    }
+
+    root.innerHTML = "";
+    const low = [];
+    for (const med of meds) {
+      const facts = supplyFacts(med);
+      if (facts.known && facts.days <= 7) low.push({ med, facts });
+      const row = el("article", `k-card supply-row${justRestocked === med.id ? " just-restocked" : ""}`);
+      const copy = el("div", "supply-copy");
+      const title = el("div", "supply-title");
+      title.append(el("strong", "", med.fields.name));
+      if (facts.known && facts.days <= 7) title.append(el("span", "k-badge warn", t("restockBadge")));
+      copy.append(title);
+      const days = el("div", "supply-days");
+      if (!facts.known) days.textContent = t("supplyUnknown");
+      else days.textContent = facts.days === 1 ? t("oneDayLeft") : t("daysLeft", { count: numberText(facts.days, 0) });
+      copy.append(days);
+      if (facts.known) copy.append(el("div", "supply-meta", t("supplyMeta", { pills: numberText(facts.pills), daily: numberText(facts.daily) })));
+      const track = el("div", "supply-track");
+      const fill = el("div", `supply-fill${facts.known && facts.days <= 7 ? " low" : ""}`);
+      fill.style.width = facts.known ? `${Math.max(facts.days ? 4 : 0, Math.min(100, (facts.days / 30) * 100))}%` : "0%";
+      track.append(fill);
+      copy.append(track);
+      row.append(copy);
+      const button = el("button", "k-btn restock-button", t("restockedButton"));
+      button.type = "button";
+      button.onclick = () => restockMedicine(med, button);
+      row.append(button);
+      root.append(row);
+    }
+    justRestocked = "";
+    document.getElementById("supply-actions").hidden = low.length === 0;
+  }
+
+  async function restockMedicine(med, button) {
+    const current = Number(med.fields.pills_left);
+    const next = (Number.isFinite(current) ? current : 0) + 30;
+    button.disabled = true;
+    button.textContent = t("restocking");
+    try {
+      await writeTool("data_update_item", {
+        id: med.id,
+        expected_version: med.version,
+        fields: { pills_left: next }
+      });
+      justRestocked = med.id;
+      showStatus("statusRestocked", "ok", { name: med.fields.name });
+      await refreshCollections();
+    } catch (error) {
+      showStatus("statusRestockFailed", "bad", { message: safeError(error) }, true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+      button.textContent = t("restockedButton");
+    }
+  }
+
+  function parseSlots(value) {
+    const aliases = {
+      morning: "morning",
+      am: "morning",
+      "早": "morning",
+      "早晨": "morning",
+      "早上": "morning",
+      noon: "noon",
+      midday: "noon",
+      "中": "noon",
+      "中午": "noon",
+      evening: "evening",
+      night: "evening",
+      pm: "evening",
+      "晚": "evening",
+      "晚上": "evening"
+    };
+    return [...new Set(String(value || "").split(/[,，、\s]+/).map((part) => aliases[part.trim().toLowerCase()] || aliases[part.trim()]).filter(Boolean))];
+  }
+
+  async function importMedicines() {
+    const input = document.getElementById("medicine-import-input");
+    const button = document.getElementById("medicine-import-button");
+    const lines = input.value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) {
+      showStatus("statusImportEmpty", "warn", {}, true);
+      return;
+    }
+    if (lines.length > 20) {
+      showStatus("statusImportLimit", "warn", {}, true);
+      return;
+    }
+
+    const rows = [];
+    for (let index = 0; index < lines.length; index++) {
+      const parts = lines[index].split("|").map((part) => part.trim());
+      const name = parts[0] || "";
+      const slots = parseSlots(parts[1]);
+      if (!name || !slots.length) {
+        showStatus("statusImportFormat", "bad", { line: index + 1 }, true);
+        return;
+      }
+      const fields = { name, slots };
+      if (parts[2]) fields.dose = parts[2];
+      if (parts[3] !== "" && Number.isFinite(Number(parts[3]))) fields.pills_left = Number(parts[3]);
+      if (parts[4] !== "" && Number.isFinite(Number(parts[4]))) fields.daily_use = Number(parts[4]);
+      if (parts[5]) fields.note = parts.slice(5).join(" | ");
+      rows.push(fields);
+    }
+
+    button.disabled = true;
+    let added = 0;
+    try {
+      for (const fields of rows) {
+        await writeTool("data_add_item", { collection: MEDS_COLLECTION, group: "medicine", fields });
+        added++;
+      }
+      input.value = "";
+      document.getElementById("medicine-import").open = false;
+      showStatus("statusImportDone", "ok", { count: added });
+      await refreshCollections();
+    } catch (error) {
+      showStatus("statusImportPartial", "bad", { count: added, message: safeError(error) }, true);
+      requestRefresh();
+    } finally {
+      button.disabled = false;
+    }
+  }
+
+  function selectTab(name) {
+    activeTab = name;
+    for (const button of document.querySelectorAll(".main-tabs .k-tab")) {
+      const selected = button.dataset.tab === name;
+      button.classList.toggle("on", selected);
+      button.setAttribute("aria-selected", String(selected));
+    }
+    for (const panel of document.querySelectorAll(".panel")) panel.hidden = panel.id !== `panel-${name}`;
+    document.getElementById("content-scroll").scrollTop = 0;
+  }
+
+  function render() {
+    renderStaticText();
+    renderDateAndProgress();
+    renderMedicines();
+    renderVitals();
+    renderSupply();
+    selectTab(activeTab);
+  }
+
+  for (const button of document.querySelectorAll(".main-tabs .k-tab")) {
+    button.onclick = () => selectTab(button.dataset.tab);
+  }
+
+  document.getElementById("medicine-import-button").onclick = importMedicines;
+  document.getElementById("reading-form").onsubmit = (event) => {
+    event.preventDefault();
+    void saveReading(event.currentTarget);
+  };
+  document.getElementById("ask-ai-reading").onclick = () => oma.sendMessage(t("readingPrompt"));
+  document.getElementById("ask-restock").onclick = () => {
+    const list = medicineRows().map((med) => ({ med, facts: supplyFacts(med) }))
+      .filter(({ facts }) => facts.known && facts.days <= 7)
+      .map(({ med, facts }) => `${med.fields.name}: ${facts.days === 1 ? t("oneDayLeft") : t("daysLeft", { count: numberText(facts.days, 0) })}`)
+      .join("; ");
+    oma.sendMessage(t("restockPrompt", { list }));
+  };
+
+  document.getElementById("reading-date").value = localIso(today());
+  oma.ready(requestRefresh);
+  oma.onChange(requestRefresh);
+  oma.onPrefChange(render);
+  setInterval(requestRefresh, 30000);
+  setInterval(render, 60000);
+</script>
+</body>
+</html>

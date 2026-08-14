@@ -1,0 +1,133 @@
+{
+  "items": [
+    {
+      "id": "5c1f9a02-7d43-4c1b-9a6e-2f8b4d901a11",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 1,
+      "fields": {
+        "handle": "@arcadebuilds",
+        "name": "Mika Tan",
+        "note": "AI tools · launch craft",
+        "status": "active"
+      },
+      "version": 1
+    },
+    {
+      "id": "8e2d7b34-1a55-4e0c-8b7f-3c9a5e012b22",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 2,
+      "fields": {
+        "handle": "@thereplyguy",
+        "name": "Dev Kohli",
+        "note": "Audience growth · distribution",
+        "status": "active"
+      },
+      "version": 1
+    },
+    {
+      "id": "2a9c4f56-3b77-4d2e-9c8a-4d0b6f123c33",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 3,
+      "fields": {
+        "handle": "@quietmaker",
+        "name": "Ana Sofía",
+        "note": "Story-led product marketing",
+        "status": "paused"
+      },
+      "version": 1
+    },
+    {
+      "id": "7b3e5d78-4c99-4f3a-8d9b-5e1c7a234d44",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 1,
+      "fields": {
+        "week_start": "2026-08-03",
+        "handle": "@arcadebuilds",
+        "posts_count": 6,
+        "engagement": "8.7K likes · 2.1K reposts",
+        "top_post": "I rebuilt our onboarding in public. Here are the three screens that cut setup time in half.",
+        "top_post_stats": "3.8K likes · 920 reposts · 214 replies",
+        "themes": "live demos, onboarding, build in public",
+        "formats": "1 teardown · 3 posts · 2 demos",
+        "change_note": "Replaced polished launch threads with short before-and-after screen recordings."
+      },
+      "version": 1
+    },
+    {
+      "id": "9d4f6e90-5daa-4a4b-9eac-6f2d8b345e55",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 2,
+      "fields": {
+        "week_start": "2026-08-03",
+        "handle": "@thereplyguy",
+        "posts_count": 14,
+        "engagement": "4.4K likes · 780 reposts",
+        "top_post": "Your content calendar is probably hiding the one opinion people would remember you for.",
+        "top_post_stats": "1.9K likes · 410 reposts · 121 replies",
+        "themes": "positioning, hooks, audience growth",
+        "formats": "2 threads · 12 short posts",
+        "change_note": "Raised posting volume, but the only breakout was a one-line contrarian take."
+      },
+      "version": 1
+    },
+    {
+      "id": "4e5a7f12-6ebb-4b5c-8fbd-7a3e9c456f66",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 3,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@arcadebuilds",
+        "posts_count": 9,
+        "engagement": "5.1K likes · 940 reposts",
+        "top_post": "We shipped five onboarding fixes this month. The smallest one moved activation the most.",
+        "top_post_stats": "1.6K likes · 330 reposts · 76 replies",
+        "themes": "launches, onboarding, build in public",
+        "formats": "2 threads · 7 posts",
+        "change_note": "Most launches were explained in long threads with static screenshots."
+      },
+      "version": 1
+    },
+    {
+      "id": "6f8b9a34-7fcc-4c6d-9ace-8b4f0d567a77",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 4,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@thereplyguy",
+        "posts_count": 11,
+        "engagement": "4.0K likes · 690 reposts",
+        "top_post": "Distribution is part of the product. If nobody repeats the idea, the idea is not finished.",
+        "top_post_stats": "1.4K likes · 290 reposts · 83 replies",
+        "themes": "distribution, positioning",
+        "formats": "3 threads · 8 short posts",
+        "change_note": "Moved from reply tactics toward longer positioning threads."
+      },
+      "version": 1
+    },
+    {
+      "id": "1a2b3c45-8add-4d7e-8bdf-9c5a1e678b88",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 5,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@quietmaker",
+        "posts_count": 4,
+        "engagement": "2.8K likes · 380 reposts",
+        "top_post": "We removed our pricing page FAQ. Support tickets fell. Sometimes fewer words is the feature.",
+        "top_post_stats": "1.6K likes · 210 reposts · 88 replies",
+        "themes": "product stories, pricing",
+        "formats": "4 posts",
+        "change_note": "Longer story posts, no threads at all."
+      },
+      "version": 1
+    }
+  ]
+}

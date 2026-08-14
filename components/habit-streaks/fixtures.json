@@ -1,0 +1,816 @@
+{
+  "items": [
+    {
+      "id": "d7501479-5b3e-4b1e-aca0-069a95fa6fa1",
+      "group": "Drink 8 glasses",
+      "position": 1,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-01",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "ebf4778a-9991-4bdd-b4e1-17cec98caa79",
+      "group": "Drink 8 glasses",
+      "position": 2,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-02",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "5b2e54de-0e6d-4e82-8180-ab0a2c1c4dc4",
+      "group": "Drink 8 glasses",
+      "position": 3,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-03",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "c483d4f6-5093-4f31-9566-0f4f90c6ab41",
+      "group": "Drink 8 glasses",
+      "position": 4,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-06",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "14d66036-ae37-4215-a036-db9c3397cf10",
+      "group": "Drink 8 glasses",
+      "position": 5,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-05",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "7782d2e8-f934-48d5-9fec-9e68122715a7",
+      "group": "Drink 8 glasses",
+      "position": 6,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-09",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "eb05501a-f158-4cda-9b61-20811dabae33",
+      "group": "Drink 8 glasses",
+      "position": 7,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-07",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "f5fb5a9c-49cd-43b6-970a-04727521e6d3",
+      "group": "Drink 8 glasses",
+      "position": 8,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-10",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "5ced4b77-2ab1-4846-be5a-af873006a687",
+      "group": "Drink 8 glasses",
+      "position": 9,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-13",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "04c1e19d-51d7-466b-90f2-973238dd1a4b",
+      "group": "Drink 8 glasses",
+      "position": 10,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-11",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "886a8776-93ab-46a9-8d19-a76567303713",
+      "group": "Drink 8 glasses",
+      "position": 11,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-14",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "28649299-fae8-483b-ab80-b8beecd2e704",
+      "group": "Drink 8 glasses",
+      "position": 12,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-15",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "c1b2c299-5759-4d50-b824-2c37e565a8db",
+      "group": "Drink 8 glasses",
+      "position": 13,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-18",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "1a9a4289-a880-4254-b6db-d14918bb507e",
+      "group": "Drink 8 glasses",
+      "position": 14,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-19",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "3f30f00e-c2e9-47cc-8f96-e473a86cc54d",
+      "group": "Drink 8 glasses",
+      "position": 15,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-17",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "e439cc24-3380-44fa-81e5-5b4d1e276ba1",
+      "group": "Drink 8 glasses",
+      "position": 16,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-21",
+        "done": true,
+        "quantity": 9,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "e87ade5c-47b9-4738-bd59-d99b0191257c",
+      "group": "Drink 8 glasses",
+      "position": 17,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-22",
+        "done": true,
+        "quantity": 8,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "e90572c7-c1e5-45c0-8719-0690ff87bd84",
+      "group": "Drink 8 glasses",
+      "position": 18,
+      "fields": {
+        "habit": "Drink 8 glasses",
+        "date": "2026-07-23",
+        "done": false,
+        "quantity": 7,
+        "target": 8,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "7fef16b4-8057-4709-aca0-4b0808df9a78",
+      "group": "Morning walk",
+      "position": 1,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-01",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "32c8cadf-c737-492e-afbb-b5c061524daa",
+      "group": "Morning walk",
+      "position": 2,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-02",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "a09f83b8-a8bc-435b-86e5-bf5e30d4fc5a",
+      "group": "Morning walk",
+      "position": 3,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-03",
+        "done": true,
+        "quantity": 38,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "4e013436-8661-4e2c-9254-1d5d4b3e335b",
+      "group": "Morning walk",
+      "position": 4,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-04",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "ec8b60bb-9a51-4ac7-824b-9bdfcbc71b24",
+      "group": "Morning walk",
+      "position": 5,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-05",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "4baa5d4f-5b76-40ee-9fa6-1c987626a7c8",
+      "group": "Morning walk",
+      "position": 6,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-07",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "348eeb00-2f32-4713-9806-8c598f8d414f",
+      "group": "Morning walk",
+      "position": 7,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-08",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "fcc47119-26bc-412b-a798-0b01a4a17630",
+      "group": "Morning walk",
+      "position": 8,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-09",
+        "done": true,
+        "quantity": 38,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "9dc45b6c-a2c1-4c46-99ce-1e978d9e4ab2",
+      "group": "Morning walk",
+      "position": 9,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-11",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "5747dd28-a23f-4dd4-a148-b5356d4a99fd",
+      "group": "Morning walk",
+      "position": 10,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-10",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "1c8c91ee-e15a-4c28-b0c3-71cc364642a4",
+      "group": "Morning walk",
+      "position": 11,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-13",
+        "done": false,
+        "quantity": 18,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "e110144e-f318-4515-9e05-bf3abd8d9960",
+      "group": "Morning walk",
+      "position": 12,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-15",
+        "done": true,
+        "quantity": 38,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "8543bac4-b905-4f80-ae1e-ce4c5c1e3dcc",
+      "group": "Morning walk",
+      "position": 13,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-14",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "1f654b5f-80c2-45f7-a73f-a7057d3cae7d",
+      "group": "Morning walk",
+      "position": 14,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-17",
+        "done": true,
+        "quantity": 32,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "4412aadb-92cf-430f-84e6-d975581af0df",
+      "group": "Morning walk",
+      "position": 15,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-16",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "5816dc97-d8d1-47d3-988b-fb932f77945c",
+      "group": "Morning walk",
+      "position": 16,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-19",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "ed4c09c2-64ee-481a-88ad-2a814d9d99f1",
+      "group": "Morning walk",
+      "position": 17,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-21",
+        "done": true,
+        "quantity": 38,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "18cefbde-f2fa-4ab5-87fc-05df9fb9dc67",
+      "group": "Morning walk",
+      "position": 18,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-20",
+        "done": false,
+        "quantity": 18,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "f3a49cb8-e95c-44f5-82d7-e3b25120b4c8",
+      "group": "Morning walk",
+      "position": 19,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-23",
+        "done": false,
+        "quantity": 0,
+        "target": 30,
+        "note": "Sunny loop through the park."
+      },
+      "version": 1
+    },
+    {
+      "id": "a1199d8f-2fa4-47e0-9781-c8800d187f3c",
+      "group": "Morning walk",
+      "position": 20,
+      "fields": {
+        "habit": "Morning walk",
+        "date": "2026-07-22",
+        "done": true,
+        "quantity": 35,
+        "target": 30,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "580f8114-b7c0-4562-98a6-028bd1dc8b0d",
+      "group": "Read 20 pages",
+      "position": 1,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-06-30",
+        "done": true,
+        "quantity": 27,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "15566be7-72b9-402c-ba92-e5784b8f56c5",
+      "group": "Read 20 pages",
+      "position": 2,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-01",
+        "done": true,
+        "quantity": 22,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "85c8b6fe-5120-4b8a-a345-56702254c3ee",
+      "group": "Read 20 pages",
+      "position": 3,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-02",
+        "done": false,
+        "quantity": 17,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "4c736bf1-b369-47ce-bdc8-ad52b2b18ae3",
+      "group": "Read 20 pages",
+      "position": 4,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-05",
+        "done": true,
+        "quantity": 28,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "7600fd06-380b-4a37-8444-e507ab3b974a",
+      "group": "Read 20 pages",
+      "position": 5,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-03",
+        "done": true,
+        "quantity": 25,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "9c682b3e-9c30-4e4b-89e5-4bbcd5ad5bc8",
+      "group": "Read 20 pages",
+      "position": 6,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-06",
+        "done": true,
+        "quantity": 23,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "2a17d9e9-a0ec-4a97-8908-d033dde6538a",
+      "group": "Read 20 pages",
+      "position": 7,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-07",
+        "done": false,
+        "quantity": 18,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "7fc17c86-597e-461c-9b43-2b8721297e30",
+      "group": "Read 20 pages",
+      "position": 8,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-08",
+        "done": true,
+        "quantity": 26,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "79585fe3-f37d-4903-8e08-c407903c1fd1",
+      "group": "Read 20 pages",
+      "position": 9,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-10",
+        "done": false,
+        "quantity": 16,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "c9c3083c-6f44-4473-9f48-d56b1c4c355b",
+      "group": "Read 20 pages",
+      "position": 10,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-11",
+        "done": true,
+        "quantity": 24,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "427e024f-cd43-455c-972e-705db74b6cdf",
+      "group": "Read 20 pages",
+      "position": 11,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-12",
+        "done": false,
+        "quantity": 19,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "595ba10a-df2f-4f66-8dab-18e7afb19bdc",
+      "group": "Read 20 pages",
+      "position": 12,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-13",
+        "done": true,
+        "quantity": 27,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "f38cdc7d-85ae-4fd0-b0ee-4f55fa41ee4a",
+      "group": "Read 20 pages",
+      "position": 13,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-15",
+        "done": false,
+        "quantity": 17,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "264dcfd2-4886-49ce-8fe9-00c831188bc1",
+      "group": "Read 20 pages",
+      "position": 14,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-16",
+        "done": true,
+        "quantity": 25,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "a45bedfa-d4e5-4a84-9c1c-c9590cf96ed0",
+      "group": "Read 20 pages",
+      "position": 15,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-17",
+        "done": true,
+        "quantity": 20,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "5866d652-c3ab-4897-b3f2-4f8ac484dffd",
+      "group": "Read 20 pages",
+      "position": 16,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-18",
+        "done": true,
+        "quantity": 28,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "8736ca4e-1fed-4bcb-84a9-5437bc53964b",
+      "group": "Read 20 pages",
+      "position": 17,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-20",
+        "done": false,
+        "quantity": 18,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "a6a624e1-7ada-49a7-bad7-d795cbb3749b",
+      "group": "Read 20 pages",
+      "position": 18,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-21",
+        "done": true,
+        "quantity": 26,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "d17ed804-cd94-4070-9202-073b98277174",
+      "group": "Read 20 pages",
+      "position": 19,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-22",
+        "done": true,
+        "quantity": 21,
+        "target": 20,
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "d7ef8b21-f507-4390-84a2-10028cd55726",
+      "group": "Read 20 pages",
+      "position": 20,
+      "fields": {
+        "habit": "Read 20 pages",
+        "date": "2026-07-23",
+        "done": true,
+        "quantity": 20,
+        "target": 20,
+        "note": "Halfway through chapter six."
+      },
+      "version": 1
+    }
+  ]
+}

@@ -77,7 +77,9 @@ console.log("\n2. needs_retest rows say how to settle themselves");
     "retest.size-changed",                             // lane-d-firsthand
     "retest.widget-domain-accepted",                   // lane-d-firsthand
     "retest.claude-desktop-widget-write-path",         // lane-d-firsthand
-    "selfcheck.spec-conformance.self-contradiction",   // lane-d-firsthand
+    // selfcheck.spec-conformance.self-contradiction — 债已还，2026-08-05（task #41 §7 对账把
+    // §4½ 的 ⏳ 与 §7.5 的「不再需要靠猜」改成互指的两半）⇒ 该行 status 已是 assertable，
+    // 按棘轮规矩从这张表里删掉，而不是留着让旧债看起来是永久的。
     "PLAT-4", "PLAT-5", "PLAT-7",                      // survey-2026-07-29(未复核)
   ]);
   const retest = m.rows.filter((r) => r.status === "needs_retest");

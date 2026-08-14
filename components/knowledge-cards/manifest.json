@@ -1,0 +1,87 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "sort_order",
+      "type": "enum",
+      "label": "Default sort",
+      "description": "Choose whether knowledge cards show newest or oldest questions first.",
+      "options": [
+        {
+          "value": "newest",
+          "label": "Newest first"
+        },
+        {
+          "value": "oldest",
+          "label": "Oldest first"
+        }
+      ],
+      "default": "newest"
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density",
+    "confirm_delete"
+  ],
+  "collections": {
+    "knowledge-cards": {
+      "label_field": "title",
+      "strict": true,
+      "fields": {
+        "title": {
+          "type": "string",
+          "required": true
+        },
+        "answer": {
+          "type": "string",
+          "required": true
+        },
+        "topic": {
+          "type": "string"
+        },
+        "image": {
+          "type": "string"
+        },
+        "image_alt": {
+          "type": "string"
+        },
+        "media_ratio": {
+          "type": "string",
+          "enum": [
+            "4:3",
+            "3:4",
+            "1:1",
+            "16:9",
+            "3:2"
+          ]
+        },
+        "media_source": {
+          "type": "string",
+          "enum": [
+            "user",
+            "web",
+            "ai"
+          ]
+        },
+        "media_credit": {
+          "type": "string"
+        },
+        "asked_at": {
+          "type": "string"
+        },
+        "source_note": {
+          "type": "string"
+        },
+        "image_data": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "teach-sim"
+  }
+}

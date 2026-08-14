@@ -1,0 +1,95 @@
+{
+  "items": [
+    {
+      "id": "b747b88f-3aff-4972-b923-39b3d0a38443",
+      "group": "2026-07-23",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "18:10",
+        "amount": 250,
+        "unit": "ml",
+        "drink_type": "Water"
+      },
+      "version": 1
+    },
+    {
+      "id": "d3684f1c-3eec-4783-964f-3677f059bfe0",
+      "group": "2026-07-23",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "18:10",
+        "amount": 250,
+        "unit": "ml",
+        "drink_type": "Water"
+      },
+      "version": 1
+    },
+    {
+      "id": "03b49dd7-e7f9-402a-b27d-3abc20f1432e",
+      "group": "2026-07-23",
+      "position": 3,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "19:33",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "water"
+      },
+      "version": 1
+    },
+    {
+      "id": "24d5a86a-78e5-4129-9e09-526074d85d90",
+      "group": "2026-07-23",
+      "position": 4,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "19:33",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "water"
+      },
+      "version": 1
+    },
+    {
+      "id": "c8a9a039-1e59-4a72-b7dc-b745646fe282",
+      "group": "2026-07-24",
+      "position": 5,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-24",
+        "time": "08:30",
+        "amount": 250,
+        "unit": "ml",
+        "drink_type": "Water"
+      }
+    },
+    {
+      "id": "0c024d0b-66f2-4200-8d6c-8c869302d401",
+      "group": "2026-07-24",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-24",
+        "time": "11:10",
+        "amount": 500,
+        "unit": "ml",
+        "drink_type": "Water"
+      }
+    },
+    {
+      "id": "bfebff91-cec6-4f8f-bf70-2d80466c65ea",
+      "group": "2026-07-24",
+      "position": 7,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-24",
+        "time": "14:05",
+        "amount": 250,
+        "unit": "ml",
+        "drink_type": "Water"
+      }
+    }
+  ]
+}

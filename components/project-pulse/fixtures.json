@@ -1,0 +1,115 @@
+{
+  "items": [
+    {
+      "id": "15d399d5-885a-47c3-afca-5c6bfb21378a",
+      "group": "Backlog",
+      "position": 1,
+      "fields": {
+        "title": "Rewrite the homepage around product stories",
+        "note": "Connect three representative projects into one narrative, then tighten the personal introduction.",
+        "tag": "Content",
+        "updated_at": "2026-07-27T08:40:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "ab85c8b0-ff8e-4c15-858a-596f04975b11",
+      "group": "Backlog",
+      "position": 2,
+      "fields": {
+        "title": "Move the studio domain's DNS to Cloudflare",
+        "note": "Preserve the mail records and export the current zone before switching so rollback stays simple.",
+        "tag": "Infrastructure",
+        "updated_at": "2026-07-24T16:10:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "6f3b9910-3693-442e-9276-e26deea635bc",
+      "group": "Backlog",
+      "position": 3,
+      "fields": {
+        "title": "Set Lighthouse budgets for project pages",
+        "note": "Add blocking CI thresholds for LCP, CLS, and total script weight.",
+        "tag": "Performance",
+        "updated_at": "2026-07-24T11:25:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "d932daf1-eb77-4a1e-9317-f98825b0c6db",
+      "group": "Doing",
+      "position": 1,
+      "fields": {
+        "title": "Wire the Astro build into one-command deploys",
+        "note": "Preview deploys work; failure notifications and cache cleanup are next.",
+        "tag": "Automation",
+        "updated_at": "2026-07-26T21:05:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "26e48e7d-244f-4a05-b156-c363bd36150e",
+      "group": "Doing",
+      "position": 2,
+      "fields": {
+        "title": "Define a mobile image strategy for case studies",
+        "note": "AVIF exports are ready; next is checking narrow crops and slow-network placeholders.",
+        "tag": "Frontend",
+        "updated_at": "2026-07-23T14:35:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "3569ab94-2a46-4e99-8040-4be74b0aff50",
+      "group": "Doing",
+      "position": 3,
+      "fields": {
+        "title": "Map 301 redirects for legacy domains",
+        "note": "Two older articles still need final destinations after the content inventory.",
+        "tag": "SEO",
+        "updated_at": "2026-07-17T10:15:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "d8f6a270-74ef-4f05-97a3-5a83a9b320cd",
+      "group": "Done",
+      "position": 1,
+      "fields": {
+        "title": "Lock the new information architecture",
+        "note": "The Home, Projects, Notes, and About entry points are settled.",
+        "tag": "UX",
+        "done_at": "2026-07-15T18:20:00+10:00",
+        "updated_at": "2026-07-15T18:20:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "1adc1335-db2f-4b6d-9e35-047040203556",
+      "group": "Done",
+      "position": 2,
+      "fields": {
+        "title": "Export project screenshots from 2021-2025",
+        "note": "Originals and compressed versions are archived by project, with a checklist for missing shots.",
+        "tag": "Assets",
+        "done_at": "2026-07-20T13:45:00+10:00",
+        "updated_at": "2026-07-24T13:45:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "da9677c1-c58e-4878-8641-466c577f651c",
+      "group": "Done",
+      "position": 3,
+      "fields": {
+        "title": "Add cookieless Plausible analytics",
+        "note": "The production domain is verified and core conversion events are now arriving.",
+        "tag": "Data",
+        "done_at": "2026-07-25T17:30:00+10:00",
+        "updated_at": "2026-07-25T17:30:00+10:00"
+      },
+      "version": 1
+    }
+  ]
+}

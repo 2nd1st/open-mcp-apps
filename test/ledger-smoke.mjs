@@ -93,7 +93,10 @@ console.log("4. event shapes carry what reconciliation needs");
   const before = store.dataVersion().seq;
   const target = store.snapshot("probe").items[0];
   store.execute({ type: "move_item", command_id: "mv1", id: target.id, group: "done", actor: "human", host: "smoke" });
-  store.execute({ type: "delete_item", command_id: "dl1", id: target.id, actor: "human", host: "smoke" });
+  // A human delete rides the W-S two-phase flow (test/confirmation.mjs owns the pins; here it
+  // just runs honestly): first leg returns the demand, the resend with its state executes.
+  const demand = store.execute({ type: "delete_item", command_id: "dl1", id: target.id, actor: "human", host: "smoke" });
+  store.execute({ type: "delete_item", command_id: "dl1", id: target.id, actor: "human", host: "smoke", request_state: demand.request_state });
   const d = store.changesSince("probe", before);
   const [moved, deleted] = d.events;
   ok("item_moved carries from/to", moved.type === "item_moved" && moved.to === "done", JSON.stringify(moved));
@@ -127,33 +130,32 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
 {
   const s2 = openStore(DB);
   const r = s2.execute({ type: "save_app", command_id: "c1", name: "shaped",
-    html: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "agent" });
+    ui: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "agent" });
   ok("app saves", r.ok === true);
   const row = s2.listApps().find((c) => c.name === "shaped");
   ok("kind defaults to 'app' — so nothing vanishes from list_apps today",
     row.kind === "app", JSON.stringify(row.kind));
   ok("visibility defaults to 'listed'", row.visibility === "listed");
-  ok("kit_version starts null (L4 fills it)", row.kit_version === null);
+  // (kit_version / server_script / principal reservations dropped 2026-08-04, elegance A4 —
+  // columns with no writer and no reader; each returns WITH its consumer as a schema bump.)
 
-  // The two columns come from DIFFERENT places, and the split is the design: `kind` is something the
-  // author knows about their own app, so it lives in the declaration; `visibility` is lifecycle
+  // The two values come from DIFFERENT places, and the split is the design: `kind` is something the
+  // author knows about their own app, so it lives in the manifest slot; `visibility` is lifecycle
   // state (retired, curated, long-tail) that someone else decides later, so it stays a command.
-  const shapedHtml = (decl) => "<!DOCTYPE html><html><head>" +
-    (decl ? `<script type="application/json" id="oma-manifest">${JSON.stringify(decl)}</script>` : "") +
-    "</head><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>";
+  const shapedUi = "<!DOCTYPE html><html><head></head><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>";
 
   s2.execute({ type: "save_app", command_id: "c2", name: "shaped", actor: "agent",
-    html: shapedHtml({ manifest_version: 2, kind: "visual" }), visibility: "unlisted" });
+    manifest: { manifest_version: 2, kind: "visual" }, visibility: "unlisted" });
   const v = s2.listApps().find((c) => c.name === "shaped");
-  ok("kind arrives from the declaration, visibility from the command", v.kind === "visual" && v.visibility === "unlisted");
+  ok("kind arrives from the manifest slot, visibility from the command", v.kind === "visual" && v.visibility === "unlisted");
 
-  s2.execute({ type: "save_app", command_id: "c3", name: "shaped", html: shapedHtml(null), actor: "agent" });
+  s2.execute({ type: "save_app", command_id: "c3", name: "shaped", ui: shapedUi, actor: "agent" });
   const k = s2.listApps().find((c) => c.name === "shaped");
-  ok("a document that says nothing preserves both (three-state, not a reset)",
+  ok("a save that omits the manifest slot preserves both (slot inheritance, not a reset)",
     k.kind === "visual" && k.visibility === "unlisted", JSON.stringify([k.kind, k.visibility]));
 
-  ok("a typo'd kind is refused at the declaration, not stored",
-    s2.execute({ type: "save_app", command_id: "c4", name: "shaped", html: shapedHtml({ kind: "aap" }), actor: "agent" }).error === "bad_manifest");
+  ok("a typo'd kind is refused at the manifest, not stored",
+    s2.execute({ type: "save_app", command_id: "c4", name: "shaped", manifest: { kind: "aap" }, actor: "agent" }).error === "bad_manifest");
 
   // E13b: the closed actor set is what keeps an anonymous write from landing as "human".
   ok("an unknown actor on a DATA write is refused",
@@ -163,60 +165,291 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
   // ...but authorship stays OPEN, because tierOf() reads an unrecognised author as PROVENANCE:
   // that is exactly how a third-party app earns the 'unreviewed' tier.
   ok("an arbitrary AUTHOR is still allowed — closing it would delete the trust model",
-    s2.execute({ type: "save_app", command_id: "c7", name: "thirdparty", html: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "some-community-author" }).ok === true);
+    s2.execute({ type: "save_app", command_id: "c7", name: "thirdparty", ui: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "some-community-author" }).ok === true);
 
-  const withPrincipal = s2.execute({ type: "add_item", command_id: "c8", collection: "probe", fields: { title: "owned" }, actor: "human", principal: "user_x" });
-  ok("principal rides into the ledger when supplied", withPrincipal.ok === true);
-  const ev = s2.changesSince("probe", 0).events.find((e) => e.principal === "user_x");
-  ok("🔴 and comes back out — the one reservation that cannot be added retroactively", !!ev);
-  ok("absent principal stays absent (today's meaning: shared across the org)",
-    s2.changesSince("probe", 0).events.some((e) => e.principal === undefined));
+  const strayPrincipal = s2.execute({ type: "add_item", command_id: "c8", collection: "probe", fields: { title: "owned" }, actor: "human", principal: "user_x" });
+  ok("a stray principal key on a command is ignored, not stored (reservation dropped, A4)",
+    strayPrincipal.ok === true && s2.changesSince("probe", 0).events.every((e) => !("principal" in e) || e.principal === undefined));
   s2.close();
 }
 
-console.log("7b. a database that predates the columns gains them, with its rows intact");
+console.log("7b. the door: fresh + v4 + v5 open; anything older refuses with the way forward");
+// v4 is the shape of the LAST PUBLIC RELEASE (v0.4.2), so this is the case with real users behind
+// it: a v4 store must climb BOTH rungs in one open (v4→v5→v6) and arrive with every atom intact.
 {
-  // Build the OLD shape by hand — this is the only way to prove the ALTER path, and it is the path
-  // every existing deployment will take. A migration that is only ever exercised on fresh
-  // databases has not been tested at all.
   const OLD = join(ROOT, "test", "ledger-old.db");
   for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const { default: Database } = await import("better-sqlite3");
-  const raw = new Database(OLD);
-  raw.exec(`CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL,
-              description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', updated_at TEXT NOT NULL);
-            CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '',
-              position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1,
-              created_at TEXT NOT NULL, updated_at TEXT NOT NULL);`);
-  raw.prepare("INSERT INTO app (name, html, description, author, updated_at) VALUES (?,?,?,?,?)")
-     .run("legacy", "<html>old</html>", "made before the columns existed", "agent", "2026-01-01T00:00:00Z");
-  raw.prepare("INSERT INTO item (id, collection, fields, created_at, updated_at) VALUES (?,?,?,?,?)")
-     .run("old-1", "legacy-coll", JSON.stringify({ title: "survived" }), "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
-  raw.close();
+  // (a) an ANCIENT store (tables but pre-versioned) is REFUSED, untouched — the ladder reaches
+  // back to the last public release and no further, and the refusal must name the way forward
+  // rather than guess at history.
+  {
+    const raw = new Database(OLD);
+    raw.exec("CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+    raw.prepare("INSERT INTO item (id, collection, fields, created_at, updated_at) VALUES (?,?,?,?,?)")
+       .run("old-1", "legacy-coll", JSON.stringify({ title: "untouched" }), "2026-01-01T00:00:00Z", "2026-01-01T00:00:00Z");
+    raw.close();
+    let refusal = null;
+    try { openStore(OLD); } catch (e) { refusal = String(e.message); }
+    ok("a pre-v4 store is refused, naming the recovery path", /migrates v4/.test(refusal || ""));
+    const check = new Database(OLD, { readonly: true });
+    ok("…and the refusal touched NOTHING (rows intact, version still 0)",
+      check.pragma("user_version", { simple: true }) === 0 &&
+      check.prepare("SELECT fields FROM item WHERE id='old-1'").get() !== undefined);
+    check.close();
+    for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  }
+  // (b) the ONE retained migration, v5 → v6 (W-N): the declaration leaves the document. The
+  // fixture exercises the load-bearing legacy semantics — a block-carrying revision, an
+  // absent-block revision (which INHERITS), a delete→recreate boundary (which does not), and a
+  // CRLF document — because "just parse each row" gets every one of those wrong.
+  {
+    const OPEN = '<script type="application/json" id="oma-manifest">';
+    const legacyDoc = (m, body) => `<!DOCTYPE html><html><head>${m == null ? "" : OPEN + JSON.stringify(m) + "</" + "script>"}</head><body>${body}</body></html>`;
+    const raw = new Database(OLD);
+    raw.exec(`CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+              CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', scene TEXT, manifest TEXT, kind TEXT NOT NULL DEFAULT 'app', visibility TEXT NOT NULL DEFAULT 'listed', updated_at TEXT NOT NULL);
+              CREATE TABLE app_history (name TEXT NOT NULL, version INTEGER NOT NULL, html TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (name, version));
+              CREATE TABLE file (app TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL DEFAULT 'application/octet-stream', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (app, path));
+              CREATE TABLE change_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, aggregate_id TEXT NOT NULL, command_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, payload TEXT NOT NULL, actor TEXT NOT NULL, host TEXT, ts TEXT NOT NULL);`);
+    const ev = raw.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts) VALUES (?, ?, ?, '{}', 'agent', 'T')");
+    const hist = raw.prepare("INSERT INTO app_history (name, version, html, ts) VALUES (?, ?, ?, 'T')");
+    const app = raw.prepare("INSERT INTO app (name, version, html, manifest, kind, updated_at) VALUES (?, ?, ?, ?, ?, 'T')");
+    // "a": v1 declares visual, v2 has NO block (absent → inherits visual)
+    ev.run("a", "m1", "component_saved"); hist.run("a", 1, legacyDoc({ kind: "visual" }, "<p>a1</p>"));
+    ev.run("a", "m2", "component_saved"); hist.run("a", 2, legacyDoc(null, "<p>a2</p>"));
+    app.run("a", 2, legacyDoc(null, "<p>a2</p>"), JSON.stringify({ kind: "visual" }), "visual");
+    // "b": declares, is DELETED, recreated with no block — the new life starts from nothing
+    ev.run("b", "m3", "component_saved"); hist.run("b", 3, legacyDoc({ kind: "app", scene: { category_id: "local-tools" } }, "<p>b1</p>"));
+    ev.run("b", "m4", "component_deleted");
+    ev.run("b", "m5", "component_saved"); hist.run("b", 5, legacyDoc(null, "<p>b2</p>"));
+    app.run("b", 5, legacyDoc(null, "<p>b2</p>"), null, "app");
+    // "c": a CRLF document whose block must strip without touching the other bytes
+    const crlfDoc = `<!DOCTYPE html>\r\n<html><head>${OPEN}{"kind":"visual"}</` + `script></head><body><p>c</p></body></html>`;
+    ev.run("c", "m6", "component_saved"); hist.run("c", 6, crlfDoc);
+    app.run("c", 6, crlfDoc, JSON.stringify({ kind: "visual" }), "visual");
+    raw.pragma("user_version = 5");
+    raw.close();
+    const migrated = openStore(OLD);
+    ok("v5 → v6: every stored document lost its block, head and history alike",
+      !migrated.getApp("a").ui.includes("oma-manifest") && !migrated.getAppVersion("a", 1).ui.includes("oma-manifest"));
+    ok("a block-carrying revision's manifest moved into the revision column",
+      JSON.parse(migrated.getAppVersion("a", 1).manifest).kind === "visual");
+    ok("an absent-block revision INHERITED the previous declaration (old three-state semantics)",
+      JSON.parse(migrated.getAppVersion("a", 2).manifest).kind === "visual" && migrated.getApp("a").kind === "visual");
+    ok("a delete→recreate boundary resets the walk — the new life inherited NOTHING",
+      migrated.getAppVersion("b", 5).manifest === null && JSON.parse(migrated.getAppVersion("b", 3).manifest).scene.category_id === "local-tools");
+    ok("CRLF bytes outside the block survived the strip verbatim",
+      migrated.getApp("c").ui.includes("\r\n") && !migrated.getApp("c").ui.includes("oma-manifest"));
+    ok("writes work against the migrated db",
+      migrated.execute({ type: "add_item", command_id: "post-mig", collection: "legacy-coll", fields: { title: "after" }, actor: "human" }).ok === true);
+    ok("…and the store is stamped v6", migrated.db.pragma("user_version", { simple: true }) === 6);
+    migrated.close();
+    for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  }
+  // (c) v4 — the LAST RELEASED shape (v0.4.2) — climbs BOTH rungs in one open. The fixture below
+  // is that release's DDL verbatim (`git show v0.4.2:src/store.mjs`), reserved columns, partial
+  // and expression indexes and all: the indexes are not decoration here, they are what a DROP
+  // COLUMN has to survive. Built as SQL rather than by driving the old engine because a test
+  // cannot check out a tag — the equivalence was drilled once against a real v0.4.2 worktree
+  // (store built by v0.4.2's own execute(), opened by this build, every atom compared).
+  {
+    const OPEN = '<script type="application/json" id="oma-manifest">';
+    const legacyDoc = (m, body) => `<!DOCTYPE html><html><head>${m == null ? "" : OPEN + JSON.stringify(m) + "</" + "script>"}</head><body>${body}</body></html>`;
+    const v4 = (p) => {
+      const raw = new Database(p);
+      raw.pragma("journal_mode = WAL");   // as a real v0.4.2 store is — the byte-identity claim below is about ITS bytes
+      raw.exec(`CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, principal TEXT, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE INDEX idx_item_collection ON item(collection);
+                CREATE INDEX idx_item_coll_grp_pos ON item(collection, grp, position);
+                CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', scene TEXT, manifest TEXT, kind TEXT NOT NULL DEFAULT 'app', visibility TEXT NOT NULL DEFAULT 'listed', kit_version TEXT, server_script TEXT, updated_at TEXT NOT NULL);
+                CREATE TABLE app_history (name TEXT NOT NULL, version INTEGER NOT NULL, html TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (name, version));
+                CREATE TABLE file (app TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL DEFAULT 'application/octet-stream', version INTEGER NOT NULL DEFAULT 1, backend TEXT NOT NULL DEFAULT 'local', created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (app, path));
+                CREATE INDEX idx_file_app ON file(app);
+                CREATE INDEX idx_file_sha ON file(app, sha256);
+                CREATE TABLE change_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, aggregate_id TEXT NOT NULL, command_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, payload TEXT NOT NULL, actor TEXT NOT NULL, principal TEXT, host TEXT, ts TEXT NOT NULL);
+                CREATE INDEX idx_event_settings ON change_event(seq) WHERE json_extract(payload, '$.collection') = 'settings';
+                CREATE INDEX idx_event_file ON change_event(seq) WHERE event_type = 'file_written' OR event_type = 'file_deleted';
+                CREATE INDEX idx_event_collection ON change_event(json_extract(payload, '$.collection'), seq);
+                CREATE TABLE ledger_truncation (collection TEXT PRIMARY KEY, before_seq INTEGER NOT NULL, ts TEXT NOT NULL);`);
+      const ev = raw.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, principal, ts) VALUES (?, ?, ?, ?, ?, ?, 'T')");
+      const hist = raw.prepare("INSERT INTO app_history (name, version, html, ts) VALUES (?, ?, ?, 'T')");
+      const app = raw.prepare("INSERT INTO app (name, version, html, manifest, kind, kit_version, updated_at) VALUES (?, ?, ?, ?, ?, 'kit-9', 'T')");
+      const item = raw.prepare("INSERT INTO item (id, collection, grp, position, fields, version, principal, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, 'T', 'T')");
+      // Data first: rows whose ids the ledger then names, exactly as a live store's do.
+      ev.run("i1", "v4-1", "item_added", JSON.stringify({ collection: "reading", group: "queue", position: 1, fields: { title: "one" } }), "human", "user_x");
+      item.run("i1", "reading", "queue", 1, JSON.stringify({ title: "one" }), 1, "user_x");
+      ev.run("i2", "v4-2", "item_added", JSON.stringify({ collection: "reading", group: "done", position: 2, fields: { title: "two" } }), "agent", null);
+      item.run("i2", "reading", "done", 2, JSON.stringify({ title: "two" }), 2, null);
+      // "a": v1 declares, v2 has NO block (absent → inherits) — the legacy semantics must survive
+      // the first rung untouched, because the second rung is what reads them.
+      ev.run("a", "v4-3", "component_saved", "{}", "agent", null); hist.run("a", 3, legacyDoc({ kind: "visual" }, "<p>a1</p>"));
+      ev.run("a", "v4-4", "component_saved", "{}", "agent", null); hist.run("a", 4, legacyDoc(null, "<p>a2</p>"));
+      app.run("a", 4, legacyDoc(null, "<p>a2</p>"), JSON.stringify({ kind: "visual" }), "visual");
+      raw.prepare("INSERT INTO file (app, path, sha256, size, mime, version, backend, created_at, updated_at) VALUES ('a','cover.png',?,5,'image/png',5,'local','T','T')")
+         .run("2cf24dba5fb0a30e26e83b2ac5b9e29e1b161e5c1fa7425e73043362938b9824");
+      raw.pragma("user_version = 4");
+      raw.close();
+      return p;
+    };
 
-  const migrated = openStore(OLD);
-  const comp = migrated.listApps().find((c) => c.name === "legacy");
-  ok("the pre-existing app is still there", !!comp && comp.description === "made before the columns existed");
-  ok("and acquired kind='app' / visibility='listed' — no row disappears from any list",
-    comp.kind === "app" && comp.visibility === "listed", JSON.stringify([comp?.kind, comp?.visibility]));
-  ok("its data survived untouched", migrated.snapshot("legacy-coll").items[0].fields.title === "survived");
-  ok("writes work against the migrated db",
-    migrated.execute({ type: "add_item", command_id: "post-mig", collection: "legacy-coll", fields: { title: "after" }, actor: "human" }).ok === true);
-  ok("and the ledger read path works on it", migrated.changesSince("legacy-coll", 0).total === 1);
-  migrated.close();
-  for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
+    v4(OLD);
+    const m = openStore(OLD);
+    ok("v4 → v6: the store climbed both rungs in ONE open", m.db.pragma("user_version", { simple: true }) === 6);
+    const cols = (t) => m.db.pragma(`table_info(${t})`).map((c) => c.name);
+    ok("the reservations nothing consumed are gone from every table",
+      !cols("item").includes("principal") && !cols("change_event").includes("principal") &&
+      !cols("app").includes("kit_version") && !cols("app").includes("server_script") && !cols("file").includes("backend"),
+      JSON.stringify([cols("app"), cols("change_event")]));
+    ok("…and so are the side tables that lost their readers",
+      !m.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ledger_truncation'").get());
+    ok("the indexes a DROP COLUMN had to survive are still there",
+      m.db.prepare("SELECT COUNT(*) AS n FROM sqlite_master WHERE type='index' AND name LIKE 'idx_%'").get().n === 7);
+    ok("every data row crossed both rungs verbatim — grp, position, fields, version",
+      JSON.stringify(m.db.prepare("SELECT id, collection, grp, position, fields, version FROM item ORDER BY id").all()) ===
+      JSON.stringify([{ id: "i1", collection: "reading", grp: "queue", position: 1, fields: '{"title":"one"}', version: 1 },
+        { id: "i2", collection: "reading", grp: "done", position: 2, fields: '{"title":"two"}', version: 2 }]),
+      JSON.stringify(m.db.prepare("SELECT * FROM item").all()));
+    ok("the ledger is intact — seq, type, aggregate and the actor that makes it worth keeping",
+      JSON.stringify(m.db.prepare("SELECT seq, event_type, aggregate_id, actor FROM change_event ORDER BY seq").all()) ===
+      JSON.stringify([{ seq: 1, event_type: "item_added", aggregate_id: "i1", actor: "human" },
+        { seq: 2, event_type: "item_added", aggregate_id: "i2", actor: "agent" },
+        { seq: 3, event_type: "component_saved", aggregate_id: "a", actor: "agent" },
+        { seq: 4, event_type: "component_saved", aggregate_id: "a", actor: "agent" }]));
+    ok("the file ref survives the dropped backend column", m.statFile("a", "cover.png").version === 5);
+    ok("the app's history is whole and the declaration reached the revision column",
+      JSON.parse(m.getAppVersion("a", 3).manifest).kind === "visual" && JSON.parse(m.getAppVersion("a", 4).manifest).kind === "visual");
+    ok("…with the blocks stripped from the documents, head and history alike",
+      !m.getApp("a").ui.includes("oma-manifest") && !m.getAppVersion("a", 3).ui.includes("oma-manifest"));
+    ok("writes work against the twice-migrated store",
+      m.execute({ type: "add_item", command_id: "post-v4", collection: "reading", fields: { title: "after" }, actor: "human" }).ok === true);
+    m.close();
+    for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
+
+    // (d) the chain is ATOMIC ACROSS RUNGS. The first rung succeeds and the second refuses — if the
+    // two were separate transactions the store would be left at v4-stamped-v5 shape, a half state
+    // no build can open. One transaction means the dropped columns come back with the rollback.
+    v4(OLD);
+    {
+      const raw = new Database(OLD);
+      raw.prepare("UPDATE app_history SET html = ? WHERE name = 'a' AND version = 3")
+         .run(`<!DOCTYPE html><html><head>${OPEN}{not json</` + "script></head><body>x</body></html>");
+      raw.close();
+    }
+    const bytesBefore = readFileSync(OLD);
+    let refusal = null;
+    try { openStore(OLD); } catch (e) { refusal = String(e.message); }
+    ok("a v4 store whose declaration cannot be read is refused, naming the offending revision",
+      /migration refused/.test(refusal || "") && /a@3/.test(refusal || ""), (refusal || "").slice(0, 160));
+    {
+      const check = new Database(OLD, { readonly: true });
+      ok("…and the FIRST rung rolled back with it — still v4, reservations and all",
+        check.pragma("user_version", { simple: true }) === 4 &&
+        check.pragma("table_info(item)").some((c) => c.name === "principal") &&
+        check.pragma("table_info(app)").some((c) => c.name === "html") &&
+        !!check.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ledger_truncation'").get());
+      check.close();
+    }
+    ok("…not one byte of the file changed", readFileSync(OLD).equals(bytesBefore));
+    for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
+
+    // (e) what a real v0.4.2 store actually looks like. A rehearsal against read-only copies of
+    // six production stores (2026-08-13) refused five, and not one of the five was corrupt — the
+    // rung was strict about its own ASSUMPTIONS. Two of them were wrong, in the shapes below.
+    // Every case here is transcribed from that corpus, not invented.
+    const v5Store = (p, build) => {
+      const raw = new Database(p);
+      raw.exec(`CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+                CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, html TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', scene TEXT, manifest TEXT, kind TEXT NOT NULL DEFAULT 'app', visibility TEXT NOT NULL DEFAULT 'listed', updated_at TEXT NOT NULL);
+                CREATE TABLE app_history (name TEXT NOT NULL, version INTEGER NOT NULL, html TEXT NOT NULL, ts TEXT NOT NULL, PRIMARY KEY (name, version));
+                CREATE TABLE file (app TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL DEFAULT 'application/octet-stream', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (app, path));
+                CREATE TABLE change_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, aggregate_id TEXT NOT NULL, command_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, payload TEXT NOT NULL, actor TEXT NOT NULL, host TEXT, ts TEXT NOT NULL);`);
+      build({
+        ev: raw.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts) VALUES (?, ?, 'component_saved', '{}', 'seed', ?)"),
+        hist: raw.prepare("INSERT INTO app_history (name, version, html, ts) VALUES (?, ?, ?, ?)"),
+        app: raw.prepare("INSERT INTO app (name, version, html, manifest, updated_at) VALUES (?, ?, ?, ?, 'T')"),
+      });
+      raw.pragma("user_version = 5");
+      raw.close();
+      return p;
+    };
+    const reset = () => { for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f); };
+    const refuseOf = (p) => { try { openStore(p).close(); return null; } catch (e) { return String(e.message); } };
+
+    // The three shapes that must now CROSS.
+    reset();
+    const SHARED = { manifest_version: 1, uses_shared: ["locale", "week_start"] };
+    const STEWARD = { collections: { notes: { fields: { title: { type: "string" } } } } };
+    v5Store(OLD, (q) => {
+      // A-forward — v0.4.2 never projected a declaration carrying no `collections` key, which is
+      // the uses_shared-only form EVERY app-store app ships. Document declares, column NULL.
+      q.ev.run("fwd", "e1", "t1"); q.hist.run("fwd", 1, legacyDoc(SHARED, "<p>fwd</p>"), "t1");
+      q.app.run("fwd", 1, legacyDoc(SHARED, "<p>fwd</p>"), null);
+      // A-reverse — the document is silent and the column is the only surviving record that this
+      // app ever declared anything (the old upsert's CASE carried a projection forward).
+      q.ev.run("rev", "e2", "t2"); q.hist.run("rev", 2, legacyDoc(null, "<p>rev</p>"), "t2");
+      q.app.run("rev", 2, legacyDoc(null, "<p>rev</p>"), JSON.stringify(STEWARD));
+      // B — the seed-era pair: the ledger still says `gallery`, the tables say `library`, and the
+      // revision is numbered by the old per-app counter instead of the seq. One transaction, so
+      // one timestamp: that is the only thing left that identifies the row.
+      q.ev.run("gallery", "e3", "t3"); q.hist.run("library", 1, legacyDoc(SHARED, "<p>lib</p>"), "t3");
+      q.app.run("library", 3, legacyDoc(SHARED, "<p>lib</p>"), JSON.stringify(SHARED));
+    });
+    const mm = openStore(OLD);
+    ok("A-forward: a declaration v0.4.2 never projected is ADOPTED at the head slot, not called a mismatch",
+      JSON.parse(mm.getApp("fwd").manifest).uses_shared.join() === "locale,week_start", JSON.stringify(mm.getApp("fwd").manifest));
+    ok("A-reverse: a column the document stopped carrying survives at the head slot…",
+      JSON.parse(mm.getApp("rev").manifest).collections.notes.fields.title.type === "string", JSON.stringify(mm.getApp("rev").manifest));
+    ok("…and on the head REVISION too — else the next ui-only edit inherits null and clears it",
+      JSON.parse(mm.getAppVersion("rev", 2).manifest).collections.notes.fields.title.type === "string");
+    ok("B: a save event whose revision drifted in NAME and VERSION is paired by its timestamp",
+      JSON.parse(mm.getAppVersion("library", 1).manifest).uses_shared.join() === "locale,week_start" &&
+      !mm.getAppVersion("library", 1).ui.includes("oma-manifest"));
+    mm.close();
+
+    // …and the two that must still REFUSE, because they are genuinely ambiguous.
+    reset();
+    v5Store(OLD, (q) => {
+      q.ev.run("clash", "e1", "t1"); q.hist.run("clash", 1, legacyDoc({ kind: "visual" }, "<p>x</p>"), "t1");
+      q.app.run("clash", 1, legacyDoc({ kind: "visual" }, "<p>x</p>"), JSON.stringify({ kind: "app" }));
+    });
+    const clash = refuseOf(OLD);
+    ok("a REAL conflict — both sides declare, and they differ — is still fatal",
+      /projection_mismatch/.test(clash || "") && /clash@head/.test(clash || ""), (clash || "opened").slice(0, 160));
+
+    reset();
+    v5Store(OLD, (q) => {
+      // no revision row at all: nothing to find, by seq or by timestamp
+      q.ev.run("ghost", "e1", "t1"); q.app.run("ghost", 1, legacyDoc(null, "<p>g</p>"), null);
+      // two revisions share one timestamp and neither is addressed by its seq — the fallback
+      // must refuse to pick rather than pick wrong. This is the whole width of the tolerance.
+      q.ev.run("amb-x", "e2", "tz"); q.ev.run("amb-y", "e3", "tz");
+      q.hist.run("amb-x", 7, legacyDoc(null, "<p>x</p>"), "tz");
+      q.hist.run("amb-y", 8, legacyDoc(null, "<p>y</p>"), "tz");
+    });
+    const stillBad = refuseOf(OLD);
+    ok("a save event with no revision anywhere is still fatal, and so is an AMBIGUOUS timestamp",
+      /ghost@1: save_event_without_revision/.test(stillBad || "") &&
+      /amb-x@2: save_event_without_revision/.test(stillBad || "") &&
+      /amb-y@3: save_event_without_revision/.test(stillBad || ""), (stillBad || "opened").slice(0, 200));
+    reset();
+  }
 }
 
-console.log("8. E4a — the forward-migration branch exists before the first bump needs it");
+console.log("8. a FUTURE-versioned store is refused by an older build");
 {
-  const { migrationsBetween, MIGRATIONS } = await import("../src/store.mjs");
-  ok("a version with no registered step contributes nothing (0->1 predates the first bump)", migrationsBetween(0, 1).length === 0);
-  MIGRATIONS[99] = () => {};
-  MIGRATIONS[100] = () => {};
-  ok("runs exactly the versions in (from, to]", migrationsBetween(98, 100).length === 2);
-  ok("excludes the version already stamped", migrationsBetween(99, 100).length === 1);
-  ok("empty when already current", migrationsBetween(100, 100).length === 0);
-  delete MIGRATIONS[99]; delete MIGRATIONS[100];
+  const FUT = join(ROOT, "test", "ledger-future.db");
+  for (const f of [FUT, FUT + "-wal", FUT + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  const { default: Database } = await import("better-sqlite3");
+  const raw = new Database(FUT);
+  raw.exec("CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)");
+  raw.pragma("user_version = 99");
+  raw.close();
+  let refusal = null;
+  try { openStore(FUT); } catch (e) { refusal = String(e.message); }
+  ok("a v99 store tells this build to update instead of writing old-shaped events into it",
+    /update open-mcp-apps/.test(refusal || ""));
+  for (const f of [FUT, FUT + "-wal", FUT + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
@@ -241,107 +474,47 @@ console.log("\n9. undo — pre-image in the ledger, one verb, no tool");
   ok("undo brings the row back, same id, same fields",
     back.ok && st.snapshot("undo-t").items.length === 1 && st.snapshot("undo-t").items[0].id === a.id);
 
-  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", html: "<p>A</p>", actor: "agent" });
-  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", html: "<p>B</p>", actor: "agent" });
-  ok("undo on an app rolls FORWARD to the previous html", st.undoLast("undo-comp").ok && st.getApp("undo-comp").html === "<p>A</p>");
+  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", ui: "<p>A</p>", actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "undo-comp", ui: "<p>B</p>", actor: "agent" });
+  ok("undo on an app rolls FORWARD to the previous ui", st.undoLast("undo-comp").ok && st.getApp("undo-comp").ui === "<p>A</p>");
   ok("history grew instead of being rewritten (so the undo is itself undoable)",
     st.appHistory("undo-comp").length === 3);
   ok("undoing the undo works — the ledger is append-only in both directions",
-    st.undoLast("undo-comp").ok && st.getApp("undo-comp").html === "<p>B</p>");
+    st.undoLast("undo-comp").ok && st.getApp("undo-comp").ui === "<p>B</p>");
   ok("nothing to undo says so, rather than pretending", st.undoLast("no-such-target").error === "nothing_to_undo");
 
-  // Retention is a POLICY VALUE, not a feature: unbounded until a deployment says otherwise.
-  ok("the engine's default keeps everything (a silent pruner is the worst data loss)", st.retentionEvents() === null);
-  ok("pruning with no policy is a no-op that says which policy it followed", st.pruneLedger("undo-t").policy === "unbounded");
-  st.executePrivileged({ type: "add_item", command_id: cid(), collection: "settings", fields: { key: "policy:retention.events", value: 2 }, actor: "human" });
-  ok("the policy key is readable once set", st.retentionEvents() === 2);
-  const pruned = st.pruneLedger("undo-t");
-  ok("pruning keeps the newest window and reports what it dropped", pruned.pruned > 0 && st.changesSince("undo-t", 0, 50).events.length === 2);
-  ok("the DATA is untouched — retention bounds history, never state", st.snapshot("undo-t").items.length === 1);
+  // (retention/pruneLedger retired 2026-08-04, elegance A2 — the ledger is append-only and
+  // unbounded until a real maintenance caller exists.)
+  ok("the store exposes no pruner (append-only, unbounded)", st.pruneLedger === undefined && st.retentionEvents === undefined);
   st.close();
 }
 
 
-// ─────────────────────────────────────────────────────── aggregate: the answer travels, not the rows
-console.log("\n10. data_query's engine — one filter table shared with match, and an auditable answer");
+console.log("\n11. the manifest slot's tri-state — omit inherits, null clears, {} refused");
 {
   const st = openStore(DB);
   const cid = () => randomUUID();
-  const rows = [
-    { category: "coffee", amount: 4.5, note: "latte" },
-    { category: "coffee", amount: 3.75 },
-    { category: "books", amount: 32, note: "novel" },
-    { category: "books", amount: 12 },
-    { category: "rent", amount: 1200 },
-    { category: "coffee", amount: "not a number" },      // deliberately non-numeric
-  ];
-  st.executeBatch(rows.map((f) => ({ type: "add_item", command_id: cid(), collection: "agg", fields: f, actor: "agent" })));
-
-  const all = st.aggregate("agg", { metrics: [{ op: "count" }] });
-  ok("count with no grouping is one bucket over everything", all.groups.length === 1 && all.groups[0].count === 6);
-  ok("`matched` and `scanned` are both reported — an aggregate you cannot check is one you must trust",
-    all.scanned === 6 && all.matched === 6);
-
-  const byCat = st.aggregate("agg", { group_by: "category", metrics: [{ op: "sum", field: "amount" }] });
-  ok("grouped, biggest bucket first (a grouped answer is read as a ranking)",
-    byCat.groups[0].category === "coffee" && byCat.groups[0].count === 3);
-  const coffee = byCat.groups.find((g) => g.category === "coffee");
-  ok("the sum ignores the non-numeric row", coffee.sum_amount === 8.25);
-  ok("...and SAYS it did: `_from` reports how many rows carried a number", coffee.sum_amount_from === 2,
-    `sum over ${coffee.sum_amount_from} of ${coffee.count}`);
-  const books = byCat.groups.find((g) => g.category === "books");
-  ok("a bucket where every row counted carries no `_from` (it would be noise)", books.sum_amount === 44 && books.sum_amount_from === undefined);
-
-  // The filter grammar is the SAME one data_list's match uses — that is the whole point of the table.
-  const big = st.aggregate("agg", { match: { amount: { gte: 12 } }, metrics: [{ op: "max", field: "amount" }, { op: "min", field: "amount" }] });
-  ok("operators filter before aggregating", big.matched === 3 && big.groups[0].max_amount === 1200 && big.groups[0].min_amount === 12);
-  // Found by this very test, when it expected 3 and got 4: the comparison KIND has to come from the
-  // filter. A numeric question cannot be answered "yes" by a value that is not a number — and the
-  // aggregate already treats such a value that way, so the filter agreeing with it is what keeps
-  // this one doctrine instead of two that nearly match.
-  ok("a numeric comparison does not match a non-numeric value (no silent string-order fallback)",
-    !st.aggregate("agg", { match: { amount: { gte: 12 } } }).groups.some(() => false) &&
-    st.aggregate("agg", { match: { amount: { gte: 0 } } }).matched === 5);
-  ok("a STRING comparison still orders lexicographically — this is what makes ISO dates work",
-    st.aggregate("agg", { match: { category: { gte: "coffee" } } }).matched === 4);
-  const has = st.aggregate("agg", { match: { note: { exists: true } } });
-  ok("exists works on absence, not on falsiness", has.matched === 2);
-  const pre = st.aggregate("agg", { match: { category: { prefix: "co" } } });
-  ok("prefix works (the ISO-date workhorse)", pre.matched === 3);
-  ok("a typo'd operator is named, never silently matching nothing",
-    st.aggregate("agg", { match: { amount: { greaterThan: 1 } } }).error === "unknown_operator");
-  ok("an unknown metric is named too", st.aggregate("agg", { metrics: [{ op: "median", field: "amount" }] }).error === "unknown_metric");
-  ok("a metric that needs a field says which one", st.aggregate("agg", { metrics: [{ op: "sum" }] }).error === "metric_needs_field");
-
-  // match and aggregate must AGREE — two filter implementations would be two dialects.
-  const viaRead = st.queryItems("agg", { match: { category: "coffee" }, limit: 500 }).items.length;
-  const viaAgg = st.aggregate("agg", { match: { category: "coffee" } }).matched;
-  ok("the read path and the aggregate path count the same rows for the same filter", viaRead === viaAgg && viaRead === 3);
-  st.close();
-}
-
-// ─────────────────────────────────────────────────────── cold-review pins (fix wave, 2026-07-26)
-console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ cleared projections");
-{
-  const st = openStore(DB);
-  const cid = () => randomUUID();
-  const block = (json) => `<p>probe</p><script type="application/json" id="oma-manifest">${json}<` + `/script>`;
-  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
-    html: block('{"manifest_version":2,"kind":"visual","scene":{"category_id":"local-tools"}}'), actor: "human" });
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", ui: "<p>probe</p>",
+    manifest: { manifest_version: 2, kind: "visual", scene: { category_id: "local-tools" } }, actor: "human" });
   let cp = st.getApp("clear-probe");
-  ok("a declared kind and scene materialise", cp.kind === "visual" && JSON.parse(cp.scene).category_id === "local-tools");
-  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", html: block("{}"), actor: "human" });
+  ok("a declared kind and scene materialise as projections", cp.kind === "visual" && JSON.parse(cp.scene).category_id === "local-tools");
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", ui: "<p>probe v2</p>", actor: "human" });
   cp = st.getApp("clear-probe");
-  ok("{} clears ALL projections — manifest and scene to null, kind back to its default",
-    cp.manifest === null && cp.scene === null && cp.kind === "app");
-  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
-    html: block('{"manifest_version":2,"kind":"visual","scene":{"category_id":"local-tools"}}'), actor: "human" });
-  const sv = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
-    html: block("{not json}"), declaration_policy: "salvage", actor: "human" });
+  ok("an omitted slot INHERITS — a ui-only save never loses the declaration",
+    JSON.parse(cp.manifest).kind === "visual" && cp.kind === "visual" && cp.ui === "<p>probe v2</p>");
+  st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", manifest: null, actor: "human" });
   cp = st.getApp("clear-probe");
-  ok("salvage on a bad block clears the SAME set, and the note says so",
-    sv.ok === true && /scene and kind reset too/.test(sv.note || "") && cp.manifest === null && cp.scene === null && cp.kind === "app",
-    sv.note);
+  ok("manifest: null clears ALL projections — manifest and scene to null, kind back to its default",
+    cp.manifest === null && cp.scene === null && cp.kind === "app" && cp.ui === "<p>probe v2</p>");
+  const amb = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", manifest: {}, actor: "human" });
+  ok("manifest: {} is refused — one spelling must not carry two meanings",
+    amb.ok === false && amb.error === "empty_manifest_use_null", JSON.stringify(amb));
+  const blocked = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe",
+    ui: `<p>x</p><script type="application/json" id="oma-manifest">{}<` + `/script>`, actor: "human" });
+  ok("a document still carrying the legacy block is refused loudly, never inert",
+    blocked.ok === false && blocked.error === "embedded_manifest_block", JSON.stringify(blocked));
+  const noSlots = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", actor: "human" });
+  ok("touching neither slot is a refusal, not a ghost version", noSlots.error === "no_slots_provided");
 
   console.log("\n12. a move remembers where it left — from_position rides the pre-image");
   const mA = st.execute({ type: "add_item", command_id: cid(), collection: "move-t", group: "g", fields: { t: "A" }, actor: "human" });
@@ -354,13 +527,13 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
     back.group === "g" && back.position === posBefore, `group=${back.group} position=${back.position} want=${posBefore}`);
 
   console.log("\n13. declaration-quality notes reach the save receipt");
-  const declOn = (extra) => block(JSON.stringify({ manifest_version: 2, collections: { shared_notes: extra } }));
-  const rA = st.execute({ type: "save_app", command_id: cid(), name: "decl-a",
-    html: declOn({ fields: { title: { type: "string" } }, label_field: "headline" }), actor: "human" });
+  const declOn = (extra) => ({ manifest_version: 2, collections: { shared_notes: extra } });
+  const rA = st.execute({ type: "save_app", command_id: cid(), name: "decl-a", ui: "<p>a</p>",
+    manifest: declOn({ fields: { title: { type: "string" } }, label_field: "headline" }), actor: "human" });
   ok("label_field outside the declared fields warns without rejecting",
     rA.ok === true && /label_field "headline" is not among/.test(rA.note || ""), rA.note);
-  const rB = st.execute({ type: "save_app", command_id: cid(), name: "decl-b",
-    html: declOn({ fields: { title: { type: "number" } } }), actor: "human" });
+  const rB = st.execute({ type: "save_app", command_id: cid(), name: "decl-b", ui: "<p>b</p>",
+    manifest: declOn({ fields: { title: { type: "number" } } }), actor: "human" });
   ok("a second declarer of the same key hears about the conflict and who wins",
     rB.ok === true && /declared by decl-a and decl-b/.test(rB.note || "") && /title \(redeclared by decl-b\)/.test(rB.note || ""), rB.note);
 
@@ -381,6 +554,9 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const st = openStore(P);
   const cid = () => randomUUID();
+  // These sections exercise via/undo MECHANICS with human-actor writes; the W-S confirmation
+  // layer (its own suite: test/confirmation.mjs) is switched off the designed way — the pref.
+  st.execute({ type: "add_item", command_id: cid(), collection: "settings", fields: { key: "confirm_delete", value: false }, actor: "human" });
   const w1 = st.execute({ type: "add_item", command_id: cid(), collection: "vp", fields: { t: "a" }, actor: "human", via: { app: "my-app" } });
   ok("a valid via lands in the ledger payload (object form, frozen)",
     w1.ok === true && st.recentEvents({ collection: "vp" })[0].via.app === "my-app");
@@ -430,7 +606,7 @@ console.log("\n11. clear semantics are ONE thing — {} ≡ whitespace ≡ clear
   const u5 = st.undoLast(dx.id);          // … last event now the delete; id is FREE → restore works
   ok("the chain converges without ever throwing", u4.ok === true && u5.ok === true);
   ok("a save with no earlier version refuses by name", (() => {
-    st.execute({ type: "save_app", command_id: cid(), name: "one-save", html: "<p>v1</p>", actor: "human" });
+    st.execute({ type: "save_app", command_id: cid(), name: "one-save", ui: "<p>v1</p>", actor: "human" });
     return st.undoLast("one-save").error === "no_previous_version";
   })());
   // stale-undo guard: a target that advanced since the pane looked must refuse, not revert the
@@ -472,8 +648,8 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
   let n = 0; const cid = () => "life" + (++n);
 
   // Life 1: a recipe app, saved twice, then deleted (data kept — the default).
-  st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("RECIPES v1"), actor: "agent" });
-  const life1v2 = st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("RECIPES v2"), actor: "agent" }).version;
+  st.execute({ type: "save_app", command_id: cid(), name: "notes", ui: HTML("RECIPES v1"), actor: "agent" });
+  const life1v2 = st.execute({ type: "save_app", command_id: cid(), name: "notes", ui: HTML("RECIPES v2"), actor: "agent" }).version;
   st.execute({ type: "delete_app", command_id: cid(), name: "notes", actor: "agent" });
 
   // Between the lives the USER puts rows into a collection that happens to share the name.
@@ -481,7 +657,7 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
     st.execute({ type: "add_item", command_id: cid(), collection: "notes", fields: { t: "mine " + i }, actor: "human" });
 
   // Life 2: a completely unrelated app, same name.
-  st.execute({ type: "save_app", command_id: cid(), name: "notes", html: HTML("BUDGET TRACKER"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "notes", ui: HTML("BUDGET TRACKER"), actor: "agent" });
 
   // ---- N10: history is this app's history
   const hist = st.appHistory("notes");
@@ -489,29 +665,18 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
     hist.length === 1 && hist[0].checkpoint === 1, JSON.stringify(hist));
   const cp1 = hist.find((h) => h.checkpoint === 1);
   ok("…so restoring 'checkpoint 1' cannot hand back a deleted, unrelated app",
-    !!cp1 && st.getAppVersion("notes", cp1.version).html.includes("BUDGET TRACKER"),
-    cp1 ? st.getAppVersion("notes", cp1.version).html : "no checkpoint 1");
+    !!cp1 && st.getAppVersion("notes", cp1.version).ui.includes("BUDGET TRACKER"),
+    cp1 ? st.getAppVersion("notes", cp1.version).ui : "no checkpoint 1");
   // The tombstone promise, and §21's real property: the earlier rows were never overwritten.
   ok("the previous life's source is still IN the table — retained, not clobbered (no REPLACE over a tombstone)",
-    st.getAppVersion("notes", life1v2).html.includes("RECIPES v2"));
+    st.getAppVersion("notes", life1v2).ui.includes("RECIPES v2"));
 
-  // ---- N3: rows that predate this life are not this app's to delete
-  const d = st.deleteDisposition("notes");
-  ok("rows written before this life began are NOT judged exclusive",
-    d.collections[0].verdict !== "exclusive" && d.exclusive.length === 0, JSON.stringify(d.collections));
-  ok("…and the reason shown to the user says so rather than claiming provable ownership",
-    /nothing proves/.test(d.collections[0].why), d.collections[0].why);
-
-  // ---- the ordinary case still works: an app that made its own rows still owns them
-  st.execute({ type: "save_app", command_id: cid(), name: "fresh", html: HTML("FRESH"), actor: "agent" });
-  st.execute({ type: "add_item", command_id: cid(), collection: "fresh", fields: { t: "made by the app" }, actor: "agent" });
-  const df = st.deleteDisposition("fresh");
-  ok("an app that was created BEFORE its collection still owns it (the gate did not just say no to everything)",
-    df.exclusive.join() === "fresh", JSON.stringify(df.collections));
+  // (N3 — cascade's ownership judge — retired with cascade itself, elegance B1. The life
+  // primitive above is what survives: it still scopes history and restore to THIS app's life.)
 
   // ---- a deleted app that was NOT recreated keeps its history reachable (the documented tombstone)
-  st.execute({ type: "save_app", command_id: cid(), name: "gone", html: HTML("GONE v1"), actor: "agent" });
-  st.execute({ type: "save_app", command_id: cid(), name: "gone", html: HTML("GONE v2"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "gone", ui: HTML("GONE v1"), actor: "agent" });
+  st.execute({ type: "save_app", command_id: cid(), name: "gone", ui: HTML("GONE v2"), actor: "agent" });
   st.execute({ type: "delete_app", command_id: cid(), name: "gone", actor: "agent" });
   ok("a tombstoned app still lists its OWN checkpoints — 'history survives delete' is unchanged",
     st.appHistory("gone").length === 2, JSON.stringify(st.appHistory("gone")));
@@ -520,168 +685,29 @@ console.log("\n17. a NAME is not an identity — a second life is a different ap
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
 
-console.log("\n18. a cascade's own receipts must not live in the caller's id namespace (N6)");
-// Each cleared collection gets a `rows_cleared` receipt, and change_event.command_id is UNIQUE, so
-// those extra events needed ids. They were DERIVED from the command's — `${command_id}#rows:${coll}`
-// — on the reasoning that derived ids are as idempotent as the command. They are, but command_id is
-// a CALLER-SUPPLIED string, so the derived space is one the caller can already be sitting in: a
-// prior write whose id happened to be that exact shape makes the cascade die on a UNIQUE violation.
-// Idempotence never needed them: a replay short-circuits at the command level and never reaches the
-// emit at all (§18b below pins that).
+console.log("\n18. delete replay — idempotent at the COMMAND level (cascade receipts retired with cascade)");
 {
   const P = join(ROOT, "test", "cid.db");
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const st = openStore(P);
   const HTML = "<!doctype html><html><body>fixture body long enough to clear the size floor</body></html>";
-  let n = 0; const cid = () => "c" + (++n);
-
-  st.execute({ type: "save_app", command_id: cid(), name: "app", html: HTML, actor: "agent" });
-  st.execute({ type: "add_item", command_id: cid(), collection: "app", fields: { t: "row" }, actor: "agent" });
-  // A perfectly ordinary earlier write that happens to have used the derived shape as its own id.
-  st.execute({ type: "add_item", command_id: "X#rows:app", collection: "elsewhere", fields: { t: "y" }, actor: "human" });
-
-  let threw = null, res = null;
-  try { res = st.execute({ type: "delete_app", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" }); }
-  catch (e) { threw = e; }
-  ok("a destructive command cannot be killed by a caller's earlier choice of id",
-    threw === null, threw && `${threw.constructor.name}: ${threw.message}`);
-  ok("…and it actually did the delete", res && res.ok === true && !st.getApp("app"));
-  ok("…and the cleared collection still got its receipt",
-    st.changesSince("app", 0).events.some((e) => e.type === "rows_cleared"),
-    JSON.stringify(st.changesSince("app", 0).events.map((e) => e.type)));
-
-  console.log("18b. …because idempotence lives at the COMMAND level, not in the receipts' ids");
-  const again = st.execute({ type: "delete_app", command_id: "X", name: "app", cascade: true, cascade_collections: ["app"], actor: "agent" });
-  ok("a replay of the same command short-circuits and emits nothing new",
-    again.ok === true && again.idempotent === true, JSON.stringify(again));
-  ok("…so exactly one rows_cleared receipt exists, however many times it is retried",
-    st.changesSince("app", 0).events.filter((e) => e.type === "rows_cleared").length === 1);
-
-  console.log("18c. a replay says WHICH act it is replaying (N5)");
-  // The registry's retry path reports "already applied" when an app is gone but the caller
-  // holds a plan token. It asked the store "did this command_id run?" and the store answered only
-  // yes/no — so a command_id previously used for a KEEP delete answered yes, and the caller was
-  // told its irreversible cascade had happened while every row was still on disk.
-  st.execute({ type: "save_app", command_id: cid(), name: "kept", html: HTML, actor: "agent" });
+  let n = 0; const cid = () => "cid-" + (++n);
+  st.execute({ type: "save_app", command_id: cid(), name: "kept", ui: HTML, actor: "agent" });
   st.execute({ type: "add_item", command_id: cid(), collection: "kept", fields: { t: "still here" }, actor: "agent" });
   const KEEP = "reused-id";
   st.execute({ type: "delete_app", command_id: KEEP, name: "kept", actor: "agent" });
-  const replay = st.execute({ type: "delete_app", command_id: KEEP, name: "kept", cascade: true, cascade_collections: [], actor: "agent" });
-  ok("replaying a KEEP delete does not claim to have cascaded",
-    replay.ok === true && replay.cascaded === undefined, JSON.stringify(replay));
-  ok("…and the rows it never took are still there", st.snapshot("kept").items.length === 1);
-
-  st.execute({ type: "save_app", command_id: cid(), name: "casc", html: HTML, actor: "agent" });
-  st.execute({ type: "add_item", command_id: cid(), collection: "casc", fields: { t: "doomed" }, actor: "agent" });
-  const CASC = "cascade-id";
-  st.execute({ type: "delete_app", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
-  const replay2 = st.execute({ type: "delete_app", command_id: CASC, name: "casc", cascade: true, cascade_collections: ["casc"], actor: "agent" });
-  ok("replaying a real CASCADE says so, so the caller can tell the two apart",
-    replay2.ok === true && !!replay2.cascaded, JSON.stringify(replay2));
-
+  const replay = st.execute({ type: "delete_app", command_id: KEEP, name: "kept", actor: "agent" });
+  ok("a replayed delete short-circuits at the command level", replay.ok === true && replay.idempotent === true);
+  ok("…and never claims a cascade it did not perform (retired verb, historical echo only)",
+    replay.cascaded === undefined);
+  ok("…and the rows a keep-delete never took are still there", st.snapshot("kept").items.length === 1);
   st.close();
   for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
 
-console.log("\n19. N9 — a pruned history must make ownership UNKNOWABLE, never wrongly certain");
-// deleteDisposition decides "was this collection created FOR this app?" by comparing earliest
-// events. Retention deletes a collection's OLDEST events — precisely the ones proving it predates
-// the app that merely shares its name — so a pruned ledger reads as "created for the app" and
-// cascade would take the user's own older rows.
-//
-// The judge cannot see the gap from the inside: the evidence it needs is the evidence that is gone.
-// So pruning records that it happened, and the judge treats an unaccounted-for gap as unknowable.
-// Unknowable means KEPT — the asymmetry from delete-cascade-design: deleting too little leaves rows
-// a user can remove again, deleting too much breaks a second app and the data is gone.
-{
-  const P = join(ROOT, "test", "n9.db");
-  const fresh = () => {
-    for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
-    return openStore(P);
-  };
-  const HTML = "<!doctype html><html><body>an app that arrived long after the diary did</body></html>";
-  let n = 0; const cid = () => "n9-" + (++n);
-  const seedOlderThanItsApp = (st) => {
-    for (let i = 0; i < 5; i++)
-      st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "mine " + i }, actor: "human" });
-    st.execute({ type: "save_app", command_id: cid(), name: "diary", html: HTML, actor: "agent" });
-    st.execute({ type: "add_item", command_id: cid(), collection: "diary", fields: { t: "the app wrote this" }, actor: "agent" });
-  };
-  const enableRetention = (st, keep) => st.executePrivileged({ type: "add_item", command_id: cid(),
-    collection: "settings", group: "", fields: { key: "policy:retention.events", value: keep }, actor: "agent" });
-
-  {
-    const st = fresh();
-    seedOlderThanItsApp(st);
-    ok("before pruning: rows older than the app are KEPT, on the evidence",
-      st.deleteDisposition("diary").exclusive.length === 0,
-      JSON.stringify(st.deleteDisposition("diary").collections));
-
-    enableRetention(st, 1);
-    const pruned = st.pruneLedger("diary");
-    ok("retention really does remove the evidence (the rig is doing the dangerous thing)",
-      pruned.pruned > 0, JSON.stringify(pruned));
-
-    const after = st.deleteDisposition("diary");
-    ok("🔴 THE MAIN JUDGE: a pruned collection is never exclusive — cascade cannot take it",
-      after.exclusive.length === 0 && after.collections[0].verdict !== "exclusive",
-      `verdict=${after.collections[0].verdict} exclusive=${JSON.stringify(after.exclusive)}`);
-    ok("…and the reason names THIS unknowable — pruned history, not 'nothing proves it'",
-      /pruned/.test(after.collections[0].why), after.collections[0].why);
-    ok("…while the rows themselves are untouched (pruning trims history, not data)",
-      st.snapshot("diary").items.length === 6);
-    st.close();
-  }
-
-  {
-    // The mark must not become a blanket amnesty: an app that genuinely made its own collection,
-    // in a store where some OTHER collection was pruned, still owns its rows.
-    const st = fresh();
-    st.execute({ type: "save_app", command_id: cid(), name: "fresh-app", html: HTML, actor: "agent" });
-    st.execute({ type: "add_item", command_id: cid(), collection: "fresh-app", fields: { t: "made by the app" }, actor: "agent" });
-    for (let i = 0; i < 4; i++)
-      st.execute({ type: "add_item", command_id: cid(), collection: "unrelated", fields: { t: "x" + i }, actor: "human" });
-    enableRetention(st, 1);
-    st.pruneLedger("unrelated");
-    const d = st.deleteDisposition("fresh-app");
-    ok("pruning ONE collection does not amnesty another — the untouched app still owns its rows",
-      d.exclusive.join() === "fresh-app", JSON.stringify(d.collections));
-    st.close();
-  }
-
-  {
-    // A prune that removed nothing truncated nothing, so it must leave no mark and change no verdict.
-    const st = fresh();
-    st.execute({ type: "save_app", command_id: cid(), name: "tidy", html: HTML, actor: "agent" });
-    st.execute({ type: "add_item", command_id: cid(), collection: "tidy", fields: { t: "one row" }, actor: "agent" });
-    enableRetention(st, 500);
-    const noop = st.pruneLedger("tidy");
-    ok("a prune that deleted nothing records nothing", noop.pruned === 0);
-    ok("…and the verdict is unchanged by having merely ASKED to prune",
-      st.deleteDisposition("tidy").exclusive.join() === "tidy",
-      JSON.stringify(st.deleteDisposition("tidy").collections));
-    st.close();
-  }
-
-  // Depth, not the main judge any more: these two used to BE the guard, back when the plan was to
-  // keep N9 latent. They stay because "nothing prunes by default" is still worth knowing if it
-  // changes — but the assertion above is what actually protects the data now.
-  {
-    const st = fresh();
-    ok("depth: a default deployment still prunes nothing", st.retentionEvents() === null
-      && st.pruneLedger("anything").pruned === 0);
-    const code = readdirSync(join(ROOT, "src"), { recursive: true })
-      .filter((f) => /\.(mjs|js)$/.test(String(f)))
-      .map((f) => readFileSync(join(ROOT, "src", String(f)), "utf-8"))
-      .join("\n")
-      .replace(/\/\*[\s\S]*?\*\//g, "")
-      .replace(/^\s*\/\/.*$/gm, "");
-    ok("depth: the engine still never calls pruneLedger itself — retention stays caller-driven",
-      (code.match(/\bpruneLedger\s*\(/g) || []).length === 1);
-    st.close();
-  }
-  for (const f of [P, P + "-wal", P + "-shm"]) if (existsSync(f)) unlinkSync(f);
-}
+// §19 (N9 — pruned history vs ownership) retired 2026-08-04: BOTH halves of that collision are
+// gone — pruneLedger/retention (elegance A2, zero production callers) and cascade's ownership
+// judge (elegance B1). The asymmetry doctrine it protected returns with cascade on W1's MRTR.
 
 console.log(`\nledger: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

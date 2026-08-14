@@ -16,15 +16,15 @@
 // this line. Hence a test rather than a comment.
 //
 // WHY THE STORE IS THE ONLY WALL. Six paths write app html: save_app,
-// edit_app, restore_app, the render-health auto-revert, install_from_library, and
+// edit_app, restore_app, the render-health auto-revert, install_from_app_store, and
 // undoLast — the last one from inside store.mjs itself. A guard per path is six chances to
 // forget; §3 proves mechanically that they all funnel through one insert, so one check covers
-// them. install_from_library additionally keeps its own tool-level twin of this rule, which
-// predates the wall and stays because its message is specific to library updates.
+// them. install_from_app_store additionally keeps its own tool-level twin of this rule, which
+// predates the wall and stays because its message is specific to App Store updates.
 //
 // Run: node test/provenance.mjs
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { randomUUID } from "node:crypto";
 import { existsSync, unlinkSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -45,7 +45,7 @@ const store = openStore(DB);
 const doc = (body) => `<!DOCTYPE html><html><head><meta charset="UTF-8"></head><body><div id="r">${body}</div>
 <script>const o = window.oma; o.ready && o.ready();</script></body></html>`;
 const save = (name, actor, body, expected) => store.execute({
-  type: "save_app", command_id: randomUUID(), name, html: doc(body),
+  type: "save_app", command_id: randomUUID(), name, ui: doc(body),
   description: "", actor, host: "prov", ...(expected == null ? {} : { expected_version: expected }),
 });
 const row = (name) => store.getApp(name);
@@ -72,7 +72,7 @@ ok("...the refusal reports whose it is", esc.author === "guest" && esc.tier === 
   // nothing happened. Check every column the tier decision or a retry depends on.
   ok("...NOTHING was written — author intact", after.author === "guest");
   ok("...NOTHING was written — version intact", after.version === before.version);
-  ok("...NOTHING was written — html intact", after.html === before.html);
+  ok("...NOTHING was written — html intact", after.ui === before.ui);
   ok("...so the tier is still the strict one", tierOf(after.author) === "unreviewed");
 }
 
@@ -96,10 +96,10 @@ ok("...and keeps its provenance", row("uploaded-app").author === "guest");
 
 ok("agent over agent", save("ai-built-app", "agent", "v2", row("ai-built-app").version).ok);
 // seed/library/human are all local: the seeder re-installing over an AI edit, the human undoing,
-// and a library install are the same tier and must not notice this rule exists.
+// and an App Store install are the same tier and must not notice this rule exists.
 ok("seed over agent (re-seed on boot)", save("ai-built-app", "seed", "v3", row("ai-built-app").version).ok);
 ok("human over seed (a widget-side write)", save("ai-built-app", "human", "v4", row("ai-built-app").version).ok);
-ok("library over human (install_from_library)", save("ai-built-app", "library", "v5", row("ai-built-app").version).ok);
+ok("library over human (install_from_app_store)", save("ai-built-app", "library", "v5", row("ai-built-app").version).ok);
 ok("...local provenance moves freely within its tier", tierOf(row("ai-built-app").author) === "local");
 ok("creating a NEW name is never blocked (no existing row, no tier to change)",
   save("fresh-name", "guest", "hello").ok && save("another-fresh", "agent", "hello").ok);
@@ -161,7 +161,7 @@ const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
 
 {
   const r = await client.callTool({ name: "save_app", arguments: {
-    command_id: randomUUID(), name: "uploaded-app", html: doc("ai rewrite"),
+    command_id: randomUUID(), name: "uploaded-app", ui: doc("ai rewrite"),
     description: "", expected_version: uploadedV,
   } });
   ok("save_app is refused at the tool surface", r.isError === true);
@@ -187,17 +187,17 @@ const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
   ok("restore_app is refused", r.isError === true, textOf(r).slice(0, 160));
 }
 {
-  // The auto-revert fires from the widget loader, not the model — a non-local app that
-  // crashes must not be rolled back by a local actor either. It reports the refusal, not a revert.
+  // (render_health + auto-revert retired 2026-08-04, elegance B3 — nothing can roll an app
+  // back automatically any more, local or not. The seat's absence is the guarantee now.)
   const r = await client.callTool({ name: "render_health", arguments: {
     app: "uploaded-app", version: uploadedV, ok: false, error: "boom",
-  } });
-  ok("the render-health auto-revert does not roll back a non-local app",
-    r.structuredContent?.reverted !== true, JSON.stringify(r.structuredContent));
+  } }).catch((e) => e);
+  ok("no seat exists that could auto-roll-back a non-local app",
+    r instanceof Error && /not found/.test(String(r.message)));
 }
 {
   const r = await client.callTool({ name: "save_app", arguments: {
-    command_id: randomUUID(), name: "ai-built-app", html: doc("still fine"),
+    command_id: randomUUID(), name: "ai-built-app", ui: doc("still fine"),
     description: "", expected_version: (await client.callTool({ name: "list_apps", arguments: { name: "ai-built-app" } })).structuredContent.apps[0].version,
   } });
   ok("the everyday path (AI saving its own app) is untouched", r.isError !== true, textOf(r).slice(0, 160));

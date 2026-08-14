@@ -7,6 +7,555 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.0 — 2026-08-14
+
+**Breaking, and the largest change since the engine existed.** Three things moved at once: an app's
+declaration left its own document and became a first-class object the engine stores; deleting a row
+stopped being something every app had to remember to ask about and became something the engine
+enforces; and an app can now expose a **function** — a data→data closure the AI can call without
+rendering anything.
+
+Under all of it the SDK moved from v1 to v2 and the tool surface got audited by asking one question
+of every line — *"rebuilding this module today, knowing everything we have measured, would this line
+exist?"* — which took the surface from 36 tools to 33 and removed roughly a thousand lines of layers
+built for an era, a product or a caller that never arrived.
+
+### Breaking
+
+- **Five tools are gone.** `app_permissions` (its answer was already inside `app_html`, which
+  settings calls for every app anyway — that result now carries `locked`, and `list_apps` rows do
+  too); `archive_app` (the seat, not the concept — the store command, the ledger event and the
+  restore path are untouched, and the seat comes back the day something calls it); `data_query`
+  (with its `OMA_QUERY` flag and the whole DSL behind it — it shipped dormant and stayed dormant, and
+  the measured incident that motivated it was not being solved by a seat nobody could reach);
+  `file_write_abort` (the 30-minute TTL already reclaimed abandoned uploads, and the abort verb was
+  what created the abort-vs-commit race that 0.4.2 had to fix); `render_health` and its automatic
+  source rollback (never once triggered on a real host — a failed mount now says so and points at
+  `app_history` → `restore_app`).
+- **Two tools are new**: `promote_app` and `call_function`. Both are described below.
+- **`save_app` takes `ui`, not `html`, and `manifest` is a parameter again.** An app's declaration
+  used to live in an `#oma-manifest` block inside the document, and the stored `manifest` column was
+  a projection of it. That is inverted: the column is authoritative, the document is pure UI, and
+  **a document containing the block is now refused** (`embedded_manifest_block`) with a pointer at
+  the parameter. The three states are explicit — absent inherits the head revision, an object
+  replaces wholesale, `null` clears (and resets everything derived from it), and `{}` is refused
+  (`empty_manifest_use_null`) because it looked like both a legal empty declaration and the old
+  "empty block means clear".
+- **`get_app` takes `slot: "ui" | "manifest"`** (default `ui`, window semantics unchanged), and
+  `promote_app` / `edit_app` operate on the slots rather than on bytes inside the document.
+  `app_html` keeps its name and its `html` field: it returns the wrapped product, not a slot.
+- **The library is now the App Store, and four tool names change with it**: `library_list` →
+  `app_store_list`, `library_preview` → `app_store_preview`, `install_from_library` →
+  `install_from_app_store`, and the system app `library` → `app-store` (so its per-app opener,
+  under `OMA_DYNAMIC_TOOLS`, is `open_app_store`). The old names are gone rather than aliased — a
+  call to `library_list` now fails as an unknown tool, and any host holding a cached tool list must
+  re-list. One output key moves with them: `app_store_list` entries report `from_app_store` where
+  they used to report `from_library`. Two things deliberately did **not** move. The provenance
+  stamp an install writes is still the actor `library`, because that value is already sitting in
+  every existing store and renaming it would be a data migration bought for a word; and the
+  reserved control-plane prefix follows the tools, so `app_store_*` is what a sandboxed app is now
+  refused by (`library_*` no longer means anything). **Upgrading an existing store replaces the old
+  app rather than leaving it behind**: the first `seedSystemApps` run after the upgrade deletes the
+  `library` row it originally wrote and installs `app-store` in the same pass. The delete goes
+  through the store like any other, so it is one `component_deleted` in the ledger and the bytes
+  stay recoverable from `app_history`. Only a row this seeder authored is touched — an app **you**
+  named `library` has a different author and is left exactly where it is, with a line in the seed
+  log saying so.
+- **The App Store ships as directories**: `components/<name>/{ui.html, manifest.json, fixtures.json}`
+  instead of one flat `<name>.html`. Anyone maintaining an entry out of tree moves two files.
+- **`app_html` lost its `offset`/`length` window, `list_apps` lost `limit`,** and `save_app` lost the
+  retired `manifest`/`scene` shapes it was still declaring in order to reject them. Only tests were
+  calling any of them.
+- **The widget runtime lost four names**: `oma.updateContext`, `oma.host`,
+  `oma.isControlPlaneTool` and the public `oma.bind` (now an internal hook for the universal loader,
+  its only caller). `oma.readCollection` no longer takes options — its one consumer never passed
+  them, and the paged walk is what it always did. `oma.callFunction` is the reverse case: it existed
+  as a method that could only fail, was removed for that reason, and **returns in this release with
+  an executor behind it**. Accordingly **`oma.contract` bumps 1 → 2** — the number exists precisely
+  for removals an externally-authored app could notice; additions never bump it.
+- **The `update_context` capability left the permission surface.** It was the one capability in
+  `CAP_NAMES` with no enforcement point anywhere — the runner never read it, because the method it
+  was supposed to gate left the runtime above — and yet `security_set` accepted
+  `security:<app>:update_context`, `app_html` served it in `caps`, and the Permissions pane drew a
+  switch for it. A switch a person can set that can never take effect is worse than no switch: it is
+  the panel telling them something about their own security that is not true. The name is gone from
+  `CAP_NAMES`, from both tier presets, from the served caps shape and from the pane. Existing
+  `security:<app>:update_context` rows need no migration — `computeCaps` only ever looks up the caps
+  it knows, so a legacy row is read past in silence; writing a new one now lands on the unknown-cap
+  path, which stores the key and says in the receipt that it has no effect.
+- **Store schema v6, and pre-v4 stores are refused.** The upgrade path is below.
+
+### The declaration is now an object, and history keeps both slots
+
+`app_history` became a revision table: every save snapshots **both** slots (`ui` and `manifest`), so
+`restore_app` and undo bring back the pair rather than the document alone. Version numbers, the OCC
+token and the checkpoint numbering a person reads are all unchanged — the ledger position is still
+the single axis, and this deliberately did **not** become a content-addressed store with parent
+commits. A single-headed linear history can derive the parent; the packaging boundary does not
+depend on CAS; and the second real source slot (a backend, a script) does not exist yet.
+`manifest`-only saves produce a real revision, and their receipt says `manifest_action:
+inherited | replaced | cleared` so a save that changed only the declaration does not read as a
+no-op.
+
+`app_store_list` compares **both** slots when deciding whether a shipped app is newer than the
+installed one. It compared only the HTML before, which meant a manifest-only update to an App Store
+app could never install.
+
+### Migration
+
+`MIGRATIONS` runs v4 → v5 → v6 on first open, in one transaction each, and a store from **0.4.2
+upgrades in a single open with nothing lost**. v5 drops the columns that were reserved for shapes
+that never arrived; v6 rebuilds the app and history tables, renames `html` to `ui`, and backfills
+every revision's manifest by **replaying the ledger** rather than by re-parsing what happens to be
+on disk — so a document that was saved without a declaration inherits the previous revision's, and
+an app deleted and recreated under the same name starts a new life instead of inheriting through the
+tombstone. The block is then stripped from every stored revision by exact byte deletion, because a
+block left behind would be a declaration that is present and silently inert.
+
+Two deliberate refusals: a manifest that will not parse **fails the whole migration** and leaves the
+store on v5, naming every offending revision, rather than quarantining anything — salvaging a broken
+declaration means deciding on the author's behalf what they declared. And a store older than v4 is
+refused without a byte being written; the version gate now runs **before** the WAL switch, which is
+also a fix (see below).
+
+**A store opened by this release cannot be opened by 0.4.x.** Every host registration and the
+browser viewer must be running the new code after the upgrade.
+
+### Deletion is confirmed by the engine, not by each app
+
+Every app that could delete a row used to implement its own "click once to arm, again to delete".
+Twelve did; the ones that forgot simply deleted. That is now the engine's job, at the point where it
+cannot be routed around — inside the store transaction that every tool, every batch and every widget
+bridge passes through.
+
+- A human-initiated delete with the `confirm_delete` preference on comes back **not as an error** but
+  as a demand: `confirmation_required`, a server-derived preview, an expiry, and a `request_state`.
+  Re-sending the same call with that state performs it. The state is an HMAC over the actor, the
+  target and **the target row's ledger position**, so it is single-use by construction rather than by
+  a table of spent nonces: the row it names cannot exist at that position twice.
+- **The shell renders the card; app authors write nothing.** In direct mode `oma.deleteItem` raises
+  it; in an embedded sandbox the runner intercepts the demand and suspends the child's promise. The
+  eleven apps carrying their own arm-then-delete had it removed — with it in place, a user with the
+  preference on had to click three times.
+- **A burst becomes one card.** Settings' "Reset all" fired a card per row. Demands arriving while a
+  card is open now merge into it (*"Delete N items, including …"*), answered once; each row still
+  spends its own `request_state`, so the engine's per-row ledger model is untouched and the card is
+  only plural in the UI. The card's deadline is the shortest of its members' — an answer must not
+  outlive the shortest-lived thing it authorises.
+- **The keys are process-local and random**, so they never reach disk and a restart invalidates
+  every outstanding demand. Fail-closed is the right direction for a question about deleting.
+
+Two verbs are exempt on purpose and say so: ledger reversal and `security_set` (an undo *is* the
+user's explicit statement about a ledger fact), and file **overwrite** is left to the existing
+destructive annotation rather than being quietly folded in.
+
+**`delete_app` can take the data with it again.** Cascade returned, rebuilt on the same
+`request_state` machinery instead of the hand-rolled plan token it used to carry: the first call
+comes back with the full disposition — which collections would go, which are kept, and the engine's
+reason for each — and the state binds the app's version, every candidate collection's ledger
+position and the settings stream, so any write in between invalidates it and the caller gets a fresh
+plan rather than executing a stale one. The demand is unconditional, ignoring the `confirm_delete`
+preference: that preference governs recoverable row deletes, and this destroys whole collections with
+no undo. A collection another app also uses, or one whose ownership cannot be established, is never
+deleted. Settings grows a **"Delete its data too"** checkbox that renders the plan and re-sends it
+verbatim.
+
+### Functions
+
+An app can declare functions in its manifest — `{name: {description?, params?, public?}}` — and carry
+their bodies in the document as `<script type="text/oma-function" data-fn="NAME">`. A declaration
+without a body, or a body without a declaration, is a **loud refusal in both directions**: the two
+silences are the same mistake.
+
+- They run in the engine, in `node:vm`, against a frozen `api` of `list` / `count` / `add` /
+  `update` over the app's own binding plus the collections its manifest stewards. Settings are
+  walled off permanently.
+- **Bodies are synchronous, and that is the design rather than a limitation.** The store is
+  synchronous, so a synchronous body makes the vm's timeout a real budget — an async body escapes to
+  the host's microtask queue where nothing can interrupt it. Returning a thenable is
+  `async_not_supported`. Code generation from strings is off; there is no `require`, `process`,
+  `fetch` or timer.
+- Budgets: 2s wall clock, 100 writes, 200 reads, a 32 KB result that is **refused rather than
+  truncated**. Depth is 1 by construction — the api has no `call`, so a function cannot reach a
+  function.
+- **There is no `api.delete`.** The confirmation gate above lives in the engine and has no delivery
+  channel from inside a function on any host we have measured; the verb arrives when that channel
+  does.
+- Every write a function makes is stamped `via: {app, function}` **by the engine**, never from the
+  function's own arguments, with the originating actor passed through. That stamp lands in the raw
+  ledger and deliberately does not reach the AI-facing change feed.
+- `call_function {app, function, args, command_id}` is a single dispatcher that fails with schema:
+  an unknown name answers with the roster, bad arguments answer with the violations and the declared
+  parameters, so a retry needs no extra read. Its `app` and `function` parameters carry
+  `x-mcp-header` annotations, so an edge can see which function was called rather than only the
+  dispatcher.
+- **The seat is opt-in at `createEngine` and absent by default.** Only this engine's own local
+  entry points ask for it; `OMA_FUNCTIONS=0` turns it off. A hosted, multi-tenant deployment cannot
+  inherit in-process execution by construction — the vm is an isolation seam, not a hardening
+  boundary, and the trust level here is the same as the app's own browser JavaScript.
+
+### Added
+
+- **`promote_app`** — one call turns a `visual` into an `app`. It rides the same `save_app` store
+  command, so the provenance lock, undo, the history row, the invalidation bridge and idempotent
+  replay all hold without a second copy of any rule, and the whole promotion is the single
+  `component_saved` event it always was. Only that direction: demotion is an author's edit, not a
+  lifecycle verb. Alongside it, `save_app` and `edit_app` receipts carry **one sentence** of
+  diagnosis when an app still declares itself `visual` while its source binds persistent data — as
+  prose, never as a structured field, because the arbitration that permitted the diagnosis forbade
+  anything downstream consuming it, and unreachability enforces that where good intentions do not.
+- **Edits by range.** `get_app`'s window now returns a `hash` covering exactly the text it returned,
+  and `edit_app` accepts `{offset, length, expect_hash, new_string}` alongside the existing
+  exact-string form. Having read a window, a model can edit it without sending an anchor back up.
+  The hash does not defend against concurrency — OCC already does — it defends against the caller:
+  a mistyped offset used to be a **silent wrong cut into someone's source**, and is now a clean
+  `hash_mismatch` telling you to re-read that window. `get_app` also takes `node`, which snaps the
+  window to a `data-oma-node="…"` element; the locator lives on the read side on purpose, where an
+  ambiguity costs one more question instead of a bad edit.
+- **The host is told when its list of apps goes stale.** `registerApp` has always registered the
+  `ui://` resource the moment the AI saves an app, and nothing ever notified anybody — so a client
+  that had listed resources once held a stale list for the rest of the session, and **an app created
+  mid-conversation was invisible to every direct embed path until reconnect**. The engine now
+  declares `resources: {subscribe, listChanged}` and emits `resource_updated` for a change to a
+  registered document, `resources_list_changed` when the set itself changes. A burst of saves folds
+  into one notification per class. Item, settings and file writes deliberately emit **nothing** —
+  MCP models no collection as a resource, so there is nothing in the host's hands to invalidate, and
+  inventing per-collection resources to have something to invalidate would be adding surface for the
+  mechanism rather than for the user. `tools/list_changed` is declared and sent only when dynamic
+  tools are on: with them off the tool surface is a constant, and announcing a change would spend
+  every user's prompt cache on a fact that did not happen.
+- **A row of system badges on every app** — refresh, **⚙ open settings**, **⧉ open in the browser** —
+  built out of machinery that already existed (`oma.embed` for the settings pane, the host's
+  `ui/open-link` for the browser). The browser badge is not created at all when the engine has no
+  viewer (`OMA_VIEWER=0`), rather than being created and inert. Two measured limits are written down
+  rather than discovered again later: the embedded settings pane is a sandboxed child, so it can
+  change preferences and data but not delete, restore or install apps; and a child cannot embed, so
+  its own thumbnails degrade to skeletons.
+- **Four new App Store apps, taking the store from 17 entries to 21**: `client-pipeline` (the
+  overdue invoice and the next follow-up, neither of them missable), `job-kit` (a phone-first field
+  board for tool locations, live jobs and site hand-overs), `meeting-actions` (meeting notes turned
+  into what you own, what you are waiting on, and what is blocking the work) and `wonder-atlas` (the
+  questions worth keeping). The seventeen entries that were already there were reworked in the same
+  pass, narrow widths in particular — these apps are what a new user browses before installing
+  anything, so how they read on a phone is not a detail of the store, it is the store.
+- **Preview documents can carry preferences, and one of them freezes the clock.**
+  `composePreviewDoc` and `stubOmaScript` take a `prefs` object, and the inert `oma.pref` answers
+  from it instead of always handing back the caller's fallback. The one that earns its place is
+  `preview_date`: a `YYYY-MM-DD` string that shadows `Date` inside the preview document, so a sample
+  month written for 2026-08-06 reads the same for a visitor arriving three weeks later instead of
+  quietly filling with overdue rows. It is scoped to the inert document by construction — the live
+  app runtime never receives the preference and never gets a shimmed clock.
+- **Editing telemetry, for one decision.** Every edit — succeeded or failed, because the failures are
+  the denominator — appends a line to a JSONL sidecar next to the database, and
+  `scripts/edit-telemetry-report.mjs` computes the two numbers that decide whether the range-edit
+  primitive is enough or whether this engine needs a source graph. The script reports; it does not
+  rule. The file is blocked from both the git index and the publish snapshot: it carries host names.
+
+### Changed
+
+- **`@modelcontextprotocol/sdk` v1 → `@modelcontextprotocol/{server,client,node}` v2**, with
+  `2026-07-28` in the supported protocol versions and per-request `_meta` carrying `clientInfo` for
+  identity. Caching hints are now expressed as a policy module over the SDK's native hint mechanism.
+  The tool schemas read identically under either JSON Schema dialect.
+- **The audit that removed the tools above also removed the layers behind them**: the pre-v4
+  migration ladder, the ledger retention/pruning subsystem (zero production callers — and with it the
+  branch defending against pruning erasing cascade evidence), the remote file-backend seam and its
+  `OMA_FILE_BACKEND` flag, five reserved columns and two dormant dimensions, the per-iframe rate
+  limiter (its thresholds admitted in their own comment to being guesses, and the only time it ever
+  fired it interrupted a legitimate dashboard preview), the `readonly` sandbox preset, and 93 lines
+  of forensics that ran when a widget lost its identity and always reached the same conclusion.
+  Net: −2,556 lines.
+- **Internal tools are marked `visibility: ["app"]`** per the MCP Apps standard — `app_html`,
+  `app_store_preview`, `ui_prefs_schema`, `security_set`. Nothing is removed and no behaviour changes;
+  they simply stop occupying the model's attention, which cut the model-visible surface by 29% at
+  the point it landed.
+- The tool surface is **33 tools / 44,911 B** (cap 47,935), down from 36 / 47,890 B in 0.4.2.
+  As in 0.4.0, renamed and removed tools mean **hosts will ask you to approve the tools again** and
+  the prompt cache misses once.
+- One policy now has one home. The set of tools that carry a widget's *human* action was written
+  twice — once for direct mode, once for the sandbox bridge — and had already drifted once
+  (`file_delete` was missing from one of them). The CSP policy string was also written twice, and
+  that copy had drifted too: the viewer's had lost `form-action 'none'`, the one outbound shape that
+  does not inherit `default-src`. Both are single-sourced, and the engine's index page — which had
+  no CSP at all — got one.
+- **`oma.embed` takes `fit: {width}`.** Settings and the App Store each had their own thumbnail
+  scaling, by different mechanisms at different natural widths; both now declare a width and use the
+  shared one. The two widths are kept at their existing values rather than unified, because that is
+  a visual decision and not this change's to make.
+- **A widget can no longer reach `data_batch` through the generic `oma.callTool` door.** One call
+  could clear a collection with every row attributed to an agent in the ledger, and the ledger half
+  is append-only — unfixable after the fact. Apps delete row by row, each with its own confirmation.
+  For the same reason the four data-writing tools are stamped `actor: "human"` when a widget calls
+  them by name: the same deletion should not depend on which method name was used to reach it.
+- **Settings and the App Store were rebuilt.** They are the two system apps a user actually sits in
+  front of, and they were the two apps least like the ones they present. The App Store is a
+  storefront now: a fixed left rail (search, Discover, featured, category counts, how many entries
+  are on the shelf), one large featured card, a row of editors' picks, a wall of category cards, and
+  the drawer replaced by a real detail page — preview, install, metadata strip, related apps. At
+  narrow widths the rail becomes a top bar with a horizontally scrolling category strip. Settings
+  gets the same treatment: left-rail navigation, row-grouped cards, its drawer replaced by an
+  in-place detail page, a top tab bar when the window is narrow. Both are fully bilingual (en/zh)
+  and take every colour from a host token rather than a literal — the rule the rest of the store
+  already followed and these two did not. Thumbnails are budgeted rather than unbounded: settings
+  mounts at most six preview iframes and none at all when the window is narrow.
+
+### Security
+
+- **`security_set` failed open on a value it did not recognise.** Given a known capability with an
+  unknown value — `ask`, which the tool's own parameter description advertised and which has never
+  existed — it silently fell back to the tier default, and on the local tier that default is
+  permissive. So a caller could set a restriction, receive a success receipt, and have nothing
+  restricted. It now refuses loudly, lists the legal values for that capability (read from the same
+  place the coercion reads, so the wording cannot drift from the check), and says explicitly that
+  **nothing was written**. The parameter description no longer advertises a value that does not
+  exist.
+- **The refusal to open a future-schema store used to modify the file first.** The version check
+  ran after the WAL switch, so a store from a newer engine was told it could not be downgraded —
+  after its header had already been rewritten. The gate now runs before anything is written, and the
+  refusal leaves the file byte-identical.
+- **Development note (never shipped):** the confirmation layer above was built, adversarially
+  reviewed twice, and four routes around its own guarantee were found and closed before any of it
+  left the repository — a declined confirmation returning the credential back into the sandbox where
+  the child could replay it, a preference parser that disagreed with the one the settings UI
+  displays, the generic `callTool` door, and a classification table that named `delete_file` as
+  requiring confirmation while nothing was wired to it. Each is now pinned by a test that goes red.
+  The last one is the one worth naming: **a protection that is declared and not connected is worse
+  than one that was never declared**, because it reads as done.
+
+### Fixed
+
+- **A refreshed widget on ChatGPT could come back permanently empty.** The host replays *a different
+  call's* envelope after a refresh, so none of the three triggers that start a data walk ever fired —
+  the UI painted and the data was never requested again, while a single write from the widget
+  restored everything, because the write path forces a walk on completion. The identity was already
+  being written to a note the host carries across renders; nothing was kicking the walk after
+  reading it back. Two additions: a recovery ladder at 0.8s / 2.5s / 7s after connect that re-binds
+  from the note and re-walks, stopping the moment a full read succeeds (on a healthy host the first
+  walk beats the first rung, so the ladder is never felt), and — if the ladder finishes with nothing
+  loaded — a **`↻ Load data`** badge, which also serves as a user gesture on hosts that gate tool
+  calls behind one, and retires itself on success. **This is a mitigation of someone else's
+  behaviour, and it has not been re-measured on that host since.** `KNOWN-ISSUES.md` says so.
+- **`restore_app` counted a retry as a restore.** Replaying the same `command_id` restored again
+  each time — measured going from checkpoint 1 to 4 across three replays of one request — so a
+  caller who lost the response could not tell a completed restore from a failed one, and retrying
+  moved the app. It now returns the original receipt.
+- **Two writes were skipping the version check entirely.** `restore_app` read history outside the
+  transaction and saved without `expected_version`, and `install_from_app_store` did the same; both
+  now carry it. (`delete_app` still deletes the current head unconditionally — deliberate for now,
+  and recorded as an open question rather than fixed quietly.)
+- **The upgrade from 0.4.2 refused almost every real store.** Rehearsed against read-only copies of
+  six production stores, the v5 → v6 rung refused five — and not one of the five was corrupt. It was
+  strict about its own *assumptions* rather than about the data, in two places. First, it
+  cross-checked each app's head declaration against the materialised `manifest` column and called
+  any disagreement `projection_mismatch` — but 0.4.2's projection had gaps in both directions. It
+  never materialised a declaration carrying no `collections` key, which is the `uses_shared`-only
+  form every App Store app ships, so **any store that had ever installed one was refused**; and its
+  upsert could carry a previous projection forward across a save whose document had dropped the
+  block, leaving a column the document is silent about. Where only one side ever spoke, that side is
+  now taken as the declaration — adopted at the head slot, and on the head revision too, or the next
+  ui-only edit would inherit a null and quietly clear it — and a value adopted from the column has to
+  be one this build would still accept at the save door. Where **both** sides speak and differ, the
+  migration refuses exactly as before: that is the case with real ambiguity in it, and "refuse rather
+  than guess" was never meant to cover a one-sided statement. Second, it addressed each revision by
+  `(aggregate_id, seq)`, which is exact only for revisions written by 0.4.x — seed-era rows are
+  numbered by a per-app counter, and one system app was renamed in place, so the ledger says
+  `gallery` where the tables say `library`. A revision and its event are written in one transaction
+  from one clock read, so when that key misses, the timestamp identifies the row: consulted only
+  after the key misses, required to land on exactly one revision that no other event claims, and
+  never inventing anything. A save event with no revision anywhere — or an ambiguous timestamp — is
+  still fatal.
+- **`oma.updateContext` resolved with `null` when the sandbox refused it**, so a caller could not
+  distinguish "updated" from "refused" — flatly contradicting the sentence in `RUNTIME.md` that says
+  a refusal rejects the promise. The method had no callers and is gone; the contradiction goes with
+  it.
+- **`data_query`'s enabled handler had never been executed by a test.** It is no longer in the
+  surface, which resolves the gap in the only way that does not involve believing an untested path.
+- **Five design tokens the whole store was already using had never been defined.**
+  `--color-text-warning` and `--color-text-info` are named by 20 and 22 of the apps in `components/`
+  and `--shadow-md` by 14, but no layer under them ever gave them a value — so every one of those
+  references fell through to whatever literal the author had typed after the comma. That is exactly
+  the hardcoded colour this token layer exists to prevent, and it was invisible precisely because
+  the fallback looked fine. The five now have values, chosen so the common fallbacks resolve to the
+  same paint they were already showing; `--shadow-xs` also joins the set forwarded into embedded
+  children, and `RUNTIME.md`'s token table lists all five, because a token an app cannot look up is
+  a token an app will hardcode.
+- **A filtered or tabbed app could not shrink back down.** Height was reported as
+  `document.documentElement.scrollHeight`, and Chromium keeps that at least as tall as the viewport —
+  so feeding it back into the iframe meant an app that had once been tall stayed tall, with a long
+  blank tail under the content. Height is measured from the body's real children now
+  (`measureNaturalBodyHeight`), and both height broadcasters — the sandboxed bridge and the
+  standalone preview document — call the same function, so the two cannot drift apart again.
+- **The App Store showed half a sentence for four of its apps.** The blurb parser let either quote
+  character close the attribute regardless of which one had opened it, so a `content="…"` holding an
+  apostrophe ended at the apostrophe: `elder-days` advertised itself as "A clear daily care record
+  for today". The closing quote is a back-reference to the opening one now, and a test sweeps every
+  shipped entry to assert the blurb that came back still sits between its own quotes in the source.
+- **Four defects the rebuilt system apps only revealed in a real browser.** The App Store's left-rail
+  search box, a flex child in a column, grew to 3,618 px and pushed the navigation off the bottom of
+  the page; the featured card's 3-D tilt left its preview iframe intermittently unpainted; the
+  preview budget's "evict the oldest, then re-observe" pass was an ownerless race (eight previews
+  declared live, five actually mounted) and is now one idempotent pass ordered by distance from the
+  viewport centre; and every store card read a `list_apps` field that does not exist, so all of them
+  displayed `NaNk`.
+- **Nine App Store apps crashed on their first open in a chat** — `Cannot set properties of null
+  (setting 'content')`, leaving the title bar and an empty body. Each of them wrote its localised
+  page description back into `<meta name="description">` at runtime, which is meaningful on a web
+  page and is nothing here: the App Store reads that blurb from the source bytes, never from the
+  DOM. It survived because the two paths a developer looks at both keep the tag — the browser
+  viewer wraps the app's own `<head>`, and so does the per-app resource — while `open_app`, the
+  door a chat actually uses, mounts through the universal loader, which copies `head style` and the
+  body and drops everything else in the head. So the write was dead code on every path and a
+  guaranteed `TypeError` on the one path most users take. The nine writes are gone; the
+  `document.title` assignment beside each of them stays, because the viewer shows it.
+- **The settings app and the App Store rendered with no card around them inside a chat**, tab strip
+  and search bar butted straight against the conversation, while every other app in the store draws
+  itself an app-bar over a bordered surface. Their narrow form had been rebuilt around a desktop
+  rail and lost the capsule on the way. Both draw it again — mark, eyebrow, name, status over a
+  bordered, rounded surface — and the condition is the **context, not the width**: hanging it on
+  `(max-width: 560px)` fixed nothing on the machine that reported it, because a desktop chat widget
+  is about 736px wide and never matched. It is `:not(.standalone)` now, so a card in a conversation
+  is framed at any width — the wide form keeps its rail-and-main layout *inside* the capsule, with
+  the app bar spanning both columns and flattening to a single line — and the browser viewer is
+  never framed, because the runtime's own stage already does it.
+- **That capsule then let the App Store's app bar float in the middle of its own content.** Scrolled,
+  the sticky bar stopped 12px short of the frame's top edge and the band above it kept painting
+  whatever had scrolled past — on Leo's transcript, the bottom half of the featured title, with the
+  bar reading as suspended in the content rather than capping it. The 12px was the capsule's inset,
+  written as the scroller's *padding* — and a scroll container is asymmetric about its own padding,
+  clipping at the padding box while constraining a sticky box to the *content* box, so the two edges
+  were 12px apart by construction. The same inset is the card's own margin now, which puts both
+  edges at zero whoever the scroll container turns out to be — the bar sticks flush to the top, and
+  nothing can paint above it. The resting state is unchanged: the gap above the card is still 12px,
+  it just scrolls away with the card now.
+- **The engine stopped inventing the name `unknown` for a host that never named itself.** That
+  literal was the last step of the host-label chain, and it is a claim: it travelled in the ledger's
+  `host` column and, through `app_html`/`open_app`, into `oma.state.host`, where the settings app
+  printed it in the capsule badge and under the identity line as this machine's client. A host that
+  does not name itself is the ordinary case since the `initialize` handshake that label came from
+  left the spec, so the honest value is the empty one — which every reader already treats as "say
+  nothing" (the ledger column is nullable; settings' own label helper hides an empty string). Fixed
+  at the source rather than by teaching each display to special-case the sentinel.
+- **A settings row with a long description and a wide control squeezed the copy into a sliver.**
+  The stacked form that answers this was hung on `(max-width: 560px)` — a viewport query, when the
+  thing that decides is the width the *row* gets: a 736px chat widget puts a 200px rail beside the
+  content, so the row is 451px wide, the query never matched, and the *AI proactivity* description
+  wrapped into eight two-word lines with the select hanging beside the middle of it. It is a
+  `@container` query on the group now, so every preference row — including the ones inside *More
+  options* and each per-app section — takes the stacked shape whenever its own box is under 620px:
+  tile and bold label on the first line with whatever tail the row carries, the description as its
+  own full-width paragraph under them at a size meant to be read, and the control on the last line
+  indented to the copy's left edge. Full width, too — the narrow rules never actually reached the
+  controls, whose own `select`/`input[type=…]` widths outranked them. In the wide form the
+  description gets a measure (64ch) and a looser line-height instead of running the full width of
+  a 900px column.
+- **An app that grew stopped being re-measured, and could ask to be taller than the screen.** The
+  height a sandboxed child broadcasts to its embedder was observed on `document.body` alone — but a
+  widget body is routinely pinned, by the frame's own viewport or by an app that writes
+  `html,body{overflow:hidden}`, so appending a row changed what was on screen without changing the
+  one box being watched. Measured against a fixture with a pinned body: five appended rows produced
+  **zero** further reports and the frame stayed at its first height. Both broadcasters now watch the
+  body *and each of its direct children*, re-attach when that child list changes (apps rewrite
+  `body.innerHTML` wholesale), and coalesce a burst instead of posting per observation — the same
+  fixture now reports each step.
+- **An app that pinned its own `html`/`body` could never be seen to grow in a chat.** The height a
+  chat host acts on is not a number we send: measured on claude.ai, the host injects its **own**
+  reporter inside the widget iframe, posting `ui/notifications/size-changed {width, height}` — a
+  string that appears nowhere in this engine — reading the document's own `scrollHeight` and
+  re-reading on mutation (a captured sequence: 755 → 1004 → 755). So the only lever we hold is **the
+  DOM that reporter measures**, and what a pinned app hands it is not a fact about the app:
+  `overflow:hidden` on `html` and/or `body` (seven of the 24 shipped apps) or `body{min-height:100vh}`
+  (the dashboard) make the measured height equal the frame height the host set from its own last
+  reading, so the number freezes and appending a row moves nothing. Every document a host measures
+  is now injected with one exported source, byte for byte, as a classic script armed ahead of the
+  runtime module — the runner's two sandboxed children *and* the top-level widget documents the
+  shell composes (the universal loader for `open_app`, the per-app `ui://` resource under
+  `OMA_DYNAMIC_TOOLS`), which broadcast nothing and so had been missed. As soon as a body exists it
+  sets `height:auto`, `min-height:0` and `overflow-y:visible` on both boxes, inline and `!important`,
+  because what it overrides is the app's own stylesheet. Measured in a 736×500 frame against a
+  fixture with the pinned shape: 8 → 14 → 20 rows report **584px → 992px → 1400px** of document,
+  while the same app with those three declarations removed reports **500px at 20, 26 and 46 rows** —
+  the frame height, forever. It applies only when something is embedding us *and* that embedder is
+  not a shell: a top-level page (`/view`) has nobody deriving its size from our document, and a
+  shell hands us a viewport-fixed frame and expects the app to lay itself out inside it.
+  **The engine sets no ceiling of its own** — a widget is as tall as its content and the host's own
+  published limit decides the rest, so an app's internal scrolling stays the app's (a long list at
+  430×844 keeps a 5442px document and scrolls in the frame the host gives it). The number a
+  sandboxed child *broadcasts* to an embedder inside this engine — `oma.embed`'s frames, the store's
+  inert previews, the one path where we are the embedder — is still bounded at the device screen
+  height (floored at 320px, and an unreadable `window.screen.height` means no bound at all).
+- **The App Store forced a horizontal scrollbar on every widget narrower than ~780px.** Its featured
+  card declared `minmax(220px, .82fr) minmax(300px, 1.4fr)`, and a grid track's minimum is a floor
+  that does not shrink: it overflows and takes the document's width with it. Once the rail and the
+  page padding are removed from a 620px viewport the main column is ~380px, so the card pushed the
+  document 126px past its own frame (48px at 700px; the app detail header carried the same 490px
+  floor one screen deeper). The proportions were the design, the floors were not — both are
+  `minmax(0, …)` now, with the grid items allowed to shrink. Both app roots also carry
+  `overflow-x: clip` as a belt (`clip`, not `hidden`, so nothing turns into a scroll container).
+  Measured at 430 / 560 / 620 / 700 / 736 / 800 / 860 / 900px before and after: 126px and 48px of
+  overflow → 0 everywhere.
+- **The App Store put its whole catalogue into a conversation, and two dozen preview windows with
+  it.** Discover drew a shelf for each of the nine categories the shipped registry carries, up to
+  four cards apiece, every card built around a live preview — so the card in a transcript measured
+  **6,065px at 390px and 5,825px at a 736px widget**. Two things changed, and the split is the
+  context rather than the width. **A chat host now mounts no speculative iframe at all**: the
+  featured hero's preview, the editorial rail's and every list card's are gone there (at 736px it
+  was laying out 25 preview windows, six of them mounted and the rest empty grey boxes), and the one
+  live preview left is the single frame inside a detail view the user opened — the small ones are
+  exactly the ones reported blank on a real desktop host, and static screenshots take their place in
+  a later version. The hero keeps its second half as a drawn plate of host tokens instead of an empty
+  window. **And Discover became a shop window rather than the inventory**: a shelf shows two entries
+  in a conversation and three in the browser viewer's wide form, with the heading's *See all* and the
+  category nav — the pill strip, or the rail — carrying the rest; the category view itself is
+  uncapped as before. The cap is a ROW, not a number, and only the viewer has one: at 1280px the
+  grid is three 440px tracks, while a 736px chat widget spends 202px on its rail and lays out a
+  single 330px-minimum track, so three cards there are three rows rather than one glance — 272px of
+  card height for a shelf nobody reads across. A card with no picture is
+  a row now — mark, title, one truncated line, the action — **56px against the 185px (390) and 206px
+  (736) the stacked form measured**, having dropped the category eyebrow (it repeats the shelf
+  heading it sits under), the publisher line (the same words on every entry in this store) and the
+  state chip (the button beside it already says Open / Update / Unavailable). All of it is one tap
+  away in the detail view. Measured after: **2,170px and 1,961px**, and zero preview windows on
+  Discover. The browser viewer is unchanged — every preview it drew before, it still draws.
+- **Three shipped apps carried defects with no way around them.** `spending-journal` rendered a
+  permanently empty list whenever it had data — a local DOM variable named `copy` shadowed the
+  module-level i18n lookup of the same name. `client-pipeline` threw `RangeError` out of render and
+  went white when a client row's free-text `currency` was not an ISO-4217 code. And `bill-calendar`
+  honoured `preview_date` on any row: since the app declares no collections, the store accepts that
+  key on a real bill too, and one stray field silently backdated the whole app's idea of today. It
+  is now honoured only on the row the fixture file actually ships.
+- **A release could land on one remote and not the other.** `publish.mjs` pushed the public tag and
+  reported success; the deployment mirror it is also supposed to reach was not part of the run, and
+  the build that reads the public repo then clones the private mirror failed to find the commit.
+  The publish run now pushes the same tag to the mirror, prints `deploy mirror:` in the summary so
+  arrival is visible on screen rather than buried in warnings, never prints the remote URL (it
+  carries a token), and a re-run with nothing to publish says so and exits 0 instead of aborting
+  with what looked like an error.
+- **The lockfile guard checked one value; the same defect happened again with a different key.**
+  0.4.1 added an assertion that `package.json` and `package-lock.json` agree on `version`; then
+  `bin` was added to one and not the other, and the guard said nothing. It now checks the
+  *relationship*: top-level version, every shared key's value, every mirrored key `package.json`
+  declares, and the completeness of the mirrored-key list itself — so the day npm starts mirroring a
+  key this repository has not heard of, the check says so instead of silently losing coverage.
+- `.gitignore` carried a trailing comment on the same line as a pattern, which meant `*.confirm-key`
+  matched nothing at all.
+
+### Also
+
+- `SECURITY.md` was rewritten against `src/contracts.mjs` as the source of truth: the
+  `library-reviewed` trust tier retired with the dormant surface above, leaving two, and eight
+  occurrences of the pre-0.4.0 vocabulary went with it. It ships in the public snapshot, which is
+  why it is worth saying it was wrong.
+- `RUNTIME.md` and the authoring guide teach the manifest parameter and the slot model instead of
+  the block grammar, teach range edits ("if you have read it, do not send anchors back"), and carry
+  the functions chapter as real instruction rather than as "not available yet".
+- `install-app.mjs` — the path a human uses to install an app they wrote themselves — **extracts** an
+  embedded declaration block and moves it to the manifest slot, where the tool surface refuses it
+  outright. Re-running a CLI is cheap; hand-editing bytes is not.
+- Seven App Store apps shipped with a block of stale build notes in their header telling the reader
+  the app declares an embedded `#oma-manifest` block — the grammar this release refuses. These files
+  go out in the public snapshot, so the notes were teaching the wrong thing to exactly the audience
+  most likely to copy them. They are gone.
+
 ## 0.4.2 — 2026-07-31
 
 A patch release about one thing: **a receipt that does not match what happened.** Every fix below

@@ -1,0 +1,156 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "default_aisle",
+      "type": "enum",
+      "label": "Default shopping aisle",
+      "options": [
+        "Produce",
+        "Pantry",
+        "Dairy",
+        "Bakery",
+        "Frozen",
+        "Household",
+        "Other"
+      ],
+      "default": "Produce"
+    },
+    {
+      "key": "show_completed",
+      "type": "boolean",
+      "label": "Show completed shopping items",
+      "default": true
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "week_start",
+    "density",
+    "confirm_delete"
+  ],
+  "collections": {
+    "family-dinners": {
+      "label_field": "dish",
+      "fields": {
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "dish": {
+          "type": "string",
+          "required": true
+        },
+        "cook": {
+          "type": "string"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "family-shopping": {
+      "label_field": "item",
+      "fields": {
+        "item": {
+          "type": "string",
+          "required": true
+        },
+        "aisle": {
+          "type": "string"
+        },
+        "qty": {
+          "type": "string"
+        },
+        "done_at": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "family-weekend": {
+      "label_field": "plan",
+      "fields": {
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "plan": {
+          "type": "string",
+          "required": true
+        },
+        "who": {
+          "type": "array"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "family-chores": {
+      "label_field": "task",
+      "fields": {
+        "task": {
+          "type": "string",
+          "required": true
+        },
+        "members": {
+          "type": "array",
+          "required": true
+        },
+        "anchor_date": {
+          "type": "string",
+          "required": true
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "family-board": {
+      "label_field": "note",
+      "fields": {
+        "note": {
+          "type": "string",
+          "required": true
+        },
+        "author": {
+          "type": "string"
+        },
+        "date": {
+          "type": "string",
+          "required": true
+        }
+      },
+      "strict": true
+    },
+    "family-dates": {
+      "label_field": "label",
+      "fields": {
+        "label": {
+          "type": "string",
+          "required": true
+        },
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "person": {
+          "type": "string"
+        },
+        "kind": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "input-cocreate"
+  }
+}

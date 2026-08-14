@@ -19,9 +19,9 @@
 // Bundled by build.mjs into dist/shell.js and inlined by shell.mjs when serving ui://.
 
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
-import { isControlPlaneTool as _isControlPlaneTool } from "./tool-policy.mjs";
-import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, sansRequestState, withConfirmation, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
+import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
@@ -137,40 +137,88 @@ function omaNotify(msg) {
   el._t = setTimeout(() => { el.style.display = "none"; }, 6000);
 }
 
-// A bridge request the host silently DROPS must reject, never hang: the ext-apps SDK has no
-// timeout of its own, and an unsettled await here wedges whatever subsystem issued it for the
-// widget's whole life — the poll chain never reschedules, syncPrefs' busy latch never clears,
-// a walk never releases its single-flight slot. Observed on Claude Desktop 1.24012.9 (and
-// Claude Code, same bridge stack): calls sent in an early post-mount window vanish — the
-// renderer logs "oncalltool handler replaced" and requests on the replaced handler are lost.
-// Ten seconds is far beyond any real engine round-trip; the rejection flows through the same
-// tagged-error path as any transport failure, so render-health never blames the app.
-const BRIDGE_DEADLINE_MS = 10_000;
-function withDeadline(p, what) {
-  return new Promise((resolve, reject) => {
-    const t = setTimeout(() => reject(new Error(what + ": no reply in " + BRIDGE_DEADLINE_MS + "ms — the host may have dropped the request")), BRIDGE_DEADLINE_MS);
-    p.then((v) => { clearTimeout(t); resolve(v); }, (e) => { clearTimeout(t); reject(e); });
+// The shell's confirmation affordance (W-S): the ENGINE demands confirmation, the SHELL renders
+// it — an app author never writes confirmation UI, and forgetting is impossible because the
+// demand is server-side. One implementation serves both the top-level widget's deletes
+// (deleteItem below) and every embedded child's (the runner hands demands up via
+// io.requestConfirm). Resolves true only on the user's explicit click; the Escape key or the
+// earliest joined state's own expiry resolves false — fail-closed in every direction.
+//
+// Demands that arrive WHILE the card is open JOIN it (W1, known-defects S4). "Reset all" is one
+// user intent over N rows, and asking the same question N times was the measured UX: a chain of
+// cards, one per row. One card now answers every demand it absorbed — and every re-send still
+// spends its own per-row request_state, so the engine's credential model is untouched; the card
+// is plural in the UI only. A demand that lands after the card is answered opens a NEW card:
+// joining is for one burst of one intent, never a way to spend an old answer on a new question.
+let confirmCard = null;   // the open card's join(demand, resolve), or null
+function shellConfirm(demand) {
+  return new Promise((resolve) => {
+    if (confirmCard) { confirmCard(demand, resolve); return; }
+    const el = document.createElement("div");
+    el.style.cssText = "position:fixed;bottom:10px;left:50%;transform:translateX(-50%);z-index:2147483647;" +
+      "background:#23282b;color:#fff;padding:8px 8px 8px 14px;border-radius:10px;max-width:92%;" +
+      "display:flex;gap:10px;align-items:center;font:12.5px/1.45 -apple-system,system-ui,sans-serif;" +
+      "box-shadow:0 4px 14px rgba(0,0,0,.35);";
+    const label = document.createElement("span");
+    const mkBtn = (text, bg) => {
+      const b = document.createElement("button");
+      b.textContent = text;
+      b.style.cssText = "border:0;border-radius:7px;padding:5px 12px;font:inherit;cursor:pointer;color:#fff;background:" + bg + ";";
+      return b;
+    };
+    const yes = mkBtn("Delete", "#e5484d"), no = mkBtn("Cancel", "rgba(255,255,255,.14)");
+    el.append(label, no, yes);
+    const members = [];   // [{demand, resolve}] — everyone this card answers for
+    let timer;
+    const ttlOf = (d) => Math.max(1000, Date.parse(d.expires_at || "") - Date.now() || 60_000);
+    const done = (ok) => {
+      clearTimeout(timer);
+      document.removeEventListener("keydown", onKey, true);
+      el.remove();
+      if (confirmCard === join) confirmCard = null;
+      for (const m of members) m.resolve(ok);
+    };
+    const join = (d, res) => {
+      members.push({ demand: d, resolve: res });
+      label.textContent = members.length === 1
+        ? 'Delete "' + (members[0].demand.preview || "this item") + '"?'
+        : "Delete " + members.length + ' items, including "' + (members[0].demand.preview || "this item") + '"?';
+      // The answer must not outlive the shortest-lived credential it stands for.
+      clearTimeout(timer);
+      timer = setTimeout(() => done(false), Math.min(...members.map((m) => ttlOf(m.demand))));
+    };
+    const onKey = (e) => { if (e.key === "Escape") done(false); };
+    yes.onclick = () => done(true);
+    no.onclick = () => done(false);
+    document.addEventListener("keydown", onKey, true);
+    confirmCard = join;
+    join(demand, resolve);
+    document.documentElement.appendChild(el);
+    no.focus();
   });
 }
+
+// A bridge request the host silently DROPS must reject, never hang: an unsettled await here
+// wedges whatever subsystem issued it for the widget's whole life — the poll chain never
+// reschedules, syncPrefs' busy latch never clears, a walk never releases its single-flight
+// slot. Observed on Claude Desktop 1.24012.9 (and Claude Code, same bridge stack): calls sent
+// in an early post-mount window vanish. Ten seconds is far beyond any real engine round-trip.
+// The POLICY (10s, reject-not-hang) is ours; the MECHANISM is the SDK's own request timeout
+// (elegance A17 — the hand-rolled Promise/timer wrapper it replaced did the same thing worse).
+const BRIDGE_DEADLINE_MS = 10_000;
 
 async function rawCall(name, args) {
   try {
     if (SA) {
       const res = await fetch(SA.endpoint || "/rpc", {
         method: "POST",
-        // `x-oma-viewer` is NOT a credential — its value carries no secret and the server never
-        // checks it. It exists so this request cannot be a CORS *simple request*: a custom header
-        // obliges the browser to preflight, and a cross-origin page's preflight dies against a
-        // server that answers no Access-Control-Allow-Origin. We are same-origin, so nothing is
-        // preflighted here; the header just has to be present. See src/http.mjs
-        // browserWriteAllowed() for the other half.
-        headers: { "content-type": "application/json", "x-oma-viewer": "1" },
+        headers: { "content-type": "application/json" },
         body: JSON.stringify({ name, arguments: args }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       return await res.json(); // a CallToolResult
     }
-    return await withDeadline(hostApp.callServerTool({ name, arguments: args }), name);
+    return await hostApp.callServerTool({ name, arguments: args }, { timeout: BRIDGE_DEADLINE_MS });
   } catch (e) {
     // Tag every failure that originates from a TOOL CALL (host declined, bridge blip, transport
     // error). The render-health reporter must never mistake these for a broken app — a
@@ -187,25 +235,20 @@ async function rawCall(name, args) {
 // walks — a host may replay a CACHED tool result on re-mount, and the zero-row open carries
 // no rows by design, so the walk (not the pushed result) is what the first paint stands on.
 
-function pageFetcher(collection, opts = {}) {
+function pageFetcher(collection) {
   return async (cursor) => {
-    const r = await rawCall("data_list", {
-      collection,
-      limit: opts.limit || WALK_LIMIT,
-      ...(opts.group != null ? { group: opts.group } : {}),
-      ...(opts.match ? { match: opts.match } : {}),
-      ...(cursor ? { cursor } : {}),
-    });
+    const r = await rawCall("data_list", { collection, limit: WALK_LIMIT, ...(cursor ? { cursor } : {}) });
     return r && !r.isError ? r.structuredContent : null;
   };
 }
 
 /** Full paged read of ANY collection. Never touches widget state (the foreign-collection
- *  rebind class of bugs is structurally out). `filtered` marks group/match reads so the
- *  adoption gate never applies a completeness check they can't satisfy. */
-async function readCollection(collection, opts = {}) {
+ *  rebind class of bugs is structurally out). One shape, no options (elegance A11: the
+ *  {group, match, limit, maxPages} knobs had zero callers — an app that wants a slice filters
+ *  the rows it was handed, or calls data_list directly through callTool). */
+async function readCollection(collection) {
   const coll = String(collection);
-  const out = await walkPages(pageFetcher(coll, opts), opts.maxPages ? { maxPages: opts.maxPages } : undefined);
+  const out = await walkPages(pageFetcher(coll));
   if (out.error) throw new Error("read failed: " + out.error);
   return {
     collection: coll,
@@ -215,13 +258,13 @@ async function readCollection(collection, opts = {}) {
     files_version: out.files_version,
     total: out.total,
     truncated: !!out.truncated,
-    ...(opts.group != null || opts.match ? { filtered: true } : {}),
     ...(out.torn ? { torn: true } : {}),
   };
 }
 
 let walking = null;   // single-flight: concurrent walk triggers share one pass
 let walkAgain = false;
+let walkedOnce = false;   // one full read has adopted — the paint has stood on real data at least once
 function walk() {
   if (!state.collection) return Promise.resolve();
   // Sharing an in-flight pass is right for two triggers that want the SAME answer, and wrong for a
@@ -237,6 +280,8 @@ function walk() {
       const snap = await readCollection(state.collection);
       snap.host = state.host;
       adopt(snap);
+      walkedOnce = true;
+      hideRecoveryBadge();             // the state the badge exists for is over
       if (snap.torn) markActivity();   // writes kept landing mid-walk — converge on the fast poll
     } catch (e) {
       console.error("[oma] walk failed", e);
@@ -319,6 +364,22 @@ async function call(name, args) {
   }
 }
 
+/** Tool names a widget's own call must be STAMPED for — the writes where "who did this" is a
+ *  fact about the user, not about whoever typed the tool name. Typed verbs and the generic
+ *  callTool door both go through the stamp, so neither is a cheaper way to write. */
+// `file_delete` belongs here for the same reason the item writes do, and its absence was the
+// two fixes above failing to COMPOSE: the generic door was taught to stamp (so a delete cannot
+// hide behind a different method name), and the file plane was taught to demand (so a file
+// delete is confirmable) — but this list was written before the second, so a top-level widget's
+// file delete still went out unstamped, arrived as "agent", and executed. Neither fix was wrong;
+// nobody re-asked the first question after the second answer changed the set of destructive
+// doors. The membership therefore lives in tool-policy.mjs now, beside the control-plane list
+// and the runner guard's write set — one home for "which tools carry a widget's human act".
+const STAMPED_TOOLS = new Set(STAMPED_LIST);
+
+/** The direct runtime's half of the same loop — same implementation, different transport. */
+const confirmable = withConfirmation({ send: call, ask: shellConfirm });
+
 // ---- preferences: prefetched at boot, group-indexed (app-name-INDEPENDENT),
 // merged lazily per read — identity may not be known yet when the data arrives.
 // Resolver evaluated at EVERY use, never cached into data structures: the loader path
@@ -335,28 +396,8 @@ const compName = () =>
   (typeof window !== "undefined" && window.__OMA_APP__) ||
   state.app || (toolInput && toolInput.app) || null;
 
-// Exact coercion, shared verbatim with the mini-bridge (docs/settings-design.md §2.1):
-// the FALLBACK's type drives it, so junk stored values degrade to the fallback safely.
-function coercePref(v, fallback) {
-  const t = typeof fallback;
-  if (t === "boolean") {
-    if (v === true  || v === "true"  || v === 1) return true;
-    if (v === false || v === "false" || v === 0) return false;
-    return fallback;                                   // "25", "yes", {…} → fallback
-  }
-  if (t === "number") {
-    if (typeof v === "number" && Number.isFinite(v)) return v;
-    if (typeof v === "string" && v.trim() !== "" && Number.isFinite(Number(v))) return Number(v);
-    if (typeof v === "boolean") return v ? 1 : 0;
-    return fallback;                                   // "abc", "", {…} → fallback
-  }
-  if (t === "string") {
-    if (typeof v === "string") return v;
-    if (typeof v === "number" || typeof v === "boolean") return String(v);
-    return fallback;                                   // objects only via raw rows → fallback
-  }
-  return v === undefined ? fallback : v;               // exotic fallback type: raw pass-through
-}
+// Value coercion (docs/settings-design.md §2.1) lives in runtime-core — the engine's own
+// confirm_delete gate reads it too, and two answers to "what does this row mean" is a dialect.
 
 let prefItems = [];                  // raw settings rows, snapshot order (last wins)
 let prefGlobal = new Map();          // key -> value           (group === "")
@@ -393,6 +434,7 @@ function rawPref(key) {                            // O(1), name resolved per ca
 function ingestPrefs(items, notify) {
   indexPrefs(items);
   applyThemeVars(themeVars(currentMerged()));   // the theme layer rides the SAME rows and merge
+  updateSystemBadge();                          // the `system_badge` pref flips take effect live
   if (!notify) return false;
   const next = currentMerged(), prev = lastMerged;
   lastMerged = next;
@@ -486,6 +528,209 @@ function rememberIdentity() {
 function recallIdentity() {
   try { return (window.openai?.widgetState || {})[STATE_KEY] || null; } catch (_) { return null; }
 }
+/** Fill whatever `state` is missing from the note a previous mount wrote down. First-wins like
+ *  every identity channel — a recovered value never overwrites one that arrived live. */
+function recoverIdentity() {
+  const kept = recallIdentity();
+  if (!kept || !kept.app) return null;
+  if (!state.app) state.app = kept.app;
+  if (!state.collection && kept.collection) state.collection = kept.collection;
+  if (!state.host && kept.host) state.host = kept.host;
+  return kept.app;
+}
+
+/** Where app→app links point from THIS document, one resolution chain for every reader.
+ *  `__OMA_STANDALONE__.viewBase` is the embedding shell's own mount base (browser viewer,
+ *  hosted /app); `__OMA_VIEW_BASE__` is the engine's own viewer, stamped into a WIDGET document
+ *  by wrapApp/wrapLoader when — and only when — this engine has one (OMA_VIEWER=0 leaves it
+ *  undefined). The tail is the relative default, meaningful only where the page and the viewer
+ *  share an origin. Absolute-or-nothing readers (the badge below, dashboard's Browse) test it. */
+function linkBase() {
+  const sa = SA && typeof SA.viewBase === "string" && SA.viewBase;
+  if (sa) return sa;
+  try { if (typeof window.__OMA_VIEW_BASE__ === "string" && window.__OMA_VIEW_BASE__) return window.__OMA_VIEW_BASE__; } catch (_) { /* no window */ }
+  return "/view/";
+}
+
+// ---- the system badge (D-13, Leo 2026-08-05/06) + mount recovery (W1) ----------------------
+// ONE corner affordance on every widget, three states, three actions:
+//   · hover (default)  — invisible until the pointer finds the corner; zero pixels taken
+//   · always           — the shared `system_badge` preference flips it permanently visible
+//   · forced           — the W1 recovery state: the retry ladder below ended and no walk has
+//     EVER succeeded, so the badge stops waiting to be found. Any successful walk clears it.
+// The recovery story (measured on ChatGPT web, both panes, 2026-08-05): after a PAGE refresh
+// the re-render is handed another call's envelope (see the identity note above), which carries
+// no `collection` — every startWalk() trigger no-ops and the widget paints UI with no data,
+// forever. One widget WRITE restored everything, which is the whole diagnosis: the bridge is
+// alive and the engine answers — nothing ever ASKED again. So ask again, twice over: a retry
+// ladder that rebinds from the identity note the first mount wrote down, and this badge, whose
+// tap is also a USER GESTURE (covers a host that gates tool calls until one).
+//
+// The other two actions (D-13 ①, Leo 2026-08-06) ride the SAME hover corner — a row of buttons
+// revealed together, not a popup with its own dismissal rules:
+//   · ⚙ settings          — oma.embed("settings") in place, the ONE runner machine every other
+//     in-widget mount already uses. Caveat, measured not guessed: a sandboxed child may not call
+//     control-plane tools (runner.mjs refuseControlPlane), so the embedded settings edits
+//     preferences and data but cannot delete/restore/install apps, and its own thumbnails do not
+//     render (a child may not embed further). Preferences — the reason a user opens settings from
+//     a widget corner — work.
+//   · ⧉ browser           — oma.openLink(viewer URL), the host's ui/open-link; the viewer origin
+//     is already in this widget's redirect_domains (tools/apps.mjs UI_SECURITY). NO VIEWER, NO
+//     ITEM (D-13 ②): with OMA_VIEWER=0 the engine stamps no view base, linkBase() stays relative
+//     and the button is never created — an item that cannot work should not be drawn.
+const MOUNT_RETRY_MS = [800, 2500, 7000];
+let sysBadge = null;        // the refresh <button> — the corner's first and default action
+let sysBar = null;          // the corner row that holds it and the menu actions
+let badgeForced = false;    // recovery state — outlives hover, cleared by any successful walk
+let sysPanel = null;        // the open settings overlay {wrap, handle, onKey}, or null
+/** The absolute viewer base, or null. Absolute-or-nothing: a host iframe is an opaque origin, so
+ *  the relative default resolves to nowhere and a link built on it is a dead item. */
+function viewerBase() {
+  const b = linkBase();
+  return typeof b === "string" && /^https?:\/\//.test(b) ? b : null;
+}
+function scheduleMountRecovery() {
+  let rung = 0;
+  const tick = () => {
+    if (walkedOnce) return;
+    recoverIdentity();
+    if (state.collection) walk();
+    rung++;
+    if (rung < MOUNT_RETRY_MS.length) setTimeout(tick, MOUNT_RETRY_MS[rung]);
+    else setTimeout(() => { if (!walkedOnce) showRecoveryBadge(); }, 1500);
+  };
+  setTimeout(tick, MOUNT_RETRY_MS[0]);
+}
+function sysButton(label, title) {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.className = "oma-sysbadge";
+  b.textContent = label;
+  b.title = title;
+  b.setAttribute("aria-label", title);
+  return b;
+}
+/** Settings, in place: an overlay panel with the settings app embedded in it. A TOGGLE — the same
+ *  item closes it — and Escape closes it too, the same key shellConfirm's card answers to. */
+function toggleSettingsPanel() {
+  if (sysPanel) { closeSettingsPanel(); return; }
+  const wrap = document.createElement("div");
+  wrap.className = "oma-syspanel";
+  const bar = document.createElement("div");
+  bar.className = "oma-syspanel-bar";
+  const title = document.createElement("span");
+  title.textContent = "Settings";
+  const x = document.createElement("button");
+  x.type = "button";
+  x.textContent = "Close";
+  x.title = "Close settings";
+  x.onclick = () => closeSettingsPanel();
+  const body = document.createElement("div");
+  body.className = "oma-syspanel-body";
+  bar.append(title, x);
+  wrap.append(bar, body);
+  const onKey = (e) => { if (e.key === "Escape") closeSettingsPanel(); };
+  document.addEventListener("keydown", onKey, true);
+  document.documentElement.append(wrap);
+  const mine = { wrap, handle: null, onKey };
+  sysPanel = mine;
+  // The ONE mount machine (oma.embed → the runner): caps-enforced, tokens inherited, and it
+  // keeps itself fresh off our own probe. No deep link — the settings app takes no "focus this
+  // app" argument today, so this is the whole page, not that app's group.
+  window.oma.embed("settings", { into: body, preset: "live", heights: { min: 320, max: 20000 } })
+    .then((h) => { if (sysPanel === mine) mine.handle = h; else h.unmount(); })
+    .catch((e) => { if (sysPanel === mine) body.textContent = "Couldn't open settings — " + ((e && e.message) || e); });
+}
+function closeSettingsPanel() {
+  if (!sysPanel) return;
+  const p = sysPanel;
+  sysPanel = null;
+  try { document.removeEventListener("keydown", p.onKey, true); } catch (_) { /* stub document */ }
+  try { if (p.handle) p.handle.unmount(); } catch (_) { /* already gone */ }
+  p.wrap.remove();
+}
+function ensureSystemBadge() {
+  if (sysBadge || typeof document === "undefined") return;
+  const st = document.createElement("style");
+  st.setAttribute("data-oma", "sysbadge");
+  st.textContent =
+    ".oma-sysbar{position:fixed;bottom:10px;right:10px;z-index:2147483646;display:flex;gap:6px;align-items:center}" +
+    ".oma-sysbadge{border:0;cursor:pointer;background:#23282b;color:#fff;padding:6px 12px;border-radius:9px;" +
+    "font:12.5px/1.45 -apple-system,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3);" +
+    "opacity:0;transition:opacity .15s}" +
+    ".oma-sysbar:hover .oma-sysbadge,.oma-sysbar.oma-on .oma-sysbadge,.oma-sysbadge:hover," +
+    ".oma-sysbadge:focus-visible,.oma-sysbadge.oma-on{opacity:1}" +
+    "@media (prefers-reduced-motion: reduce){.oma-sysbadge{transition:none}}" +
+    ".oma-syspanel{position:fixed;inset:0;z-index:2147483645;display:flex;flex-direction:column;" +
+    "background:var(--color-background-primary,Canvas)}" +
+    ".oma-syspanel-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#23282b;color:#fff;" +
+    "font:12.5px/1.45 -apple-system,system-ui,sans-serif}" +
+    ".oma-syspanel-bar button{margin-left:auto;border:0;cursor:pointer;background:rgba(255,255,255,.16);color:#fff;" +
+    "border-radius:7px;padding:4px 10px;font:inherit}" +
+    ".oma-syspanel-body{flex:1;min-height:0;overflow:auto}";
+  const bar = document.createElement("div");
+  bar.className = "oma-sysbar";
+  const b = sysButton("↻", "Refresh this app's data");
+  b.onclick = () => {
+    b.disabled = true;
+    recoverIdentity();
+    if (!state.collection) {
+      // The host kept no note for us (or never exposes one) — the engine-side rope ends here.
+      omaNotify("Couldn't rebind this view — ask the assistant to open the app again.");
+      b.disabled = false;
+      return;
+    }
+    walk().finally(() => { b.disabled = false; });   // success clears the forced state from inside walk()
+  };
+  const gear = sysButton("⚙", "Open settings");
+  gear.onclick = () => toggleSettingsPanel();
+  bar.append(b, gear);
+  // D-13 ②: the item EXISTS only when there is a viewer to send the user to.
+  if (viewerBase()) {
+    const out = sysButton("⧉", "Open in browser");
+    out.onclick = async () => {
+      const name = compName() || recoverIdentity();
+      if (!name) { omaNotify("Couldn't tell which app this is — ask the assistant to open it again."); return; }
+      out.disabled = true;
+      const r = await window.oma.openLink(viewerBase() + encodeURIComponent(name));
+      out.disabled = false;
+      // openLink resolves {ok:false} on a host that will not open links — say so once, rather
+      // than leaving a click that looks like nothing happened.
+      if (!r || !r.ok) omaNotify("This host wouldn't open the link — the app lives at " + viewerBase() + name);
+    };
+    bar.append(out);
+  }
+  document.documentElement.append(st, bar);
+  sysBar = bar;
+  sysBadge = b;
+  updateSystemBadge();
+}
+function updateSystemBadge() {
+  if (!sysBadge) return;
+  const always = coercePref(rawPref("system_badge"), "hover") === "always";
+  // The row is shown or hidden as ONE affordance: the pref says "keep the corner visible",
+  // not "keep the refresh button visible".
+  if (sysBar) sysBar.classList.toggle("oma-on", badgeForced || always);
+  sysBadge.classList.toggle("oma-on", badgeForced || always);
+  sysBadge.textContent = badgeForced ? "↻ Load data" : "↻";
+  sysBadge.title = badgeForced
+    ? "This view lost its data binding when the page reloaded — tap to fetch it again."
+    : "Refresh this app's data";
+}
+function showRecoveryBadge() {   // the ladder's terminal state — stop waiting to be hovered
+  if (walkedOnce || badgeForced) return;
+  // A slow first load is not a lost binding: if a walk is still in flight, judge it when it
+  // lands, not while it flies.
+  if (walking) { walking.finally(() => { if (!walkedOnce) showRecoveryBadge(); }); return; }
+  badgeForced = true;
+  ensureSystemBadge();
+  updateSystemBadge();
+}
+function hideRecoveryBadge() {   // any successful walk ends the state the forcing exists for
+  if (!badgeForced) return;
+  badgeForced = false;
+  updateSystemBadge();
+}
 
 // Internal, for the same reason as the host context below: the ONE caller is the loader document,
 // and an app that had to ask which app it is would be a bug in the app, not a missing API.
@@ -501,12 +746,7 @@ try {
     if (name) return name;
     // Nothing live — but the host may be carrying the note we wrote on a previous mount. This is
     // what survives a re-render the host binds to the wrong call.
-    const kept = recallIdentity();
-    if (!kept || !kept.app) return null;
-    if (!state.app) state.app = kept.app;
-    if (!state.collection && kept.collection) state.collection = kept.collection;
-    if (!state.host && kept.host) state.host = kept.host;
-    return kept.app;
+    return recoverIdentity();
   };
 } catch (_) { /* no window (test rig): the loader is the only caller and it has one */ }
 
@@ -698,15 +938,15 @@ window.oma = {
   },
   /** Delete an item. */
   deleteItem(id) {
-    return call("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) });
+    return confirmable("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) });
   },
   /** Re-read the bound collection (a full paged walk; adopted through the gate). */
   refresh() { return walk(); },
   /**
    * Read ANY collection as a full paged walk — items/version/total/truncated — WITHOUT
-   * touching this widget's own bound state. opts: {group, match, limit, maxPages}.
+   * touching this widget's own bound state.
    */
-  readCollection(collection, opts) { return readCollection(collection, opts); },
+  readCollection(collection) { return readCollection(collection); },
   /**
    * SYNC merged preference read: own app override ▸ global ▸ fallback, computed
    * lazily at call time. The fallback's TYPE drives coercion (junk values → fallback).
@@ -771,7 +1011,30 @@ window.oma = {
    * unmediated passthrough to every registered MCP tool — tolerable ONLY because direct mode
    * is local-authored-only; untrusted apps run behind the runner, which filters calls.
    */
-  callTool(name, args) { return rawCall(name, args || {}); },
+  callTool(name, args) {
+    const a = args || {};
+    // A widget's write is a widget's write, whichever door it used. This escape hatch used to
+    // hand the raw tool through unstamped, so the SAME delete that goes through oma.deleteItem
+    // as actor:"human" (and gets the user's confirmation) arrived as an anonymous "agent" write
+    // here and executed immediately — the confirmation guarantee undone by choosing a different
+    // method name, and the ledger's provenance wrong besides (codex review, reproduced).
+    // One policy for one verb, the rule the runner already enforces for embedded children.
+    if (STAMPED_TOOLS.has(name)) {
+      return confirmable(name, { command_id: uuid(), ...a, actor: "human", via: viaOf(compName()) });
+    }
+    // data_batch is the MODEL's bulk verb, and an app reaching for it was the widest door of all:
+    // "Clear all" as one batch deleted every row with no confirmation and wrote `agent` beside
+    // each one in an append-only ledger — the deletions are recoverable, the wrong attribution is
+    // not. Stamping it human would not fix that: a batch is all-or-nothing, so one demand inside
+    // it fails the whole call and the state would have to be re-attached per command, a protocol
+    // nothing teaches. So it is refused here, exactly as the runner already refuses it to
+    // sandboxed children — an app loops oma.deleteItem, each row keeps its own pinned demand,
+    // and shellConfirm coalesces a concurrent burst into ONE card (S4) so the user answers once.
+    if (name === "data_batch") {
+      return Promise.reject(new Error(DATA_BATCH_REFUSAL));
+    }
+    return rawCall(name, a);
+  },
   /** Per-app FILES, read side: list(), read(path) → Uint8Array, url(path) → object URL you can
    *  put straight into <img src>/<a href>. Files are written by the AI (file_write); this is
    *  how an app renders them. */
@@ -796,20 +1059,29 @@ window.oma = {
     },
   },
   /**
-   * Call one of THIS app's own #oma-manifest functions (data in → data out; functions
-   * never touch UI — the data change comes back through the normal reactive loop). The callee
-   * is always this app: cross-app calls arrive with the function pillar's
-   * callable caps, not before.
+   * Call a function THIS app declares (manifest.functions) — data in, data out, no UI touched.
+   * (Returned with W3, reversing the 2026-08-04 A10 retirement exactly on its own condition:
+   * the server seat and its executor exist now, so the verb can succeed.) The runner forces the
+   * callee to this app and stamps via/actor, so a widget can never reach another app's functions
+   * through this door. Resolves the engine's ack body ({ok, result?, writes}) or the typed
+   * failure body ({ok:false, reason, …}) — a refusal is an ANSWER here, not an exception, the
+   * same contract every other data verb keeps.
    */
   callFunction(fn, args) {
-    const me = compName();
-    return rawCall("call_function", { app: me, function: String(fn), args: args || {}, command_id: uuid(), via: viaOf(me) });
+    // Same self-stamped envelope as every direct-mode write (app forced to SELF, actor human,
+    // via = this app); under a runner the guard re-forces all three, so the two doors agree.
+    return rawCall("call_function", {
+      command_id: uuid(), app: compName(), function: String(fn),
+      ...(args == null ? {} : { args }), actor: "human", via: viaOf(compName()),
+    }).then((r) => (r && r.structuredContent) || null);
   },
   /**
    * Mount another app INSIDE this one (sandboxed, caps-enforced — the same runner
    * machine the loader uses; depth 1: an embedded child cannot embed further).
-   * opts: { into: Element (required), preset: "live"|"readonly"|"inert", collection, html,
-   *         snapshot, heights: {min,max}|false }.
+   * opts: { into: Element (required), preset: "live"|"inert", collection, html,
+   *         snapshot, heights: {min,max}|false, fit: {width} }.
+   * `fit` renders the child at its natural `width` px and scales the frame to fill `into`
+   * (thumbnails, previews) — sizing via heights is off while it is on.
    * Returns { el, unmount, refresh }.
    */
   async embed(name, opts = {}) {
@@ -869,7 +1141,6 @@ window.oma = {
       io: {
         callTool: rawCall,
         sendMessage: (t) => window.oma.sendMessage(t),
-        updateContext: (t) => window.oma.updateContext(t),
         snapshot: () => childSnap,
         settingsIds: () => settingsIds,
         readCollection,
@@ -879,7 +1150,8 @@ window.oma = {
           return { base64: btoa(s), mime: f.mime };
         }),
         notify: omaNotify,
-        confirm: (m) => { try { return typeof window.confirm === "function" && window.confirm(m) === true; } catch { return false; } },
+        // engine confirmation demands render in OUR chrome (shellConfirm, W-S)
+        requestConfirm: shellConfirm,
         uuid,
       },
     });
@@ -887,9 +1159,34 @@ window.oma = {
     const frame = document.createElement("iframe");
     frame.setAttribute("sandbox", "allow-scripts");
     // heights:false hands ALL sizing to the embedder's own CSS (scaled thumbnails, preview
-    // fit) — no inline size properties to out-specificity a stylesheet.
-    const H = opts.heights === false ? null : opts.heights || { min: 60, max: 20000 };
+    // fit) — no inline size properties to out-specificity a stylesheet. `fit` implies it.
+    const H = opts.fit || opts.heights === false ? null : opts.heights || { min: 60, max: 20000 };
     frame.style.cssText = "display:block;border:0;" + (H ? "width:100%;height:" + Math.max(H.min, 140) + "px" : "");
+    // fit: {width} — scale-to-thumbnail, inside the one machine (W4). The settings grid and the
+    // library grid had each grown their own copy of this (a CSS-var scale at 720px vs a JS
+    // transform at 760px — measured drift, two answers to one question), so the machinery lives
+    // here now and the NATURAL WIDTH is the caller's declared argument instead of two hard-coded
+    // constants. The child renders at fit.width; the frame is scaled to fill `into`, whose CSS
+    // keeps owning the visible box (width, aspect, overflow). Pointer behaviour stays the
+    // caller's: an inert thumbnail sets pointer-events:none in its own stylesheet.
+    let fitObserver = null;
+    if (opts.fit && Number(opts.fit.width) > 0) {
+      const nat = Number(opts.fit.width);
+      const applyFit = () => {
+        const w = opts.into.clientWidth, h = opts.into.clientHeight;
+        if (!w) return;                       // hidden — the observer re-fires when it shows
+        const s = w / nat;
+        frame.style.width = nat + "px";
+        frame.style.height = Math.max(1, Math.ceil(h / s)) + "px";
+        frame.style.transform = "scale(" + s + ")";
+        frame.style.transformOrigin = "0 0";
+      };
+      applyFit();
+      if (typeof ResizeObserver === "function") {
+        fitObserver = new ResizeObserver(applyFit);
+        fitObserver.observe(opts.into);
+      }
+    }
 
     // `changed` exists for the apply-refresh case: an optimistic local apply deliberately does NOT
     // move childSnap.version, so an UPDATE (same row count, same version) was invisible to the
@@ -912,11 +1209,10 @@ window.oma = {
       }, "*");
     }
 
-    // Prefs + first data, per preset: live walks both in full; readonly reads prefs plus ONE
-    // first page of the bound collection (a thumbnail is a picture, not a full projection);
-    // inert touches nothing — its snapshot came with the fixtures.
+    // Prefs + first data, per preset: live walks both in full; inert touches nothing — its
+    // snapshot came with the fixtures. (The readonly preset retired 2026-08-04, elegance A8.)
     let boot = Promise.resolve();
-    if (preset === "live" || preset === "readonly") {
+    if (preset === "live") {
       // Boot results are the OLDEST information this embed will ever have, but they can arrive
       // LAST (a slow first read racing a fast child write). Both legs therefore adopt the same way
       // every other path does — version-monotonically, and never after unmount.
@@ -924,7 +1220,7 @@ window.oma = {
         readCollection("settings").then((s) => rebuildPrefs(s.items || [], s.settings_version))
           .catch(() => { if (prefMap === null) prefMap = {}; }),
         opts.snapshot ? Promise.resolve()
-          : readCollection(coll, preset === "readonly" ? { maxPages: 1 } : undefined)
+          : readCollection(coll)
               .then((s) => {
                 if (dead) return;
                 if ((s.version || 0) >= (childSnap.version || 0)) childSnap = { ...s, app: n, host: state.host };
@@ -1015,6 +1311,7 @@ window.oma = {
       unmount() {
         dead = true;   // in-flight boot/refresh results resolve into a frame that is already gone
         liveEmbeds.delete(handle);
+        if (fitObserver) { try { fitObserver.disconnect(); } catch {} }
         window.removeEventListener("message", onMessage);
         const ci = changeCbs.indexOf(onParentChange);
         if (ci !== -1) changeCbs.splice(ci, 1);
@@ -1064,45 +1361,19 @@ window.oma = {
   get contract() { return RUNTIME_CONTRACT; },
   /** Arguments of the tool call that mounted this widget (e.g. {app, collection}). */
   get toolInput() { return toolInput; },
-  /** Which host this widget is running in ("claude-ai", "chatgpt", "browser-viewer", …). */
-  get host() { return state.host; },
   /** True when running in a plain browser page (no chat attached — sendMessage unavailable). */
   get standalone() { return !!SA; },
   /**
    * Base path for app→app links (e.g. `oma.viewBase + name`). Defaults to the
    * engine viewer's "/view/"; an embedding shell sets standalone.viewBase to its own mount
    * base so links resolve there. Single source of truth — apps never hardcode "/view/".
-   */
-  get viewBase() { return (SA && typeof SA.viewBase === "string" && SA.viewBase) || "/view/"; },
-  /**
-   * True if `name` is a control-plane tool no app may call via callTool (registry /
-   * security-policy mutation, and every internal `_`-prefixed RPC). The single source of
-   * truth (tool-policy.mjs) — a preview bridge MUST gate on this rather than hand-maintain
-   * its own denylist.
-   */
-  isControlPlaneTool(name) { return _isControlPlaneTool(name); },
-  /**
-   * Bind this runtime to a collection, once, from an answer the SERVER computed.
    *
-   * DIRECT MODE ONLY, and it exists for exactly one caller: the universal loader. A per-app
-   * document is baked with its binding at serve time (`__OMA_COLLECTION_HINT__`), but the loader is
-   * ONE document serving every app, so it cannot be — leaving `state.collection` with a single
-   * source, a host push, and `open_app`'s `collection` input optional and usually omitted.
-   * The result of the `app_html` call the loader already makes carries the binding, so the
-   * loader hands it over here instead of the runtime waiting to be told.
-   *
-   * It does NOT recompute anything, and callers must not either: "what does this app open on" has
-   * one owner (contracts.mjs defaultCollectionFor, which /view mounts by too), and a second copy is
-   * a second answer waiting to disagree.
-   *
-   * FIRST WINS, like every other writer of this field — a late call cannot rebind a widget that is
-   * already bound and reading. Sandboxed children never see this method (the guard's surface is an
-   * allowlist), which is deliberate: a child that could rebind itself could read another app's rows.
+   * Inside a HOST (no standalone config) this used to be the relative default and nothing else,
+   * so the absolute URL the engine knew never reached the widget and every in-widget link was
+   * dead (lane-c finding #8). wrapApp/wrapLoader now stamp the engine's own viewer base into the
+   * document when there is one, and linkBase() is where the two doors meet.
    */
-  bind(collection) {
-    if (typeof collection === "string" && collection && !state.collection) state.collection = collection;
-    return state.collection;
-  },
+  get viewBase() { return linkBase(); },
   /**
    * PROPOSE a message into the chat (ui/message). Call ONLY from an explicit user click
    * (e.g. a "Send to AI" button) — never automatically.
@@ -1184,15 +1455,19 @@ window.oma = {
       .then((r) => ({ ok: !(r && r.isError) }))
       .catch(() => ({ ok: false }));
   },
-  /**
-   * Silently update the AI's context (ui/update-model-context) — no chat message is
-   * produced; the AI sees it on its next turn. Each call REPLACES the previous context.
-   */
-  updateContext(text) {
-    if (SA) return Promise.resolve();
-    return hostApp.updateModelContext({ content: [{ type: "text", text: String(text) }] })
-      .catch((e) => { console.error("[oma] updateContext failed", e); });
-  },
+  // updateContext retired 2026-08-04 (elegance A10): zero executable callers. R2's arbitrated
+  // bridge (oma.updateContext push + TTL'd view_context resource) rebuilds it WITH its host
+  // wiring in the W4 tranche — the verb returns with its consumer, not ahead of it.
+};
+
+// INTERNAL bind hook — not author API (elegance A10: `oma.bind` had exactly one caller, the
+// universal loader, and advertising a loader-only handoff as author surface invited misuse).
+// DIRECT MODE ONLY; first wins, like every other writer of state.collection. The loader hands
+// over the binding `app_html` computed — it never recomputes it (contracts.mjs
+// defaultCollectionFor stays the one owner of "what does this app open on").
+window.__OMA_BIND__ = (collection) => {
+  if (typeof collection === "string" && collection && !state.collection) state.collection = collection;
+  return state.collection;
 };
 
 // Staleness: the AI (or another host — CLI, another chat) can write via data_* while this
@@ -1246,38 +1521,27 @@ document.addEventListener("visibilitychange", () => {
 document.addEventListener("pointerdown", markActivity, { capture: true, passive: true });
 document.addEventListener("keydown", markActivity, { capture: true, passive: true });
 
-// ---- render-health: report a broken mount so the engine can AUTO-REVERT to the last good
-// version (local tier only — the engine enforces that plus a per-run budget). Identity comes
-// from the injected globals (__OMA_APP__/__OMA_APP_VERSION__ via wrapApp, or
-// set by the loader before mount); no identity/version → no report. First error only, within
-// the initial window; earlier parse-time errors arrive via the __OMA_EARLY_ERRORS__ buffer
-// (a classic script installed before any app code runs).
-let bridgeReady;                                          // resolves when rawCall is usable
-const bridgeReadyP = new Promise((r) => { bridgeReady = r; });
+// ---- broken-mount notice: an uncaught error during the initial window tells the USER what
+// happened and names the explicit recovery path (app_history → restore_app, driven through the
+// AI). The auto-revert that used to ride this signal — a server-side rollback with a per-run
+// budget — was retired 2026-08-04 (elegance B3): it never fired outside tests, and an
+// app-originated report silently rewriting source was the heaviest belt on this face. Earlier
+// parse-time errors arrive via the __OMA_EARLY_ERRORS__ buffer (a classic script installed
+// before any app code runs).
 {
   const REPORT_WINDOW_MS = 8000;
   const t0 = Date.now();
   let reported = false;
   const report = (msg) => {
-    if (reported) return;
-    const app = compName();
-    const version = typeof window !== "undefined" ? window.__OMA_APP_VERSION__ : undefined;
-    if (!app || typeof version !== "number") return;
+    if (reported || !compName()) return;
     reported = true;
-    bridgeReadyP.then(() => rawCall("render_health", { app, version, ok: false, error: String(msg).slice(0, 300) }))
-      .then((r) => {
-        const sc = r && r.structuredContent;
-        if (sc && sc.reverted) {
-          omaNotify("This app's latest change broke it — rolled back to the previous working version. Reopen it to load the fix.");
-          if (SA) setTimeout(() => { try { location.reload(); } catch {} }, 1200);  // /view refetches; host iframes need a reopen
-        }
-      }).catch(() => {});
+    omaNotify(`This app hit an error while loading: ${String(msg).slice(0, 160)} — if its latest change broke it, ask the AI to roll back (app_history → restore_app).`);
   };
   for (const m of (typeof window !== "undefined" && window.__OMA_EARLY_ERRORS__) || []) report(m);
   window.addEventListener("error", (e) => { if (Date.now() - t0 < REPORT_WINDOW_MS) report((e && e.message) || "script error"); });
   window.addEventListener("unhandledrejection", (e) => {
     const r = e && e.reason;
-    if (r && r.omaToolCallError) return;   // environment/tool failure, NOT broken app code — never a revert trigger
+    if (r && r.omaToolCallError) return;   // environment/tool failure, NOT broken app code
     if (Date.now() - t0 < REPORT_WINDOW_MS) report((r && r.message) || r || "unhandled rejection");
   });
 }
@@ -1289,8 +1553,8 @@ if (SA) {
   state.app = SA.app || null;
   state.host = "browser-viewer";
   prefsPromise = syncPrefs();  // SA.app is already set — even eager consumers are safe
+  ensureSystemBadge();         // same corner affordance as in a chat host
   walk().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
-  bridgeReady();
   // Viewer SHELL (standalone pages only — host chats render the bare widget): a slim fixed top
   // bar so a browser-opened app has navigation and identity instead of floating raw in the tab.
   // Attached to <html> like omaNotify (apps rewrite body.innerHTML), body pushed down via
@@ -1406,8 +1670,9 @@ if (SA) {
   hostApp.connect().then(() => {
     applyTheme(hostApp.getHostContext());
     prefsPromise = syncPrefs();  // bridge must be connected before callServerTool works
-    bridgeReady();               // render-health reports queued before connect can flush now
     connected = true;
+    ensureSystemBadge();         // D-13: the hover-corner refresh affordance, on every widget
     startWalk();                 // binding may have arrived before connect — walk now
+    scheduleMountRecovery();     // and if no binding ever comes (refresh-replay), ask again
   }).catch((e) => console.error("[oma] connect failed", e));
 }

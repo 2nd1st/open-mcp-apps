@@ -1,0 +1,106 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "morning_end_hour",
+      "type": "number",
+      "label": "Morning ends at",
+      "description": "Local hour when the noon medicine period begins.",
+      "default": 11,
+      "min": 6,
+      "max": 14,
+      "step": 1
+    },
+    {
+      "key": "evening_start_hour",
+      "type": "number",
+      "label": "Evening starts at",
+      "description": "Local hour when the evening medicine period begins.",
+      "default": 17,
+      "min": 15,
+      "max": 22,
+      "step": 1
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "date_format",
+    "density"
+  ],
+  "collections": {
+    "elder-meds": {
+      "label_field": "name",
+      "fields": {
+        "name": {
+          "type": "string",
+          "required": true
+        },
+        "slots": {
+          "type": "array",
+          "required": true
+        },
+        "dose": {
+          "type": "string"
+        },
+        "pills_left": {
+          "type": "number"
+        },
+        "daily_use": {
+          "type": "number"
+        },
+        "note": {
+          "type": "string"
+        }
+      },
+      "strict": true
+    },
+    "elder-checks": {
+      "label_field": "med",
+      "fields": {
+        "med": {
+          "type": "string",
+          "required": true
+        },
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "slot": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "morning",
+            "noon",
+            "evening"
+          ]
+        }
+      },
+      "strict": true
+    },
+    "elder-vitals": {
+      "label_field": "date",
+      "fields": {
+        "date": {
+          "type": "string",
+          "required": true
+        },
+        "systolic": {
+          "type": "number",
+          "required": true
+        },
+        "diastolic": {
+          "type": "number",
+          "required": true
+        },
+        "pulse": {
+          "type": "number"
+        }
+      },
+      "strict": true
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "local-tools"
+  }
+}

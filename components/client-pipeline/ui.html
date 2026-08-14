@@ -1,0 +1,726 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="A client pipeline that makes overdue invoices and the next follow-up impossible to miss.">
+<meta name="oma-category" content="Work">
+<title>Client Pipeline</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    color-scheme: light dark;
+    --accent: var(--color-text-info, var(--color-ring-primary));
+    --danger: var(--color-text-danger, var(--color-ring-primary));
+    --positive: var(--color-text-success, var(--color-ring-primary));
+    --warning: var(--color-text-warning, var(--accent));
+    --accent-wash: color-mix(in oklab, var(--accent) 9%, transparent);
+    --danger-wash: color-mix(in oklab, var(--danger) 8%, transparent);
+    --positive-wash: color-mix(in oklab, var(--positive) 9%, transparent);
+  }
+  html, body { margin: 0; }
+  body {
+    padding: 14px;
+    background: transparent;
+    color: var(--color-text-primary);
+    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
+  }
+  .app {
+    position: relative;
+    width: min(100%, 920px);
+    margin: 0 auto;
+    overflow: hidden;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+  }
+  .app::before {
+    position: absolute;
+    top: -112px;
+    right: -54px;
+    width: 230px;
+    height: 230px;
+    border: 30px solid color-mix(in oklab, var(--accent) 6%, transparent);
+    border-radius: var(--border-radius-full, 999px);
+    content: "";
+    pointer-events: none;
+  }
+  .topbar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    min-height: 66px;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .brand-mark {
+    display: grid;
+    width: 39px;
+    height: 39px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--color-border-primary));
+    border-radius: var(--border-radius-md);
+    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 15%, transparent), color-mix(in oklab, var(--positive) 6%, transparent));
+    color: var(--accent);
+  }
+  .brand-mark svg {
+    width: 21px;
+    height: 21px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+  .identity { min-width: 0; }
+  .eyebrow {
+    margin-bottom: 2px;
+    color: var(--color-text-tertiary);
+    font: 700 10px/1 var(--font-mono);
+    letter-spacing: .1em;
+    text-transform: uppercase;
+  }
+  h1 {
+    margin: 0;
+    font-size: 16px;
+    line-height: 1.2;
+    letter-spacing: -.015em;
+  }
+  .sync-state {
+    display: inline-flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 7px;
+    margin-left: auto;
+    padding: 5px 9px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: color-mix(in oklab, var(--color-background-primary) 78%, transparent);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    font-weight: 650;
+    white-space: nowrap;
+  }
+  .sync-state::before {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--positive);
+    box-shadow: 0 0 0 3px var(--positive-wash);
+    content: "";
+  }
+  .overview {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(230px, 1.5fr) repeat(3, minmax(92px, .72fr));
+    align-items: stretch;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: linear-gradient(110deg, color-mix(in oklab, var(--accent) 8%, var(--color-background-secondary)), color-mix(in oklab, var(--positive) 3%, var(--color-background-secondary)));
+    font-variant-numeric: tabular-nums;
+  }
+  .overview-lead {
+    min-width: 0;
+    padding: 16px 18px;
+  }
+  .overview-label,
+  .metric-label {
+    color: var(--color-text-tertiary);
+    font: 700 9px/1.25 var(--font-mono);
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+  .pipeline-value {
+    margin-top: 6px;
+    overflow: hidden;
+    font-size: clamp(28px, 5vw, 38px);
+    font-weight: 780;
+    line-height: .95;
+    letter-spacing: -.055em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pipeline-note {
+    margin-top: 7px;
+    color: var(--color-text-secondary);
+    font-size: 12px;
+  }
+  .metric {
+    display: grid;
+    min-width: 0;
+    align-content: center;
+    gap: 5px;
+    padding: 14px 16px;
+    border-left: 1px solid var(--color-border-secondary);
+  }
+  .metric strong {
+    font-size: 21px;
+    line-height: 1;
+    letter-spacing: -.035em;
+  }
+  .metric.danger strong { color: var(--danger); }
+  .metric.positive strong { color: var(--positive); }
+  .workspace {
+    position: relative;
+    z-index: 1;
+    display: grid;
+    grid-template-columns: minmax(0, 1.45fr) minmax(250px, .9fr);
+    gap: 18px;
+    padding: 17px;
+  }
+  .section { min-width: 0; }
+  .section-head {
+    display: flex;
+    min-height: 28px;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 9px;
+  }
+  .section-head h2 {
+    margin: 0;
+    font-size: 13px;
+    letter-spacing: -.005em;
+  }
+  .section-count {
+    display: inline-grid;
+    min-width: 21px;
+    height: 21px;
+    place-items: center;
+    padding: 0 6px;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    font: 700 10px/1 var(--font-mono);
+  }
+  .section-count.alert {
+    background: var(--danger-wash);
+    color: var(--danger);
+  }
+  .section-note {
+    margin-left: auto;
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+    white-space: nowrap;
+  }
+  .attention-list,
+  .steady-list { display: grid; gap: 9px; }
+  .attention-card {
+    position: relative;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 11px 14px;
+    min-height: 112px;
+    padding: 13px 14px 12px 16px;
+    overflow: hidden;
+    border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--color-border-secondary));
+    border-radius: var(--border-radius-lg);
+    background: linear-gradient(105deg, var(--danger-wash), transparent 58%);
+  }
+  .attention-card::before {
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 3px;
+    background: var(--danger);
+    content: "";
+  }
+  .client-id {
+    display: flex;
+    min-width: 0;
+    align-items: center;
+    gap: 10px;
+  }
+  .avatar {
+    display: grid;
+    width: 32px;
+    height: 32px;
+    flex: 0 0 auto;
+    place-items: center;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-primary);
+    color: var(--color-text-secondary);
+    font: 700 10px/1 var(--font-mono);
+  }
+  .client-copy { min-width: 0; }
+  .client-copy strong,
+  .client-copy span {
+    display: block;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .client-copy strong { font-size: 13px; }
+  .client-copy span {
+    margin-top: 2px;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+  }
+  .amount {
+    align-self: center;
+    font-size: 17px;
+    font-weight: 760;
+    letter-spacing: -.03em;
+    text-align: right;
+    white-space: nowrap;
+  }
+  .action-row {
+    display: flex;
+    grid-column: 1 / -1;
+    min-width: 0;
+    align-items: center;
+    gap: 8px;
+    padding-top: 10px;
+    border-top: 1px solid color-mix(in oklab, var(--danger) 14%, var(--color-border-secondary));
+  }
+  .status {
+    display: inline-flex;
+    min-height: 23px;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 7px;
+    border-radius: var(--border-radius-full, 999px);
+    font-size: 10px;
+    font-weight: 720;
+    white-space: nowrap;
+  }
+  .status svg {
+    width: 12px;
+    height: 12px;
+    fill: none;
+    stroke: currentColor;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 2;
+  }
+  .status.overdue {
+    background: var(--danger-wash);
+    color: var(--danger);
+  }
+  .status.ready {
+    background: var(--accent-wash);
+    color: var(--accent);
+  }
+  .status.chased {
+    margin-left: auto;
+    background: var(--positive-wash);
+    color: var(--positive);
+  }
+  .steady-card {
+    padding: 12px 13px;
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg);
+    background: var(--color-background-primary);
+  }
+  .steady-top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: start;
+  }
+  .stage {
+    display: inline-flex;
+    width: max-content;
+    min-height: 22px;
+    align-items: center;
+    margin-top: 2px;
+    padding: 3px 7px;
+    border-radius: var(--border-radius-full, 999px);
+    background: var(--color-background-secondary);
+    color: var(--color-text-secondary);
+    font-size: 10px;
+    font-weight: 720;
+    text-transform: capitalize;
+  }
+  .stage.active {
+    background: var(--positive-wash);
+    color: var(--positive);
+  }
+  .stage.proposal {
+    background: color-mix(in oklab, var(--warning) 9%, transparent);
+    color: var(--warning);
+  }
+  .steady-detail {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin-top: 11px;
+    padding-top: 10px;
+    border-top: 1px solid var(--color-border-secondary);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+  .steady-detail svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    margin-top: 1px;
+    fill: none;
+    stroke: var(--color-text-tertiary);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+  .steady-date {
+    display: block;
+    margin-top: 4px;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+  }
+  .empty {
+    grid-column: 1 / -1;
+    padding: 34px 20px;
+    border: 1px dashed var(--color-border-primary);
+    border-radius: var(--border-radius-lg);
+    color: var(--color-text-tertiary);
+    text-align: center;
+  }
+  .app-foot {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 17px;
+    border-top: 1px solid var(--color-border-secondary);
+    background: color-mix(in oklab, var(--color-background-secondary) 70%, transparent);
+    color: var(--color-text-tertiary);
+    font-size: 10.5px;
+  }
+  .app-foot svg {
+    width: 14px;
+    height: 14px;
+    flex: 0 0 auto;
+    fill: none;
+    stroke: var(--accent);
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    stroke-width: 1.7;
+  }
+  .app-foot strong { color: var(--color-text-secondary); }
+
+  @media (max-width: 720px) {
+    .overview { grid-template-columns: minmax(200px, 1.35fr) repeat(3, minmax(76px, .65fr)); }
+    .overview-lead { padding-inline: 15px; }
+    .metric { padding-inline: 11px; }
+    .workspace { grid-template-columns: minmax(0, 1.3fr) minmax(220px, .85fr); gap: 12px; padding: 14px; }
+    .attention-card { padding-inline: 13px; }
+    .status { padding-inline: 6px; }
+  }
+  @media (max-width: 570px) {
+    body { padding: 10px; }
+    .topbar { padding-inline: 13px; }
+    .sync-state { padding-inline: 7px; }
+    .sync-state span { display: none; }
+    .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .overview-lead { grid-column: 1 / -1; padding: 14px 15px 13px; border-bottom: 1px solid var(--color-border-secondary); }
+    .pipeline-value { font-size: 31px; }
+    .overview-label, .metric-label { font-size: 9.5px; }
+    .metric { min-height: 65px; padding: 11px 12px; border-left: 0; }
+    .metric + .metric { border-left: 1px solid var(--color-border-secondary); }
+    .metric strong { font-size: 19px; }
+    .workspace { grid-template-columns: 1fr; padding: 14px; }
+    .section-note { display: none; }
+    .client-copy span, .steady-detail { font-size: 11.5px; }
+    .steady-date { font-size: 10.5px; }
+    .status { min-height: 26px; font-size: 10.5px; }
+    .status.chased { margin-left: 0; }
+    .action-row { flex-wrap: wrap; }
+    .app-foot { padding-inline: 14px; }
+  }
+  @media (max-width: 390px) {
+    .metric { padding-inline: 9px; }
+    .metric-label { font-size: 8px; }
+    .attention-card { grid-template-columns: minmax(0, 1fr); }
+    .attention-card .amount { position: absolute; top: 18px; right: 13px; }
+    .client-id { padding-right: 78px; }
+  }
+  [data-density="compact"] body { padding: 10px; }
+  [data-density="compact"] .workspace { gap: 12px; padding: 13px; }
+</style>
+</head>
+<body>
+<main class="app">
+  <header class="topbar">
+    <div class="brand-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M4 19V8m6 11V4m6 15v-7m4 7H2"></path><path d="m3 10 7-6 6 8 5-5"></path></svg>
+    </div>
+    <div class="identity">
+      <div class="eyebrow" id="eyebrow">Money in motion</div>
+      <h1 id="app-title">Client Pipeline</h1>
+    </div>
+    <div class="sync-state" id="sync-state" aria-label="Synced with your AI"><span id="sync-label">Synced with your AI</span></div>
+  </header>
+
+  <section id="overview" class="overview" aria-label="Pipeline summary"></section>
+
+  <div id="workspace" class="workspace" aria-live="polite"></div>
+
+  <footer class="app-foot">
+    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 9.8 8.2 4.5 10.5l5.3 2.3L12 18l2.2-5.2 5.3-2.3-5.3-2.3L12 3Z"></path></svg>
+    <span><strong id="shared-label">Shared context:</strong> <span id="shared-copy">update this app here or ask your AI to do it.</span></span>
+  </footer>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+  const $ = (id) => document.getElementById(id);
+  const STR = {
+    en: {
+      eyebrow: "Money in motion",
+      title: "Client Pipeline",
+      metaDescription: "A client pipeline that makes overdue invoices and the next follow-up impossible to miss.",
+      synced: "Synced with your AI",
+      snapshot: "Snapshot · {date}",
+      overviewAria: "Pipeline summary",
+      openPipeline: "Open pipeline",
+      acrossOpen: "Across {count} open client",
+      acrossOpenMany: "Across {count} open clients",
+      overdue: "Overdue",
+      draftsReady: "Drafts ready",
+      chasedToday: "Chased today",
+      chasedDate: "Chased · {date}",
+      needsAttention: "Needs your attention",
+      followupsPrepared: "Follow-ups prepared",
+      movingForward: "Moving forward",
+      draftReady: "Draft ready",
+      dayOverdue: "{count} day overdue",
+      daysOverdue: "{count} days overdue",
+      due: "Due",
+      quoted: "Quoted",
+      noNextStep: "No next step yet",
+      nothingOverdue: "Nothing overdue.",
+      noOtherOpen: "No other open clients.",
+      empty: "Add the people you are selling to or waiting to be paid by.",
+      untitled: "Untitled",
+      sharedLabel: "Shared context:",
+      sharedCopy: "update this app here or ask your AI to do it.",
+      stage: { active: "Active", proposal: "Proposal", lead: "Lead", paid: "Paid", open: "Open" },
+    },
+    zh: {
+      eyebrow: "回款与推进",
+      title: "客户管道",
+      metaDescription: "把逾期回款、跟进草稿和每位客户的下一步放在同一条清晰管道里。",
+      synced: "已与 AI 同步",
+      snapshot: "快照 · {date}",
+      overviewAria: "客户管道概览",
+      openPipeline: "进行中的金额",
+      acrossOpen: "共 {count} 位进行中客户",
+      acrossOpenMany: "共 {count} 位进行中客户",
+      overdue: "已逾期",
+      draftsReady: "草稿已就绪",
+      chasedToday: "今天已跟进",
+      chasedDate: "已跟进 · {date}",
+      needsAttention: "需要你处理",
+      followupsPrepared: "跟进内容已准备",
+      movingForward: "正在推进",
+      draftReady: "草稿已就绪",
+      dayOverdue: "已逾期 {count} 天",
+      daysOverdue: "已逾期 {count} 天",
+      due: "到期",
+      quoted: "报价",
+      noNextStep: "还没有下一步",
+      nothingOverdue: "目前没有逾期项目。",
+      noOtherOpen: "暂无其他进行中的客户。",
+      empty: "把正在洽谈或等待回款的客户添加进来。",
+      untitled: "未命名",
+      sharedLabel: "共享上下文：",
+      sharedCopy: "你可以在这里更新，也可以直接让 AI 代你处理。",
+      stage: { active: "执行中", proposal: "提案中", lead: "线索", paid: "已付款", open: "进行中" },
+    },
+  };
+  let currentState = { items: [] };
+  const lang = () => {
+    const preferred = String(oma.pref("locale", "auto") || "auto");
+    const resolved = preferred === "auto" ? navigator.language : preferred;
+    return resolved.toLowerCase().startsWith("zh") ? "zh" : "en";
+  };
+  const t = (key, vars = {}) => {
+    const value = key.split(".").reduce((node, part) => node?.[part], STR[lang()]) ?? key;
+    return String(value).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+  };
+  const icons = {
+    draft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"></path><path d="M14 3v6h6M8 14h8M8 17h5"></path></svg>',
+    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>',
+    arrow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg>',
+  };
+
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
+  const dateOnly = (value) => {
+    if (!value) return null;
+    const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const locale = () => {
+    const preferred = oma.pref("locale", "auto");
+    return preferred === "auto" ? navigator.language : preferred;
+  };
+  // `currency` is a free-text field on a client row, so it is whatever the AI or the user typed.
+  // Intl.NumberFormat throws RangeError on anything that is not an ISO-4217 code, and the throw
+  // lands inside render — one row spelled "dollars" and the whole app is a white rectangle.
+  // Same shape as bill-calendar: normalise to three uppercase letters, and still catch.
+  const safeCurrency = (value) => String(value || "USD").trim().toUpperCase().slice(0, 3) || "USD";
+  const fmtMoney = (value, currency = "USD") => {
+    const amount = Number(value) || 0;
+    const code = safeCurrency(currency);
+    try {
+      return new Intl.NumberFormat(locale(), {
+        style: "currency",
+        currency: code,
+        maximumFractionDigits: 0,
+      }).format(amount);
+    } catch {
+      return `${code} ${Math.round(amount)}`;
+    }
+  };
+  const fmtDate = (value) => {
+    const date = dateOnly(value);
+    return date ? new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(date) : "—";
+  };
+  const localIso = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+  const referenceContext = (items) => {
+    const actualIso = localIso();
+    const fixture = items.length > 0 && items.every((item) => /^(?:fx-|landing-client-)/.test(String(item.id || "")));
+    const fixtureDates = items
+      .flatMap((item) => [item.fields?.last_chased, item.fields?.invoice_due, item.fields?.quote_date])
+      .map((value) => String(value || "").slice(0, 10))
+      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
+      .sort();
+    const iso = fixture && fixtureDates.length
+      ? items.map((item) => String(item.fields?.last_chased || "").slice(0, 10)).filter(Boolean).sort().at(-1) || fixtureDates.at(-1)
+      : actualIso;
+    return { iso, snapshot: fixture && iso !== actualIso };
+  };
+  const daysLate = (value, referenceIso) => {
+    const due = dateOnly(value);
+    const reference = dateOnly(referenceIso);
+    return due && reference ? Math.max(0, Math.round((reference - due) / 86400000)) : 0;
+  };
+  const initials = (name) => String(name || "?")
+    .split(/\s+/)
+    .filter((word) => /[\p{L}\p{N}]/u.test(word[0] || ""))
+    .slice(0, 2)
+    .map((word) => word[0])
+    .join("")
+    .toUpperCase();
+
+  function applyStaticCopy(context) {
+    const language = lang();
+    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
+    document.title = t("title");
+    $("eyebrow").textContent = t("eyebrow");
+    $("app-title").textContent = t("title");
+    $("overview").setAttribute("aria-label", t("overviewAria"));
+    $("shared-label").textContent = t("sharedLabel");
+    $("shared-copy").textContent = t("sharedCopy");
+    const syncLabel = context.snapshot ? t("snapshot", { date: fmtDate(context.iso) }) : t("synced");
+    $("sync-label").textContent = syncLabel;
+    $("sync-state").setAttribute("aria-label", syncLabel);
+  }
+
+  function attentionCard(item, context) {
+    const f = item.fields;
+    const late = daysLate(f.invoice_due, context.iso);
+    const chasedOnReference = String(f.last_chased || "").slice(0, 10) === context.iso;
+    const draftReady = /draft|草稿/i.test(f.next_step || "");
+    const chasedLabel = context.snapshot ? t("chasedDate", { date: fmtDate(context.iso) }) : t("chasedToday");
+    return `<article class="attention-card">
+      <div class="client-id">
+        <span class="avatar" aria-hidden="true">${escapeHtml(initials(f.name))}</span>
+        <div class="client-copy">
+          <strong>${escapeHtml(f.name || t("untitled"))}</strong>
+          <span>${escapeHtml(f.contact || f.company || "")}</span>
+        </div>
+      </div>
+      <div class="amount">${fmtMoney(f.amount, f.currency)}</div>
+      <div class="action-row">
+        <span class="status overdue">${escapeHtml(t(late === 1 ? "dayOverdue" : "daysOverdue", { count: late }))}</span>
+        ${draftReady ? `<span class="status ready">${icons.draft}${escapeHtml(t("draftReady"))}</span>` : ""}
+        ${chasedOnReference ? `<span class="status chased">${icons.check}${escapeHtml(chasedLabel)}</span>` : ""}
+      </div>
+    </article>`;
+  }
+
+  function steadyCard(item) {
+    const f = item.fields;
+    const date = f.invoice_due || f.quote_date;
+    const dateLabel = f.invoice_due ? t("due") : t("quoted");
+    const stage = ["active", "proposal", "lead", "paid"].includes(f.stage) ? f.stage : "open";
+    return `<article class="steady-card">
+      <div class="steady-top">
+        <div class="client-copy">
+          <strong>${escapeHtml(f.name || t("untitled"))}</strong>
+          <span>${escapeHtml(f.contact || f.company || "")}</span>
+          <span class="stage ${escapeHtml(stage)}">${escapeHtml(t(`stage.${stage}`))}</span>
+        </div>
+        <div class="amount">${fmtMoney(f.amount, f.currency)}</div>
+      </div>
+      <div class="steady-detail">
+        ${icons.arrow}
+        <span>${escapeHtml(f.next_step || t("noNextStep"))}<small class="steady-date">${escapeHtml(dateLabel)} ${fmtDate(date)}</small></span>
+      </div>
+    </article>`;
+  }
+
+  function render(state) {
+    currentState = state || { items: [] };
+    const items = (currentState.items || []).slice().sort((a, b) => a.position - b.position);
+    const context = referenceContext(items);
+    applyStaticCopy(context);
+    const open = items.filter((item) => item.fields.stage !== "paid");
+    const overdue = open.filter((item) => item.fields.stage === "overdue");
+    const steady = open.filter((item) => item.fields.stage !== "overdue");
+    const chased = open.filter((item) => String(item.fields.last_chased || "").slice(0, 10) === context.iso).length;
+    const drafts = overdue.filter((item) => /draft|草稿/i.test(item.fields.next_step || "")).length;
+    const total = open.reduce((sum, item) => sum + (Number(item.fields.amount) || 0), 0);
+    const currency = open[0]?.fields.currency || "USD";
+    const chasedMetric = context.snapshot ? t("chasedDate", { date: fmtDate(context.iso) }) : t("chasedToday");
+
+    $("overview").innerHTML = `<div class="overview-lead">
+      <div class="overview-label">${escapeHtml(t("openPipeline"))}</div>
+      <div class="pipeline-value">${fmtMoney(total, currency)}</div>
+      <div class="pipeline-note">${escapeHtml(t(open.length === 1 ? "acrossOpen" : "acrossOpenMany", { count: open.length }))}</div>
+    </div>
+    <div class="metric danger"><span class="metric-label">${escapeHtml(t("overdue"))}</span><strong>${overdue.length}</strong></div>
+    <div class="metric"><span class="metric-label">${escapeHtml(t("draftsReady"))}</span><strong>${drafts}</strong></div>
+    <div class="metric positive"><span class="metric-label">${escapeHtml(chasedMetric)}</span><strong>${chased}</strong></div>`;
+
+    if (!items.length) {
+      $("workspace").innerHTML = `<div class="empty">${escapeHtml(t("empty"))}</div>`;
+      return;
+    }
+
+    $("workspace").innerHTML = `<section class="section" aria-labelledby="attention-heading">
+      <div class="section-head">
+        <h2 id="attention-heading">${escapeHtml(t("needsAttention"))}</h2>
+        <span class="section-count alert">${overdue.length}</span>
+        <span class="section-note">${escapeHtml(t("followupsPrepared"))}</span>
+      </div>
+      <div class="attention-list">${overdue.map((item) => attentionCard(item, context)).join("") || `<div class="empty">${escapeHtml(t("nothingOverdue"))}</div>`}</div>
+    </section>
+    <section class="section" aria-labelledby="steady-heading">
+      <div class="section-head">
+        <h2 id="steady-heading">${escapeHtml(t("movingForward"))}</h2>
+        <span class="section-count">${steady.length}</span>
+      </div>
+      <div class="steady-list">${steady.map(steadyCard).join("") || `<div class="empty">${escapeHtml(t("noOtherOpen"))}</div>`}</div>
+    </section>`;
+  }
+
+  oma.ready(render);
+  oma.onChange(render);
+  oma.onPrefChange?.(({ key }) => {
+    if (key === "locale" || key === "date_format") render(currentState);
+  });
+</script>
+</body>
+</html>

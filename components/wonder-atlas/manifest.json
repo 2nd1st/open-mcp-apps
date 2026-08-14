@@ -1,0 +1,91 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "scene_motion",
+      "type": "enum",
+      "label": "Scene motion",
+      "description": "Choose whether atlas illustrations move gently or remain still.",
+      "options": [
+        {
+          "value": "gentle",
+          "label": "Gentle"
+        },
+        {
+          "value": "still",
+          "label": "Still"
+        }
+      ],
+      "default": "gentle"
+    }
+  ],
+  "uses_shared": [
+    "locale",
+    "density"
+  ],
+  "collections": {
+    "wonder-atlas": {
+      "label_field": "question",
+      "strict": true,
+      "fields": {
+        "question": {
+          "type": "string",
+          "required": true
+        },
+        "short_answer": {
+          "type": "string",
+          "required": true
+        },
+        "category": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "Sky",
+            "Animals",
+            "Plants",
+            "Everyday"
+          ]
+        },
+        "scene": {
+          "type": "string",
+          "required": true,
+          "enum": [
+            "moon",
+            "blue-sky",
+            "rainbow",
+            "migration",
+            "autumn-leaf",
+            "shell-sound",
+            "cold-breath",
+            "seed-direction"
+          ]
+        },
+        "big_idea": {
+          "type": "string",
+          "required": true
+        },
+        "try_it": {
+          "type": "string",
+          "required": true
+        },
+        "try_note": {
+          "type": "string"
+        },
+        "related_prompt": {
+          "type": "string"
+        },
+        "explored": {
+          "type": "boolean"
+        },
+        "rank": {
+          "type": "number",
+          "required": true
+        }
+      }
+    }
+  },
+  "kind": "app",
+  "scene": {
+    "category_id": "teach-sim"
+  }
+}

@@ -11,7 +11,7 @@
 // this note exists so the two never drift apart again. Until the name is ours, nothing in this
 // repository may advertise the npx form — test/invariants.mjs holds us to it.
 // The engine itself lives in engine.mjs; http.mjs serves the same store over HTTP.
-import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { openStore } from "./store.mjs";
 import { createEngine } from "./engine.mjs";
 import { startViewer } from "./http.mjs";
@@ -39,4 +39,14 @@ const viewer = process.env.OMA_VIEWER === "0" ? null : await startViewer({ store
 // the URL without anyone having to know the default port.
 if (viewer) console.error(`[oma] browser viewer: ${viewer.url}${viewer.adopted ? " (shared with another open-mcp-apps process)" : ""}`);
 
-await createEngine(store, { viewBase: viewer?.url }).connect(new StdioServerTransport());
+// serveStdio owns the era decision (SEP-2575): a 2025-era `initialize` opening pins a legacy
+// instance, a 2026-07-28 envelope opening (or a `server/discover` probe) gets a modern one — the
+// SAME factory backs both, so the two wires can never drift apart. The factory may run more than
+// once (a discarded probe instance is normal); createEngine is cheap and side-effect-free per
+// call — the store and its file channel are shared, memoized state.
+// `functions: …` — this entrypoint IS the local product, so the function pillar is on by
+// default here (and in http.mjs); OMA_FUNCTIONS=0 is the kill-switch. createEngine itself
+// defaults OFF so no embedding/hosted consumer inherits same-process execution unasked.
+serveStdio(() => createEngine(store, { viewBase: viewer?.url, functions: process.env.OMA_FUNCTIONS !== "0" }), {
+  onerror: (e) => console.error(`[oma] stdio: ${e && e.message || e}`),
+});

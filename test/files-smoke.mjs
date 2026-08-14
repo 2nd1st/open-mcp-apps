@@ -4,6 +4,7 @@
 // blob-first/ref-second GC, read-time integrity, orphan sweep, per-app isolation. Store-plane invariants
 // (quota/OCC/idempotency) live in server-smoke §23; this proves the src/files.mjs backend + channel.
 // Run: node test/files-smoke.mjs
+import { createHash } from "node:crypto";
 import { existsSync, readdirSync, writeFileSync, rmSync, mkdirSync, utimesSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -129,12 +130,8 @@ await ch.appendUpload(bu2.upload_id, "dedup my bytes");
 const cm2 = await ch.commitUpload(bu2.upload_id, "copy-via-chunks.bin");
 ok("identical content dedups (same sha256, blob count unchanged)", cm2.ok && cm2.meta.sha256 === ch.stat("chunky", "orig.bin").sha256 && blobCount("chunky") === blobsBefore);
 ok("commits consumed their staging files", await waitUploads(0));
-// abort removes the staging file
-const bu3 = await ch.beginUpload("chunky");
-await ch.appendUpload(bu3.upload_id, "to be discarded");
-ok("staging file exists while the upload is live", tmpUploads().length === 1);
-await ch.abortUpload(bu3.upload_id);
-ok("abort removes the staging file (no .upload leftovers)", await waitUploads(0));
+// abortUpload retired (elegance A12): an abandoned upload's staging is owned by the TTL sweep
+// (sweepTmp), exercised below via the swept-underneath path.
 // upload_expired: the staging file vanishes underneath a live upload (e.g. swept) → clean error, not truncation
 const bu4 = await ch.beginUpload("chunky");
 await ch.appendUpload(bu4.upload_id, "first half ");
@@ -159,17 +156,8 @@ ok("the target file's bytes are untouched", (await ch.get("occ-chunk", "target.t
   await ch.sweepOrphans();
   ok("aged orphan reclaimed by the sweep; the referenced blob survives", blobCount("occ-chunk") === 1);
 }
-// abort during an in-flight operation is refused instead of yanking staging mid-write
-const bu6 = await ch.beginUpload("occ-chunk");
-const bigChunk = Buffer.alloc(512 * 1024, 7);
-const appendP = ch.appendUpload(bu6.upload_id, bigChunk);      // in flight…
-const abortRace = await ch.abortUpload(bu6.upload_id);         // …abort races it
-const appendR = await appendP;
-ok("abort during append is either refused (busy) or the append fails clean — never a silent half-write",
-  (abortRace.ok === false && abortRace.error === "upload_busy" && appendR.ok === true) || (abortRace.ok === true && appendR.ok === false));
-await ch.abortUpload(bu6.upload_id);
 
-console.log("11. write-set C appends — chunk dedup, sha precheck, and the commit that survives a lost reply");
+console.log("11. write-set C appends — chunk dedup and the commit that survives a lost reply");
 {
   const enc = (s) => Buffer.from(s);
   const u1 = await ch.beginUpload("chunky");
@@ -180,18 +168,15 @@ console.log("11. write-set C appends — chunk dedup, sha precheck, and the comm
   const ooo = await ch.appendUpload(u1.upload_id, enc("BBBB"), { seq: 5 });
   ok("a future index names the one expected", ooo.ok === false && ooo.error === "chunk_out_of_order" && ooo.expected === 1);
   await ch.appendUpload(u1.upload_id, enc("BBBB"), { seq: 1 });
-  const wrong = await ch.commitUpload(u1.upload_id, "c.bin", { expected_sha256: "0".repeat(64) });
-  ok("expected_sha256 mismatch refuses LOSSLESSLY and names the actual hash",
-    wrong.ok === false && wrong.error === "sha256_mismatch" && /^[0-9a-f]{64}$/.test(wrong.actual));
-  const good = await ch.commitUpload(u1.upload_id, "c.bin", { command_id: "c15-commit", expected_sha256: wrong.actual });
-  ok("…the upload SURVIVED the refusal and commits with the right hash",
-    good.ok === true && good.meta.sha256 === wrong.actual && good.meta.size === 8);
+  const good = await ch.commitUpload(u1.upload_id, "c.bin", { command_id: "c15-commit" });
+  ok("commit reports the staged bytes' true hash and size (expected_sha256 precheck retired — commit's own sha IS the receipt)",
+    good.ok === true && good.meta.sha256 === createHash("sha256").update("AAAABBBB").digest("hex") && good.meta.size === 8);
   // THE adversarial-challenge pin: the reply to a successful commit is lost, the upload is
   // consumed, the host retries — and used to be told "start again with file_write_begin",
   // inducing a full re-upload. The ledger answers first now.
   const replay = await ch.commitUpload(u1.upload_id, "c.bin", { command_id: "c15-commit" });
   ok("a retried commit with the same command_id returns the ORIGINAL receipt — no re-upload demanded",
-    replay.ok === true && replay.idempotent === true && replay.meta.sha256 === wrong.actual);
+    replay.ok === true && replay.idempotent === true && replay.meta.sha256 === good.meta.sha256);
   const reused = await ch.commitUpload("no-such-upload", "other.bin", { command_id: "c15-commit" });
   ok("…while the same command_id aimed at a DIFFERENT path is refused",
     reused.ok === false && reused.error === "command_id_reused");
@@ -204,7 +189,6 @@ console.log("11. write-set C appends — chunk dedup, sha precheck, and the comm
   await ch.appendUpload(u2.upload_id, enc("CCC"), { seq: 1 });
   const old0 = await ch.appendUpload(u2.upload_id, enc("AAA"), { seq: 0 });
   ok("an older staged index cannot be re-verified and is refused", old0.ok === false && old0.error === "chunk_already_staged");
-  await ch.abortUpload(u2.upload_id);
   // C-review residue: the replay receipt is the ORIGINAL commit's, never the current row's.
   const u3 = await ch.beginUpload("chunky");
   await ch.appendUpload(u3.upload_id, enc("first"));
@@ -219,7 +203,6 @@ console.log("11. write-set C appends — chunk dedup, sha precheck, and the comm
   await ch.appendUpload(u5.upload_id, enc("zzz"));
   const cross = await ch.commitUpload(u5.upload_id, "r.bin", { command_id: "c15-replay" });
   ok("a different app's live upload cannot ride an old command_id", cross.ok === false && cross.error === "command_id_reused");
-  await ch.abortUpload(u5.upload_id);
 }
 
 store.close();

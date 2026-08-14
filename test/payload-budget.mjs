@@ -12,8 +12,8 @@
 // Bytes, not tokens: see the calibration note in test/tool-surface.mjs — 4 B/tk, cross-checked
 // against count_tokens. Free and deterministic, so CI needs no API key.
 // Run: node test/payload-budget.mjs
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { Client } from "@modelcontextprotocol/client";
+import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { randomUUID } from "node:crypto";
 import { existsSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";

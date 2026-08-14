@@ -39,7 +39,7 @@
 // Position is irrelevant: head, body, even inside a comment. That is a consequence of scanning bytes,
 // it is documented, and it costs nothing — the JSON is inert wherever it sits, and the authoritative
 // answer to "what did this app declare" is not the document at all. It is the materialised
-// column, which is exact, greppable, and what the Library and any review pass should read.
+// column, which is exact, greppable, and what the App Store and any review pass should read.
 
 /** The one spelling. Written out rather than assembled so that a grep for the literal string in a
  *  app finds the same thing the engine looks for. */
@@ -72,7 +72,9 @@ export function extractManifestBlock(src) {
   // attempt elsewhere means the second one silently does nothing — the outcome this check exists
   // to refuse. occurrences === 1 here, so anything the residue matches is a near miss by definition.
   const malformed = NEAR_MISS.test(html.slice(0, open)) || NEAR_MISS.test(html.slice(end));
-  return { found: true, occurrences, malformed, text: html.slice(start, end) };
+  // `start`/`end` are offsets into the NORMALISED html (the string this grammar runs on) — a
+  // rewriter must splice that string, not the raw input, or CRLF documents shift every offset.
+  return { found: true, occurrences, malformed, text: html.slice(start, end), start, end, html };
 }
 
 /** Four states, because a document either says nothing, says "nothing", says something, or is
@@ -105,4 +107,37 @@ export function readDeclaration(html) {
   // teaches them as one. Two spellings of clear must not behave differently.
   if (Object.keys(value).length === 0) return { state: "empty" };
   return { state: "present", value };
+}
+
+/** Does this document carry (or nearly carry) a legacy declaration tag? The v6 save guard: from
+ *  W-N the declaration arrives as a structured parameter, so a document still carrying the block —
+ *  a model transcribing pre-v6 examples — must be refused LOUDLY, never accepted as inert bytes.
+ *  Same tag-scoped byte judgement as the legacy reader (prose may mention the marker freely;
+ *  teaching examples entity-escape the opening tag), and deliberately not an HTML-tree parse —
+ *  that obligation was retired with the browser readers, see the header above. */
+export function mentionsDeclarationTag(src) {
+  const html = String(src ?? "").replace(/\r\n?/g, "\n");
+  return html.includes(DECLARATION_OPEN) || NEAR_MISS.test(html);
+}
+
+/** Remove the declaration block from a document — RAW BYTES, no CRLF normalisation, because this
+ *  is the v5→v6 migration's writer and everything outside the block must survive byte-for-byte
+ *  (splicing with the normalised offsets the reader uses would delete the wrong span in a CRLF
+ *  document, or silently rewrite the whole document's line endings). The span removed is the
+ *  canonical opening tag through the end of the first closing script tag; the opening tag contains
+ *  no newline, so a raw indexOf finds exactly what the normalising reader found. Callers strip only
+ *  documents the reader already accepted (one block, well-formed), so "not found" just returns the
+ *  input unchanged. */
+export function stripDeclarationBlock(src) {
+  const raw = String(src ?? "");
+  const open = raw.indexOf(DECLARATION_OPEN);
+  if (open === -1) return { found: false, html: raw };
+  const close = raw.indexOf(CLOSE, open + DECLARATION_OPEN.length);
+  let end;
+  if (close === -1) end = raw.length;
+  else {
+    const gt = raw.indexOf(">", close);
+    end = gt === -1 ? raw.length : gt + 1;
+  }
+  return { found: true, html: raw.slice(0, open) + raw.slice(end) };
 }

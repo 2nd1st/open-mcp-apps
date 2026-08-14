@@ -1,0 +1,344 @@
+{
+  "items": [
+    {
+      "id": "77af3f95-0ec8-4cd2-b41a-740ecb4720dd",
+      "group": "week",
+      "position": 1,
+      "fields": {
+        "date": "2026-07-27",
+        "dish": "Lemon herb chicken",
+        "cook": "Maya",
+        "note": "Use the rosemary from the balcony planter"
+      },
+      "version": 1,
+      "collection": "family-dinners"
+    },
+    {
+      "id": "ee19e746-21fd-45f3-b35c-6f83c4c92747",
+      "group": "week",
+      "position": 2,
+      "fields": {
+        "date": "2026-07-28",
+        "dish": "Tomato basil pasta",
+        "cook": "Ben",
+        "note": "Lina wants extra parmesan"
+      },
+      "version": 1,
+      "collection": "family-dinners"
+    },
+    {
+      "id": "5bbaf7c6-f039-4d24-8477-f426b063a8ce",
+      "group": "week",
+      "position": 3,
+      "fields": {
+        "date": "2026-07-29",
+        "dish": "Mapo tofu + rice",
+        "cook": "Lina",
+        "note": "Keep one bowl mild"
+      },
+      "version": 1,
+      "collection": "family-dinners"
+    },
+    {
+      "id": "19830760-3112-4f79-91cf-381edbf436a9",
+      "group": "week",
+      "position": 4,
+      "fields": {
+        "date": "2026-07-31",
+        "dish": "Fish tacos",
+        "cook": "Maya",
+        "note": "Use the avocados if they are ripe"
+      },
+      "version": 1,
+      "collection": "family-dinners"
+    },
+    {
+      "id": "a7497658-1af5-4ceb-b2a6-f227a1cb8572",
+      "group": "week",
+      "position": 5,
+      "fields": {
+        "date": "2026-08-01",
+        "dish": "Dumplings & cucumber salad",
+        "cook": "Ben",
+        "note": "Make enough for lunch leftovers"
+      },
+      "version": 1,
+      "collection": "family-dinners"
+    },
+    {
+      "id": "27e66a72-5c84-4f3f-83df-160824564e69",
+      "group": "Produce",
+      "position": 1,
+      "fields": {
+        "item": "Baby spinach",
+        "aisle": "Produce",
+        "qty": "1 bag"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "14c0d781-9fef-437c-b2c9-b2438affd6db",
+      "group": "Produce",
+      "position": 2,
+      "fields": {
+        "item": "Avocados",
+        "aisle": "Produce",
+        "qty": "4"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "cdad26bd-c777-48f0-9419-f85b0199b0d6",
+      "group": "Dairy",
+      "position": 3,
+      "fields": {
+        "item": "Greek yogurt",
+        "aisle": "Dairy",
+        "qty": "1 tub"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "e8781a82-6b90-4e25-9422-b3ef3c91c4c1",
+      "group": "Bakery",
+      "position": 4,
+      "fields": {
+        "item": "Tortillas",
+        "aisle": "Bakery",
+        "qty": "1 pack"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "924e9dc9-2bd1-44a4-93af-7c5fbf3c4b7e",
+      "group": "Pantry",
+      "position": 5,
+      "fields": {
+        "item": "Black beans",
+        "aisle": "Pantry",
+        "qty": "2 cans"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "2e54f967-86bd-492a-8a79-59352f271462",
+      "group": "Pantry",
+      "position": 6,
+      "fields": {
+        "item": "Sesame oil",
+        "aisle": "Pantry",
+        "qty": "1 bottle"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "78726620-2c88-4bed-a0b0-97d9b9c3a361",
+      "group": "Household",
+      "position": 7,
+      "fields": {
+        "item": "Dishwasher tablets",
+        "aisle": "Household",
+        "qty": "1 box",
+        "done_at": "2026-07-26T16:10:00+10:00"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "6fa6bd84-ec47-4db7-98ea-22e53a57f0bf",
+      "group": "Produce",
+      "position": 8,
+      "fields": {
+        "item": "Blueberries",
+        "aisle": "Produce",
+        "qty": "2 punnets",
+        "done_at": "2026-07-27T08:30:00+10:00"
+      },
+      "version": 1,
+      "collection": "family-shopping"
+    },
+    {
+      "id": "ba19e0f8-c351-4af0-8400-750c50c8ee9d",
+      "group": "weekend",
+      "position": 1,
+      "fields": {
+        "date": "2026-08-01",
+        "plan": "Hiking + ice cream",
+        "who": [
+          "Maya",
+          "Ben",
+          "Lina"
+        ],
+        "note": "Leave by 9; bring hats and the small picnic blanket"
+      },
+      "version": 1,
+      "collection": "family-weekend"
+    },
+    {
+      "id": "173fc898-2d44-49b3-a4c6-c8f79df9f7fd",
+      "group": "rotation",
+      "position": 1,
+      "fields": {
+        "task": "Dinner dishes",
+        "members": [
+          "Maya",
+          "Ben",
+          "Lina",
+          "Theo"
+        ],
+        "anchor_date": "2026-07-27",
+        "note": "Kitchen reset after dinner"
+      },
+      "version": 1,
+      "collection": "family-chores"
+    },
+    {
+      "id": "4746f957-2929-4c18-9d1e-f449b78dad9c",
+      "group": "rotation",
+      "position": 2,
+      "fields": {
+        "task": "Laundry fold",
+        "members": [
+          "Maya",
+          "Ben",
+          "Lina",
+          "Theo"
+        ],
+        "anchor_date": "2026-07-27",
+        "note": "Sunday afternoon"
+      },
+      "version": 1,
+      "collection": "family-chores"
+    },
+    {
+      "id": "52be6611-c70e-4594-95de-3c27ac139c49",
+      "group": "rotation",
+      "position": 3,
+      "fields": {
+        "task": "Bins + recycling",
+        "members": [
+          "Maya",
+          "Ben",
+          "Lina",
+          "Theo"
+        ],
+        "anchor_date": "2026-07-27",
+        "note": "Out on Wednesday night"
+      },
+      "version": 1,
+      "collection": "family-chores"
+    },
+    {
+      "id": "eac694e4-f678-49e0-a5bc-2d52fcf11bd3",
+      "group": "rotation",
+      "position": 4,
+      "fields": {
+        "task": "Water the plants",
+        "members": [
+          "Maya",
+          "Ben",
+          "Lina",
+          "Theo"
+        ],
+        "anchor_date": "2026-07-27",
+        "note": "Balcony herbs too"
+      },
+      "version": 1,
+      "collection": "family-chores"
+    },
+    {
+      "id": "28367b88-a92f-469b-9c0b-79a0bdb405eb",
+      "group": "board",
+      "position": 1,
+      "fields": {
+        "note": "Library books are due Thursday — blue tote is by the door.",
+        "author": "Maya",
+        "date": "2026-07-27"
+      },
+      "version": 1,
+      "collection": "family-board"
+    },
+    {
+      "id": "4a8ec35e-4b94-49d7-bae5-e4be689fbf08",
+      "group": "board",
+      "position": 2,
+      "fields": {
+        "note": "Theo needs the signed excursion form in his backpack.",
+        "author": "Ben",
+        "date": "2026-07-26"
+      },
+      "version": 1,
+      "collection": "family-board"
+    },
+    {
+      "id": "1a31a2df-bab3-4098-88c7-e5e074a2ce6c",
+      "group": "board",
+      "position": 3,
+      "fields": {
+        "note": "Save one cardboard box for Lina's solar-system project.",
+        "author": "Lina",
+        "date": "2026-07-25"
+      },
+      "version": 1,
+      "collection": "family-board"
+    },
+    {
+      "id": "295b354c-c8f4-4671-a200-66b849932387",
+      "group": "calendar",
+      "position": 1,
+      "fields": {
+        "label": "Lina's birthday",
+        "date": "2014-08-12",
+        "person": "Lina",
+        "kind": "Birthday"
+      },
+      "version": 1,
+      "collection": "family-dates"
+    },
+    {
+      "id": "f44e07c1-9a4f-47d1-a2aa-a048d1a9bbc9",
+      "group": "calendar",
+      "position": 2,
+      "fields": {
+        "label": "Maya & Ben's anniversary",
+        "date": "2011-09-04",
+        "person": "Maya + Ben",
+        "kind": "Anniversary"
+      },
+      "version": 1,
+      "collection": "family-dates"
+    },
+    {
+      "id": "0ff2c0e1-70bb-472b-954f-0879d8dc7980",
+      "group": "calendar",
+      "position": 3,
+      "fields": {
+        "label": "Ben's birthday",
+        "date": "1987-11-18",
+        "person": "Ben",
+        "kind": "Birthday"
+      },
+      "version": 1,
+      "collection": "family-dates"
+    },
+    {
+      "id": "282e971b-5473-4753-9641-7757204ce380",
+      "group": "calendar",
+      "position": 4,
+      "fields": {
+        "label": "Maya's birthday",
+        "date": "1988-03-03",
+        "person": "Maya",
+        "kind": "Birthday"
+      },
+      "version": 1,
+      "collection": "family-dates"
+    }
+  ]
+}

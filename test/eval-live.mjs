@@ -20,8 +20,8 @@
 //   OMA_EVAL_KEY=... OMA_EVAL_BASE=http://host/v1 node test/eval-live.mjs [taskId...]
 // Without a key it exits 0 and says so, so CI stays green and honest rather than green and blind.
 
-import { Client } from "@modelcontextprotocol/sdk/client/index.js";
-import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { Client } from "@modelcontextprotocol/client";
+import { InMemoryTransport } from "@modelcontextprotocol/client";
 import { randomUUID } from "node:crypto";
 import { existsSync, unlinkSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -137,7 +137,7 @@ const TASKS = [
     why: "the GETTING STARTED half of INSTRUCTIONS is only served to users with nothing — does it actually produce an app?",
     prompt: "I just installed this. How do I use it?",
     check: (s, { calls }) => {
-      const own = s.listApps().filter((c) => !["settings", "dashboard", "library"].includes(c.name));
+      const own = s.listApps().filter((c) => !["settings", "dashboard", "app-store"].includes(c.name));
       ok("built at least one app instead of explaining", own.length >= 1,
         `apps: ${s.listApps().map((c) => c.name).join(", ")}`);
       ok("and opened it", calls.some((c) => c.name === "open_app" || c.name.startsWith("open_")));
@@ -149,7 +149,7 @@ const TASKS = [
     id: "first-stop",
     why: "INSTRUCTIONS says look HERE first for the user's own data — does it?",
     setup: (s) => {
-      s.execute({ type: "save_app", command_id: "t1", name: "reading-list", html: "<p>x</p>".repeat(200), description: "Books to read", actor: "agent" });
+      s.execute({ type: "save_app", command_id: "t1", name: "reading-list", ui: "<p>x</p>".repeat(200), description: "Books to read", actor: "agent" });
       s.execute({ type: "add_item", command_id: "t2", collection: "reading-list", fields: { title: "Dune" }, actor: "human" });
     },
     prompt: "What am I tracking?",
@@ -164,7 +164,7 @@ const TASKS = [
     id: "reuse-not-recreate",
     why: "INSTRUCTIONS warns against recreating something under a new name — the returning-user half now says it twice",
     setup: (s) => {
-      s.execute({ type: "save_app", command_id: "r1", name: "reading-list", html: "<p>x</p>".repeat(200), description: "Books to read", actor: "agent" });
+      s.execute({ type: "save_app", command_id: "r1", name: "reading-list", ui: "<p>x</p>".repeat(200), description: "Books to read", actor: "agent" });
       s.execute({ type: "add_item", command_id: "r2", collection: "reading-list", fields: { title: "Dune" }, actor: "human" });
     },
     prompt: "Add 'Neuromancer' to my reading list.",
@@ -172,14 +172,14 @@ const TASKS = [
       const items = s.snapshot("reading-list").items;
       ok("the row landed in the EXISTING collection", items.some((i) => /Neuromancer/i.test(JSON.stringify(i.fields))),
         `reading-list has: ${items.map((i) => JSON.stringify(i.fields)).join(" | ")}`);
-      const own = s.listApps().filter((c) => !["settings", "dashboard", "library"].includes(c.name));
+      const own = s.listApps().filter((c) => !["settings", "dashboard", "app-store"].includes(c.name));
       ok("no near-duplicate app was created", own.length === 1, `apps: ${own.map((c) => c.name).join(", ")}`);
     },
   },
   {
     id: "multi-write",
     why: "three rows, three ids — the ack is now the ONLY place an id appears, on both channels",
-    setup: (s) => s.execute({ type: "save_app", command_id: "m1", name: "todos", html: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" }),
+    setup: (s) => s.execute({ type: "save_app", command_id: "m1", name: "todos", ui: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" }),
     prompt: "Add three todos to my todos app: buy milk, call the dentist, renew passport.",
     check: (s) => {
       const items = s.snapshot("todos").items;
@@ -192,7 +192,7 @@ const TASKS = [
     id: "update-by-id",
     why: "🔴 the regression this catches: a FAILED write used to be indistinguishable from a successful one on the structured channel",
     setup: (s) => {
-      s.execute({ type: "save_app", command_id: "u1", name: "todos", html: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" });
+      s.execute({ type: "save_app", command_id: "u1", name: "todos", ui: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" });
       for (const [i, t] of ["buy milk", "call the dentist", "renew passport"].entries())
         s.execute({ type: "add_item", command_id: `u2-${i}`, collection: "todos", fields: { title: t, done: false }, actor: "human" });
     },
@@ -211,7 +211,7 @@ const TASKS = [
     id: "user-changed-it",
     why: "the differentiator: the user edited the widget directly, and that never passed through the model",
     setup: (s) => {
-      s.execute({ type: "save_app", command_id: "d1", name: "todos", html: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" });
+      s.execute({ type: "save_app", command_id: "d1", name: "todos", ui: "<p>x</p>".repeat(200), description: "Simple todo list", actor: "agent" });
       s.execute({ type: "add_item", command_id: "d2", collection: "todos", fields: { title: "buy milk" }, actor: "agent" });
       s.execute({ type: "add_item", command_id: "d3", collection: "todos", fields: { title: "book flights" }, actor: "human" });
       s.execute({ type: "delete_item", command_id: "d4", collection: "todos", id: s.snapshot("todos").items[0].id, actor: "human" });
