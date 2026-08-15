@@ -73,6 +73,28 @@ of these:
 **Prerequisites: Node 22 or newer, and `git`.** The installer checks for both and stops with a
 message rather than half-installing if either is missing.
 
+**From npm — nothing to clone:** if you are comfortable editing your host's config file, point it
+at the published package and let `npx` fetch the engine. This path needs only Node 22 — no `git`,
+and no checkout for you to keep updated:
+
+```json
+{
+  "mcpServers": {
+    "open-mcp-apps": {
+      "command": "npx",
+      "args": ["-y", "@2nd1st/open-mcp-apps"]
+    }
+  }
+}
+```
+
+Everything below runs that same server. Two things the installer does that this path does not: it
+registers the server into every host it finds, and it pre-seeds the built-in system apps (settings,
+dashboard, App Store) into your store — so on the `npx` path your registry starts empty and your AI
+installs what it needs from the App Store on demand, which is fully available either way. Your data
+lives in the same fixed per-user store, so you can move between an `npx` server and a cloned one
+without migrating anything.
+
 **As a user — one command:**
 
 ```bash
@@ -84,8 +106,10 @@ Codex** — plus your permission preference. Skip it with `-s -- --yes`, or targ
 `-s -- --host codex`. (Or clone and run it yourself: `git clone
 https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps && node install.mjs`.)
 
-> **A note on npm:** the `open-mcp-apps` package on the npm registry is **not this project** —
-> that name is held by an unrelated package. Install from this repository, using the command above.
+> **A note on npm:** this project publishes under the **scoped** name
+> [`@2nd1st/open-mcp-apps`](https://www.npmjs.com/package/@2nd1st/open-mcp-apps). The *unscoped*
+> `open-mcp-apps` on the registry is **not this project** — that name is held by an unrelated
+> package. Check for the `@2nd1st/` prefix; the scope is the only thing telling the two apart.
 
 **With a coding agent** (Claude Code, Codex CLI — they have a shell), paste:
 
@@ -290,7 +314,7 @@ Where it stands:
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
-- [ ] `npx` one-command install
+- [x] `npx` one-command install (`@2nd1st/open-mcp-apps` on npm)
 - [ ] remote (Streamable HTTP) as a *supported* shape → claude.ai / ChatGPT / mobile — the
       transport exists (`src/http.mjs`) and has been live-tested over HTTPS; what's missing is the
       hosted story, since the engine binds `127.0.0.1` by design

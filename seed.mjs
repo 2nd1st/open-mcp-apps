@@ -2,7 +2,7 @@
 // Copyright (C) 2026 2nd1st
 // seed.mjs — load the built-in SYSTEM apps (components/<name>/ entries) into a registry.
 // CLI: node seed.mjs   (idempotent per content: re-seeding same content just bumps version)
-// As a library: import { seedSystemApps } from "open-mcp-apps" — embedders (e.g. a hosted
+// As a library: import { seedSystemApps } from "@2nd1st/open-mcp-apps" — embedders (e.g. a hosted
 // data-plane provisioning a fresh per-tenant store) call it after openStore(); idempotent,
 // so calling on every open is safe and cheap (content-hash command_id + unchanged check).
 import { openStore } from "./src/store.mjs";

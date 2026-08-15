@@ -7,6 +7,48 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.2 — 2026-08-15
+
+**Packaging only: the engine is now on npm, so installing it no longer requires cloning it.** Not
+one line of engine behavior changed in this release — the tool surface is byte-for-byte the same
+document it was in 0.5.1, and a store written by either release is readable by the other. What
+changed is how the code reaches a machine.
+
+Until now the only ways in were a shell script that clones the repository or a `git clone` you ran
+yourself. Both work, and both stay. But they ask a user to adopt a checkout — a directory that has
+to live somewhere, and that they are now responsible for updating — in order to run a server they
+never intend to edit. `npx` asks for none of that.
+
+- **Published as `@2nd1st/open-mcp-apps`.** The name is scoped because the unscoped one is not ours:
+  `open-mcp-apps` on the registry is an unrelated package by another author, and it was there first.
+  Both READMEs said so already, as a warning to stay off npm entirely; they now say it as a
+  disambiguation, which is the more useful form of the same fact and a more necessary one — the risk
+  of installing the wrong thing goes *up*, not down, on the day we start telling people to type a
+  name that close to it.
+- **`npx -y @2nd1st/open-mcp-apps` is a working MCP server**, so a host config can be three lines of
+  JSON with no path in it: `{"command": "npx", "args": ["-y", "@2nd1st/open-mcp-apps"]}`. The
+  package declares `open-mcp-apps` as its `bin`, pointing at the same `src/server.mjs` that a clone
+  has always run. The **stdio and HTTP faces are the same two faces** — nothing about the transport,
+  the store location, or the environment variables is special to an npm install.
+- **The MCP server still identifies itself as `open-mcp-apps`** at initialize. The package name is
+  scoped; the *server* name is not, and deliberately — it is what already-registered hosts match on,
+  so scoping the npm name is not allowed to rename anyone's server out from under them.
+- **Your data does not move.** The store is a fixed per-user path, not a file inside the install, so
+  an `npx` server and a cloned one open the same apps and the same data — and switching between them
+  is not a migration.
+- **The package claims a name in the official MCP Registry.** `mcpName` declares
+  `io.github.2nd1st/open-mcp-apps`, the namespace that GitHub identity entitles us to. The registry
+  verifies the claim by reading this field back out of the published tarball, which is why it has to
+  travel *inside* the package rather than only in a submission form — a listing nobody can trace
+  back to a published artifact is exactly what that check exists to refuse. Directories that index
+  the registry rather than crawling npm follow from the same field.
+- **What is in the tarball is now a decided list rather than a leftover.** `files` ships the engine,
+  the apps, the built runtime, the installer/uninstaller and the licences; the test suite, the
+  internal documents and every database stay out. `prepack` rebuilds `dist/shell.js` before the
+  tarball is sealed, and unlike the `prepare` hook beside it, it is not allowed to skip quietly when
+  its bundler is missing — a published package with a stale runtime in it is exactly the failure
+  that hook exists to prevent.
+
 ## 0.5.1 — 2026-08-15
 
 **An app stops being a guest in someone's conversation and starts owning a screen.** 0.5.0 made an

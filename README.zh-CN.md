@@ -68,6 +68,25 @@ open-mcp-apps 是一个本地 MCP server。先把它**接上**你的 host(见下
 
 **前置:Node 22 或更新,以及 `git`。** 安装器会检查这两样,缺哪个就报错停下,而不是装到一半。
 
+**从 npm 装——不用 clone:** 如果你不介意自己改 host 的配置文件,直接把它指向已发布的包,让 `npx`
+去取引擎。这条路只需要 Node 22 —— 不需要 `git`,也不留一个要你自己维护的 checkout:
+
+```json
+{
+  "mcpServers": {
+    "open-mcp-apps": {
+      "command": "npx",
+      "args": ["-y", "@2nd1st/open-mcp-apps"]
+    }
+  }
+}
+```
+
+下面几种方式跑的是同一个 server。安装器多做两件这条路不做的事:把 server 注册进它找到的每个 host,
+以及把内置的系统 app(settings、dashboard、App Store)预先 seed 进你的 store —— 所以走 `npx` 这条路
+时你的 registry 是空的,由 AI 按需从 App Store 装它要的东西,而 App Store 本身两条路都是全的。两条路的
+数据都落在同一个固定的用户级 store,所以你在 `npx` 版和 clone 版之间来回切,不需要迁移任何东西。
+
 **普通用户——一条命令:**
 
 ```bash
@@ -78,8 +97,10 @@ curl -fsSL https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.s
 加 `-s -- --yes` 跳过选择器,或 `-s -- --host codex` 只装某个 host。(或自己 clone 后跑:
 `git clone https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps && node install.mjs`。)
 
-> **关于 npm**:npm registry 上的 `open-mcp-apps` 包**不是本项目** —— 那个名字属于一个无关的包。
-> 请用上面的命令从本仓库安装。
+> **关于 npm**:本项目发布在**带 scope 的**名字
+> [`@2nd1st/open-mcp-apps`](https://www.npmjs.com/package/@2nd1st/open-mcp-apps) 下。npm registry 上
+> **不带 scope 的** `open-mcp-apps` **不是本项目** —— 那个名字属于一个无关的包。认准 `@2nd1st/`
+> 前缀,区分两者的只有这个 scope。
 
 **用编码 agent**(Claude Code、Codex CLI——它们有 shell),粘:
 
@@ -256,7 +277,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 - [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key
 - [x] 多 host 发现式安装器(Claude Desktop · Claude Code · Codex)+ 共享的用户级 store
-- [ ] `npx` 一条命令安装
+- [x] `npx` 一条命令安装(npm 上的 `@2nd1st/open-mcp-apps`)
 - [ ] 远程(Streamable HTTP)作为一种*受支持*的形态 → claude.ai / ChatGPT / 移动端——transport
       本身已经在(`src/http.mjs`),也在 HTTPS 上实测过;缺的是托管那一半,因为引擎按设计绑死
       `127.0.0.1`
