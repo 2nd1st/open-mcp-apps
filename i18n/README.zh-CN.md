@@ -2,18 +2,19 @@
 
 [![CI](https://github.com/2nd1st/open-mcp-apps/actions/workflows/ci.yml/badge.svg)](https://github.com/2nd1st/open-mcp-apps/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%402nd1st%2Fopen-mcp-apps?logo=npm&label=npm)](https://www.npmjs.com/package/@2nd1st/open-mcp-apps)
-[![license](https://img.shields.io/npm/l/%402nd1st%2Fopen-mcp-apps)](LICENSE)
-[![node](https://img.shields.io/node/v/%402nd1st%2Fopen-mcp-apps)](package.json)
-[![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dopen-mcp-apps&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue&prefix=v)](https://registry.modelcontextprotocol.io/v0/servers?search=open-mcp-apps)
+[![license](https://img.shields.io/npm/l/%402nd1st%2Fopen-mcp-apps)](../LICENSE)
+[![node](https://img.shields.io/node/v/%402nd1st%2Fopen-mcp-apps)](../package.json)
+[![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dopen-mcp-apps%26version%3Dlatest&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue&prefix=v)](https://registry.modelcontextprotocol.io/v0/servers?search=open-mcp-apps&version=latest)
 
-[English](README.md) | **简体中文**
+[English](../README.md) | **简体中文**
 
 > 给你的 AI 一个持久、可复用的 UI。它把 app 搭一次——你永久拥有。
 
 **open-mcp-apps** 是一个基于 [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
 (`ui://`, `io.modelcontextprotocol/ui`)构建的开放引擎——MCP Apps 是 core MCP 规范之外的 extension,
-也是**第一个官方 extension**,2026 年 1 月 GA。它给任何支持 MCP Apps 的 host(Claude Desktop、
-claude.ai、Codex、ChatGPT……)提供 extension 本身不提供的三样东西:
+也是[**第一个官方 extension**](https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/),
+2026 年 1 月 26 日上线。它给任何支持 MCP Apps 的 host(Claude Desktop、claude.ai、Codex、
+ChatGPT……)提供 extension 本身不提供的三样东西:
 
 1. **一个 AI 可写入的 app registry。** 想要一个还不存在的 UI——AI 读一份 authoring guide,针对一个
    极小的 `window.oma` API 写出单文件 HTML app 并保存。从那一刻起你随时能按名字打开它,在
@@ -25,17 +26,23 @@ claude.ai、Codex、ChatGPT……)提供 extension 本身不提供的三样东�
    host 主题(Claude 的 design tokens,明/暗)、和 `window.oma` 数据 API 把 app 包起来。你写的是
    视图;协议、持久化、幂等、主题都是引擎的事。
 
+**这些 host 里,*本仓这个引擎*够得到哪些。** 它跑在你自己的机器上、绑死 `127.0.0.1`,所以它服务的是
+同一台机器上的那些 host:Claude Desktop、Claude Code、Codex,以及它自带的浏览器 viewer。浏览器里的
+host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT web 需要一个远程部署** ——
+今天那指的是托管版 [openmcp.app](https://openmcp.app),它替你跑的正是同一个引擎。*自己*跑起这种远程
+形态还在路线图上,尚未做完。
+
 | | |
 |---|---|
-| **版本** | 0.5.7([`CHANGELOG.md`](CHANGELOG.md)) |
-| **许可** | 全仓 MIT([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
+| **版本** | 0.5.8([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **怎么跑** | `npx -y @2nd1st/open-mcp-apps`(stdio MCP server) |
 | **前置** | Node 22 或更新。走安装器还需要 `git` |
 | **规模** | 33 个 tool · 一个内置 App Store · 三个随 seed 装好的系统 app |
 | **平台** | macOS · Windows · Linux |
 | **宿主** | Claude Desktop · Claude Code · Codex · ChatGPT web —— 见 [Host 支持](#host-支持) |
-| **托管版** | [openmcp.app](https://openmcp.app) |
+| **托管版** | [openmcp.app](https://openmcp.app) —— 远程那种形态,也是够到浏览器宿主(claude.ai、ChatGPT)的那条路 |
 
 ## 安装
 
@@ -79,6 +86,11 @@ curl -fsSL https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.s
 它会弹一个简短选择器,让你勾选注册到哪些 host —— **Claude Desktop、Claude Code、Codex** —— 以及
 权限偏好。加 `-s -- --yes` 跳过选择器,或 `-s -- --host codex` 只装某个 host。
 
+**它把 clone 放在哪**,在你把这行管进 shell 之前就该知道:`~/open-mcp-apps`。想换地方就设 `OMA_DIR`
+—— `curl -fsSL <url> | OMA_DIR=~/src/oma sh`。再跑一次这条一键命令是**原地更新**那个 clone,不会再
+克隆第二份。你的 app 和数据**不**在这个目录里(它们在[配置](#配置)那节说的用户级 store 里),所以
+这个目录随时可以搬走或删掉 —— 而 `node uninstall.mjs` 也不会替你删它。
+
 **用编码 agent**(Claude Code、Codex CLI——它们有 shell),粘:
 
 > Read https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.md and follow it.
@@ -116,7 +128,8 @@ node install.mjs        # 与上面那条一键命令同一个选择器
 ### 卸载
 
 `node uninstall.mjs` 把 server 从所有检测到的 host 注销——但**保留你的数据**:共享 store
-原样留着,以后重装即恢复全部 app 和数据。
+原样留着,以后重装即恢复全部 app 和数据。安装器那份 clone(缺省 `~/open-mcp-apps`,或 `OMA_DIR`
+指到的地方)也照样留在盘上 —— 这里没有任何东西会删那个目录,想清掉 checkout 请自己删。
 
 ```bash
 node uninstall.mjs           # 从所有检测到的 host 注销——数据保留
@@ -129,7 +142,7 @@ node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
 - **Node 22 或更新**,macOS / Windows / Linux 均可。
 - **`git`** —— 只有走安装器那条路才需要。上面的 `npx` 路径既不需要 `git` 也不需要 checkout。
   安装器这两样都会检查,缺哪个就报错停下,而不是装到一半。
-- **一个能渲染 `ui://` 的 host**,如果你要的是*对话里*的 widget。终端宿主(Claude Code、codex CLI)
+- **一个能渲染 `ui://` 的 host**,如果你要的是*对话里*的 widget。终端宿主(终端里的 Claude Code、codex CLI)
   按设计操作同一份数据,UI 则落在终端旁边的一块浏览器屏上——那块屏能跟着走,AI 刚开的是哪个
   app 它就显示哪个。逐个宿主的实测见 [Host 支持](#host-支持)。
 - **装完/更新后,彻底退出并重开 host**(Cmd-Q,不是关窗)—— 不彻底退出,它会一直挂着连旧数据的
@@ -169,17 +182,24 @@ host 共享同一份 app 和数据的原因。
 
 **首次权限。** 头几个 tool call 各弹一次批准框——选 **"Always allow"**。工具集刻意做得小而稳定:只读
 tool 一般免批准,而默认情况下单个 `open_app` tool 就覆盖打开*每一个* app(包括 AI 之后创建的),
-一次授权全包,之后不会再有新东西来问你。**Claude Desktop 和 Claude Code 这两个宿主是例外**:
-安装器给它们写了 `OMA_DYNAMIC_TOOLS=1`,于是每个 app 各有一个自己的 `open_<name>` tool——代价是
-每个 app 各花一次授权提示。那是针对这两个宿主聊天面 bridge 回归的**临时**绕行(`install.mjs` 里
-自标 TEMPORARY,[`KNOWN-ISSUES.md`](KNOWN-ISSUES.md) 有整条),宿主修好就撤掉。你也可以在
+一次授权全包,之后不会再有新东西来问你——**安装器注册的每个宿主都是如此,现在没有例外了**。
+2026-07-28 到 2026-08-16 之间有两个例外:安装器给 **Claude Desktop 和 Claude Code** 写了
+`OMA_DYNAMIC_TOOLS=1`,靠「每个 app 各有一个自己的 `open_<name>` tool」绕开聊天面的 bridge 回归,
+代价是每个 app 各花一次授权提示。在 Desktop 1.30096.5 上复测,那个症状已经不出现,所以安装器不再
+给任何人写这个开关——两次读数都记在 [`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md) 里。
+**如果你是在那段窗口里装的,你的条目里还留着它**:`node install.mjs --check` 会把它报成 `stale`,
+重跑一次安装器就只删掉这一个键,你自己设的其它 env 值一个不动。你也可以在
 **Settings → Connectors → open-mcp-apps → Tool permissions** 里批量设。
 
 ## 怎么用
 
-**从你的 host 开始。** 装完先重启它。第一次用?对 AI 说一句,比如 **"我刚装了 open-mcp-apps,
-给我介绍下怎么用、给几个例子,并建议几个适合我的 app。"** 它会看自己能建什么、翻它对你的了解(记忆 +
-历史对话,不够就问你几句),然后为你建一两个贴合的 app。这一步与安装分开、在 host 里。或者直接问:
+**从你的 host 开始。** 装完先重启它。第一次用?引擎自带一个 MCP prompt,`get_started`。会露出 prompts
+的 host 会把它列成 **Get started with open-mcp-apps**;把 prompts 渲染成斜杠命令的 host 拼作
+`/mcp__open-mcp-apps__get_started`。点一下,开场那整套动作就交给 AI 了。不是每个 host 都露 prompts ——
+你那个不露也不少什么,因为这个 prompt 本来就是一句你自己也能说的话:**"我刚装了 open-mcp-apps,
+给我介绍下怎么用、给几个例子,并建议几个适合我的 app。"** 两条路一样:它会看你已经有什么、店里现成的
+有什么,翻它对你的了解(记忆 + 历史对话,不够就问你几句),然后为你建一个贴合的 app。这一步与安装分开、
+在 host 里。或者直接问:
 
 - *"给我做个板子管我现在手头的事"* → AI 现写、填初始数据、打开(持久)
 - *"make me a habit tracker"* → 看它读 guide、写 app、保存、打开
@@ -191,13 +211,13 @@ tool 一般免批准,而默认情况下单个 `open_app` tool 就覆盖打开*�
 "给我做个 kanban"
       │
       ▼
-list_apps ── 已存在? ──► open_kanban          (复用,秒开)
+list_apps ── 已存在? ──► open_app {app: "kanban"}     (复用,秒开)
       │ 否
       ▼
 get_app_guide ──► AI 写 HTML ──► save_app
       │
       ▼
-open_kanban  →  内联渲染、带主题、持久——以后每个对话都能复用
+open_app {app: "kanban"}  →  内联渲染、带主题、持久——以后每个对话都能复用
 ```
 
 app 会不断积累。每个都是单一用途、彼此独立的——一块看板、一个追踪器、一个分账器——为你眼前的任务
@@ -207,21 +227,21 @@ app 会不断积累。每个都是单一用途、彼此独立的——一块看�
 
 app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它写出来:
 
-![Codex——要一个读书追踪器,AI 写完当场渲染,三本书已经在里面](.github/screenshots/host-codex.webp)
+![Codex——要一个读书追踪器,AI 写完当场渲染,三本书已经在里面](../.github/screenshots/host-codex.webp)
 
 换一场对话——甚至换一个 host——它还在,数据也还在:
 
-![Claude——新对话里打开同一个 reading list,已经攒到八本](.github/screenshots/host-claude.webp)
+![Claude——新对话里打开同一个 reading list,已经攒到八本](../.github/screenshots/host-claude.webp)
 
 内置 App Store——在 0.5.0 重建成了一个真正的店面——自带 22 个现成 app,带真实可交互的活预览,
 一键安装:
 
-![App Store——现成 app 的活预览](.github/screenshots/app-store.webp)
+![App Store——现成 app 的活预览](../.github/screenshots/app-store.webp)
 
 | | |
 |---|---|
-| ![Companion——有共同记忆的 AI 角色](.github/screenshots/companion.webp) | ![Family Week——全家的一周:晚餐、家务轮值、购物与周末](.github/screenshots/family-week.webp) |
-| ![Study Cards——间隔重复+复习热力图+卡组书架](.github/screenshots/study-cards.webp) | ![Knowledge Cards——可视化的答案收藏库](.github/screenshots/knowledge-cards.webp) |
+| ![Companion——有共同记忆的 AI 角色](../.github/screenshots/companion.webp) | ![Family Week——全家的一周:晚餐、家务轮值、购物与周末](../.github/screenshots/family-week.webp) |
+| ![Study Cards——间隔重复+复习热力图+卡组书架](../.github/screenshots/study-cards.webp) | ![Knowledge Cards——可视化的答案收藏库](../.github/screenshots/knowledge-cards.webp) |
 
 上面每个 app 都是绑定在普通数据集合上的单文件 HTML——用的是你的 AI 将来给你造 app 时
 同一套 `window.oma` API 与写作指南。
@@ -245,18 +265,25 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ## Host 支持
 
-2026-07-22 实测;ChatGPT web 行 2026-07-28 更新。
+2026-07-22 实测;ChatGPT web 行 2026-07-28 更新。**这两个读数都早于 0.5.0** —— 那是迄今最大的一次
+改动,发生在两个日期之后。除了自带 2026-08-16 日期的那几格之外,本表没有任何一格在 0.5.0 或更新的
+版本上复测过;日期说的是那一行「当时是这样」,不是「之后又核过一遍」。
 
 | Host | 渲染 widget | 人点击 widget | AI 操作数据 | 同一 store |
 |---|---|---|---|---|
-| **Claude Desktop**(本地 stdio) | ✅ | ✅ 完整循环,含 `sendMessage` 回复 | ✅ | ✅ |
+| **Claude Desktop**(本地 stdio) | ✅ —— 2026-08-16 在 1.30096.5 上复测:通用 `open_app` 在对话里就能渲染,不再需要当初为 1.24012.9 上的那条 `OMA_DYNAMIC_TOOLS` 绕行(见 KNOWN-ISSUES) | ✅ 完整循环,含 `sendMessage` 回复 | ✅ | ✅ |
 | **浏览器 viewer**(`/view/<name>`) | ✅ | ✅(无 chat 连接——`sendMessage` 降级为提示) | 经 CLI AI | ✅ |
-| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag)—— 对**本地**引擎实测;远程未确立 | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增仍被 host 侧拦([openai/codex#28912](https://github.com/openai/codex/issues/28912),见 KNOWN-ISSUES) | ✅ | ✅ |
-| **Claude Code**(CLI,`claude mcp`) | — 对话里没有,这是设计(走文本 fallback)——但见 **[终端旁边的那块屏](#终端旁边的那块屏)** | — 对话里没有 | ✅ | ✅ |
+| **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag)—— 对**本地**引擎实测;远程未确立 | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增当时被 host 侧拦住。伞状请求 [openai/codex#28912](https://github.com/openai/codex/issues/28912)(标签是 `enhancement`:「make MCP apps work end-to-end in the Codex GUI」)已于 2026-08-05 以 completed 关闭 —— 但与这条故障逐条对得上、且由第三方在同一宿主上独立复现的那个 `bug` [#30092](https://github.com/openai/codex/issues/30092),2026-08-16 仍是 open。两边本仓都没有复测,所以这一格仍是 ◐。见 KNOWN-ISSUES | ✅ | ✅ |
+| **Claude Code** —— 终端里(`claude mcp`) | — 对话里没有,这是设计(走文本 fallback)——但见 **[终端旁边的那块屏](#终端旁边的那块屏)** | — 对话里没有 | ✅ | ✅ |
+| **Claude Code** —— Claude app 里的 Code 面 | ✅ 2026-08-16 实测:用通用 `open_app` 打开的 app 就地渲染,与 chat 面同形 | 这一面没测过 | ✅ | ✅ |
 | **codex CLI / IDE** | — 对话里没有,这是设计(走文本 fallback)——但见 **[终端旁边的那块屏](#终端旁边的那块屏)** | — 对话里没有 | ✅ | ✅ |
 | **ChatGPT web**(Work mode) | ✅ 2026-07-28 实测(远程 HTTPS)——满高渲染,未被截断;页面刷新后 widget 会丢数据(缓解已 ship,但尚未在这个宿主上复测——见 KNOWN-ISSUES) | ✅ widget 按钮新增一条,落盘成功 | ✅ | ✅ |
 
 一切走 MCP Apps 的 bridge,所以上游 host 的修复(如 #28912)不改一行也能让本项目受益。
+
+**关于 Claude Code:** 它是一个产品、两张面孔,而只有一张画得出东西 —— 所以占了两行。终端里根本
+没有 inline widget 这一面:那是架构,不是缺口,也正是[终端旁边的那块屏](#终端旁边的那块屏)存在的
+理由。Claude app 里的 Code 面有 UI,就地渲染;2026-08-16 那次读数走的就是通用 `open_app`。
 
 **关于 Codex:** plugin 是从 web 侧注册的,所以**本地安装的引擎以 MCP server 的形式接入**,
 而不是作为 plugin —— 对自托管来说这本来也是对的那条路。ChatGPT 桌面 app 里的 widget 渲染
@@ -268,9 +295,14 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 app,并把这个指针随 `/events` 那一帧推给 viewer;而任何一个 app 都可以放一块区域——
 `oma.embed("@live", {into})`——它挂载 AI 最后打开的那个 app,AI 再开一个它就自己换过去。
 App Store 里就带了一个:装上 **`live`**,在一个你之后不再去动的窗口里打开
-`http://127.0.0.1:8787/view/live`(第二显示器正是它的用意),于是对话留在终端,app 显示在那块屏上。
+`http://127.0.0.1:8787/view/live`,于是对话留在终端,app 显示在那块屏上。
 AI 在 CLI 里开、在 CLI 里写,屏上跟着变,而你可以在那块屏上点、改、录入。headless CLI 场景正是
 它当初被造出来的理由。
+
+**「那块屏」最便宜的形态,就是同一个平铺工作区里的一栏浏览器面板** —— 紧挨着 agent 的那一栏,
+就在你已经在用的这个窗口里。同一台机器,零隧道,零第二设备;当代终端环境大多能在 shell 旁边摆一个
+浏览器,而这个功能要的就只是这些。第二显示器是同一件事多占一张桌子,别的设备上的屏是同一件事
+再加上下面那条限定。
 
 代价也要说清楚。**对话里仍然没有 widget。** standalone 页面上 `sendMessage` 降级为一条提示——
 跟表里 **浏览器 viewer** 那行完全一样:点击能改数据,但不能回话给 chat。viewer 必须在跑
@@ -296,7 +328,7 @@ node install-app.mjs --list                     # 装了什么、各自的 prove
 app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`--sandboxed` 装进来的 app
 在删除之前永远在沙盒里。
 
-**[`RUNTIME.md`](RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
+**[`RUNTIME.md`](../RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
 以及只咬非 AI 作者的那些坑。它带一个版本号(`oma.contract`),`test/runtime-contract.mjs` 把它钉在
 两个 runtime 的真实表面上,所以它不会悄悄跟它们漂开。
 
@@ -309,7 +341,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 **诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 App Store 的 app(全部第一方出品)——
 都以 direct mode 全信任本地运行;目前还没有任何第三方内容需要沙箱。runner *已建成并测试过,但处于休眠*:
 它是将来共享/发布 app 的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
-[`SECURITY.md`](SECURITY.md)。
+[`SECURITY.md`](../SECURITY.md)。
 
 ## 设计取向(为什么这么建)
 
@@ -327,11 +359,11 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 |---|---|
 | 更新了,但宿主行为还是旧的 | 宿主不**彻底退出**(Cmd-Q,不是关窗)就会一直挂着连旧数据的旧 server 进程。 |
 | `pnpm install` 以 1 退出，报 `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 在你表态之前不跑第三方构建脚本，并把这件事算作错误。这里没有东西需要构建 —— `better-sqlite3` 加载它自带的预编译产物，esbuild 的二进制来自它的平台包 —— 所以它留下的这棵树是完整可用的。`pnpm approve-builds` 随你怎么答，或者用 npm。我们不去声明「允许这些脚本」：那会让 pnpm 在没有工具链的机器上（容器、多数 CI）真的去编译 `better-sqlite3`，白白失败。 |
-| Claude Desktop 自动更新后又开始弹批准框 | Desktop 自动更新偶尔会重置这些决定(上游 [#56954](https://github.com/anthropics/claude-code/issues/56954))——重新允许即可。 |
-| 每个 app 各弹一次授权 | `OMA_DYNAMIC_TOOLS=1`,安装器给 Claude Desktop 和 Claude Code 写了它。见[配置](#配置)。 |
+| Claude Desktop 自动更新后又开始弹批准框 | Desktop 自动更新偶尔会重置这些决定(上游 [#56954](https://github.com/anthropics/claude-code/issues/56954),已于 2026-06-23 以 *not planned* 关闭)——那条 issue 不会带来修复,重新允许即可。 |
+| 每个 app 各弹一次授权 | 你的宿主条目里有 `OMA_DYNAMIC_TOOLS=1` —— 要么是你自己设的,要么你是在 2026-07-28 到 2026-08-16 之间装的:那段时间安装器把它当绕行写给了 Claude Desktop 和 Claude Code。`node install.mjs --check` 会把这样的条目报成 `stale`;重跑安装器只删这一个键,其余 env 保留。见[配置](#配置)。 |
 | 没有 viewer 链接,或 viewer 是别人的 | 端口被一个非 open-mcp-apps 的进程占了。把 `PORT` 换成空闲的。 |
-| ChatGPT web 上刷新页面后 widget 丢数据 | 已知,缓解已 ship,实测复验待做——[`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)。 |
-| Codex desktop 上 widget 能改不能加 | 被宿主侧拦住,[openai/codex#28912](https://github.com/openai/codex/issues/28912)。 |
+| ChatGPT web 上刷新页面后 widget 丢数据 | 已知,缓解已 ship,实测复验待做——[`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md)。 |
+| Codex desktop 上 widget 能改不能加 | 被宿主侧拦住。伞状请求 [openai/codex#28912](https://github.com/openai/codex/issues/28912) 已于 2026-08-05 以 completed 关闭,但那条是 `enhancement`、不是这个缺陷本身:对得上的那个 `bug` [#30092](https://github.com/openai/codex/issues/30092) 在 2026-08-16 仍是 open。可以升级 Codex 试试,但预期它还在。 |
 | 想彻底从零开始 | 彻底退出宿主,删掉[配置](#配置)那节所说 store 目录下的 `open-mcp-apps.db`(连同 `-wal`/`-shm` 同伴)。app 和数据全部清空、不可逆,安装本身保留。 |
 
 ## 开发
@@ -356,7 +388,7 @@ node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
 ```
 
-贡献无需签署任何协议 —— MIT 进,MIT 出([`CONTRIBUTING.md`](CONTRIBUTING.md))。
+贡献无需签署任何协议 —— MIT 进,MIT 出([`CONTRIBUTING.md`](../CONTRIBUTING.md))。
 
 ## 状态与路线图
 
@@ -364,7 +396,7 @@ node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上�
 验证。
 
 **0.5.0 改了什么**(breaking,也是迄今最大的一次改动——完整交代见
-[`CHANGELOG.md`](CHANGELOG.md)):
+[`CHANGELOG.md`](../CHANGELOG.md)):
 
 - **app 的 declaration 成了一等对象。** `save_app` 收 `ui` 和 `manifest` 两个槽,而不再是埋在文档里的
   一段 manifest 块;每次修订两个槽一起快照,所以 restore 拿回来的是一对,不是单份文档。
@@ -388,22 +420,23 @@ node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上�
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key
 - [x] 多 host 发现式安装器(Claude Desktop · Claude Code · Codex)+ 共享的用户级 store
 - [x] `npx` 一条命令安装(npm 上的 `@2nd1st/open-mcp-apps`)
-- [ ] 远程(Streamable HTTP)作为一种*受支持*的形态 → claude.ai / ChatGPT / 移动端——transport
-      本身已经在(`src/http.mjs`),也在 HTTPS 上实测过;缺的是托管那一半,因为引擎按设计绑死
-      `127.0.0.1`
+- [ ] **自托管的**远程(Streamable HTTP)作为一种*受支持*的形态 → 用*你自己*跑的引擎接上
+      claude.ai / ChatGPT / 移动端——transport 本身已经在(`src/http.mjs`),也在 HTTPS 上实测过;
+      缺的是托管那一半,因为引擎按设计绑死 `127.0.0.1`。那几个浏览器宿主接托管版
+      [openmcp.app](https://openmcp.app) 现在就能用;这一格说的是「自己跑起来」
 - [ ] 不用 shell 的一键安装
 - [ ] app export/import → 分享 → 社区 App Store(review + runner 沙箱到这一步才真正上岗)
 
 ## 许可
 
-全仓**统一 MIT** —— 引擎和 [`components/`](components/) 里的 app 一视同仁
-([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md))。随便用、fork、改、嵌入、
+全仓**统一 MIT** —— 引擎和 [`components/`](../components/) 里的 app 一视同仁
+([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md))。随便用、fork、改、嵌入、
 把改过的版本作为托管服务跑;再分发实质部分时保留版权声明即可 —— 义务只有这一条。
 v0.5.2 及之前引擎是 AGPL-3.0-only、按目录分成两个许可,改动的来龙去脉见
-[`LICENSING.md`](LICENSING.md)。
+[`LICENSING.md`](../LICENSING.md)。
 
 名称 **open-mcp-apps**、**openmcp.app**、**SecondFirst**、**2nd1st** 及其 logo
-**不**在许可的授予范围内 —— 见 [`TRADEMARKS.md`](TRADEMARKS.md)。代码尽管 fork,
+**不**在许可的授予范围内 —— 见 [`TRADEMARKS.md`](../TRADEMARKS.md)。代码尽管 fork,
 但请给你的 fork 起自己的名字。
 
 版权所有 © 2026 2nd1st。

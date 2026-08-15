@@ -390,9 +390,14 @@ export async function startViewer({ store: ownStore } = {}) {
 
     // Bind to loopback ONLY. Both /rpc and /mcp are unauthenticated; a default (all-interfaces)
     // bind would let anyone on the LAN read and write your data. Remote hosts (ChatGPT/claude.ai)
-    // reach /mcp through an OUTBOUND tunnel that connects to 127.0.0.1 locally, so restricting the
-    // listener to loopback costs nothing. (Data-layer exposure only — even so, the tool surface
-    // caps a caller to SQLite ops; see docs/security-model.md §1.5 Layer C.)
+    // reach /mcp through an OUTBOUND tunnel that connects to 127.0.0.1 locally, so that door pays
+    // nothing for the restriction. (Data-layer exposure only — even so, the tool surface caps a
+    // caller to SQLite ops; see docs/security-model.md §1.5 Layer C.)
+    // /view DOES pay, and 0.5.1 set the price (repriced 2026-08-16 — this used to say loopback
+    // "costs nothing"): `@live`'s whole point is a SECOND screen — wall tablet, old phone, e-ink —
+    // and those live on the LAN, so reaching them costs you a bridge you stand up yourself. The
+    // price stands until device pairing ships; a bind flag alone is not the fix, and the reasoning
+    // for that is docs/open-decisions.md D-15.
     const bound = await new Promise((resolve) => {
       const onError = (e) => { server.removeListener("listening", onListening); resolve({ error: e }); };
       const onListening = () => { server.removeListener("error", onError); resolve({ ok: true }); };

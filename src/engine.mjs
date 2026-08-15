@@ -29,6 +29,7 @@ import { register as registerFileTools } from "./tools/files.mjs";
 import { register as registerRegistryTools } from "./tools/registry.mjs";
 import { register as registerAppStoreTools } from "./tools/app-store.mjs";
 import { register as registerSettingsTools } from "./tools/settings.mjs";
+import { register as registerPrompts } from "./prompts.mjs";
 
 // Part of this module's public surface (server.mjs / http.mjs / index.mjs import them from here),
 // so the move into contracts.mjs is invisible to callers.
@@ -181,9 +182,17 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       // dropped from the ack. `tools.listChanged` is declared ONLY with the per-app openers on:
       // with them off the tool surface never moves, and claiming it might is an invitation for a
       // host to re-list — the prompt-cache cost OMA_DYNAMIC_TOOLS exists to keep opt-in.
+      // `prompts.listChanged: false` is written out rather than left to the SDK, and the reason is
+      // that silence here does NOT mean "not declared": registering a prompt makes the SDK declare
+      // the capability itself, filling the bit in with `?? true`. Our one prompt is compiled into
+      // the binary and registered before the transport is attached, so the list provably cannot
+      // move for the life of the process — saying `true` would be a standing invitation to re-list
+      // something that never changes. This is the same reasoning as the `tools.listChanged` line
+      // above, stated where it can actually take effect.
       capabilities: {
         extensions: { [EXTENSION_ID]: {} },
         resources: { subscribe: true, listChanged: true },
+        prompts: { listChanged: false },
         ...(dynamicTools ? { tools: { listChanged: true } } : {}),
       },
       // Both eras, one engine: the SDK's default list is legacy-only, and a list with a modern
@@ -469,6 +478,14 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   registerRegistryTools(ctx);
   registerAppStoreTools(ctx);
   registerSettingsTools(ctx);
+
+  // Prompts are a different MCP primitive on a different verb (`prompts/list`), so they sit
+  // outside src/tools/ and outside the tool-surface golden — nothing registered here reaches
+  // `tools/list`, and the resident per-conversation cost the ratchet guards is untouched.
+  // Unconditional, and that is the ruling rather than an omission: a prompt is inert until a
+  // person picks it out of a menu, so there is no risk for a seat flag to gate. Hosted
+  // deployments share this createEngine and inherit it for the same reason.
+  registerPrompts(ctx);
 
   // Must run AFTER every registration: it wraps the handler the SDK built around the finished set.
   // Only the `$schema` trim remains here — the SEP-2549 cache fields moved into ServerOptions

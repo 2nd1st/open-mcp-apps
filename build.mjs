@@ -22,7 +22,7 @@ function thirdPartyNotices(metafile) {
   // so a match on the FIRST segment yields `.pnpm` — the content-addressed store, not a package —
   // and reading its package.json is an ENOENT that fails `prepare` and with it the whole install.
   // (Measured 2026-08-16 on the published tree: `pnpm install` dies here, which is also why the
-  // Glama build of this repo has never gone green. Under npm nothing changes: same paths, same set.)
+  // Glama build of this repo had never gone green. Under npm nothing changes: same paths, same set.)
   const roots = new Map();
   for (const input of Object.keys(metafile.inputs)) {
     const m = input.match(/^(.*node_modules\/((?:@[^/]+\/)?[^/]+))\//);

@@ -6,9 +6,12 @@
 // re-add a tool inline or introduce an undocumented env flag while doing something else. A rule
 // living in a doc gets obeyed for a week; a rule living here gets obeyed.
 //
-//  1. TOOL REGISTRATION IS CONFINED. src/engine.mjs is the one file three tracks all need to
+//  1. SURFACE REGISTRATION IS CONFINED. src/engine.mjs is the one file three tracks all need to
 //     edit — it is the project's only real serialization bottleneck. Once registrations are split
 //     into src/tools/*.mjs, this check is what stops the bottleneck from quietly growing back.
+//     Prompts joined the rule when the first one shipped: a prompt is a second model-facing
+//     surface with the same property that earned tools the rule — a name that is public contract
+//     the moment it is registered — so it gets one declared home too, not wherever it was handy.
 //  2. EVERY ENV FLAG IS DECLARED. Work-in-progress lands on main behind an OMA_* flag, which
 //     means flag debt is the price of trunk-based development. Construction flags therefore carry
 //     an expiry, and this test fails when one is overdue. Undeclared and unused flags both fail
@@ -24,13 +27,17 @@ import { CONFIRMATION_CLASSES } from "../src/confirmation.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
-// Where server.registerTool( is allowed to appear. src/tools/ is listed ahead of the split so the
-// refactor needs no edit here — and so the intended destination is documented in the rule itself.
+// Where a surface registration is allowed to appear. src/tools/ is listed ahead of the split so
+// the refactor needs no edit here — and so the intended destination is documented in the rule.
 const TOOL_REGISTRATION_ALLOWED = [
   "src/engine.mjs",     // today: everything. Roadmap: split into src/tools/*.mjs
   "src/mcp-apps.mjs",   // DEFINES registerAppTool/registerAppResource (the MCP Apps seam) — a
                         // helper's own body necessarily contains the call it wraps. It registers
                         // nothing itself: no tool name appears in this file.
+  "src/prompts.mjs",    // the prompts, all of them. Deliberately NOT under src/tools/: a prompt
+                        // rides `prompts/list`, never `tools/list`, and filing it with the tools
+                        // would put it inside the one directory whose contents the tool-surface
+                        // golden is entitled to speak for.
   /^src\/tools\/[a-z-]+\.mjs$/,
 ];
 
@@ -90,12 +97,14 @@ function shippedSources() {
 const sources = shippedSources();
 const allowed = (rel) => TOOL_REGISTRATION_ALLOWED.some((a) => (typeof a === "string" ? a === rel : a.test(rel)));
 
-// All three registration calls, not just server.registerTool: open_app and the per-app
+// All four registration calls, not just server.registerTool: open_app and the per-app
 // open_<name> tools go through the MCP-Apps helpers, so matching only .registerTool( would let
-// 1 of the 33 tools — and every ui:// resource — escape the rule.
-const REGISTRATION_CALL = /(?:\.registerTool|registerAppTool|registerAppResource)\s*\(/;
+// 1 of the 33 tools — and every ui:// resource — escape the rule. .registerPrompt is here for
+// the same reason and not because prompts are tools: it is the other call that mints a public
+// name on the wire, and a name minted in a file nobody thought to review is the failure mode.
+const REGISTRATION_CALL = /(?:\.registerTool|\.registerPrompt|registerAppTool|registerAppResource)\s*\(/;
 
-console.log("1. tool registration is confined");
+console.log("1. surface registration is confined");
 const registrars = sources.filter(([, src]) => REGISTRATION_CALL.test(src)).map(([rel]) => rel);
 const strays = registrars.filter((rel) => !allowed(rel));
 ok(`registrations live in ${registrars.length} allowed file(s): ${registrars.join(", ") || "(none)"}`,

@@ -7,28 +7,364 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.8 — 2026-08-16
+
+**Four green lights that could not have gone red.** The largest group below shares a shape rather
+than a subject: a reading was trusted for an answer it was structurally incapable of giving.
+`install.mjs --check` called a Codex entry clean by parsing a line on which every value is printed
+`*****`. The MCP Registry badge read `servers[0]` off an endpoint that returns every version ever
+published under a name, oldest first. The link-closure gate this project added one release ago
+printed CLEAN over the densest batch of relative links in the repository, because one regex read
+left to right can only ever see the inner half of a nested badge. And `openai/codex#28912` closing
+as *completed* was quoted in the place a reader looks to find out whether a failure still bites —
+the closure of an umbrella, which cannot speak for any single failure filed beneath it. None of the
+four was a wrong number waiting to be corrected. Each was an instrument reporting on itself while
+wearing the clothes of a report about the world, which is why each one had gone unnoticed for as
+long as it had: the answer it gave was the answer it always gives.
+
+The rest is the first five minutes of an install, from both ends. The sentence the README asked a
+brand-new user to *copy* is now an MCP prompt a host can put in a menu, and the `OMA_DYNAMIC_TOOLS=1`
+the installer had been writing into two host entries is gone — which takes one approval dialog per
+app off every install made from here on, and off existing ones on the next re-run. The tool surface
+did not move: 44,911 B, byte-identical to its golden and so to 0.5.7's, because prompts ride
+`prompts/list` and structurally cannot enter `tools/list`.
+
+### Added
+
+- **The engine's first MCP prompt: `get_started`.** Until now the README's Usage section opened by
+  asking a brand-new user to *type a sentence* — "I just installed open-mcp-apps — show me how to use
+  it with a couple of examples, and suggest a few apps that fit how I work." A sentence a project
+  prints for people to copy is a prompt template by definition; this one was simply living in a
+  document instead of on the wire, where a host can put it in a menu and a click can deliver it.
+  It now is one: a host that surfaces prompts lists **Get started with open-mcp-apps**, and hosts
+  that render prompts as slash commands spell it `/mcp__open-mcp-apps__get_started`. Where a host
+  does not surface prompts nothing is lost — the sentence still works typed, and both READMEs say
+  so rather than promising a menu entry we cannot see from here.
+
+  One prompt, and no arguments, decided rather than defaulted. A prompt's name is public contract
+  from the moment it ships and a menu has no redirects, so renaming is a break with no deprecation
+  path; argument names are the second surface that can break the same way, and the only shape that
+  can never break on its arguments is the one that has none. The wording behind the name stays free
+  to change: `test/prompt-surface.mjs` pins the name, the absence of arguments, and every byte of
+  the body against a golden, which makes a rewording deliberate without making it expensive.
+
+  **The body is an instruction, not a copy of the authoring guide.** The craft of writing an app has
+  exactly one home — `GUIDE` in `src/guide.mjs`, 29 KB, pinned by `doc-facts`' `exportBytes` — and
+  this repository has spent real time on what happens when one fact acquires two homes. So the
+  prompt routes instead of teaching: look at what the user already has (`list_apps`,
+  `data_collections`) and at what the App Store already offers (`app_store_list`,
+  `install_from_app_store`), call `get_app_guide` *before* writing any HTML, ask at most two
+  questions, then build one app that fits this particular person and `open_app` it. Two machine
+  criteria hold that line, because a golden only proves bytes did not move and not that they were
+  ever true: every tool name the body mentions must exist in the live `tools/list`, and no long line
+  of the body may appear verbatim in `GUIDE`.
+
+  Default-on, including for hosted deployments, which share the same `createEngine`. There is no
+  opt-in seat here and that is the ruling, not an omission: seats exist for capabilities that carry
+  risk — `call_function` gates same-process execution that way — and a prompt is inert until a
+  person picks it out of a menu. The cost is as small as that implies: `prompts/list` is 277 B
+  fetched about once per connection, the body is 748 B and only travels when someone asks for it,
+  and the capability declaration adds 32 B to `initialize`. The tool surface — the number that is
+  resident in every conversation, and the one the byte ratchet guards — did not move a single byte:
+  prompts ride `prompts/list`, a different verb, so they structurally cannot enter `tools/list`.
+
+### Removed
+
+- **The `OMA_DYNAMIC_TOOLS=1` that the installer wrote into two hosts.** Since 2026-07-28 it had
+  registered Claude Desktop and Claude Code with that flag, and the reason was real: Desktop
+  1.24012.9 silently dropped the loader widget's boot-time bridge calls, so an app opened through the
+  universal `open_app` sat on "Loading app…" and never moved, while the per-app `open_<name>` tools'
+  direct-embed path drew and worked. A good trade to make that week and a bad one to keep, because
+  of what paid for it: one tool per app is one approval dialog per app, permanently, in a product
+  whose entire permission story is that a single `open_app` grant covers every app the AI will ever
+  build for you. The flag never bought Claude Code's terminal anything either — a terminal has no
+  inline widget surface to fix.
+
+  Re-measured 2026-08-16 on Desktop **1.30096.5**, with both registrations tried. A second
+  registration carrying no flag at all opened an app through `open_app`: it rendered, its controls
+  wrote, and the writes were still there after a full quit and relaunch. The original registration,
+  flag still on, rendered through both doors. On the Claude app's **Code** surface — a face with a
+  UI, unlike the terminal — `open_app` rendered as well. The universal path therefore works on both
+  Anthropic surfaces that can draw, and all three hosts are registered the same way again, which is
+  also one fewer way for two hosts to drift apart.
+
+  What was measured is the absence of a symptom on one build, not a repair. Nobody here can read the
+  host's source, so neither the code nor [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md) says upstream fixed
+  anything; the dated record of the original failure stands verbatim and the new reading sits after
+  it under its own date. The comment in `install.mjs` keeps both dates rather than disappearing —
+  the next person to read that file should be able to find out what used to be there and on what
+  evidence it went.
+
+  **An existing install keeps the flag until the installer is re-run** — deleting code cannot edit a
+  file already on disk, and doing nothing would mean paying those prompts forever. So `node
+  install.mjs --check` now reports such an entry as `stale` on **all three** hosts, and a re-run
+  removes exactly that one key: `PORT`, `OMA_DB`, a corporate proxy, any sibling field — all left
+  where they are, with the run printing what it removed and how to put it back. Only the literal
+  value the installer itself wrote is touched, so an `OMA_DYNAMIC_TOOLS=0` that somebody set as their
+  own opt-out is not disturbed. The setting remains supported (README → Configuration); what ended is
+  the installer choosing it on your behalf.
+
+  *All three* took a second defect out of the way first. When this entry was first written the
+  cleanup reached two hosts, because on the third the installer could not see the key it was
+  cleaning — see **`--check` called a Codex entry clean…** below.
+
+### Fixed
+
+- **`--check` called a Codex entry clean by reading a line that could not have shown otherwise.**
+  `codex mcp get` prints an entry's env as `KEY=*****` — the keys are real, every value is masked —
+  and the installer parsed only `command` and `args` out of it. So a Codex registration carrying
+  `OMA_DYNAMIC_TOOLS=1` came back indistinguishable from one that never had it, `--check` answered
+  `already current`, and the retirement above skipped the one host that still needed it. This
+  project's own machine is the example: the key sits in its `~/.codex/config.toml` to this day
+  (measured 2026-08-16). The miss is the small half. The large half is what the miss licensed —
+  *Codex never got this key* was concluded from a reading incapable of showing it either way, which
+  is a statement about the instrument wearing the clothes of a statement about the world.
+
+  The probe now reads env in two passes with two different jobs. The masked line settles which keys
+  **exist**, and that much it settles conclusively. The **value** comes from `codex mcp get --json`,
+  codex's own resolution of its own config — which beats re-parsing the file by hand, since the
+  quoting, the layering and the `-c` overrides are already applied — falling back to the
+  `[mcp_servers.<name>.env]` sub-table in `~/.codex/config.toml` on builds without that flag, and
+  counting a value that comes back masked there too as unread rather than as absent. When no pass
+  can produce the value the entry reads `stale`, and the status line says the value is the thing that
+  could not be read. What it will never do is report unknown as clean: a re-run somebody did not need
+  costs a minute, while `already current` over an entry that is still dirty costs an approval dialog
+  per app for as long as they keep the install.
+
+  A value that cannot be read is also a value that will not be overwritten. Correcting a Codex entry
+  means re-registering it, and re-registering hands every env key back **by value** — so a run that
+  could not read them changes nothing, says exactly that, and prints the two commands that finish the
+  job by hand. `updated` over a run that deliberately did nothing is the same defect as `unchanged`
+  over a run that did something.
+
+  Carried out with it, from the same place: a stale Codex entry used to be re-added with **no `env`
+  at all**, silently discarding a proxy or an `OMA_DB` somebody had put there. That is the same
+  defect a re-install once had on Claude Desktop — fixed there when it was found, still live under a
+  different host's name — and every key that is not ours now goes back through `codex mcp add
+  --env`. Covered in `test/install-paths.mjs` §6–§7: §6 drives a stand-in `codex` for the two
+  readings a current binary cannot produce (a build with no `--json`, an env laid out where the file
+  fallback cannot parse it), §7 checks the real CLI still answers the way the stand-in assumes, and
+  says so out loud when there is no `codex` to ask.
+
+- **Every visitor to the npm package page has been reading the Chinese README.** The defect exists
+  on exactly one surface — `npmjs.com` renders whatever the registry's packument names as the
+  readme, and for this package that field has never said `README.md`. Measured on 2026-08-16,
+  `npm view @2nd1st/open-mcp-apps readmeFilename` returns `README.zh-CN.md` and the `readme` body is
+  25,466 bytes of Chinese; every version still on the registry (0.5.4, 0.5.6, 0.5.7) carries both
+  files at the root of its tarball. Nothing about any of those releases was done wrong, which is why
+  no release checklist could have caught it: npm ALWAYS packs a `README*` found at the package root,
+  and `package.json`'s `files` array is powerless against it — that array only ever *adds*, and root
+  READMEs are one of the classes it can never subtract. So both files went in regardless, npm chose
+  between them, and it chose the second one. Republishing the same layout reproduces the same page.
+
+  The fix is deliberately *not* a better guess at how npm chooses. Dictionary order, readdir order,
+  last-one-wins — each story fits the evidence, and a fix resting on one of them holds only until an
+  undocumented implementation detail moves. The criterion sits one level below that question: the
+  package root now holds exactly ONE `README*`, so there is nothing left to choose between. The
+  Chinese README moved to `i18n/README.zh-CN.md`, where the forced-inclusion rule does not reach —
+  it is a rule about the package root, not about subdirectories — and where a reader on GitHub still
+  arrives in one click from the English one. All 24 of its relative links and images gained a `../`,
+  because a file that changes directory takes every promise it made about its neighbours with it;
+  `publish.mjs`'s link-closure check is the thing that says so out loud, and the same move is carried
+  through its `ALLOWLIST` (as the directory `i18n`, so the next translation cannot silently miss the
+  public snapshot), its `SECURITY.md` scrub, and the one forbidden-token exemption that names this
+  file by path. That last one is also how this paragraph got shorter: naming the token here would
+  have published it outside the handful of files allowed to say it, and the scan said so.
+
+  This reaches the page on the next `npm publish` and not before: `readme` and `readmeFilename` are
+  written into the packument at publish time, so 0.5.7's page keeps showing Chinese until a newer
+  version replaces it. Verify it there — on those two packument fields — and not in the tarball,
+  which was never the thing that was wrong.
+- **The MCP Registry badge on both READMEs printed a version that gets staler with every release.**
+  It read `$.servers[0].server.version` off `…/v0/servers?search=open-mcp-apps`, and that endpoint
+  does not return *the* server — it returns every version ever published under that name, oldest
+  first. So `[0]` was never "the current one": it was pinned to the first release the registry ever
+  saw, and each release since widened the gap by one. Measured on 2026-08-16 the array was
+  `[0]=0.5.4` (`isLatest=false`), `[1]=0.5.7` (`isLatest=true`), and the badge at the top of both
+  READMEs said `v0.5.4` while the package said 0.5.7. The subscript is what hid it: `servers[0]`
+  reads like a lookup of the one thing you asked for, and is in fact an assumption about array
+  order. Both badges now ask the registry for the answer rather than picking a row — `version=latest`
+  returns exactly one entry, and is spelled `%26version%3Dlatest` because it lives *inside* shields'
+  own `url` parameter; the other honest criterion, had the filter not existed, is
+  `_meta["io.modelcontextprotocol.registry/official"].isLatest`. The badge's link target carries the
+  same filter, so a reader who clicks through sees the version the badge just claimed instead of the
+  list that produced the wrong one.
+- **Six passages in the READMEs that only a stranger could trip over.** They have no defect type in
+  common — a diagram, a pair of dates, an undisclosed path, a URL that does not back its own sentence
+  — only a *reader* in common. Each is a place where someone inside this repository supplies a
+  premise on the way past and never notices doing it: that `OMA_DYNAMIC_TOOLS` is off unless you
+  switched it on, that the installer clones to `~/open-mcp-apps`, that `claude.ai` in a list of
+  MCP-Apps hosts means the hosted deployment and not the engine you just put on your laptop. Someone
+  arriving from outside holds none of those, reads the same sentence, and receives a different
+  sentence — and in the first two cases acts on it, since one of them is a diagram an AI will copy
+  and the other is a decision made before a URL goes into a shell.
+
+  The diagram under `## The loop` taught `open_kanban`: a per-app tool that does not exist unless
+  `OMA_DYNAMIC_TOOLS=1`, which is not the default and is documented as not the default three other
+  times in the same file. A default `tools/list` answers with 33 tools and exactly one `open_*` among
+  them (`open_app`), so both diagrams now show `open_app {app: "kanban"}` — the call the default
+  configuration actually answers. `install.sh` clones into `${OMA_DIR:-$HOME/open-mcp-apps}`, and
+  neither of those strings appeared anywhere in the public documentation: the destination was first
+  disclosed by the script's own echo, which happens after you have already piped a URL into `sh`. The
+  path, the override, and the fact that `uninstall.mjs` never removes that folder are now stated
+  before the one-liner instead of after it.
+
+  The other four are claims that had stopped being checkable. "GA since January 2026" linked to a
+  page containing neither word; what the official announcement says verbatim, dated 26 January 2026,
+  is "MCP Apps is now live as the first official MCP extension" — so the sentence now claims that,
+  and links to the post that carries it. Two upstream issues were quoted in the present tense long
+  after they closed: `openai/codex#28912` as *completed* on 2026-08-05, `anthropics/claude-code#56954`
+  as *not planned* on 2026-06-23. Both now carry their state and date — and the Codex one carries a
+  second correction that nearly went the other way. Reading only the state would have let this file
+  hint that widget-adds are fixed on Codex now; `docs/host-matrix.json` had recorded, first-hand on
+  2026-07-29, that #28912 was never this defect. Re-checked here: #28912 is labelled `enhancement`
+  and titled "make MCP apps work end-to-end in the Codex GUI" — an umbrella whose closure says
+  nothing about one failure inside it — while `openai/codex#30092`, labelled `bug` and reproduced on
+  that host by a third party with the same error string, was still open on 2026-08-16. Both READMEs
+  now name both issues and what each one is, and the host-support cell deliberately stays `◐`: an
+  issue closing upstream is not a re-test here, and this repository does not get to mark a host
+  working on the strength of someone else's tracker. The table's
+  live-test dates are untouched for the same reason — dating a reading honestly is the whole value of
+  it; what was missing was the sentence saying both dates precede 0.5.0 and nothing has been re-run
+  since. Last, `claude.ai` sat in the opening list of hosts and on no other host-facing surface,
+  while the roadmap's unticked remote box dropped the word *self-hosted* that the paragraph above it
+  had kept — which reads, to precisely the reader that box is written for, as "this does not work
+  with claude.ai today", when the hosted deployment is the thing built for them. The box stays
+  unticked, because self-hosted remote is genuinely not done; the qualifier and the bridge between
+  the two facts are what got added.
+- **`KNOWN-ISSUES.md` pointed at an issue that was never this defect, and that issue had closed.**
+  Both READMEs send a reader there to settle one question — is the Codex widget-add block still
+  live? — and the entry's `Upstream:` line named
+  [openai/codex#28912](https://github.com/openai/codex/issues/28912), closed as *completed* on
+  2026-08-05. A closed link standing in that position answers the question by itself, and answers it
+  wrong. Re-read first-hand on 2026-08-16: #28912 is labelled `enhancement` and titled "make MCP
+  apps work end-to-end in the Codex GUI" — an umbrella, whose closure says the effort was wrapped up
+  and nothing about whether one add gets through — while
+  [#30092](https://github.com/openai/codex/issues/30092), labelled `bug`, is a third party
+  reproducing this exact failure on this exact host, with their server-side operations all
+  succeeding and only the in-app card failing, which is the shape measured here. It was still open.
+  The entry now names both and says what each one is.
+
+  Two kinds of text live in that file and only one of them was touched. The dated lines — `confirmed
+  2026-07-28`, `measured in-widget 2026-07-28`, `confirmed 2026-08-05 on the wire` — are a verbatim
+  record and are byte-identical; an `Upstream:` line carries no date and claims no observation, so
+  it is a live pointer, and a live pointer that no longer points is simply wrong. The entry also now
+  states its own tense: our add-block reading is the 2026-07-28 one and has not been re-taken since
+  that closure, so nothing in the file can be read as saying the block lifted. The host-support cell
+  stays `◐` for the same reason — an issue closing upstream is not a re-test here. The READMEs' half
+  of this correction is the last of the six passages above.
+- **The Host support table gave one row to a product with two surfaces, only one of which can
+  draw.** `Claude Code` was a single row whose *Renders widgets* cell read `— in the chat, by
+  design`: true of a terminal, false of the Code surface inside the Claude app, which has a UI. On
+  2026-08-16 an app opened there through the universal `open_app` rendered inline, the same shape
+  the chat surface gives — the same measurement session described under **The `OMA_DYNAMIC_TOOLS=1`
+  that the installer wrote into two hosts** above. So the row became two, and the terminal row kept
+  every word of its own, including its link to *A screen beside the terminal* — a section that
+  exists precisely because "does not render in the chat" is not "has no UI", and that a table
+  reshuffle must not quietly drop. The new row's *Human clicks widget* cell says **not measured on
+  this surface**: rendering is what was seen there, clicking is not, and one reading does not get to
+  fill in its neighbours. The table's header sentence was narrowed in the same pass — it declares
+  that nothing in the table has been re-tested since before 0.5.0, which a cell carrying its own
+  2026-08-16 date falsifies the moment it lands, so it now exempts exactly the dated cells. The
+  codex CLI row has no new reading behind it and is untouched.
+
+  **And that screen beside the terminal was documented as costlier than it is.** The section led
+  with a second monitor and a spare tablet, and never named the cheapest form: a browser pane one
+  column over in the same tiled workspace, in the window you are already working in. Same machine,
+  no tunnel, no second device — most terminal setups can put a browser next to a shell, and that is
+  the whole requirement. That is now the form it leads with; a second monitor is the same idea with
+  more desk, and another device is the same idea again with the caveat that was already there. The
+  binding sentence is untouched, because it is what makes the caveat true: the viewer listens on
+  `127.0.0.1` only.
+- **Three comments in files that ship had stopped being true, and not one of them by drifting off a
+  number.** `src/http.mjs` defends binding the viewer to loopback, and it had priced that decision:
+  remote hosts reach `/mcp` through an outbound tunnel that connects to `127.0.0.1` locally, "so
+  restricting the listener to loopback costs nothing." That was priced when the viewer was your own
+  browser. 0.5.1's `@live` changed what the viewer is *for* — its headline use is a **second**
+  screen, a wall tablet, a retired phone, an e-ink panel — and every one of those sits on the LAN,
+  on the far side of that bind. So `/mcp` pays nothing and `/view` pays, and the comment now says
+  which is which. The behaviour did not move a byte (`server.listen(PORT, "127.0.0.1")` is
+  unchanged) and neither did the security argument, which still holds exactly as written: `/rpc` and
+  `/mcp` are both unauthenticated, so an all-interfaces bind hands your data to anyone on the
+  segment. The price stands until device pairing exists — a bind flag on its own is not that fix,
+  it is a different shape, and shipping a shape already known to need withdrawing is worse than
+  charging for the bridge in the meantime.
+
+  The `Dockerfile`'s head comment gave the wrong reason for the file's own existence: that a
+  directory which grades MCP servers builds them from it. Measured 2026-08-16 — that grader reads no
+  Dockerfile out of this repository at all, and generates an image definition from a form in its own
+  admin, which is the only place its start command can be set. The file is genuinely wanted by
+  `docker/mcp-registry`, and by us: building it is how this server is shown to start in a container,
+  and its `ENTRYPOINT` is where the start command every directory ends up asking for comes from. The
+  refuted half stays as a dated negative rather than being deleted, because the next person to hold
+  that belief will otherwise go looking in the repository for something to change. The same pass
+  re-ran the hardcoded reading instead of editing it: `docker build` on both architectures, then a
+  real `initialize` + `tools/list` over stdin, answers 33 tools with an empty stderr on
+  `linux/arm64` and on `linux/amd64` alike.
+
+  And `build.mjs` said the Glama build of this repository "has never gone green" — present perfect,
+  true when written and false since the `prepare` fix in 0.5.5, whose effect is exactly what turned
+  that build green (it passes `pnpm install` on the tree pinned at v0.5.7). One word: *had*.
+- **The link-closure gate printed CLEAN over the densest batch of relative links in the
+  repository.** 0.5.7 added it to `scripts/publish.mjs` — every relative markdown link in a
+  published `.md` must resolve inside the published file set — and markdown nests, while one regex
+  read left to right can only ever see the inner nest. A badge is an image inside a link:
+  `[![license](https://img.shields.io/…)](LICENSE)`. The scan matched the image, its cursor landed
+  past *that* `)`, and the outer `](LICENSE)` was unmatchable from then on. What got checked was the
+  shields URL — absolute, skipped on sight — and the half a reader actually clicks was never parsed
+  at all. The blind spot sat where the shape is densest: the badge row at the top of a README is
+  nearly all of that file's relative links, and every badge in it has this shape. The gate did not
+  find this either; moving the Chinese README under `i18n/` left `../LICENSE` and `../package.json`
+  to be worked out by hand, and the gate agreed with a count that never held them.
+
+  Teaching one regex to swallow the outer level as well would only move the blind spot to whatever
+  nests next, so the scan is two passes. The first lifts every image out — keeping its own target,
+  since a relative image `src` is a link too — and leaves a placeholder containing none of
+  `[ ] ( ) !`; the second runs over text with no images left in it, where a badge now reads as an
+  ordinary link whose text happens to be a word. The per-target filtering, counting and resolution
+  are untouched, so the count still means what it meant. Verified by probe rather than by reading
+  the diff: a deliberately broken badge target inserted into `README.md` left the old code at
+  `EXIT=0` with its count unmoved, while the new code exits 2 and names the file and the missing
+  path. With the probe removed, the same tree counts 55 links before the change and 59 after — and
+  those four are `README.md`'s `LICENSE` and `package.json` plus `i18n/`'s `../LICENSE` and
+  `../package.json`, with no image target lost anywhere.
+
 ## 0.5.7 — 2026-08-16
 
-**Three defects that were only ever visible from outside.** All three were found by looking at what
-a stranger receives rather than at what this repository contains: the text an MCP client is actually
-handed by `list_apps`, a link a reader on GitHub actually clicks, and the security alerts the public
-repository page actually shows. None of them had ever failed a test. The runtime's only behavioural
+**Everything a stranger receives, and everything this repository says about itself.** Three of the
+defects below were found by looking at what someone on the other side actually gets: the text an MCP
+client is handed by `list_apps`, a link a reader on GitHub clicks, the security alerts the public
+repository page shows. The rest is the same question asked of prose and of copied constants —
+statements in the files that ship had quietly stopped being true, and three homes of the version
+number had nothing counting them. Exactly one item here had a gate, and that gate had been red for
+some time on `doc-facts --deep`, a branch `npm test` does not run. The runtime's only behavioural
 change is that one line of listing text — the tool surface is otherwise byte-identical to 0.5.6.
+
+*This section was completed after `v0.5.7` was tagged. All of it shipped in that release; only the
+first entries were written down at the time, and the rest reach the public face with the next
+snapshot.*
 
 ### Fixed
 
 - **`list_apps` told the model every app was `undefined` characters long.** The rendered row read a
   row field named `html_size`; the query behind it has produced `length(ui) AS ui_size` since the
-  manifest split,
-  and a missing property in JavaScript is `undefined`, not an error. So every row of every listing,
-  in every host, printed `(undefined chars, by …)` — while the structured half stayed correct,
-  because it spreads the store row rather than naming fields. Found by driving the *published* npm
-  package as a client would (`npx -y @2nd1st/open-mcp-apps`, initialize → `save_app` → `list_apps`),
-  which is also why the test now asserts on the rendered text and not on the structured payload.
+  manifest split, and a missing property in JavaScript is `undefined`, not an error. So every row of
+  every listing, in every host, printed `(undefined chars, by …)` — while the structured half stayed
+  correct, because it spreads the store row rather than naming fields. Found by driving the
+  *published* npm package as a client would (`npx -y @2nd1st/open-mcp-apps`, initialize → `save_app`
+  → `list_apps`), which is also why the test now asserts on the rendered text and not on the
+  structured payload.
 - **A link in this file 404'd for every reader.** The v0.3.0 entry links `CLA.md`, which was deleted
   in 0.5.4 with the MIT relicense. It now points at the file inside the last release that carried
   it. `doc-facts` had the name exempted — correctly, as a record of what once was — but an
   exemption for a *name* cannot see that the name is wrapped in a *hyperlink*.
+- **A capability claim in this file had no preconditions.** The 0.5.1 entry says to install `live`
+  on a spare tablet, open `/view/live`, and the display is done — but the viewer binds `127.0.0.1`,
+  so a *separate* device reaches it only through a tunnel you start yourself, while on the machine
+  running the engine it is simply a second window. The claim was not impossible, it was
+  unconditioned — an operating instruction with its preconditions missing. The sentence is
+  untouched and carries a parenthetical now: a release history is a record, and rewriting one is
+  worse than letting it age, so a repair to it has to be legible as an annotation.
 - **Nine Dependabot alerts on the public repository, not one of them on a dependency we declare.**
   Every one of them arrived through somebody else's `package.json`: `hono` and `@hono/node-server`
   by two paths at once (`@modelcontextprotocol/node` and `@modelcontextprotocol/sdk`, deduped to a
@@ -41,6 +377,53 @@ change is that one line of listing text — the tool surface is otherwise byte-i
   next snapshot, which is why the alert PRs raised over there get closed rather than merged: that
   repository's history is a fast-forward of curated snapshots, and a merge commit of its own would
   make the following release unpushable.
+- **`TRADEMARKS.md` still described the licence, in the present tense, as AGPL.** It opened on "the
+  open-source licenses that cover this project — the GNU Affero General Public License v3.0 for the
+  engine, and the MIT License for the `components/` directory", a split that ended in 0.5.4 — while
+  the same file already said MIT about itself further down. This one is doubly exposed — it is in
+  `publish.mjs`'s `ALLOWLIST` *and* in `package.json`'s `files`, so it goes out both with the public
+  repository and inside the npm tarball. It now says what `LICENSING.md` says: the MIT License, for
+  every file in the repository. Nothing was moved into the past tense, because the file carries no
+  historical sentence that needed preserving.
+- **"Until v0.5.2" read two ways, and only one of them was true.** Three independent pieces of
+  evidence say v0.5.2 itself was still the split licence: `components/LICENSE` is present in
+  `git ls-tree v0.5.2` and gone by v0.5.4; `v0.5.2:LICENSE` opens with GNU AFFERO where v0.5.4 opens
+  with MIT; and the 0.5.4 entry below states in its own words that `v0.5.3` never existed.
+  `LICENSING.md` now reads "Up to and including v0.5.2" and names where the split ended, so both
+  ends are pinned and there is no second reading left. `README.zh-CN.md` had resolved the same
+  ambiguity the other way — 「v0.5.2 之前」, exclusive — and now agrees.
+- **The reason given for reading the `GUIDE` was a size gap that has since closed.** `RUNTIME.md`
+  sent you there because it was the bigger document — 28,588 bytes against its own 10,559 — and
+  `CONTRIBUTING.md` quoted the same ratio as "roughly three times". Both numbers were stale, and
+  putting the true ones in dissolves the argument they were carrying: `GUIDE` measures 29,022 bytes
+  and `RUNTIME.md` is no longer far behind it. So the argument was replaced rather than the numbers,
+  and on evidence — v0.4.0's `RUNTIME.md` was exactly 10,559 bytes and stopped at §7; the §8 and §9
+  that v0.4.2 added are what grew it, and neither of them is the house style or the worked examples.
+  It now says the gap closed from the *other* side, and that size was never the reason — scope was.
+  `RUNTIME.md`'s own byte count is gone rather than corrected, since writing that number down is the
+  act that falsifies it; `GUIDE`'s is the single home left, and it is pinned now (below).
+  `CONTRIBUTING.md` carried a second falsehood in the same sentence — that everything about layout
+  and the CSS kit lives only in the guide — and now draws the line where it actually falls.
+- **`CONTRIBUTING.md` described the test surface as three suites, in three places.** The `test`
+  script in `package.json` chains far more than three. The repair was deliberately *not* to write
+  the new number down — an ungated number is the species this release was spent removing — but to
+  point at that script as the authoritative list, which is the only answer that cannot drift. The
+  same pass added `doc-facts --deep` to the suites a developer runs on their own, and said plainly
+  that `npm test` runs that one without the flag.
+- **Both READMEs quoted 427 assertions where `test/server-smoke.mjs` reports 428.** This is the one
+  item in this release a machine was already watching, and it had been failing: `doc-facts` checks
+  the number, but only under `--deep`, and `npm test` runs the version without it — so the gate was
+  red on a path nobody walks. One more bilingual mismatch went out with it: the Chinese README's
+  roadmap line had dropped the parenthetical its English counterpart carries, "(review + runner
+  sandbox activate here)".
+- **`lhm.plugin.json` sat at 0.5.4 through two releases, and it cost a directory listing.**
+  `lhm plugin update` answered `Updated 2nd1st-open-mcp-apps@0.5.4 (merged into the existing
+  version)` — the update was folded into an *old* version's entry, so LobeHub's `validated` flag
+  never moved and its badge still prints a description from before the app rename. The version
+  number has homes outside `package.json`: the lockfile's two copies are held by
+  `test/invariants.mjs` and both READMEs' fact tables by `doc-facts`, but `server.json`'s two
+  version fields and this one had nothing counting them at all — grepping `test/` and the doc-facts
+  config for either filename returned zero hits. All three are counted now (below).
 
 ### Changed
 
@@ -49,6 +432,49 @@ change is that one line of listing text — the tool surface is otherwise byte-i
   covers the two cases nothing else could — a target deleted from the repo, and a target that
   exists here but is not in the `ALLOWLIST`, which no check run against the internal tree can
   detect by construction. It aborts before any push and names which of the two it hit.
+- **`test/invariants.mjs` now counts every copy of the version that leaves with a release** —
+  `server.json`'s top-level `version` and each entry of its `packages[]`, plus `lhm.plugin.json`'s
+  `version`. The fields are reached by path rather than copied by value or frozen at index 0, so a
+  second `packages` entry — a `pypi` or `oci` registry type, say — grows the check instead of
+  slipping past it, and every failure names the file, the key, what it says and what to set it to.
+  It lives in invariants rather than `doc-facts` for one reason: `doc-facts` exits 0 on a tree with
+  no `docs/`, which is what a public snapshot always is, while both of these files ride out in that
+  snapshot. A gate belongs on the road its file travels. Three name couplings are pinned alongside
+  it, all three measured as already correct: `server.json`'s npm `identifier` is the package this
+  repository publishes, its `name` equals `package.json`'s `mcpName` — the pair the registry proves
+  ownership with — and `lhm.plugin.json`'s `identifier` is frozen as a literal rather than derived
+  from the package name, because LobeHub keys its catalogue on that string. Changing it does not
+  rename the listing; it abandons the claimed one and opens a second, empty one.
+- **`doc-facts` gained a declarative compute kind, `exportBytes`**, and the `GUIDE` size quoted in
+  `RUNTIME.md` is the first fact under it — the number that had gone stale by more than a factor of
+  two, with an argument resting on it and nothing watching. It imports the module and
+  measures the exported string rather than the bytes on disk: `GUIDE` is a template literal, so its
+  file bytes and its runtime bytes differ by every escape written into it, and scraping the literal
+  with a regex is the kind of check that stops matching the day someone adds an interpolation. Two
+  fields, `file` and `export` — a config that can express arbitrary code is a config nobody can
+  audit. It sits in the always-on `DERIVED` pass rather than under `--deep`, because `--deep` is
+  exactly the branch `npm test` does not run, and a companion `format` spells the computed value the
+  way a document writes it so a pin cannot fail on a thousands separator alone.
+
+### Added
+
+- **Both READMEs gained a section called "A screen beside the terminal".** The Host support table's
+  two `—` cells for Claude Code and the codex CLI were literally correct and read wrong: what a
+  reader took away was "terminal hosts have no UI", and since 0.5.1's live pointer that conclusion
+  is false. An app opened from a terminal host appears on a browser screen next to it and swaps
+  itself when the AI opens another. So the cells were narrowed rather than flipped — `—` *in the
+  chat*, by design — and they now point at a section that says how to get there (install `live`,
+  open the viewer in a window you then leave alone) and what it costs. The costs are stated as
+  plainly as the capability: there is still no widget in the transcript; `sendMessage` degrades to a
+  notice on a standalone page, exactly as the **Browser viewer** row already said; the viewer has to
+  be running with a browser pointed at it; and the listener binds `127.0.0.1`, so "a spare tablet on
+  the wall" means *this machine's* screen unless you put up the tunnel described above it. Inside a
+  chat host the same region deliberately draws a placeholder instead of following anything. The
+  section says in its own text that it is described from the code as built and not measured on a
+  host — the live-test dates above it cover the table, not it.
+- **A CI badge on both READMEs.** It was held back until the public workflow actually went green,
+  which it first did on the 0.5.6 snapshot. The test for hanging one is what the SVG prints, not
+  whether the URL resolves: a badge that reads `failing` is worse than no badge.
 
 ## 0.5.6 — 2026-08-16
 

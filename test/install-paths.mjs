@@ -16,7 +16,7 @@
 // Run: node test/install-paths.mjs
 
 import Database from "better-sqlite3";
-import { existsSync, unlinkSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync } from "node:fs";
+import { existsSync, unlinkSync, rmSync, mkdirSync, writeFileSync, readFileSync, statSync, chmodSync } from "node:fs";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
@@ -39,11 +39,16 @@ const claudeCfgFor = (home) =>
 
 // A fake HOME is only a complete boundary on macOS. Elsewhere the installer honours XDG_CONFIG_HOME
 // and APPDATA, which point at the REAL user on a developer machine — so the sandbox has to name
-// them too, or a test run would write into the person running it.
-const sandboxEnv = (home) => ({
+// them too, or a test run would write into the person running it. CODEX_HOME is the same hole one
+// process further out: the installer resolves `~/.codex` from homedir(), but the `codex` CLI it
+// shells out to prefers CODEX_HOME when that is set — and it is set, in the environment Codex's own
+// app hands its children. Unnamed, the Codex drill below would register into the real config.
+const sandboxEnv = (home, extra) => ({
   ...process.env, HOME: home,
   XDG_CONFIG_HOME: join(home, ".config"),
   APPDATA: join(home, "AppData", "Roaming"),
+  CODEX_HOME: join(home, ".codex"),
+  ...extra,
 });
 
 
@@ -185,7 +190,7 @@ console.log("\n3. W-2 — a re-install keeps what the user put in the entry, and
   // The user edits their own entry — a proxy, a feature flag, a sibling field — and adds another
   // server. Then they re-run the installer for an unrelated reason.
   const j = JSON.parse(readFileSync(cfg, "utf8"));
-  j.mcpServers["open-mcp-apps"].env.HTTPS_PROXY = "http://corp-proxy:8080";
+  j.mcpServers["open-mcp-apps"].env = { HTTPS_PROXY: "http://corp-proxy:8080" };
   j.mcpServers["open-mcp-apps"].timeout = 60000;
   j.mcpServers["other"] = { command: "node", args: ["/tmp/o.mjs"], env: { OTHER_SECRET: "keep-me" } };
   writeFileSync(cfg, JSON.stringify(j, null, 2));
@@ -208,7 +213,11 @@ console.log("\n3. W-2 — a re-install keeps what the user put in the entry, and
   ok("a stale entry is reported as `updated`, not `unchanged`", /updated/.test(out2), out2.slice(0, 200));
   ok("…and is actually corrected", read()["open-mcp-apps"].args[0].endsWith("src/server.mjs"));
   ok("…while the user's env still survives the rewrite", read()["open-mcp-apps"].env.HTTPS_PROXY === "http://corp-proxy:8080");
-  ok("…and our own key is still set", read()["open-mcp-apps"].env.OMA_DYNAMIC_TOOLS === "1");
+  // The canonical entry sets NO env of our own — all three hosts are registered the same way since
+  // the chat-surface workaround came off (2026-08-16). §5 covers what happens to configs that were
+  // written while it was still on.
+  ok("…and we add no env of our own to it", read()["open-mcp-apps"].env.OMA_DYNAMIC_TOOLS === undefined,
+    JSON.stringify(read()["open-mcp-apps"].env));
 }
 
 // ══════════════════════════════════════════════════════════════════════════════════════════════
@@ -245,6 +254,255 @@ console.log("\n4. W-4 — a host that could not be registered fails the run, on 
       { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) { code2 = e.status; }
   ok("a healthy run still exits 0 and still says ✅", code2 === 0 && out2.includes("✅"));
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n5. the retired workaround key is cleaned out of entries that already have it — and ONLY it");
+// From 2026-07-28 to 2026-08-16 this installer wrote `OMA_DYNAMIC_TOOLS=1` into the Claude Desktop
+// and Claude Code entries, to route around a chat-surface bridge regression at the cost of one
+// approval prompt per app. Deleting that code does nothing for the configs already on disk: they
+// keep the key, keep the prompts, and keep them forever. So the retirement is only real if a re-run
+// takes the key back out — and that is a re-run EDITING SOMEBODY'S SETTINGS, which is why the three
+// things below have to hold together. It removes our key. It removes nothing else. And it says so
+// out loud, with the way back, because a setting that changes silently is indistinguishable from a
+// bug — somebody may have wanted this one on.
+{
+  const HOME = join(TMP, "home5");
+  const cfg = claudeCfgFor(HOME);
+  mkdirSync(dirname(cfg), { recursive: true });
+  writeFileSync(cfg, JSON.stringify({ mcpServers: {} }));
+  const install = () => execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "claude", "--yes"],
+    { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  // `--check` takes no --host: it walks every adapter, so on a machine that has the real `claude`
+  // or `codex` CLI those lines are whatever that machine says. Only the Claude Desktop line is
+  // this test's business, and it is read out by name rather than matched against the whole block.
+  const checkLine = () => (execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--check"],
+    { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    .split("\n").find((l) => /Claude Desktop/.test(l)) || "");
+  const read = () => JSON.parse(readFileSync(cfg, "utf8")).mcpServers["open-mcp-apps"];
+
+  // Build the pre-2026-08-16 shape the way it was really produced — let the installer write a
+  // canonical entry, then put the old key back by hand beside one of the user's own. Hand-writing
+  // `command` instead would mean restating how install.mjs resolves node (a Homebrew launcher here,
+  // `process.execPath` in a CI container), and a second copy of that rule is a rule that drifts.
+  install();
+  ok("a fresh registration carries no OMA_DYNAMIC_TOOLS at all", read().env?.OMA_DYNAMIC_TOOLS === undefined,
+    JSON.stringify(read()));
+  const j = JSON.parse(readFileSync(cfg, "utf8"));
+  j.mcpServers["open-mcp-apps"].env = { OMA_DYNAMIC_TOOLS: "1", HTTPS_PROXY: "http://corp-proxy:8080" };
+  writeFileSync(cfg, JSON.stringify(j, null, 2));
+
+  ok("an entry still carrying the retired key reads `stale`, not `already current`", /stale/.test(checkLine()),
+    `--check said: ${checkLine().trim()} — a user with no signal to re-run keeps paying a prompt per app`);
+
+  const out = install();
+  ok("a re-run takes the retired key out", read().env?.OMA_DYNAMIC_TOOLS === undefined, JSON.stringify(read().env));
+  ok("…and takes nothing else with it", read().env?.HTTPS_PROXY === "http://corp-proxy:8080", JSON.stringify(read().env));
+  ok("…and the entry is otherwise intact", read().args?.[0].endsWith("src/server.mjs"), JSON.stringify(read()));
+  ok("…and the run SAYS which key it removed", /removed env: OMA_DYNAMIC_TOOLS=1/.test(out),
+    "a run that edits your settings and reports nothing is the defect this whole file is about");
+  ok("…and points at how to put it back", /README/.test(out) && /Configuration/.test(out), out.slice(-400));
+  // Matched against the host's own summary line, not the whole run: `seed.mjs` prints `= <app>
+  // unchanged` for every app it did not need to reseed, so a bare search for that word answers a
+  // different question than the one being asked.
+  ok("…and reports THAT HOST as `updated`, not `unchanged`",
+    /Claude Desktop: updated/.test(out) && !/Claude Desktop: unchanged/.test(out), out.slice(-500));
+
+  ok("once cleaned, the entry is current again", /already current/.test(checkLine()), checkLine().trim());
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+// The Codex half of §5, which §5 could not reach. `codex mcp get` prints an entry's env as
+// `KEY=*****` — keys real, every value masked — and for three weeks the installer parsed only
+// `command` and `args` out of it. So a Codex entry carrying the retired key came back looking
+// exactly like a clean one, `--check` said `already current`, and the conclusion drawn from that
+// reading was that Codex had never been given the key at all. It had (this repo's own machine,
+// measured 2026-08-16). The defect is not the miss, it is the shape of the miss: a probe that
+// cannot see a thing must report that it could not see, never that the thing is absent. Which is
+// why the two sections below split along what can be OBSERVED, not along what is convenient —
+// §6 drives the readings a real codex on this machine cannot produce, §7 checks that the real one
+// still answers the way §6 assumes.
+console.log("\n6. a probe that cannot read a value says so — it does not call the entry clean");
+// A stand-in `codex`, backed by a JSON file this test writes. It exists for the two readings the
+// real binary cannot give us: a build too old for `codex mcp get --json` (0.147.0 has it), and an
+// env laid out in a shape the config.toml fallback cannot parse. Both land on "unknown", and
+// unknown is precisely the side that used to be reported as clean. It also puts this section on
+// CI, where there is no codex binary at all — the coverage is worth most exactly where the real
+// one is missing.
+const writeShim = (dir) => {
+  mkdirSync(dir, { recursive: true });
+  const mjs = join(dir, "codex-shim.mjs");
+  writeFileSync(mjs, String.raw`
+import { readFileSync, writeFileSync, existsSync } from "node:fs";
+import { join } from "node:path";
+const STATE = join(process.env.HOME, ".codex", "shim-state.json");
+const s = existsSync(STATE) ? JSON.parse(readFileSync(STATE, "utf8")) : { json: true, servers: {} };
+const save = () => writeFileSync(STATE, JSON.stringify(s, null, 2));
+const a = process.argv.slice(2);
+if (a[0] === "--version") { console.log("codex-cli 0.0.0-shim"); process.exit(0); }
+if (a[0] !== "mcp") process.exit(1);
+const name = a[2];
+const e = s.servers[name];
+if (a[1] === "get") {
+  if (!e) { console.error("Error: No MCP server named '" + name + "' found."); process.exit(1); }
+  const keys = Object.keys(e.env || {});
+  if (a.includes("--json")) {
+    if (!s.json) { console.error("error: unexpected argument '--json' found"); process.exit(2); }
+    console.log(JSON.stringify({ name, enabled: true, disabled_reason: null,
+      transport: { type: "stdio", command: e.command, args: e.args, env: keys.length ? e.env : null, env_vars: [], cwd: null },
+      enabled_tools: null, disabled_tools: null, startup_timeout_sec: null, tool_timeout_sec: null }));
+    process.exit(0);
+  }
+  console.log([name, "  enabled: true", "  transport: stdio",
+    "  command: " + e.command, "  args: " + (e.args.join(" ") || "-"), "  cwd: -",
+    "  env: " + (keys.length ? keys.map((k) => k + "=*****").join(", ") : "-"),
+    "  remove: codex mcp remove " + name].join("\n"));
+  process.exit(0);
+}
+if (a[1] === "remove") { delete s.servers[name]; save(); process.exit(0); }
+if (a[1] === "add") {
+  const rest = a.slice(3), dash = rest.indexOf("--"), env = {};
+  for (let i = 0; i < (dash < 0 ? rest.length : dash); i++)
+    if (rest[i] === "--env") { const kv = rest[++i]; env[kv.slice(0, kv.indexOf("="))] = kv.slice(kv.indexOf("=") + 1); }
+  const cmd = dash < 0 ? [] : rest.slice(dash + 1);
+  s.servers[name] = { command: cmd[0], args: cmd.slice(1), env };
+  save();
+  console.log("Added global MCP server '" + name + "'.");
+  process.exit(0);
+}
+process.exit(1);
+`);
+  const bin = join(dir, "codex");
+  writeFileSync(bin, "#!/bin/sh\nexec " + JSON.stringify(process.execPath) + " " + JSON.stringify(mjs) + ' "$@"\n');
+  chmodSync(bin, 0o755);
+};
+
+if (process.platform === "win32") {
+  console.log("  ⚠ SKIPPED — the stand-in is a /bin/sh wrapper; this section has not run on Windows.");
+} else {
+  const HOME = join(TMP, "home6");
+  const BIN = join(TMP, "bin6");
+  const cdir = join(HOME, ".codex");                     // the Codex adapter detects on this directory
+  mkdirSync(cdir, { recursive: true });
+  writeShim(BIN);
+  const env = sandboxEnv(HOME, { PATH: BIN + ":" + process.env.PATH });
+  const toml = join(cdir, "config.toml");
+  const statePath = join(cdir, "shim-state.json");
+  const FEATURES = "[features]\napps = true\nenable_mcp_apps = true\n";
+  const PROXY = "http://corp-proxy:8080";
+  writeFileSync(toml, FEATURES);
+  writeFileSync(statePath, JSON.stringify({ json: true, servers: {} }));
+
+  const install = () => execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "codex", "--yes"],
+    { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+  const checkLine = () => (execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--check"],
+    { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    .split("\n").find((l) => /^\s*Codex\s/.test(l)) || "");
+  const entry = () => JSON.parse(readFileSync(statePath, "utf8")).servers["open-mcp-apps"];
+
+  // The registration is written by the INSTALLER — the stand-in just records the `mcp add` it was
+  // handed. Writing the entry by hand here would mean restating how install.mjs resolves node and
+  // the server path, and a second copy of that rule is a copy that drifts.
+  install();
+  ok("a fresh Codex registration carries no OMA_DYNAMIC_TOOLS", !entry().env?.OMA_DYNAMIC_TOOLS, JSON.stringify(entry()));
+  ok("…and reads current straight afterwards", /already current/.test(checkLine()), checkLine().trim());
+
+  // shape: what the entry's env looks like to each of the two readings.
+  //   json     — `codex mcp get --json` answers, values and all (a current codex)
+  //   subtable — no --json; the value is in the `[mcp_servers.…env]` sub-table codex writes
+  //   inline   — no --json; the value is laid out some other way, so nothing can read it
+  const dirty = (shape, value = "1") => {
+    const s = JSON.parse(readFileSync(statePath, "utf8"));
+    s.json = shape === "json";
+    s.servers["open-mcp-apps"].env = { OMA_DYNAMIC_TOOLS: value, HTTPS_PROXY: PROXY };
+    writeFileSync(statePath, JSON.stringify(s, null, 2));
+    writeFileSync(toml, FEATURES + (shape === "subtable"
+      ? `\n[mcp_servers.open-mcp-apps.env]\nOMA_DYNAMIC_TOOLS = "${value}"\nHTTPS_PROXY = "${PROXY}"\n`
+      : shape === "inline"
+        ? `\n[mcp_servers.open-mcp-apps]\nenv = { OMA_DYNAMIC_TOOLS = "${value}", HTTPS_PROXY = "${PROXY}" }\n`
+        : ""));
+  };
+
+  // A `0` is somebody's own opt-out. Agreeing with today's default is not a reason to edit a file.
+  dirty("json", "0");
+  ok("the key at a value we never wrote is left alone", /already current/.test(checkLine()), checkLine().trim());
+
+  dirty("subtable");
+  ok("no --json, but the file can be read: the retired key still reads `stale`", /stale/.test(checkLine()), checkLine().trim());
+  ok("…and it is the plain kind of stale — the value WAS read", !/could not be read/.test(checkLine()), checkLine().trim());
+
+  dirty("inline");
+  ok("no --json and a layout we cannot parse reads `stale`, never `already current`",
+    /stale/.test(checkLine()) && !/already current/.test(checkLine()), checkLine().trim());
+  ok("…and says the value is what it could not read, rather than implying the key is gone",
+    /could not be read/.test(checkLine()), checkLine().trim());
+
+  // The other half of not-knowing: re-registering hands every env key back BY VALUE, and the values
+  // are the thing that could not be read. Rewriting anyway would destroy settings in order to
+  // remove one of them — so the run has to leave it alone AND not claim it fixed anything.
+  const blocked = install();
+  ok("a value it cannot read is a value it does not overwrite", entry().env.HTTPS_PROXY === PROXY, JSON.stringify(entry().env));
+  ok("…so the retired key is still there, untouched", entry().env.OMA_DYNAMIC_TOOLS === "1", JSON.stringify(entry().env));
+  ok("…and the summary does NOT say `updated` over a run that changed nothing",
+    !/Codex: updated/.test(blocked) && /Codex: needs a hand/.test(blocked), blocked.slice(-700));
+  ok("…and it prints the commands that finish the job by hand", /codex mcp add open-mcp-apps --env/.test(blocked), blocked.slice(-700));
+
+  // And with a codex that can answer, the whole thing goes through.
+  dirty("json");
+  ok("a readable entry carrying the retired key reads `stale`", /stale/.test(checkLine()), checkLine().trim());
+  const out = install();
+  ok("a re-run takes the retired key out", entry().env.OMA_DYNAMIC_TOOLS === undefined, JSON.stringify(entry().env));
+  ok("…and hands the user's own key straight back", entry().env.HTTPS_PROXY === PROXY, JSON.stringify(entry().env));
+  ok("…and the entry still points at this clone", /server\.mjs/.test(entry().args.join(" ")), JSON.stringify(entry()));
+  ok("…and the run SAYS which key it removed", /removed env: OMA_DYNAMIC_TOOLS=1/.test(out), out.slice(-700));
+  ok("…and points at how to put it back", /README/.test(out) && /Configuration/.test(out), out.slice(-700));
+  ok("…and reports THAT HOST as `updated`", /Codex: updated/.test(out) && !/Codex: unchanged/.test(out), out.slice(-700));
+  ok("once cleaned, the entry is current again", /already current/.test(checkLine()), checkLine().trim());
+}
+
+// ══════════════════════════════════════════════════════════════════════════════════════════════
+console.log("\n7. …and the real `codex` still answers the way §6's stand-in assumes");
+// §6 proves the installer's side against a stand-in that encodes OUR belief about the CLI: that
+// `mcp add` takes `--env KEY=VALUE`, that a second add replaces the entry whole, that `mcp get
+// --json` prints values unmasked. A belief is not a contract. This section is the only thing here
+// that would notice codex changing its mind, so when it does not run, that has to be audible.
+{
+  const haveCodex = (() => { try { execFileSync("codex", ["--version"], { stdio: "ignore" }); return true; } catch { return false; } })();
+  if (!haveCodex) {
+    console.log("  ⚠ SKIPPED — no `codex` on PATH, so nothing here checked the real CLI's flags or output.");
+    console.log("    §6 still ran: the installer's own logic is covered, its assumptions about codex are not.");
+  } else {
+    const HOME = join(TMP, "home7");
+    const cdir = join(HOME, ".codex");
+    mkdirSync(cdir, { recursive: true });
+    const toml = join(cdir, "config.toml");
+    const env = sandboxEnv(HOME);
+    const install = () => execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "codex", "--yes"],
+      { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const checkLine = () => (execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--check"],
+      { env, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+      .split("\n").find((l) => /^\s*Codex\s/.test(l)) || "");
+    const read = () => readFileSync(toml, "utf8");
+
+    install();
+    ok("the real CLI accepts the registration we hand it", /server\.mjs/.test(read()), read());
+    ok("…and it carries no OMA_DYNAMIC_TOOLS", !/OMA_DYNAMIC_TOOLS/.test(read()), read());
+
+    // The 2026-07-28 shape, reproduced where it really lives: the entry's own env sub-table, the
+    // retired key beside a key of the user's. (Byte-for-byte what `sed -n '773,780p' ~/.codex/
+    // config.toml` shows on this repo's machine.)
+    writeFileSync(toml, read() + `\n[mcp_servers.open-mcp-apps.env]\nOMA_DYNAMIC_TOOLS = "1"\nHTTPS_PROXY = "http://corp-proxy:8080"\n`);
+    ok("an entry carrying the retired key reads `stale`, not `already current`",
+      /stale/.test(checkLine()), `--check said: ${checkLine().trim()} — the reading that hid this for three weeks`);
+
+    const out = install();
+    ok("a re-run takes the retired key out", !/OMA_DYNAMIC_TOOLS/.test(read()), read());
+    ok("…and hands the user's own key back through the real `--env`", /HTTPS_PROXY = "http:\/\/corp-proxy:8080"/.test(read()), read());
+    ok("…and the entry still points at this clone", /server\.mjs/.test(read()), read());
+    ok("…and the run SAYS which key it removed", /removed env: OMA_DYNAMIC_TOOLS=1/.test(out), out.slice(-700));
+    ok("…and reports THAT HOST as `updated`", /Codex: updated/.test(out) && !/Codex: unchanged/.test(out), out.slice(-700));
+    ok("once cleaned, the entry is current again", /already current/.test(checkLine()), checkLine().trim());
+  }
 }
 
 rmSync(TMP, { recursive: true, force: true });

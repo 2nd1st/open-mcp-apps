@@ -52,6 +52,25 @@ so widget clicks write normally. Re-run `./install.sh` (or `node install.mjs`) t
 after the host refreshes its tool list, which Desktop does lazily; reopening the conversation
 hurries it along.
 
+**Status 2026-08-16 — the workaround has been removed.** Everything above is the record as it was
+written against 1.24012.9 and stays untouched; this is the next reading. On **Claude Desktop
+1.30096.5**, a second registration carrying no `OMA_DYNAMIC_TOOLS` at all was added, the app was
+fully quit and reopened, and an app was opened through the universal `open_app`: it **rendered**
+instead of sitting on the loader placeholder, its controls **wrote**, and the writes were **still
+there** after another full quit. On the original registration — flag still on — both doors rendered,
+`open_habit_streaks` and `open_app` alike. Separately, on the Claude app's **Code mode** (a surface
+with a UI, not the terminal) an app opened through `open_app` rendered the same way. So the
+installer no longer sets the flag for any host: all three are registered identically again, an entry
+that still carries it reads `stale` on `node install.mjs --check`, and a re-run removes that one key
+while keeping every other env key you have set, printing what it took out.
+
+What was measured is that **this symptom does not occur on this build** — read on one machine, on
+the builds named. Nobody here can see the host's source, so this is not a fix record and does not
+say the bridge was repaired. `OMA_DYNAMIC_TOOLS=1` remains a supported setting you can put back
+yourself (README → Configuration) if the hang returns. Two notes on scope: the flag never bought
+Claude Code's **terminal** surface anything — a terminal has no inline widget surface at all, by
+design — and the ChatGPT-web entry above is a different family that this reading says nothing about.
+
 ## Codex / ChatGPT desktop: widget ADDS fail with MCP error -32000 (updates now pass)
 
 **Symptom.** In Codex / the ChatGPT desktop app, a widget control that *adds* an item shows a
@@ -67,10 +86,25 @@ OpenAI's reference documents for exactly this), verified on the wire — the blo
 regardless, so the current build's policy ignores the documented flag for adds (ChatGPT
 surfaces gate widget calls behind per-call permission dialogs the codex surface may never
 show — see openai/openai-apps-sdk-examples#163). The proxy policy is not in the open-source
-codex CLI. Upstream: [openai/codex#28912](https://github.com/openai/codex/issues/28912),
-related [#30092](https://github.com/openai/codex/issues/30092). Deletes pass (confirmed
-2026-08-05 on the wire: widget `data_delete_item` reaches the server and commits, including
-the two-phase confirmation round trip — so the block is specifically on adds).
+codex CLI. Deletes pass (confirmed 2026-08-05 on the wire: widget `data_delete_item` reaches
+the server and commits, including the two-phase confirmation round trip — so the block is
+specifically on adds).
+
+**Upstream.** The report that matches this failure is
+[openai/codex#30092](https://github.com/openai/codex/issues/30092) — labels `bug, mcp, app`,
+titled *Lucid connector preview card fails with "MCP proxy request failed" in Codex desktop*.
+Same host, same error string, and it is an **independent third-party reproduction**: their
+server-side operations all succeeded and only the in-app card failed, which is the shape measured
+here. It was **still open as of 2026-08-16**.
+
+[openai/codex#28912](https://github.com/openai/codex/issues/28912) is **not** this defect's
+ticket — though this entry filed it there until 2026-08-16, an error worth naming because it
+pointed at a closed issue and so read like a fix. #28912 is an umbrella `enhancement` ("make MCP
+apps work end-to-end in the Codex GUI") and it closed as `completed` on 2026-08-05. Closing an
+umbrella request is not a fix record for any single failure filed beneath it: it says the broad
+effort was wrapped up, never that this add gets through. Our own add-block reading is the
+2026-07-28 one above and has **not** been re-taken since that closure, so nothing here says the
+block has lifted.
 
 **Scope.** Codex / ChatGPT desktop only. Claude hosts' widget→server loop works (via the
 direct-embed path — see the entry above). AI-side data operations work on every host.

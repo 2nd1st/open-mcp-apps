@@ -1,9 +1,13 @@
 # open-mcp-apps — stdio MCP server in a container.
 #
-# Why this file exists: directories that grade MCP servers do it by BUILDING them, not by reading
-# about them. Glama runs a sandboxed build and withholds a server from search results, category
-# listings, and recommendations until that build reproduces; docker/mcp-registry wants a Dockerfile
-# outright. So this is a real entry point, not a badge — `docker run -i` speaks MCP over stdin.
+# Why this file exists, for two readers. docker/mcp-registry wants a Dockerfile in the repo root
+# outright, and we build from it ourselves to prove this server starts in a container: its
+# ENTRYPOINT is the start command a directory ends up needing. So this is a real entry point, not a
+# badge — `docker run -i` speaks MCP over stdin.
+#
+# NOT for Glama, measured 2026-08-16: it does grade a server by building it, but it reads no
+# Dockerfile out of this repo — it generates its own image definition from a form in its admin,
+# which is the only place that start command can be set. Editing this file cannot move that grade.
 #
 #   docker build -t open-mcp-apps .
 #   docker run -i --rm -v oma-data:/data open-mcp-apps
@@ -22,8 +26,8 @@
 #
 # Verified on BOTH architectures, because the first reader of this file is a directory's build
 # sandbox and that is almost certainly linux/amd64 while this was authored on arm64: `docker build`
-# plus a real `initialize` + `tools/list` over stdin returns open-mcp-apps 0.5.4 / 33 tools with an
-# empty stderr on linux/arm64 and on linux/amd64 (`--platform linux/amd64`) alike.
+# plus a real `initialize` + `tools/list` over stdin returns open-mcp-apps 0.5.7 / 33 tools with an
+# empty stderr on linux/arm64 and on linux/amd64 (`--platform linux/amd64`) alike. Measured 2026-08-16.
 #
 # The alternative was a build stage with python3/make/g++ compiling the module from source. That
 # was tried and rejected: it is a bigger image, a slower build, and it swaps a binary the vendor

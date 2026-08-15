@@ -1,13 +1,13 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.5.7",
+  "version": "0.5.8",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
   "description": "Persistent, interactive MCP Apps for any MCP host: the AI builds an app once, you both reuse it — data outlives the conversation.",
   "directories": {
     "test": "test"
   },
   "scripts": {
-    "test": "node test/invariants.mjs && node test/doc-facts.mjs && node test/tool-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/confirmation.mjs && node test/functions.mjs && node test/notify-bridge.mjs && node test/edit-range.mjs && node test/promote-app.mjs && node test/install-paths.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs && node test/host-matrix-smoke.mjs",
+    "test": "node test/invariants.mjs && node test/doc-facts.mjs && node test/tool-surface.mjs && node test/prompt-surface.mjs && node test/runtime-core.mjs && node test/runner-guard.mjs && node test/provenance.mjs && node test/runtime-contract.mjs && node test/payload-budget.mjs && node test/two-channel.mjs && node test/server-smoke.mjs && node test/http-smoke.mjs && node test/seed-smoke.mjs && node test/files-smoke.mjs && node test/ledger-smoke.mjs && node test/confirmation.mjs && node test/functions.mjs && node test/notify-bridge.mjs && node test/edit-range.mjs && node test/promote-app.mjs && node test/install-paths.mjs && node test/manifest-grammar.mjs && node test/bridge-resilience.mjs && node test/host-matrix-smoke.mjs",
     "build": "node build.mjs",
     "prepare": "node build.mjs --optional",
     "prepack": "npm run build",

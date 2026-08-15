@@ -1,0 +1,20 @@
+{
+  "prompts": [
+    {
+      "description": "First time here? The AI looks at what you already have, checks the built-in App Store, asks you at most a couple of questions, then builds one app that fits how you work and opens it.",
+      "name": "get_started",
+      "title": "Get started with open-mcp-apps"
+    }
+  ],
+  "messages": {
+    "get_started": [
+      {
+        "content": {
+          "text": "I just connected open-mcp-apps and I want to see what it does for me.\n\nLook before you build: list_apps and data_collections show what I already have here, and app_store_list shows the ready-made apps — if one of those already fits, install_from_app_store beats writing a new one.\n\nBefore you write any HTML, call get_app_guide. The craft lives there, and an app written without it comes out wrong.\n\nAsk me at most two questions, and only about what you cannot already tell from my memory, this chat, or what you just found. Then set up ONE app that fits how I actually work, give it a little real starting data, and open_app it.\n\nShow me the app, not a tour of the tools.",
+          "type": "text"
+        },
+        "role": "user"
+      }
+    ]
+  }
+}

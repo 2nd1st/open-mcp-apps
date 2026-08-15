@@ -4,17 +4,17 @@
 [![npm](https://img.shields.io/npm/v/%402nd1st%2Fopen-mcp-apps?logo=npm&label=npm)](https://www.npmjs.com/package/@2nd1st/open-mcp-apps)
 [![license](https://img.shields.io/npm/l/%402nd1st%2Fopen-mcp-apps)](LICENSE)
 [![node](https://img.shields.io/node/v/%402nd1st%2Fopen-mcp-apps)](package.json)
-[![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dopen-mcp-apps&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue&prefix=v)](https://registry.modelcontextprotocol.io/v0/servers?search=open-mcp-apps)
+[![MCP Registry](https://img.shields.io/badge/dynamic/json?url=https%3A%2F%2Fregistry.modelcontextprotocol.io%2Fv0%2Fservers%3Fsearch%3Dopen-mcp-apps%26version%3Dlatest&query=%24.servers%5B0%5D.server.version&label=MCP%20Registry&color=blue&prefix=v)](https://registry.modelcontextprotocol.io/v0/servers?search=open-mcp-apps&version=latest)
 
-**English** | [简体中文](README.zh-CN.md)
+**English** | [简体中文](i18n/README.zh-CN.md)
 
 > Give your AI a persistent, reusable UI. It builds the app once — you keep it forever.
 
 **open-mcp-apps** is an open engine built on [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
 (`ui://`, `io.modelcontextprotocol/ui`) — an extension to the core Model Context Protocol
-specification, and the first official one, GA since January 2026. It gives any MCP-Apps-capable
-host (Claude Desktop, claude.ai, Codex, ChatGPT, …) three things the extension itself
-doesn't provide:
+specification, and [the first official one](https://blog.modelcontextprotocol.io/posts/2026-01-26-mcp-apps/),
+live since 26 January 2026. It gives any MCP-Apps-capable host (Claude Desktop, claude.ai, Codex,
+ChatGPT, …) three things the extension itself doesn't provide:
 
 1. **An app registry the AI can write to.** Ask for a UI that doesn't exist — the AI reads
    the authoring guide, writes a single-file HTML app against a tiny `window.oma` API,
@@ -28,9 +28,15 @@ doesn't provide:
    light/dark), and the `window.oma` data API. What you write is a view; the protocol,
    persistence, idempotency and theming are the engine's problem.
 
+**Which of those hosts *this* engine reaches.** It runs on your machine and binds `127.0.0.1`, so it
+serves the hosts on that same machine: Claude Desktop, Claude Code, Codex, plus its own browser
+viewer. A browser host cannot reach a loopback server on your laptop, so **claude.ai and ChatGPT web
+need a remote deployment** — today that means the hosted [openmcp.app](https://openmcp.app), which
+runs this same engine for you. Running that remote shape *yourself* is on the roadmap and not done.
+
 | | |
 |---|---|
-| **Version** | 0.5.7 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.5.8 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Run it** | `npx -y @2nd1st/open-mcp-apps` (stdio MCP server) |
@@ -38,7 +44,7 @@ doesn't provide:
 | **Surface** | 33 tools · a built-in App Store · 3 system apps seeded |
 | **Platforms** | macOS · Windows · Linux |
 | **Hosts** | Claude Desktop · Claude Code · Codex · ChatGPT web — see [Host support](#host-support) |
-| **Hosted** | [openmcp.app](https://openmcp.app) |
+| **Hosted** | [openmcp.app](https://openmcp.app) — the remote shape, and the way to reach browser hosts (claude.ai, ChatGPT) |
 
 ## Install
 
@@ -87,6 +93,12 @@ It opens a short picker to choose which hosts to register into — **Claude Desk
 Codex** — plus your permission preference. Skip it with `-s -- --yes`, or target one host with
 `-s -- --host codex`.
 
+**Where it puts the clone**, before you pipe anything into a shell: `~/open-mcp-apps`. Set `OMA_DIR`
+to put it somewhere else — `curl -fsSL <url> | OMA_DIR=~/src/oma sh`. Re-running the one-liner
+updates that same clone in place instead of making a second one. Your apps and data are *not* in it
+(they live in the per-user store under [Configuration](#configuration)), so the folder is safe to
+move or delete — and `node uninstall.mjs` does not delete it for you.
+
 **With a coding agent** (Claude Code, Codex CLI — they have a shell), paste:
 
 > Read https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.md and follow it.
@@ -127,7 +139,9 @@ To wire a clone into a host by hand instead, point it at the checkout — this i
 ### Uninstall
 
 `node uninstall.mjs` unregisters the server from every host it finds — but **keeps your data**:
-the shared store stays put, so re-installing later restores every app and all data.
+the shared store stays put, so re-installing later restores every app and all data. It also leaves
+the installer's clone (`~/open-mcp-apps`, or wherever `OMA_DIR` pointed) on disk — nothing here ever
+deletes that folder, so remove it yourself when you want the checkout gone.
 
 ```bash
 node uninstall.mjs           # unregister from all detected hosts — keeps your data
@@ -142,9 +156,9 @@ node uninstall.mjs --check   # read-only: show what's registered and what would 
   The installer checks for both and stops with a message rather than half-installing if either is
   missing.
 - **A host that renders `ui://`** if you want widgets *in the conversation*. Terminal hosts (Claude
-  Code, codex CLI) drive the same data by design and put the UI on a browser screen beside the
-  terminal instead — one that can follow along, showing whatever the AI just opened. The per-host
-  detail is in [Host support](#host-support).
+  Code in a terminal, codex CLI) drive the same data by design and put the UI on a browser screen
+  beside the terminal instead — one that can follow along, showing whatever the AI just opened. The
+  per-host detail is in [Host support](#host-support).
 - **After installing or updating, fully quit and reopen the host** (Cmd-Q, not just closing the
   window) — it keeps its old server process on the old data until fully quit.
 
@@ -182,22 +196,29 @@ why every host shares the same apps and data.
 
 **First-run permissions.** The first few tool calls each show an approval dialog — pick
 **"Always allow"**. The tool set is small and stable on purpose: read-only tools generally
-skip approval, and by default the single `open_app` tool covers opening *every* app
-(including ones the AI creates later) behind that one grant, so nothing new asks again.
-Two hosts are the exception: the installer registers **Claude Desktop and Claude Code** with
-`OMA_DYNAMIC_TOOLS=1`, which gives every app its own `open_<name>` tool — the price is one
-approval prompt per app. That is a deliberate, temporary workaround for a chat-surface bridge
-regression on those hosts (it is marked TEMPORARY in `install.mjs` and written up in
-[`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)); it comes off when the host is fixed.
+skip approval, and the single `open_app` tool covers opening *every* app (including ones the AI
+creates later) behind that one grant, so nothing new asks again — on every host the installer
+registers, with no exceptions any more. From 2026-07-28 to 2026-08-16 there were two: **Claude
+Desktop and Claude Code** were registered with `OMA_DYNAMIC_TOOLS=1`, which routed around a
+chat-surface bridge regression by giving every app its own `open_<name>` tool, at one approval
+prompt per app. Re-measured on Desktop 1.30096.5, that symptom is gone, so the installer no longer
+sets the flag for anybody — [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md) carries both readings.
+**If you installed during that window, your entry still has the flag:** `node install.mjs --check`
+reports it as `stale`, and re-running the installer removes that one key while leaving every other
+env value you have set exactly where it is.
 You can also batch approvals in **Settings → Connectors → open-mcp-apps → Tool permissions**.
 
 ## Usage
 
-**Start in your host.** Restart it after installing. New here? Tell the AI something like **"I just
-installed open-mcp-apps — show me how to use it with a couple of examples, and suggest a few apps that
-fit how I work."** It reads what it can build, draws on what it knows about you (your memory and past
-chats — or it asks a couple of questions), and sets up a first app or two tailored to you. This step
-is separate from install and lives in the host. Or just ask directly:
+**Start in your host.** Restart it after installing. New here? The engine ships one MCP prompt,
+`get_started`. A host that surfaces prompts lists it as **Get started with open-mcp-apps**; hosts
+that render prompts as slash commands spell it `/mcp__open-mcp-apps__get_started`. Picking it hands
+the AI the whole opening move. Not every host surfaces prompts — where yours doesn't, nothing is
+lost, because the prompt is just a sentence you can say yourself: **"I just installed open-mcp-apps
+— show me how to use it with a couple of examples, and suggest a few apps that fit how I work."**
+Either way it looks at what you already have and what the App Store already offers, draws on what it
+knows about you (your memory and past chats — or it asks a couple of questions), and sets up a first
+app tailored to you. This step is separate from install and lives in the host. Or just ask directly:
 
 - *"make me a board for what I'm juggling right now"* → the AI writes it, seeds it, and opens it (persistent)
 - *"make me a habit tracker"* → watch it read the guide, write the app, save it, open it
@@ -209,13 +230,13 @@ is separate from install and lives in the host. Or just ask directly:
 "make me a kanban"
       │
       ▼
-list_apps ── exists? ──► open_kanban          (reuse, instant)
+list_apps ── exists? ──► open_app {app: "kanban"}     (reuse, instant)
       │ no
       ▼
 get_app_guide ──► AI writes HTML ──► save_app
       │
       ▼
-open_kanban  →  rendered inline, themed, persistent — reusable in every future chat
+open_app {app: "kanban"}  →  rendered inline, themed, persistent — reusable in every future chat
 ```
 
 Apps accumulate. Each one is single-purpose and independent — a board, a tracker, a
@@ -267,19 +288,29 @@ only thing standing between the internet and your data.
 
 ## Host support
 
-Live-tested 2026-07-22; ChatGPT web row updated 2026-07-28.
+Live-tested 2026-07-22; ChatGPT web row updated 2026-07-28. **Both readings predate 0.5.0** — the
+largest change so far, and later than either date. Apart from the cells that carry their own
+2026-08-16 date, nothing in this table has been re-tested on 0.5.0 or newer; a date says when that
+row was true, not that it was checked again since.
 
 | Host | Renders widgets | Human clicks widget | AI operates data | Same store |
 |---|---|---|---|---|
-| **Claude Desktop** (local stdio) | ✅ | ✅ full loop incl. `sendMessage` reply | ✅ | ✅ |
+| **Claude Desktop** (local stdio) | ✅ — re-checked 2026-08-16 on 1.30096.5: the universal `open_app` renders in chat without the `OMA_DYNAMIC_TOOLS` workaround that shipped for 1.24012.9 (see KNOWN-ISSUES) | ✅ full loop incl. `sendMessage` reply | ✅ | ✅ |
 | **Browser viewer** (`/view/<name>`) | ✅ | ✅ (no chat attached — `sendMessage` degrades to a notice) | via CLI AI | ✅ |
-| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) — tested against a **local** engine; remote not established | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
-| **Claude Code** (CLI, `claude mcp`) | — in the chat, by design (text fallback) — but see **[a screen beside the terminal](#a-screen-beside-the-terminal)** | — in the chat | ✅ | ✅ |
+| **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) — tested against a **local** engine; remote not established | ✅ experimental | ◐ updates/toggles from widget clicks work; adds were blocked host-side. The umbrella request [openai/codex#28912](https://github.com/openai/codex/issues/28912) (an `enhancement`: "make MCP apps work end-to-end in the Codex GUI") closed as completed on 2026-08-05 — but [#30092](https://github.com/openai/codex/issues/30092), the `bug` matching this exact failure and reproduced there by a third party, was still open on 2026-08-16. Not re-tested here either way, so the cell stays ◐. See KNOWN-ISSUES | ✅ | ✅ |
+| **Claude Code** — in a terminal (`claude mcp`) | — in the chat, by design (text fallback) — but see **[a screen beside the terminal](#a-screen-beside-the-terminal)** | — in the chat | ✅ | ✅ |
+| **Claude Code** — the Code surface inside the Claude app | ✅ live-tested 2026-08-16: an app opened with the universal `open_app` renders inline, the same shape the chat surface gives | not measured on this surface | ✅ | ✅ |
 | **codex CLI / IDE** | — in the chat, by design (text fallback) — but see **[a screen beside the terminal](#a-screen-beside-the-terminal)** | — in the chat | ✅ | ✅ |
 | **ChatGPT web** (Work mode) | ✅ live-tested 2026-07-28 (remote HTTPS) — renders at full height, no clamping; a widget loses its data after a page refresh (mitigation shipped, awaiting live re-test here — see KNOWN-ISSUES) | ✅ a widget button added a row and it stuck | ✅ | ✅ |
 
 Everything rides the MCP Apps bridge, so host fixes upstream (e.g. #28912) benefit this
 project with zero changes.
+
+**On Claude Code specifically:** it is one product with two surfaces, and only one of them can
+draw — which is why it takes two rows. In a terminal there is no inline widget surface at all: that
+is architecture rather than a gap, and it is exactly what [a screen beside the
+terminal](#a-screen-beside-the-terminal) is for. The Code surface inside the Claude app has a UI and
+renders inline; the 2026-08-16 reading there came through the universal `open_app`.
 
 **On Codex specifically:** plugins are registered on the web side, so a locally-installed engine
 is reached as an **MCP server**, not as a plugin — which is the right path for a self-hosted
@@ -292,10 +323,15 @@ Those two `—` cells say the **chat** shows text. They do not say there is no U
 engine remembers which app was opened last and pushes that pointer to the viewer on the `/events`
 frame, and an app can place a region — `oma.embed("@live", {into})` — that mounts whatever the AI
 opened last and swaps itself when the AI opens another. The App Store ships one: install **`live`**,
-open `http://127.0.0.1:8787/view/live` in a window you then leave alone (a second monitor is the
-point of it), and the terminal keeps the conversation while that screen shows the app. The AI opens
-or writes from the CLI, the screen follows, and you can click, edit and type into it there. Headless
-CLI use is what it was built for.
+open `http://127.0.0.1:8787/view/live` in a window you then leave alone, and the terminal keeps the
+conversation while that screen shows the app. The AI opens or writes from the CLI, the screen
+follows, and you can click, edit and type into it there. Headless CLI use is what it was built for.
+
+**The cheapest form of "that screen" is a browser pane in the same tiled workspace** — one column
+over from the agent, in the window you are already working in. Same machine, no tunnel, no second
+device; most modern terminal setups can put a browser next to a shell, and that is all this needs.
+A second monitor is the same idea with more desk, and a screen on another device is the same idea
+again with the caveat below.
 
 The costs are real and worth stating plainly. There is still **no widget in the transcript**.
 `sendMessage` degrades to a notice on a standalone page, exactly as in the **Browser viewer** row —
@@ -362,11 +398,11 @@ for shared/published apps later, where review + sandboxing arrive together. See
 | Symptom | What it is |
 |---|---|
 | Updated, but the host still shows the old behaviour | The host keeps its old server process on the old data until **fully quit** (Cmd-Q, not just closing the window). |
-| Approval dialogs came back after a Claude Desktop auto-update | A Desktop auto-update occasionally resets these decisions (upstream [#56954](https://github.com/anthropics/claude-code/issues/56954)) — just re-allow. |
-| One approval prompt per app | `OMA_DYNAMIC_TOOLS=1`, which the installer sets for Claude Desktop and Claude Code. See [Configuration](#configuration). |
+| Approval dialogs came back after a Claude Desktop auto-update | A Desktop auto-update occasionally resets these decisions (upstream [#56954](https://github.com/anthropics/claude-code/issues/56954), closed 2026-06-23 as *not planned*) — no fix is coming from that issue, so just re-allow. |
+| One approval prompt per app | `OMA_DYNAMIC_TOOLS=1` is in your host entry — either you put it there, or you installed between 2026-07-28 and 2026-08-16, when the installer set it for Claude Desktop and Claude Code as a workaround. `node install.mjs --check` calls such an entry `stale`; re-running the installer removes that one key and keeps the rest of your env. See [Configuration](#configuration). |
 | No viewer link, or the viewer is somebody else's | The port is taken by a non-open-mcp-apps process. Set `PORT` to something free. |
 | A widget loses its data after a page refresh (ChatGPT web) | Known, mitigation shipped, live re-test pending — [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md). |
-| Widget clicks can update but not add (Codex desktop) | Blocked host-side, [openai/codex#28912](https://github.com/openai/codex/issues/28912). |
+| Widget clicks can update but not add (Codex desktop) | Blocked host-side. The umbrella request [openai/codex#28912](https://github.com/openai/codex/issues/28912) closed as completed on 2026-08-05, but that one is an `enhancement`, not this defect: the matching `bug`, [#30092](https://github.com/openai/codex/issues/30092), was still open on 2026-08-16. Update Codex and try, but expect it to still bite. |
 | You want to start completely clean | Fully quit your host(s), delete `open-mcp-apps.db` (plus its `-wal`/`-shm` siblings) from the store directory under [Configuration](#configuration). All apps and data gone, irreversibly, while staying installed. |
 | `pnpm install` exits 1 with `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 refuses third-party build scripts until you decide about them, and calls that an error. Nothing here needs building — `better-sqlite3` loads a prebuilt binary it ships, and esbuild's binary comes from its platform package — so the tree it leaves behind is complete and working. Answer `pnpm approve-builds` however you like, or use npm. We do not declare those scripts as allowed, because that would make pnpm compile `better-sqlite3` on machines with no toolchain (a container, most CI) and fail there for nothing. |
 
@@ -429,9 +465,11 @@ Where it stands:
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
 - [x] `npx` one-command install (`@2nd1st/open-mcp-apps` on npm)
-- [ ] remote (Streamable HTTP) as a *supported* shape → claude.ai / ChatGPT / mobile — the
-      transport exists (`src/http.mjs`) and has been live-tested over HTTPS; what's missing is the
-      hosted story, since the engine binds `127.0.0.1` by design
+- [ ] **self-hosted** remote (Streamable HTTP) as a *supported* shape → claude.ai / ChatGPT / mobile
+      off an engine *you* run — the transport exists (`src/http.mjs`) and has been live-tested over
+      HTTPS; what's missing is the hosted story, since the engine binds `127.0.0.1` by design.
+      Those browser hosts already work against the hosted [openmcp.app](https://openmcp.app); this
+      box is about doing it yourself
 - [ ] one-click install with no shell
 - [ ] app export/import → sharing → community App Store (review + runner sandbox activate here)
 
