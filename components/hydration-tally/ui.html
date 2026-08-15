@@ -15,29 +15,20 @@
     --wash: color-mix(in oklab, var(--accent) 10%, transparent);
     --wash-strong: color-mix(in oklab, var(--accent) 18%, transparent);
   }
-  html, body { margin: 0; overflow: hidden; }
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
-  }
+  /* No body rule. Padding, ground and the outer frame are the kit's stage contract now;
+     colour, font and margin the kit already sets for every app. The old root overflow was worse:
+     on a fixed-height frame it killed the scroll wheel and stranded everything below the fold. */
   button { font: inherit; }
   button:focus-visible {
     outline: 2px solid var(--color-ring-primary);
     outline-offset: 2px;
   }
-  .shell {
-    width: min(100%, 820px);
-    margin: 0 auto;
-    overflow: hidden;
-    position: relative;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .shell::before {
+  /* The root is `.k-stage` now: the kit draws one card in chat and no card when the app owns
+     the screen. Nothing from the old shell rule was load-bearing once its decorative ring moved
+     into the hydration hero below; the width now comes from manifest.stage.width. */
+  /* This 250px ring is identity, not frame chrome. It lives on a content section now, so removing
+     the shell's border cannot erase the app's face. */
+  .hero::before {
     content: "";
     position: absolute;
     z-index: 0;
@@ -49,49 +40,20 @@
     border-radius: var(--border-radius-full, 999px);
     pointer-events: none;
   }
+  /* `.topbar` is `.k-appbar` now: row, gap, padding, mark box, title/eyebrow scale and the
+     chat-only rule all come from the kit. Its stacking remains load-bearing because the content
+     ring reaches upward from the hero and must stay behind the bar. */
   .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
     min-height: 68px;
-    padding: 13px 16px;
     position: relative;
     z-index: 1;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
-  .brand {
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 11px;
-  }
-  .brand-copy { min-width: 0; }
+  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
+     strips frames, never faces. */
   .brand-mark {
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
-    display: grid;
-    place-items: center;
     color: var(--accent);
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg, var(--wash-strong), color-mix(in oklab, var(--accent) 5%, transparent));
-  }
-  .brand-mark svg { width: 20px; height: 20px; }
-  .shell-kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
   }
   .brand-summary {
     margin-top: 3px;
@@ -101,6 +63,22 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
+  /* The app had no error surface, so its one Ask-AI hand-off could only fail silently. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    position: relative;
+    z-index: 1;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+  .error-strip[hidden] { display: none; }
   .top-actions {
     display: flex;
     gap: 8px;
@@ -193,9 +171,11 @@
       radial-gradient(circle at 14% 22%, color-mix(in oklab, var(--accent) 15%, transparent), transparent 34%),
       linear-gradient(135deg, color-mix(in oklab, var(--accent) 8%, var(--color-background-secondary)), var(--color-background-primary) 72%);
   }
+  .hero > * { position: relative; z-index: 1; }
   .hero::after {
     content: "";
     position: absolute;
+    z-index: 0;
     width: 72px;
     height: 72px;
     right: 28px;
@@ -576,7 +556,6 @@
     @keyframes dot-in { from { transform: scale(0); } }
   }
   @media (max-width: 640px) {
-    body { padding: 8px; }
     .topbar { min-height: 62px; padding: 11px 12px; gap: 10px; }
     .brand-summary { display: none; }
     .btn { padding: 8px; }
@@ -617,21 +596,19 @@
 
 </head>
 <body>
-<main class="shell">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none">
-          <path d="M5.5 3.5h13l-1.3 17h-10.4l-1.3-17Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-          <path d="M6.1 10.2c1.6-.9 2.8-.9 4.3 0 1.6.9 2.8.9 4.4 0 1.1-.6 2-.8 2.9-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-          <path d="M14.8 6.8h3.1M14.5 14.1h2.9M14.3 17.1h2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <div class="brand-copy">
-        <div class="shell-kicker">DAILY INTAKE</div>
-        <h1>Hydration tally</h1>
-        <div class="brand-summary">One-tap water tracking</div>
-      </div>
+<main class="shell k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none">
+        <path d="M5.5 3.5h13l-1.3 17h-10.4l-1.3-17Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+        <path d="M6.1 10.2c1.6-.9 2.8-.9 4.3 0 1.6.9 2.8.9 4.4 0 1.1-.6 2-.8 2.9-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+        <path d="M14.8 6.8h3.1M14.5 14.1h2.9M14.3 17.1h2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <div class="shell-kicker k-eyebrow">DAILY INTAKE</div>
+      <h1>Hydration tally</h1>
+      <div class="brand-summary">One-tap water tracking</div>
     </div>
     <div class="top-actions">
       <button class="btn ghost" id="targetButton" type="button" title="Ask AI to help set a sensible target">
@@ -642,6 +619,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview" aria-label="Today’s hydration overview">
     <div class="overview-lead">
@@ -1015,15 +996,33 @@
     };
   });
 
-  // Keep this visible in standalone: oma.sendMessage falls back to the clipboard outside a chat host.
-  document.getElementById("targetButton").onclick = () => {
+  // Keep this visible in standalone: oma.sendMessage falls back to the clipboard outside a chat
+  // host, so the degraded channel is still a working feature.
+  //
+  // AWAITED, and disabled in flight: this crosses a bridge with a 10s deadline, and accepting more
+  // clicks meanwhile would queue duplicate target requests into someone's chat.
+  //
+  // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage returns
+  // `{isError: true, degraded: "clipboard"}` after the runtime has copied the prompt and told the
+  // user. Only an unsoftened error belongs in the red strip.
+  const targetButton = document.getElementById("targetButton");
+  targetButton.onclick = async () => {
     const goal = target();
     const days = sevenDays(latestState.items);
     const average = Math.round(days.reduce((sum, day) => sum + day.total, 0) / days.length);
     const todayTotal = days.at(-1).total;
-    oma.sendMessage(
-      `Help me set a sensible daily hydration target. My current target is ${goal} mL, today I have logged ${todayTotal} mL, and my 7-day average is ${average} mL/day. Please ask about the factors that matter (such as body size, activity, climate, diet, pregnancy, and relevant health conditions or medications), then suggest a practical target in mL and explain the reasoning briefly.`
-    );
+    clearError();
+    targetButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(
+        `Help me set a sensible daily hydration target. My current target is ${goal} mL, today I have logged ${todayTotal} mL, and my 7-day average is ${average} mL/day. Please ask about the factors that matter (such as body size, activity, climate, diet, pregnancy, and relevant health conditions or medications), then suggest a practical target in mL and explain the reasoning briefly.`
+      );
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      targetButton.disabled = false;
+    }
   };
 
   const UI_COPY = {
@@ -1068,7 +1067,8 @@
     "log": "条记录",
     "days": "天",
     "day": "天",
-    "logs": "条记录"
+    "logs": "条记录",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -1106,6 +1106,24 @@
         if (translated !== value) element.setAttribute(attribute, translated);
       }
     });
+  }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both already framed by the host, so the kit draws no card.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = document.getElementById("errorStrip");
+  const errorText = document.getElementById("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
   }
 
   oma.ready((state) => {

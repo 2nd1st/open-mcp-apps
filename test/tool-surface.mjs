@@ -9,8 +9,9 @@
 //     for every user, every conversation. Measured: cache_read drops to 0. The MCP spec now
 //     also says tools/list SHOULD be deterministically ordered "to improve LLM prompt cache
 //     hit rates" — order is therefore part of the surface, not cosmetics.
-//  2. NO FLAG LEAKS. Work-in-progress lands on main behind an OMA_* flag (see docs/process.md
-//     in the SaaS repo). A half-finished feature that registers its tool unconditionally is a
+//  2. NO FLAG LEAKS. Work-in-progress lands on main behind an OMA_* flag that is off unless the
+//     environment names it — the practice is written up outside this repo, so the rule is restated
+//     here rather than cited. A half-finished feature that registers its tool unconditionally is a
 //     live cost regression for every user. Booting with a DEFAULT env and diffing the surface
 //     is the only check that catches that.
 //

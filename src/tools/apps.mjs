@@ -10,9 +10,9 @@ import { randomUUID } from "node:crypto";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "../mcp-apps.mjs";
 import { LOADER } from "../cache-hints.mjs";
 import { APP_NAME_RE } from "../store.mjs";
-import { wrapApp, wrapLoader } from "../shell.mjs";
+import { wrapApp, wrapLoader, stampStage } from "../shell.mjs";
 import { GUIDE, guideChapter } from "../guide.mjs";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, answer, toMcp, textWindow } from "../contracts.mjs";
+import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor, answer, toMcp, textWindow } from "../contracts.mjs";
 import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
 import { makeFunctionHost } from "../functions.mjs";
 import { editTelemetry } from "../edit-telemetry.mjs";
@@ -157,7 +157,7 @@ export function register(ctx) {
       // opaque origin and cannot derive it. It is what makes the system badge's "Open in browser"
       // exist (and oma.viewBase absolute) inside a host; an engine without a viewer stamps
       // nothing, and the item is not drawn (D-13 ②).
-      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(comp.ui, { app: name, collection: defaultCollectionFor(comp), viewBase: viewRoot }), _meta: UI_SECURITY }] };
+      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(comp.ui, { app: name, collection: defaultCollectionFor(comp), stage: stageWidthFor(comp), viewBase: viewRoot }), _meta: UI_SECURITY }] };
     });
 
     if (!DYNAMIC_TOOLS) return;
@@ -184,6 +184,10 @@ export function register(ctx) {
         // invented collection writes into it silently. Fail the way the sibling path already does.
         const comp = store.getApp(name);
         if (!comp) return fail(`App "${name}" no longer exists.`);
+        // …and the SAME live-pointer rule as open_app, display exemption included: these per-app
+        // tools are a second door onto one act, so a wall display must not depend on which door
+        // the host happened to offer.
+        if (!stageDisplayFor(comp)) store.touchLiveApp(name);
         const collection = (a && a.collection) || defaultCollectionFor(comp);
         const v = store.dataVersion();
         return toMcp(answer.page(
@@ -233,6 +237,19 @@ export function register(ctx) {
     async (a) => {
       const comp = store.getApp(a.app);
       if (!comp) return fail(`No app "${a.app}" in the registry. list_apps shows what exists.`);
+      // THE ONE PLACE "the app the AI opened last" is recorded — a single overwritten field, no
+      // ledger event (store.touchLiveApp says why). It sits AFTER the existence check on purpose:
+      // a failed open puts nothing on screen, so it must not move a pointer that says what IS on
+      // screen. Only the open_* doors record; app_html does not, because every `@live` brick and
+      // every loader fetch their source through it and would otherwise keep re-electing themselves.
+      //
+      // …and a DISPLAY app records nothing (contracts.mjs stageDisplayFor). An app carrying an
+      // `@live` brick is a frame around whatever the pointer names, so pointing at it would aim
+      // the wall at itself. This is the OUTER of the two walls: it keeps the bad value from ever
+      // being written. The inner one lives in the brick, which refuses to mount a display app no
+      // matter how the pointer came to name one — an old row, a hand-written store, a door written
+      // after this line.
+      if (!stageDisplayFor(comp)) store.touchLiveApp(a.app);
       // ZERO rows, by ruling (redesign row #4, reaffirmed 2026-07-26): the widget always refetches
       // on mount, so rows here would travel twice on a host with a widget and once for nothing on a
       // host without one. total and version still ride — the model knows the size of what it opened
@@ -297,12 +314,20 @@ export function register(ctx) {
       // not apply here; a model reading source has get_app, which windows by default.
       // `html` stays the FIELD name here — it names the payload's format for the loader widget
       // (shell-runtime reads r.html), not the registry slot. The value is the ui slot.
+      //
+      // …carrying the stage class, because this is the loader's mount source and the loader is
+      // the third door onto the same document (the other two — /view and the per-app ui://
+      // resource — get it from wrapApp). Stamped in the BYTES rather than announced in a new
+      // structuredContent key: the tool surface is resident context for every host on every
+      // connection, and this is a rendering detail the model has no use for. `declaration` right
+      // above already carries the manifest verbatim for anyone who wants to read the field
+      // itself; what the loader needs is the class, and one authority computes it (stageWidthFor).
       return {
         content: [{ type: "text", text: `(app "${comp.name}" v${comp.version}, ${comp.ui.length} chars, tier ${tier} — consumed by the loader widget)` }],
         structuredContent: { name: comp.name, version: comp.version, author: comp.author, tier,
           locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp),
           caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
-          html: comp.ui },
+          html: stampStage(comp.ui, stageWidthFor(comp)) },
       };
     },
   );

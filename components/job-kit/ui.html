@@ -28,12 +28,8 @@ Job Kit · App Store app self-check
     --site-on-accent: var(--color-background-primary);
   }
 
-  body {
-    max-width: 960px;
-    margin-inline: auto;
-    background: transparent;
-    color: var(--color-text-primary);
-  }
+  /* No body rule. The private 960px width is a manifest declaration now; ground, padding,
+     colour and centring belong to the kit's stage contract. */
 
   button,
   input,
@@ -46,27 +42,46 @@ Job Kit · App Store app self-check
     display: none !important;
   }
 
+  /* `.site-app` is `.k-stage` now: the kit draws one card in chat and no card on a screen the
+     app owns. Position and isolation stay only to hold the grid wash below as content paint. */
   .site-app {
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: 22px;
+    position: relative;
+    isolation: isolate;
+  }
+
+  /* The old root's grid gradient is Job Kit's face, not its frame. It survives as an inert
+     content layer; the neutral root fill, border, radius, shadow and clipping are gone. */
+  .site-texture {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
     background:
       linear-gradient(90deg, color-mix(in oklab, var(--color-text-primary) 3%, transparent) 1px, transparent 1px) 0 0 / 36px 36px,
-      linear-gradient(color-mix(in oklab, var(--color-text-primary) 3%, transparent) 1px, transparent 1px) 0 0 / 36px 36px,
-      var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
+      linear-gradient(color-mix(in oklab, var(--color-text-primary) 3%, transparent) 1px, transparent 1px) 0 0 / 36px 36px;
+    pointer-events: none;
   }
 
+  .site-app > :not(.site-texture) {
+    position: relative;
+    z-index: 1;
+  }
+
+  /* `.masthead` is `.k-appbar` now: row, gaps, padding, the mark box, title scale and the chat-
+     only rule beneath it come from the kit. Its accent wash and colour bar remain content paint. */
   .masthead {
     position: relative;
-    color: var(--color-text-primary);
-    border-bottom: 1px solid var(--color-border-primary);
-    background:
-      linear-gradient(116deg, color-mix(in oklab, var(--site-accent) 10%, transparent), transparent 52%),
-      var(--color-background-primary);
   }
 
-  .masthead::after {
+  .masthead::before {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(116deg, color-mix(in oklab, var(--site-accent) 10%, transparent), transparent 52%);
+    content: "";
+    pointer-events: none;
+  }
+
+  .masthead-accent {
     position: absolute;
     right: 0;
     bottom: 0;
@@ -74,32 +89,18 @@ Job Kit · App Store app self-check
     height: 4px;
     border-radius: 4px 0 0 0;
     background: var(--site-accent);
-    content: "";
+    pointer-events: none;
   }
 
-  .app-bar {
-    display: flex;
-    gap: 12px;
-    align-items: center;
-    padding: 17px 19px 15px;
-  }
-
+  /* The mark keeps its paint: the accent block, ring and glow are identity, not framing. */
   .app-mark {
-    display: grid;
-    width: 46px;
-    height: 46px;
-    flex: none;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--site-accent) 72%, transparent);
-    border-radius: 13px;
     color: var(--site-on-accent);
     background: var(--site-accent);
     box-shadow: 0 8px 24px color-mix(in oklab, var(--site-accent) 18%, transparent);
   }
 
   .app-mark svg {
-    width: 28px;
-    height: 28px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.65;
@@ -107,11 +108,6 @@ Job Kit · App Store app self-check
     stroke-linejoin: round;
   }
 
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow,
   .section-kicker,
   .tool-code,
   .job-code,
@@ -119,22 +115,6 @@ Job Kit · App Store app self-check
   .metric-label {
     font-family: var(--font-mono);
     text-transform: uppercase;
-  }
-
-  .eyebrow {
-    margin: 0 0 2px;
-    color: var(--color-text-secondary);
-    font-size: 10px;
-    font-weight: 760;
-    letter-spacing: .11em;
-  }
-
-  .identity h1 {
-    margin: 0;
-    font-size: 20px;
-    font-weight: 760;
-    line-height: 1.12;
-    letter-spacing: -.02em;
   }
 
   .shift-live {
@@ -192,7 +172,6 @@ Job Kit · App Store app self-check
     grid-template-columns: minmax(220px, 1.45fr) repeat(3, minmax(112px, .75fr));
     gap: 1px;
     padding: 0;
-    border-top: 1px solid var(--color-border-secondary);
     background: var(--color-border-secondary);
   }
 
@@ -1367,13 +1346,14 @@ Job Kit · App Store app self-check
   }
 
   @media (max-width: 820px) {
-    .app-bar {
+    .masthead {
       flex-wrap: wrap;
     }
 
     .shift-live {
       order: 3;
-      margin-left: 58px;
+      /* Align the wrapped live badge with copy after the kit's 34px mark + 11px gap. */
+      margin-left: 45px;
     }
 
     .bar-actions {
@@ -1399,27 +1379,6 @@ Job Kit · App Store app self-check
   }
 
   @media (max-width: 680px) {
-    body {
-      padding: 8px;
-    }
-
-    .site-app {
-      border-radius: 18px;
-    }
-
-    .app-bar {
-      padding: 14px;
-    }
-
-    .app-mark {
-      width: 42px;
-      height: 42px;
-    }
-
-    .identity h1 {
-      font-size: 18px;
-    }
-
     .shift-live {
       order: initial;
       margin-left: auto;
@@ -1605,57 +1564,57 @@ Job Kit · App Store app self-check
 </style>
 </head>
 <body>
-<main class="site-app">
-  <section class="masthead" aria-labelledby="app-title">
-    <header class="app-bar">
-      <div class="app-mark" aria-hidden="true">
-        <svg viewBox="0 0 32 32">
-          <path d="M5 16h22M16 5v22"/>
-          <circle cx="16" cy="16" r="6"/>
-          <path d="M8 24l3-3m13 3-3-3M8 8l3 3m13-3-3 3"/>
-        </svg>
-      </div>
-      <div class="identity">
-        <p class="eyebrow" data-i18n="eyebrow">Field crew · live</p>
-        <h1 id="app-title" data-i18n="appName">Job Kit</h1>
-      </div>
-      <div class="shift-live">
-        <span class="live-dot" aria-hidden="true"></span>
-        <span id="shift-date">Wednesday shift</span>
-      </div>
-      <div class="bar-actions">
-        <button class="k-btn sec" id="handover-button" type="button">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v8H8l-4 3v-3H2zM5 6h6M5 8.5h4"/></svg>
-          <span data-i18n="askHandover">Ask for handover</span>
-        </button>
-        <button class="k-btn update-button" id="update-button" type="button">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10v8H7l-3.5 3v-3H3zM6 6.5h4M8 4.5v4"/></svg>
-          <span data-i18n="addUpdate">Add site update</span>
-        </button>
-      </div>
-    </header>
+<main class="site-app k-stage">
+  <div class="site-texture" aria-hidden="true"></div>
+  <header class="masthead k-appbar" aria-labelledby="app-title">
+    <div class="app-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 32 32">
+        <path d="M5 16h22M16 5v22"/>
+        <circle cx="16" cy="16" r="6"/>
+        <path d="M8 24l3-3m13 3-3-3M8 8l3 3m13-3-3 3"/>
+      </svg>
+    </div>
+    <div class="identity k-appcopy">
+      <p class="eyebrow k-eyebrow" data-i18n="eyebrow">Field crew · live</p>
+      <h1 id="app-title" data-i18n="appName">Job Kit</h1>
+    </div>
+    <div class="shift-live">
+      <span class="live-dot" aria-hidden="true"></span>
+      <span id="shift-date">Wednesday shift</span>
+    </div>
+    <div class="bar-actions">
+      <button class="k-btn sec" id="handover-button" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2 3h12v8H8l-4 3v-3H2zM5 6h6M5 8.5h4"/></svg>
+        <span data-i18n="askHandover">Ask for handover</span>
+      </button>
+      <button class="k-btn update-button" id="update-button" type="button">
+        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 2.5h10v8H7l-3.5 3v-3H3zM6 6.5h4M8 4.5v4"/></svg>
+        <span data-i18n="addUpdate">Add site update</span>
+      </button>
+    </div>
+    <span class="masthead-accent" aria-hidden="true"></span>
+  </header>
 
-    <div class="shift-overview" aria-label="Shift overview">
-      <div class="overview-cell overview-primary">
-        <div class="overview-main">
-          <strong id="active-job-count">0</strong>
-          <span id="active-job-label">jobs moving</span>
-        </div>
-      </div>
-      <div class="overview-cell">
-        <span class="metric-value" id="tool-coverage">0/0</span>
-        <span class="metric-label" data-i18n="toolCoverage">tools accounted</span>
-      </div>
-      <div class="overview-cell">
-        <span class="metric-value" id="open-action-count">0</span>
-        <span class="metric-label" data-i18n="openActions">open actions</span>
-      </div>
-      <div class="overview-cell">
-        <span class="metric-value" id="issue-count">0</span>
-        <span class="metric-label" data-i18n="issuesFlagged">issues flagged</span>
+  <div class="shift-overview" aria-label="Shift overview">
+    <div class="overview-cell overview-primary">
+      <div class="overview-main">
+        <strong id="active-job-count">0</strong>
+        <span id="active-job-label">jobs moving</span>
       </div>
     </div>
-  </section>
+    <div class="overview-cell">
+      <span class="metric-value" id="tool-coverage">0/0</span>
+      <span class="metric-label" data-i18n="toolCoverage">tools accounted</span>
+    </div>
+    <div class="overview-cell">
+      <span class="metric-value" id="open-action-count">0</span>
+      <span class="metric-label" data-i18n="openActions">open actions</span>
+    </div>
+    <div class="overview-cell">
+      <span class="metric-value" id="issue-count">0</span>
+      <span class="metric-label" data-i18n="issuesFlagged">issues flagged</span>
+    </div>
+  </div>
 
   <nav class="mobile-page-nav" aria-label="Job Kit pages" role="tablist">
     <button class="mobile-page-tab" id="mobile-tab-overview" type="button" role="tab" aria-controls="mobile-page-overview" aria-selected="true" data-mobile-page-target="overview" data-i18n="pageOverview">Overview</button>
@@ -2066,6 +2025,7 @@ Job Kit · App Store app self-check
       handoverPrompt: "Give me a clean handover for {site}. Open actions: {actions}. Tool issues: {issues}. Latest field updates: {updates}. Separate what is done, what is blocked, what the next crew needs, and which tools must move. Do not mark anything complete unless I confirm it.",
       updatePrompt: "I'm at {site}. Ask me one short text question at a time to capture a field update: what changed, what is blocked, what tool moved, and what the next crew needs. When I finish, summarize it and ask before writing it to job-kit-updates with the exact current time and my name.",
       toolPrompt: "Help me follow up on {tool} ({code}). It is currently {status}, last known at {location}, with {holder}. Ask what I want to confirm or change; do not update its location or status until I explicitly tell you.",
+      askFailed: "Couldn't reach the assistant — try again.",
       unknownError: "Unknown error"
     },
     zh: {
@@ -2206,6 +2166,7 @@ Job Kit · App Store app self-check
       handoverPrompt: "请整理 {site} 的清楚交接。未完成事项：{actions}。工具问题：{issues}。最近现场更新：{updates}。分别说明已完成、被阻塞、下一班需要什么、哪些工具要移动。除非我确认，不要把任何事项标成完成。",
       updatePrompt: "我现在在 {site}。请一次只问一个简短的文字问题，帮我记录现场更新：发生了什么、哪里受阻、哪件工具移动了、下一班需要知道什么。全部问完后先总结，并在写入 job-kit-updates 前询问确认，使用准确的当前时间和我的名字。",
       toolPrompt: "请帮我跟进 {tool}（{code}）。目前状态是 {status}，最后已知位置为 {location}，领用人是 {holder}。先问我想确认或修改什么；除非我明确说明，不要更新位置或状态。",
+      askFailed: "没能联系上助手，请重试。",
       unknownError: "未知错误"
     }
   };
@@ -2224,6 +2185,11 @@ Job Kit · App Store app self-check
   let statusTimer = 0;
   const mobilePageMedia = window.matchMedia("(max-width: 680px)");
   const MOBILE_PAGES = new Set(["overview", "jobs", "tools", "updates"]);
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   const byPosition = (a, b) => (Number(a.position) || 0) - (Number(b.position) || 0);
   const clamp = (value, min, max) => Math.max(min, Math.min(max, Number(value) || 0));
@@ -2418,6 +2384,12 @@ Job Kit · App Store app self-check
         applyStatus();
       }, 4200);
     }
+  }
+
+  function clearStatus() {
+    clearTimeout(statusTimer);
+    statusState = null;
+    applyStatus();
   }
 
   function applyStatus() {
@@ -3091,38 +3063,83 @@ Job Kit · App Store app self-check
     renderComposer();
   };
 
-  document.getElementById("setup-button").onclick = () => oma.sendMessage(t("setupPrompt"));
+  // All assistant hand-offs remain useful in standalone because the runtime degrades them to a
+  // clipboard copy. Await each bridge, suppress repeat clicks, and surface only real failures:
+  // `{isError: true, degraded: "clipboard"}` is a completed fallback, not an error.
+  const setupButton = document.getElementById("setup-button");
+  setupButton.onclick = async () => {
+    clearStatus();
+    setupButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("setupPrompt"));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      setupButton.disabled = false;
+    }
+  };
   document.getElementById("bulk-tool-button").onclick = importTools;
 
-  document.getElementById("handover-button").onclick = () => {
+  const handoverButton = document.getElementById("handover-button");
+  handoverButton.onclick = async () => {
     const summary = selectedJobSummary();
     if (!summary) return;
-    oma.sendMessage(t("handoverPrompt", {
-      site: field(summary.job, "site"),
-      actions: summary.actions,
-      issues: summary.issues,
-      updates: summary.updates
-    }));
+    clearStatus();
+    handoverButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("handoverPrompt", {
+        site: field(summary.job, "site"),
+        actions: summary.actions,
+        issues: summary.issues,
+        updates: summary.updates
+      }));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      handoverButton.disabled = false;
+    }
   };
 
-  function sendUpdatePrompt() {
+  async function sendUpdatePrompt(event) {
     const job = jobById(selectedJobId);
     if (!job) return;
-    oma.sendMessage(t("updatePrompt", { site: field(job, "site") || field(job, "title") }));
+    const button = event.currentTarget;
+    clearStatus();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("updatePrompt", { site: field(job, "site") || field(job, "title") }));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      button.disabled = false;
+    }
   }
 
   document.getElementById("update-button").onclick = sendUpdatePrompt;
   document.getElementById("ai-update-button").onclick = sendUpdatePrompt;
-  document.getElementById("ask-holder-button").onclick = () => {
+  const askHolderButton = document.getElementById("ask-holder-button");
+  askHolderButton.onclick = async () => {
     const tool = model.tools.find((item) => item.id === selectedToolId);
     if (!tool) return;
-    oma.sendMessage(t("toolPrompt", {
-      tool: field(tool, "name"),
-      code: field(tool, "code") || "—",
-      status: statusLabel(field(tool, "status")),
-      location: field(tool, "location") || t("noDetail"),
-      holder: field(tool, "holder") || t("noHolder")
-    }));
+    clearStatus();
+    askHolderButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("toolPrompt", {
+        tool: field(tool, "name"),
+        code: field(tool, "code") || "—",
+        status: statusLabel(field(tool, "status")),
+        location: field(tool, "location") || t("noDetail"),
+        holder: field(tool, "holder") || t("noHolder")
+      }));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      askHolderButton.disabled = false;
+    }
   };
 
   oma.ready(requestRefresh);

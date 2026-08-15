@@ -61,7 +61,12 @@ STRUCTURE RULES
   body {
     min-height: 100vh;
     padding: 18px;
-    overflow-x: hidden;
+    /* clip, not hidden: both stop a stray wide child from adding a horizontal scrollbar, but
+       `hidden` makes this element a scroll container — and a scroll container on <body> is what
+       the stage contract's overflow rule exists to keep off (it swallows the wheel on a
+       fixed-height frame and gives `position:sticky` a box that can never scroll). `clip` refuses
+       the scroll instead of offering one nobody can reach. */
+    overflow-x: clip;
     background: transparent;
     color: var(--text);
     font: var(--font-text-md-size, 14px)/1.45 var(--font);

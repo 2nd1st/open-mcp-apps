@@ -20,7 +20,7 @@ import { existsSync, unlinkSync, readFileSync, readdirSync } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-import { openStore } from "../src/store.mjs";
+import { openStore, SCHEMA_VERSION } from "../src/store.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "ledger.db");
@@ -173,7 +173,7 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
   s2.close();
 }
 
-console.log("7b. the door: fresh + v4 + v5 open; anything older refuses with the way forward");
+console.log("7b. the door: fresh + v4 + v5 + v6 open; anything older refuses with the way forward");
 // v4 is the shape of the LAST PUBLIC RELEASE (v0.4.2), so this is the case with real users behind
 // it: a v4 store must climb BOTH rungs in one open (v4→v5→v6) and arrive with every atom intact.
 {
@@ -243,7 +243,7 @@ console.log("7b. the door: fresh + v4 + v5 open; anything older refuses with the
       migrated.getApp("c").ui.includes("\r\n") && !migrated.getApp("c").ui.includes("oma-manifest"));
     ok("writes work against the migrated db",
       migrated.execute({ type: "add_item", command_id: "post-mig", collection: "legacy-coll", fields: { title: "after" }, actor: "human" }).ok === true);
-    ok("…and the store is stamped v6", migrated.db.pragma("user_version", { simple: true }) === 6);
+    ok("…and the store is stamped with the current version", migrated.db.pragma("user_version", { simple: true }) === SCHEMA_VERSION);
     migrated.close();
     for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
   }
@@ -295,7 +295,7 @@ console.log("7b. the door: fresh + v4 + v5 open; anything older refuses with the
 
     v4(OLD);
     const m = openStore(OLD);
-    ok("v4 → v6: the store climbed both rungs in ONE open", m.db.pragma("user_version", { simple: true }) === 6);
+    ok("v4 → current: the store climbed EVERY rung in ONE open", m.db.pragma("user_version", { simple: true }) === SCHEMA_VERSION);
     const cols = (t) => m.db.pragma(`table_info(${t})`).map((c) => c.name);
     ok("the reservations nothing consumed are gone from every table",
       !cols("item").includes("principal") && !cols("change_event").includes("principal") &&
@@ -433,6 +433,67 @@ console.log("7b. the door: fresh + v4 + v5 open; anything older refuses with the
       /amb-x@2: save_event_without_revision/.test(stillBad || "") &&
       /amb-y@3: save_event_without_revision/.test(stillBad || ""), (stillBad || "opened").slice(0, 200));
     reset();
+  }
+  // (f) v6 — the store v0.5.0 released, so the rung with real users behind it — takes v6→v7.
+  // The rung adds the live pointer and touches nothing else, which is most of what is asserted
+  // here: a display's bookmark must not be able to disturb the ledger it sits beside.
+  {
+    const raw = new Database(OLD);
+    raw.exec(`CREATE TABLE item (id TEXT PRIMARY KEY, collection TEXT NOT NULL, grp TEXT NOT NULL DEFAULT '', position REAL NOT NULL DEFAULT 0, fields TEXT NOT NULL DEFAULT '{}', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL);
+              CREATE INDEX idx_item_collection ON item(collection);
+              CREATE INDEX idx_item_coll_grp_pos ON item(collection, grp, position);
+              CREATE TABLE app (name TEXT PRIMARY KEY, version INTEGER NOT NULL DEFAULT 1, ui TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', author TEXT NOT NULL DEFAULT 'agent', scene TEXT, manifest TEXT, kind TEXT NOT NULL DEFAULT 'app', visibility TEXT NOT NULL DEFAULT 'listed', updated_at TEXT NOT NULL);
+              CREATE TABLE app_history (name TEXT NOT NULL, version INTEGER NOT NULL, ui TEXT NOT NULL, manifest TEXT, ts TEXT NOT NULL, PRIMARY KEY (name, version));
+              CREATE TABLE file (app TEXT NOT NULL, path TEXT NOT NULL, sha256 TEXT NOT NULL, size INTEGER NOT NULL, mime TEXT NOT NULL DEFAULT 'application/octet-stream', version INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL, PRIMARY KEY (app, path));
+              CREATE INDEX idx_file_app ON file(app);
+              CREATE INDEX idx_file_sha ON file(app, sha256);
+              CREATE TABLE change_event (seq INTEGER PRIMARY KEY AUTOINCREMENT, aggregate_id TEXT NOT NULL, command_id TEXT NOT NULL UNIQUE, event_type TEXT NOT NULL, payload TEXT NOT NULL, actor TEXT NOT NULL, host TEXT, ts TEXT NOT NULL);
+              CREATE INDEX idx_event_settings ON change_event(seq) WHERE json_extract(payload, '$.collection') = 'settings';
+              CREATE INDEX idx_event_file ON change_event(seq) WHERE event_type = 'file_written' OR event_type = 'file_deleted';
+              CREATE INDEX idx_event_collection ON change_event(json_extract(payload, '$.collection'), seq);`);
+    raw.prepare("INSERT INTO item (id, collection, fields, created_at, updated_at) VALUES ('v6-1','reading',?, 'T','T')").run('{"title":"before"}');
+    raw.prepare("INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, ts) VALUES ('v6-1','c1','item_added',?,'human','T')")
+       .run(JSON.stringify({ collection: "reading", fields: { title: "before" } }));
+    raw.prepare("INSERT INTO app (name, version, ui, updated_at) VALUES ('bill-calendar', 1, '<p>x</p>', 'T')").run();
+    raw.pragma("user_version = 6");
+    raw.close();
+
+    const s = openStore(OLD);
+    ok("v6 → v7: the store is stamped with the current version", s.db.pragma("user_version", { simple: true }) === SCHEMA_VERSION);
+    ok("…and the rung's whole job is one added table", !!s.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='live_pointer'").get());
+    ok("…with the v6 rows and ledger untouched",
+      s.snapshot("reading").items.length === 1 && s.dataVersion().seq === 1);
+    // A store that has never opened an app has no pointer — null is the answer /live renders as
+    // "waiting", NOT a missing row to be papered over with a made-up name.
+    ok("a store nobody has opened an app in reports no live pointer", s.livePointer() === null);
+    ok("…and its live_n probe reads 0 rather than throwing", s.dataVersion().live_n === 0);
+
+    const seqBefore = s.dataVersion().seq;
+    const evBefore = s.db.prepare("SELECT COUNT(*) AS n FROM change_event").get().n;
+    const t1 = s.touchLiveApp("bill-calendar");
+    ok("touchLiveApp records the app, with a counter that starts at 1",
+      t1.app === "bill-calendar" && t1.n === 1 && typeof t1.ts === "string");
+    ok("…and livePointer reads back exactly that", JSON.stringify(s.livePointer()) === JSON.stringify(t1));
+    // THE POINT OF THE WHOLE DESIGN: opening an app is not a data change. If this ever appends an
+    // event, every widget in every host sees a moved seq and refetches because somebody GLANCED.
+    ok("…and it wrote NOTHING to the ledger — no event, no moved seq",
+      s.db.prepare("SELECT COUNT(*) AS n FROM change_event").get().n === evBefore && s.dataVersion().seq === seqBefore);
+    ok("…while live_n did move, which is how another process notices", s.dataVersion().live_n === 1);
+
+    const t2 = s.touchLiveApp("settings");
+    ok("a second open overwrites in place and advances the counter", t2.app === "settings" && t2.n === 2);
+    ok("…and the table still holds exactly ONE row (the CHECK is the schema saying so)",
+      s.db.prepare("SELECT COUNT(*) AS n FROM live_pointer").get().n === 1);
+    ok("re-opening the SAME app still advances n — a display reloaded since then must still switch",
+      s.touchLiveApp("settings").n === 3);
+    ok("a name that is not an app name is refused, and the pointer keeps what it had",
+      s.touchLiveApp("../etc/passwd") === null && s.livePointer().app === "settings");
+    s.close();
+    // …and it survives a reopen, because the display outlives the process that wrote it.
+    const s2 = openStore(OLD);
+    ok("the pointer survives a reopen", s2.livePointer().app === "settings" && s2.dataVersion().live_n === 3);
+    s2.close();
+    for (const f of [OLD, OLD + "-wal", OLD + "-shm"]) if (existsSync(f)) unlinkSync(f);
   }
 }
 

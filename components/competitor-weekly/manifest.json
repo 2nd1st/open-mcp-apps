@@ -72,5 +72,8 @@
       "strict": true
     }
   },
-  "kind": "app"
+  "kind": "app",
+  "stage": {
+    "width": "wide"
+  }
 }

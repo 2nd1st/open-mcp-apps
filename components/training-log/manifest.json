@@ -81,5 +81,8 @@
   "kind": "app",
   "scene": {
     "category_id": "input-cocreate"
+  },
+  "stage": {
+    "width": "column"
   }
 }

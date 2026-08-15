@@ -9,11 +9,8 @@
 
 <!-- gpt-image production seed spec: square 1:1, photorealistic, generated in one batch per topic. Store fixture images are AI-generated preview references and are labeled as such in media_source/media_credit. -->
 <style>
-  body {
-    max-width: 760px;
-    margin-inline: auto;
-    background: transparent;
-  }
+  /* No body rule. The private 760px column that used to live here is manifest.stage.width now;
+     the ground, outer padding and chat frame belong to the kit's stage contract. */
 
   button,
   input,
@@ -21,52 +18,25 @@
     letter-spacing: 0;
   }
 
+  /* `.app` is `.k-stage` now. There was no self-drawn card frame to strip; position is
+     load-bearing because the detail overlay is absolute against this root, and min-width keeps
+     its gallery and editor children shrinkable. */
   .app {
     position: relative;
     min-width: 0;
   }
 
-  .app-bar {
-    align-items: center;
-    gap: var(--k-s2);
-    padding: 10px 15px 9px;
-  }
+  /* `.app-bar` is `.k-appbar` now: row, gaps, padding, mark box and type scale come from the kit,
+     along with the chat-only rule under the bar. The mark keeps its paint below — identity is
+     content, and the stage contract strips frames, never faces. */
 
   .brand-mark {
-    width: 36px;
-    height: 36px;
-    flex: none;
-    display: grid;
-    place-items: center;
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
     color: var(--color-text-info, var(--color-ring-primary));
     background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, transparent);
   }
 
-  .brand-mark svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin: 0 0 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
   .identity .k-h1 {
-    margin: 0;
-    font-size: 19px;
-    letter-spacing: 0;
     overflow-wrap: anywhere;
   }
 
@@ -83,7 +53,9 @@
     display: flex;
     align-items: center;
     gap: var(--k-s2);
-    margin: 0 15px 8px;
+    /* Pull this edge over the app bar's chat-only rule: the functional strip stays attached to
+       the hero without turning its own top border plus the kit's rule into a two-line seam. */
+    margin: -1px 15px 8px;
     padding: 8px;
     border: 1px solid var(--color-border-primary);
     border-radius: var(--border-radius-md);
@@ -803,11 +775,6 @@
   }
 
   @media (max-width: 520px) {
-    .app-bar {
-      gap: 6px;
-      padding-inline: 10px;
-    }
-
     .bar-action {
       width: 40px;
       min-width: 40px;
@@ -833,7 +800,7 @@
 
     .ask-strip {
       min-height: 52px;
-      margin: 0 10px 7px;
+      margin: -1px 10px 7px;
       padding: 6px;
     }
 
@@ -978,17 +945,17 @@
 </style>
 </head>
 <body>
-  <main class="app" id="appRoot">
-    <header class="k-row app-bar">
-      <div class="brand-mark" aria-hidden="true">
+  <main class="app k-stage" id="appRoot">
+    <header class="app-bar k-appbar">
+      <div class="brand-mark k-appmark" aria-hidden="true">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
           <path d="M4 5.5h10.5A2.5 2.5 0 0 1 17 8v11H6.5A2.5 2.5 0 0 1 4 16.5z"/>
           <path d="M7 2.5h10.5A2.5 2.5 0 0 1 20 5v11"/>
           <path d="m8.5 10 2 2 4-4"/>
         </svg>
       </div>
-      <div class="identity">
-        <p class="eyebrow" data-i18n="eyebrow">Visual knowledge index</p>
+      <div class="identity k-appcopy">
+        <p class="eyebrow k-eyebrow" data-i18n="eyebrow">Visual knowledge index</p>
         <h1 class="k-h1" data-i18n="app_title">Knowledge Cards</h1>
       </div>
       <button class="k-btn sec bar-action" id="harvestButton" type="button">
@@ -1081,6 +1048,11 @@
   <script type="module">
     const oma = window.oma;
 
+    // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+    // browser viewer or a panel host, both already framed, so the kit draws no card; absent = a
+    // widget in someone's conversation, where the card is ours to draw.
+    if (oma.standalone) document.body.classList.add("standalone");
+
     const STR = {
       en: {
         page_title: "Knowledge Cards - Keep useful answers in a visual library",
@@ -1143,6 +1115,7 @@
         delete: "Delete",
         delete_error: "Delete failed. Try again.",
         sort_error: "The sort preference was not saved. Try again.",
+        ask_error: "Couldn't reach the assistant — try again.",
         ask_prompt: "If I attached a photo, inspect that original image closely; otherwise use my text question. Explain the answer clearly, then save the result as a knowledge card while preserving the original photo.",
         ask_user_prefix: "Question: ",
         harvest_prompt: "Review the image and text questions I have already asked in this conversation, and save the answers with long-term value to knowledge-cards. Preserve an uploaded photo instead of replacing it with generated art: use file_write to save it to cards/<id>.<ext>, set media_source to user, and keep the original context in media_credit. For a useful web reference, save a local copy rather than hotlinking it, set media_source to web, and record the publisher and page in media_credit. For an AI-generated explanatory image, set media_source to ai and label it plainly; never present generated artwork as a user photo. Use addItem with title, answer, topic, image, image_alt, media_ratio, media_source, media_credit, asked_at, and source_note. Use media_ratio 4:3, 3:4, 1:1, 16:9, or 3:2 to match the real image. Text-only answers do not need an image. Store the original absolute ISO time."
@@ -1208,6 +1181,7 @@
         delete: "删除",
         delete_error: "删除失败，请重试。",
         sort_error: "排序偏好没有保存，请重试。",
+        ask_error: "没能联系上助手，请重试。",
         ask_prompt: "如果我附了照片，请认真查看这张原始照片；否则就根据文字问题回答。解释清楚后，把答案保存成知识卡片，并保留原始照片。",
         ask_user_prefix: "问题：",
         harvest_prompt: "请回看这段对话里我已经问过的图片和文字问题，把有长期价值的答案整理进 knowledge-cards。用户上传的照片必须保留原图，不要替换成生成插画：先用 file_write 保存到 cards/<id>.<ext>，把 media_source 写成 user，并在 media_credit 保留原始场景。网络参考图请保存本地副本而不是直接热链，把 media_source 写成 web，并在 media_credit 记录发布方和页面。AI 生成的解释图把 media_source 写成 ai，并明确标注；不能把生成图伪装成用户实拍。addItem 写入 title、answer、topic、image、image_alt、media_ratio、media_source、media_credit、asked_at 和 source_note。media_ratio 按真实图片填写 4:3、3:4、1:1、16:9 或 3:2；纯文字答案不需要配图。日期请写当时的绝对 ISO 时间。"
@@ -1414,18 +1388,41 @@
       document.getElementById("writeError").hidden = true;
     };
 
-    const sendHarvestRequest = () => {
-      oma.sendMessage(t("harvest_prompt"));
+    // These hand-offs stay visible in standalone: sendMessage's clipboard fallback is a working
+    // feature, not an absent one. A degraded clipboard result is therefore not an error.
+    const sendHarvestRequest = async (event) => {
+      const button = event.currentTarget;
+      hideError();
+      button.disabled = true;
+      try {
+        const result = await oma.sendMessage(t("harvest_prompt"));
+        if (result && result.isError === true && !result.degraded) showError(t("ask_error"));
+      } catch (error) {
+        showError(String(error?.message || error || t("ask_error")));
+      } finally {
+        button.disabled = false;
+      }
     };
 
-    const sendAskRequest = () => {
+    const sendAskRequest = async () => {
       const input = document.getElementById("askInput");
+      const button = document.getElementById("askSubmit");
+      if (button.disabled) return;
       const question = input.value.trim();
       const message = question
         ? `${t("ask_prompt")}\n\n${t("ask_user_prefix")}${question}`
         : t("ask_prompt");
-      oma.sendMessage(message);
+      hideError();
+      button.disabled = true;
       input.value = "";
+      try {
+        const result = await oma.sendMessage(message);
+        if (result && result.isError === true && !result.degraded) showError(t("ask_error"));
+      } catch (error) {
+        showError(String(error?.message || error || t("ask_error")));
+      } finally {
+        button.disabled = false;
+      }
     };
 
     const makeTopicChip = (label, value, count) => {
@@ -1622,7 +1619,6 @@
       action.type = "button";
       action.prepend(icon("message"));
       action.onclick = sendHarvestRequest;
-      action.hidden = !!oma.standalone;
       empty.append(sketch, title, copy, action);
       shell.append(empty);
       return shell;
@@ -1839,9 +1835,17 @@
       const followUp = element("button", "k-btn sec", t("follow_up"));
       followUp.type = "button";
       followUp.prepend(icon("message"));
-      followUp.hidden = !!oma.standalone;
-      followUp.onclick = () => {
-        oma.sendMessage(t("follow_prompt", { title: titleOf(item), answer: answerOf(item) }));
+      followUp.onclick = async () => {
+        hideError();
+        followUp.disabled = true;
+        try {
+          const result = await oma.sendMessage(t("follow_prompt", { title: titleOf(item), answer: answerOf(item) }));
+          if (result && result.isError === true && !result.degraded) showError(t("ask_error"));
+        } catch (error) {
+          showError(String(error?.message || error || t("ask_error")));
+        } finally {
+          followUp.disabled = false;
+        }
       };
 
       const remove = element("button", "k-btn danger danger-zone", t("delete"));
@@ -1885,7 +1889,6 @@
       renderSort();
       renderGallery(items);
       document.getElementById("clearSearch").hidden = !query;
-      document.getElementById("harvestButton").hidden = !!oma.standalone;
       if (openId) {
         const item = items.find((entry) => entry.id === openId);
         if (item) renderDetail(item);
@@ -1905,9 +1908,9 @@
       document.getElementById("searchInput").focus();
     };
 
-    document.getElementById("askForm").onsubmit = (event) => {
+    document.getElementById("askForm").onsubmit = async (event) => {
       event.preventDefault();
-      sendAskRequest();
+      await sendAskRequest();
     };
 
     for (const button of document.querySelectorAll("[data-sort]")) {

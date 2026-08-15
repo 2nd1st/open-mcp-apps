@@ -18,77 +18,28 @@
     --danger-wash: color-mix(in oklab, var(--danger) 8%, transparent);
     --positive-wash: color-mix(in oklab, var(--positive) 9%, transparent);
   }
-  html, body { margin: 0; }
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
-  }
-  .app {
-    position: relative;
-    width: min(100%, 920px);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .app::before {
-    position: absolute;
-    top: -112px;
-    right: -54px;
-    width: 230px;
-    height: 230px;
-    border: 30px solid color-mix(in oklab, var(--accent) 6%, transparent);
-    border-radius: var(--border-radius-full, 999px);
-    content: "";
-    pointer-events: none;
-  }
+  /* No body or root rule. Padding, ground, width and the one chat frame are the kit's stage
+     contract now; the old `.app` positioning context existed only for the identity ring, which
+     belongs to the overview content band below instead of to the frame around the whole app. */
   .topbar {
     position: relative;
     z-index: 1;
-    display: flex;
     min-height: 66px;
-    align-items: center;
-    gap: 12px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
+  /* `.topbar` is `.k-appbar` now: row, gaps, padding, the mark's box and the title/eyebrow scale
+     come from the kit, along with the rule drawn only when this app is a card in a chat. The mark
+     keeps its paint because identity is content, and stripping a frame must not strip a face. */
   .brand-mark {
-    display: grid;
-    width: 39px;
-    height: 39px;
-    flex: 0 0 auto;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--color-border-primary));
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 15%, transparent), color-mix(in oklab, var(--positive) 6%, transparent));
     color: var(--accent);
   }
   .brand-mark svg {
-    width: 21px;
-    height: 21px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.7;
-  }
-  .identity { min-width: 0; }
-  .eyebrow {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font: 700 10px/1 var(--font-mono);
-    letter-spacing: .1em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.015em;
   }
   .sync-state {
     display: inline-flex;
@@ -119,10 +70,27 @@
     display: grid;
     grid-template-columns: minmax(230px, 1.5fr) repeat(3, minmax(92px, .72fr));
     align-items: stretch;
+    overflow: clip;
     border-bottom: 1px solid var(--color-border-secondary);
     background: linear-gradient(110deg, color-mix(in oklab, var(--accent) 8%, var(--color-background-secondary)), color-mix(in oklab, var(--positive) 3%, var(--color-background-secondary)));
     font-variant-numeric: tabular-nums;
   }
+  /* The 230px ring is this app's face, not the deleted card chrome. It lives on the first content
+     band now; clip, not hidden, keeps the arc inside that band without making it a scroll
+     container. */
+  .overview::before {
+    position: absolute;
+    top: -112px;
+    right: -54px;
+    z-index: 0;
+    width: 230px;
+    height: 230px;
+    border: 30px solid color-mix(in oklab, var(--accent) 6%, transparent);
+    border-radius: var(--border-radius-full, 999px);
+    content: "";
+    pointer-events: none;
+  }
+  .overview > * { position: relative; z-index: 1; }
   .overview-lead {
     min-width: 0;
     padding: 16px 18px;
@@ -382,13 +350,17 @@
   .app-foot {
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 10px 17px;
     border-top: 1px solid var(--color-border-secondary);
     background: color-mix(in oklab, var(--color-background-secondary) 70%, transparent);
     color: var(--color-text-tertiary);
     font-size: 10.5px;
+    text-align: center;
   }
+  /* The frame is gone, so the filled band, icon and rule stay together as a deliberate page
+     endcap rather than leaving a lone separator at the bottom of the content. */
   .app-foot svg {
     width: 14px;
     height: 14px;
@@ -410,8 +382,6 @@
     .status { padding-inline: 6px; }
   }
   @media (max-width: 570px) {
-    body { padding: 10px; }
-    .topbar { padding-inline: 13px; }
     .sync-state { padding-inline: 7px; }
     .sync-state span { display: none; }
     .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
@@ -437,18 +407,17 @@
     .attention-card .amount { position: absolute; top: 18px; right: 13px; }
     .client-id { padding-right: 78px; }
   }
-  [data-density="compact"] body { padding: 10px; }
   [data-density="compact"] .workspace { gap: 12px; padding: 13px; }
 </style>
 </head>
 <body>
-<main class="app">
-  <header class="topbar">
-    <div class="brand-mark" aria-hidden="true">
+<main class="app k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M4 19V8m6 11V4m6 15v-7m4 7H2"></path><path d="m3 10 7-6 6 8 5-5"></path></svg>
     </div>
-    <div class="identity">
-      <div class="eyebrow" id="eyebrow">Money in motion</div>
+    <div class="identity k-appcopy">
+      <div class="eyebrow k-eyebrow" id="eyebrow">Money in motion</div>
       <h1 id="app-title">Client Pipeline</h1>
     </div>
     <div class="sync-state" id="sync-state" aria-label="Synced with your AI"><span id="sync-label">Synced with your AI</span></div>
@@ -715,6 +684,11 @@
       <div class="steady-list">${steady.map(steadyCard).join("") || `<div class="empty">${escapeHtml(t("noOtherOpen"))}</div>`}</div>
     </section>`;
   }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready(render);
   oma.onChange(render);

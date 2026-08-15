@@ -4,5 +4,8 @@
     "locale",
     "date_format",
     "confirm_delete"
-  ]
+  ],
+  "stage": {
+    "width": "wide"
+  }
 }

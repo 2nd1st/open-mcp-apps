@@ -326,6 +326,40 @@ console.log("\n2f. the height unpin reaches the documents a HOST measures, from 
     ok("…a NUMBER, bounded by the screen reading (5000px of app, 900px screen ⇒ 900)",
       posted[0] && posted[0].h === 900, JSON.stringify(posted));
   }
+  {
+    // …AND THE SAME THING AFTER MINIFICATION, which is the file that actually ships.
+    //
+    // The check above reads the SOURCE module, where every injected function still has the name
+    // this file wrote. dist/shell.js is built with minify:true, and the bodies are injected by
+    // toString(): a body that calls a SIBLING calls it by whatever name the bundler left there.
+    // 0.5.0 shipped exactly that hole — the helper was declared as the literal `screenHeightCap`
+    // while the minified caller asked for `Eh` — so every sandboxed child threw a ReferenceError
+    // inside omaSendHeight's own catch and NO embed ever reported a height (measured in Chrome:
+    // every frame sat at its initial 140px forever). Nothing that reads src/ can see that, so this
+    // one builds the artifact and runs the injected source the way the browser does.
+    const { build } = await import("esbuild");
+    const out = await build({
+      entryPoints: [join(ROOT, "src", "runner.mjs")],
+      bundle: true, format: "esm", platform: "browser", target: "es2022", minify: true, write: false,
+    });
+    const min = await import("data:text/javascript;base64," + Buffer.from(out.outputFiles[0].text).toString("base64"));
+    const preview = min.composePreviewDoc("<div>hi</div>", { name: "a" });
+    const src = preview.slice(preview.lastIndexOf("<script>") + 8, preview.lastIndexOf("</script>"));
+    const posted = [];
+    const parent = { postMessage: (m) => posted.push(m) };
+    const style = { setProperty() {} };
+    const body = { style, scrollHeight: 5000, children: [], getBoundingClientRect: () => ({ top: 0 }) };
+    const win = { parent, screen: { height: 900 }, innerHeight: 400, addEventListener() {} };
+    const doc = { body, documentElement: { style }, readyState: "complete", addEventListener() {} };
+    let threw = null;
+    try { new Function("window", "document", "parent", src)(win, doc, parent); }
+    catch (e) { threw = e; }
+    // The ReferenceError this pins never escapes — it is caught and dropped — so the assertion has
+    // to be about the POST, never about a throw.
+    ok("the MINIFIED broadcast still posts: every name its bodies call is one the child has",
+      threw === null && posted.length === 1 && posted[0].h === 900,
+      String(threw) + JSON.stringify(posted));
+  }
   for (const [what, doc] of docs.slice(0, 2)) {
     ok(`${what} injects it as a CLASSIC script — a module is deferred, and "before anyone measures" is the point`,
       /<script data-oma="height-unpin">/.test(doc) && !/type="module"[^>]*data-oma="height-unpin"/.test(doc));

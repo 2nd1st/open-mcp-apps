@@ -8,12 +8,9 @@
 <meta name="oma-category" content="Family">
 
 <style>
-  body {
-    max-width: 760px;
-    margin-inline: auto;
-    background: transparent;
-    color: var(--color-text-primary);
-  }
+  /* No body rule. The private 760px cap is a stage declaration now
+     (manifest.stage.width: column), while the outer padding and ground belong to the kit's stage
+     contract; colour already comes from the kit for every app. */
 
   [hidden] {
     display: none !important;
@@ -26,62 +23,30 @@
     letter-spacing: 0;
   }
 
-  .app {
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-  }
+  /* `.app` is `.k-stage` now: the kit draws this full card frame once in a chat and draws no
+     frame when the app owns the screen. The old rule was frame-only, so there was no
+     layout-bearing declaration to keep. */
 
+  /* `.app-bar` is `.k-appbar` now: row, gaps, padding, the mark's box and the title/eyebrow scale
+     come from the kit, along with the rule drawn only when this is a chat card. */
   .app-bar {
     min-height: 66px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
 
+  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
+     strips frames, never faces. */
   .app-mark {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    flex: none;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 36%, var(--color-border-primary));
-    border-radius: var(--border-radius-sm, 6px);
     background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, var(--color-background-primary));
     color: var(--color-text-info, var(--color-ring-primary));
   }
 
   .app-mark svg {
-    width: 26px;
-    height: 26px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.45;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .app-name {
-    margin: 0;
-    font-size: 19px;
-    font-weight: 680;
-    letter-spacing: 0;
-    line-height: 1.2;
   }
 
   .app-actions {
@@ -1098,7 +1063,6 @@
   }
 
   @media (max-width: 560px) {
-    .app-bar,
     .overview,
     .dinner-band,
     .editor-band,
@@ -1221,17 +1185,17 @@
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="app-bar k-row">
-    <div class="app-mark" aria-hidden="true">
+<div class="app k-stage">
+  <header class="app-bar k-appbar">
+    <div class="app-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 28 28">
         <path d="M4 12.5 14 4l10 8.5V24H4z"/>
         <path d="M9 24v-7h10v7M9 10.5h2M17 10.5h2"/>
         <path d="M21.5 4.5v4" opacity=".55"/>
       </svg>
     </div>
-    <div class="identity">
-      <div class="eyebrow" data-i18n="eyebrow"></div>
+    <div class="identity k-appcopy">
+      <div class="eyebrow k-eyebrow" data-i18n="eyebrow"></div>
       <h1 class="app-name" data-i18n="appName"></h1>
     </div>
     <div class="app-actions k-row">
@@ -1640,6 +1604,7 @@
       readFailed: "Could not refresh the family week: {error}",
       saveFailed: "Nothing was saved: {error}",
       invalidData: "The {collection} collection returned invalid data.",
+      askFailed: "Couldn't reach the assistant — try again.",
       produce: "Produce",
       pantry: "Pantry",
       dairy: "Dairy",
@@ -1767,6 +1732,7 @@
       readFailed: "无法刷新全家这一周：{error}",
       saveFailed: "没有保存：{error}",
       invalidData: "{collection} 集合返回了无效数据。",
+      askFailed: "没能联系上助手，请重试。",
       produce: "果蔬",
       pantry: "食品柜",
       dairy: "乳品",
@@ -1831,6 +1797,11 @@
   let weekendSelection = null;
   let shoppingFormOpen = false;
   let boardFormOpen = false;
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   function language() {
     return localeCode().toLowerCase().startsWith("zh") ? "zh" : "en";
@@ -1992,6 +1963,41 @@
       statusTimer = setTimeout(() => {
         strip.hidden = true;
       }, 3400);
+    }
+  }
+
+  function showError(message) {
+    showStatus(message, "bad", true);
+    statusTimer = setTimeout(() => {
+      document.getElementById("statusStrip").hidden = true;
+    }, 7000);
+  }
+
+  function clearError() {
+    const strip = document.getElementById("statusStrip");
+    const badge = document.getElementById("statusMessage");
+    if (badge.classList.contains("bad")) {
+      clearTimeout(statusTimer);
+      strip.hidden = true;
+    }
+  }
+
+  // AWAITED, and the button is dead while the hand-off is in flight: this crosses a bridge with
+  // a deadline, so a live button would queue duplicate prompts into someone's chat.
+  //
+  // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage answers
+  // `{isError: true, degraded: "clipboard"}` after the runtime has already copied the prompt and
+  // told the user. Only an unsoftened error belongs in the app's existing status strip.
+  async function sendAssistantMessage(button, message) {
+    clearError();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(message);
+      if (result && result.isError === true && !result.degraded) showError(t("askFailed"));
+    } catch (error) {
+      showError(String(error?.message || error || t("askFailed")));
+    } finally {
+      button.disabled = false;
     }
   }
 
@@ -2300,7 +2306,9 @@
         "choreEmptyTitle",
         "choreEmptyBody",
         "setupChores",
-        () => oma.sendMessage(t("choresMessage"))
+        async (event) => {
+          await sendAssistantMessage(event.currentTarget, t("choresMessage"));
+        }
       ));
       return;
     }
@@ -2373,7 +2381,9 @@
         "datesEmptyTitle",
         "datesEmptyBody",
         "addDates",
-        () => oma.sendMessage(t("datesMessage"))
+        async (event) => {
+          await sendAssistantMessage(event.currentTarget, t("datesMessage"));
+        }
       ));
       return;
     }
@@ -2424,7 +2434,9 @@
       const actions = el("div", "k-row");
       const ask = el("button", "k-btn sec", t("askWeather"));
       ask.type = "button";
-      ask.onclick = () => askWeatherIdeas(iso);
+      ask.onclick = async (event) => {
+        await askWeatherIdeas(event.currentTarget, iso);
+      };
       const add = el("button", "k-btn ghost", t("addPlan"));
       add.type = "button";
       add.onclick = () => openWeekendEditor(iso, null);
@@ -2653,27 +2665,33 @@
     if (ok) closeWeekendEditor();
   }
 
-  function askWeatherIdeas(date) {
-    oma.sendMessage(t("weatherMessage", { date: formatLongDate(date) }));
+  async function askWeatherIdeas(button, date) {
+    await sendAssistantMessage(button, t("weatherMessage", { date: formatLongDate(date) }));
   }
 
-  function askPlanNextWeek() {
+  async function askPlanNextWeek(button) {
     const dates = nextWeekDates();
-    oma.sendMessage(t("planNextMessage", { start: toISO(dates[0]), end: toISO(dates[6]) }));
+    await sendAssistantMessage(button, t("planNextMessage", { start: toISO(dates[0]), end: toISO(dates[6]) }));
   }
 
-  function askChanges() {
-    oma.sendMessage(t("changesMessage"));
+  async function askChanges(button) {
+    await sendAssistantMessage(button, t("changesMessage"));
   }
 
-  function askMemorySeed() {
+  async function askMemorySeed(button) {
     const week = datesOfWeek();
-    oma.sendMessage(t("memoryMessage", { start: toISO(week[0]), end: toISO(week[6]) }));
+    await sendAssistantMessage(button, t("memoryMessage", { start: toISO(week[0]), end: toISO(week[6]) }));
   }
 
-  document.getElementById("planNextButton").onclick = askPlanNextWeek;
-  document.getElementById("changesButton").onclick = askChanges;
-  document.getElementById("memoryButton").onclick = askMemorySeed;
+  document.getElementById("planNextButton").onclick = async (event) => {
+    await askPlanNextWeek(event.currentTarget);
+  };
+  document.getElementById("changesButton").onclick = async (event) => {
+    await askChanges(event.currentTarget);
+  };
+  document.getElementById("memoryButton").onclick = async (event) => {
+    await askMemorySeed(event.currentTarget);
+  };
   document.getElementById("closeDinnerEditor").onclick = closeDinnerEditor;
   document.getElementById("cancelDinnerButton").onclick = closeDinnerEditor;
   document.getElementById("clearDinnerButton").onclick = clearDinner;

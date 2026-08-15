@@ -4,7 +4,11 @@
    It used to be inlined at seed time into the three system apps only, which made it
    invisible to authors: measured k- usage across four real apps was ZERO.
    All colors derive from host design tokens; fallback chains end in the shell fallbacks.
-   Compact on purpose; hard cap 10KB source — it ships with EVERY widget. */
+   Compact on purpose; hard cap 14KB source — it ships with EVERY widget. (Was 10KB until the
+   stage contract at the foot of this file: its DECLARATIONS alone are ~1.4 KB, so the old figure
+   could not have held even with zero prose. The cap is a real cost and moves only with a
+   measurement — this one: the kit is 13.3 KB of a ~517 KB rendered app document, 2.6%, next to a
+   456 KB runtime bundle. What it buys is the one layer an author cannot re-derive: page shape.) */
 :root{
   --k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));
   --k-ok:var(--color-text-success,#2e9e5b);
@@ -107,3 +111,51 @@ body{margin:0;padding:var(--k-s4);font-family:var(--font-sans);color:var(--color
 @keyframes k-in{from{opacity:0;translate:0 6px}}
 .k-pop{animation:k-pop 320ms var(--k-spring)}
 @keyframes k-pop{0%{scale:.7}60%{scale:1.08}100%{scale:1}}
+/* ── the stage contract (OPT-IN: nothing below matches a document that does not ask) ──────────
+   An app is either a CARD IN SOMEONE'S CONVERSATION or the OWNER OF A SCREEN, and the two want
+   opposite chrome. The judge is CONTEXT, never width: `body.standalone` (the app sets it from
+   `oma.standalone`, as settings/ui.html does at mount) = viewer or panel host, which frames the
+   page already; anything else = a widget in a chat, where the frame is ours to draw. Both hang off
+   ONE element the app opts in by naming — `.k-stage`, its root container and a DIRECT CHILD of
+   body. An app that never adds the class matches not one selector here; that is the whole
+   compatibility story for everything written before this block, and why `body{padding}` above
+   stays unconditional (repealing it would move ~10 apps that never overrode it).
+   `stage-column|wide|fluid` is stamped on <body> by the engine from the manifest's optional
+   `stage.width` (src/shell.mjs stampStage); column is the BASE rule, so an app that declares
+   nothing lands on the safe form with no class at all. */
+:root{--k-ground:var(--color-background-primary);--k-surface:var(--color-background-primary)}
+.k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+body.stage-wide .k-stage{max-width:1120px}
+body.stage-fluid .k-stage{max-width:none}
+/* Stage family: the app owns the screen, so its ground runs to every edge. Outer padding here
+   would read as a margin drawn around a page — and the frame around the page is the host's job. */
+body:has(>.k-stage){padding:0;background:var(--k-ground)}
+/* Chat family: ONE card, drawn once, by the kit. An app that draws its own gets two borders and
+   two radii the moment a host frames it — the double bezel this block exists to end. */
+body:not(.standalone):has(>.k-stage){padding:12px;background:transparent}
+body:not(.standalone)>.k-stage{
+  overflow:clip;   /* clip, not hidden: rounds the corners without becoming a scroll container */
+  border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,14px);
+  background:var(--k-surface);box-shadow:var(--shadow-md,var(--shadow-sm))}
+/* Chat, narrow: on a phone the host's widget frame IS the card, edge to edge, and a rounded box
+   inside it is the same double bezel one level up. VIEWPORT, not @container: in a widget the
+   viewport IS the host's frame, so it measures the very thing asked about, and a container query
+   would need `container-type` on body — a layout property the kit will not set on every app
+   unconditionally. 560 is the system apps' own step. */
+@media (max-width:560px){
+  body:not(.standalone):has(>.k-stage){padding:0}
+  body:not(.standalone)>.k-stage{border:0;border-radius:0;box-shadow:none}
+}
+/* The app bar: a CONTENT header (mark · eyebrow · name · tail), no rule and no fill of its own —
+   in the stage family it is simply the top of a page. Inside the chat card it becomes that card's
+   title bar, the one place a line under it means something. The mark gets its BOX here and its
+   PAINT from the app: identity is content, and stripping a frame must not strip a face. */
+.k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+.k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+.k-appbar .k-appmark svg{width:18px;height:18px}
+.k-appbar .k-appcopy{min-width:0;flex:1}
+/* margin:0 is load-bearing, not tidiness: an eyebrow is as often a <p> as a <span> (project-pulse
+   wrote one), and the UA's 1em block margin on <p> pushed the bar 30px taller than the design. */
+.k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+.k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}

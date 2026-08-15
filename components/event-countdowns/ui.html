@@ -15,52 +15,30 @@
     --bad: var(--color-text-danger, var(--color-ring-primary));
     --ink-4: color-mix(in oklab, var(--color-text-primary) 4%, transparent);
   }
-  body {
-    margin: 0;
-    padding: 14px;
-    overflow: hidden;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-text-md-size, 14px);
-  }
+  /* No body rule at all. Padding, ground and the frame are the kit's stage contract now
+     (components/_system.css, keyed on `.k-stage` below); colour, font and margin the kit already
+     set for every app. The `overflow: hidden` that used to sit here was the worst of the three:
+     on a fixed-height frame it made the root a scroll container, so the wheel died and everything
+     below the fold was unreachable. */
   button, input { font: inherit; }
   button { color: inherit; }
   [hidden] { display: none !important; }
-  #app {
-    width: min(100%, 880px);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-width: 0;
-  }
+  /* The root is `.k-stage`: the kit draws one card in a chat and no card when this app owns the
+     screen. Its width track comes from manifest.stage.width, so the old private 880px frame is
+     intentionally gone. */
+  /* `.topbar` is `.k-appbar` now: row, gaps, padding, the mark's box, the title/eyebrow scale
+     and the chat-only rule below the bar all come from the kit. The app keeps its own minimum
+     height because that is part of this composition, not the shared frame. */
+  .topbar { min-height: 68px; }
+  /* The mark keeps its PAINT and loses its box: the gradient, accent ring and live dot are this
+     app's face, and the stage contract strips frames, never faces. `position: relative` remains
+     the containing block for that painted dot. */
   .brand-mark {
     position: relative;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
     border: 1px solid color-mix(in oklab, var(--info) 26%, transparent);
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg, color-mix(in oklab, var(--info) 17%, transparent), color-mix(in oklab, var(--good) 7%, transparent));
     color: var(--info);
   }
-  .brand-mark svg { position: absolute; inset: 8px; width: 20px; height: 20px; }
   .brand-mark::after {
     content: "";
     position: absolute;
@@ -72,18 +50,23 @@
     background: currentColor;
     box-shadow: 0 0 0 4px color-mix(in oklab, var(--info) 12%, transparent);
   }
-  /* House shell: mono kicker over the app name — the family marker every app carries. */
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  h1 { margin: 0; font-size: 16px; line-height: 1.2; letter-spacing: -.01em; }
+  /* `.kicker` is `.k-eyebrow` now; the kit owns its type scale and spacing. */
   #summary { margin-top: 3px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); }
+  /* Ask AI used to have no visible failure path. This small strip is the app's only error surface,
+     and its timer keeps a transient bridge failure from displacing the countdown. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+  .error-strip[hidden] { display: none; }
   .top-actions { display: flex; gap: 8px; margin-left: auto; }
   .btn {
     display: inline-flex;
@@ -467,11 +450,9 @@
     #saveEvent { grid-column: 1 / -1; }
   }
   @media (max-width: 640px) {
-    body { padding: 8px; }
-    #app { border-radius: var(--border-radius-md); }
+    /* Narrow: the outer padding, border and radius belong to the kit's stage contract now. The
+       host drops its chat card to the viewport edge at this width, so the app must not redraw it. */
     .topbar { min-height: 60px; padding: 11px 12px; }
-    .brand-mark { width: 34px; height: 34px; }
-    .brand-mark svg { inset: 7px; }
     #summary { max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
     #addToggle span { display: none; }
     #addToggle { width: 36px; padding: 0; }
@@ -503,20 +484,18 @@
 
 </head>
 <body>
-<main id="app">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M6.5 3.5v3M17.5 3.5v3M4 9h16M5.5 5.5h13A1.5 1.5 0 0 1 20 7v12a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V7a1.5 1.5 0 0 1 1.5-1.5Z"/>
-          <path d="M8 13h3v3H8z"/>
-        </svg>
-      </div>
-      <div>
-        <div class="kicker">Date watch</div>
-        <h1>Event countdowns</h1>
-        <div id="summary">Your important dates, in view</div>
-      </div>
+<main id="app" class="k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M6.5 3.5v3M17.5 3.5v3M4 9h16M5.5 5.5h13A1.5 1.5 0 0 1 20 7v12a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 19V7a1.5 1.5 0 0 1 1.5-1.5Z"/>
+        <path d="M8 13h3v3H8z"/>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <div class="kicker k-eyebrow">Date watch</div>
+      <h1>Event countdowns</h1>
+      <div id="summary">Your important dates, in view</div>
     </div>
     <div class="top-actions">
       <button class="btn ghost" id="prepareButton" type="button">
@@ -529,6 +508,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section id="addPanel" hidden>
     <form id="addForm">
@@ -708,9 +691,25 @@
     heroUnit.textContent = days === null ? "date needed" : days < 0 ? `${Math.abs(days) === 1 ? "day" : "days"} overdue` : `${days === 1 ? "day" : "days"} left`;
     // Shown outside a chat host too: oma.sendMessage degrades to the clipboard there.
     prepareButton.hidden = false;
-    prepareButton.onclick = () => {
+    // AWAITED, and the button is dead while it is in flight: this hand-off crosses a bridge with a
+    // deadline, and accepting another click meanwhile would queue duplicate preparation plans.
+    //
+    // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage answers
+    // `{isError: true, degraded: "clipboard"}` after copying the prompt and telling the user.
+    // Reading `isError` alone would therefore put a red strip under every successful standalone
+    // click; only a non-degraded error is surfaced here.
+    prepareButton.onclick = async () => {
       const note = fields.note ? ` My note: ${fields.note}.` : "";
-      oma.sendMessage(`Help me prepare for "${fields.title || "this event"}" on ${formatDate(fields.target_date, true)}. It is ${countdownText(days).toLowerCase()}.${note} Please make a concise preparation plan with milestones and a practical checklist.`);
+      clearError();
+      prepareButton.disabled = true;
+      try {
+        const result = await oma.sendMessage(`Help me prepare for "${fields.title || "this event"}" on ${formatDate(fields.target_date, true)}. It is ${countdownText(days).toLowerCase()}.${note} Please make a concise preparation plan with milestones and a practical checklist.`);
+        if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+      } catch (error) {
+        showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+      } finally {
+        prepareButton.disabled = false;
+      }
     };
   }
 
@@ -858,7 +857,8 @@
     "Mum’s birthday": "妈妈的生日",
     "Final checks, release notes, and team briefing": "完成最终检查、发布说明和团队简报。",
     "Book the last night and sketch a food list": "订好最后一晚住宿，并列一份美食清单。",
-    "Choose a gift and reserve lunch": "挑选礼物，并预订午餐。"
+    "Choose a gift and reserve lunch": "挑选礼物，并预订午餐。",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -902,6 +902,25 @@
         if (translated !== value) element.setAttribute(attribute, translated);
       }
     });
+  }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = document.getElementById("errorStrip");
+  const errorText = document.getElementById("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
   }
 
   oma.ready((state) => {

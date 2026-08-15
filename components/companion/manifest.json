@@ -112,5 +112,8 @@
   "kind": "app",
   "scene": {
     "category_id": "ambient-viral"
+  },
+  "stage": {
+    "width": "column"
   }
 }

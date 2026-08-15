@@ -8,12 +8,15 @@
 <meta name="oma-category" content="Work">
 
 <style>
-  body {
-    max-width: 760px;
-    margin-inline: auto;
-    background: transparent;
-    color: var(--color-text-primary);
-  }
+  /* No body rule. The 760px column that used to live here was a private number for a THREE-LANE
+     BOARD — three 214px minimums plus gaps eat 662 of it, so every card was a hair wider than a
+     phone and the whole app read as a list that happened to have columns. The width is a
+     declaration now (manifest.stage.width: wide → 1120), the ground and the padding belong to the
+     kit's stage contract, and colour comes from the kit as it does for every app.
+
+     The app had no root element to hang that on, so it gained one: `.k-stage` in the markup wraps
+     the PAGE — bar, overview, pulse, board — and deliberately not the modal, which is fixed to
+     the viewport and belongs to nobody. */
 
   button,
   input,
@@ -29,54 +32,22 @@
     outline-offset: 2px;
   }
 
-  .app-bar {
-    align-items: center;
-    padding: 15px 17px 13px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
+  /* `.app-bar` is `.k-appbar` now — the row, the gaps, the padding, the mark's box and the
+     title/eyebrow scale are the kit's, and so is the rule under the bar, drawn only in a chat
+     where this is the card's title bar. What stays here is the mark's PAINT: identity is content,
+     and the stage contract strips frames, never faces. */
   .app-mark {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    flex: none;
-    place-items: center;
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg, 8px);
     color: var(--color-text-info, var(--color-ring-primary));
     background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 10%, transparent);
   }
 
   .app-mark svg {
-    width: 23px;
-    height: 23px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.5;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin: 0 0 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .identity h1 {
-    margin: 0;
-    font-size: 18px;
-    font-weight: 680;
-    line-height: 1.2;
-    letter-spacing: 0;
   }
 
   .bar-actions {
@@ -616,14 +587,15 @@
 </style>
 </head>
 <body>
-  <header class="app-bar k-row">
-    <span class="app-mark" aria-hidden="true">
+<div class="k-stage">
+  <header class="app-bar k-appbar">
+    <span class="app-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 24 24">
         <path d="M2.5 12h4l2.2-6 4.2 12 2.2-6h6.4"/>
       </svg>
     </span>
-    <div class="identity">
-      <p class="eyebrow" data-i18n="eyebrow"></p>
+    <div class="identity k-appcopy">
+      <p class="eyebrow k-eyebrow" data-i18n="eyebrow"></p>
       <h1 data-i18n="appName"></h1>
     </div>
     <div class="bar-actions k-row">
@@ -726,6 +698,7 @@
       </section>
     </div>
   </main>
+</div>
 
   <div class="modal" id="task-modal" role="dialog" aria-modal="true" aria-labelledby="modal-title" hidden>
     <form class="modal-panel" id="task-form">
@@ -824,7 +797,8 @@
         saveFailed: "The task was not saved. Try again.",
         triage: "Triage",
         bulkFailed: "{count} tasks were not added and remain in the input.",
-        weeklyPrompt: "Write a weekly brief from the latest project-pulse changes. Use data_changes to distinguish my updates from AI updates, then summarize completed work, active work, stale tasks, and next steps. Do not change any data."
+        weeklyPrompt: "Write a weekly brief from the latest project-pulse changes. Use data_changes to distinguish my updates from AI updates, then summarize completed work, active work, stale tasks, and next steps. Do not change any data.",
+        askFailed: "Couldn't reach the assistant — try again."
       },
       zh: {
         pageTitle: "项目脉搏 · 项目进度脉搏",
@@ -890,7 +864,8 @@
         saveFailed: "保存失败，请重试。",
         triage: "待整理",
         bulkFailed: "{count} 条任务未写入，已保留在输入框中。",
-        weeklyPrompt: "按 project-pulse 最近的变动给我写个周报：请用 data_changes 区分我和 AI 的更新，概括已完成、正在推进、陈旧任务与下一步。不要改数据。"
+        weeklyPrompt: "按 project-pulse 最近的变动给我写个周报：请用 data_changes 区分我和 AI 的更新，概括已完成、正在推进、陈旧任务与下一步。不要改数据。",
+        askFailed: "没能联系上助手，请重试。"
       }
     };
     const GROUPS = ["Backlog", "Doing", "Done"];
@@ -1363,8 +1338,26 @@
       };
     }
 
-    document.getElementById("weekly-btn").onclick = () => {
-      oma.sendMessage(t("weeklyPrompt"));
+    // AWAITED, and the button is dead while it is in flight: the call crosses a bridge with a 10s
+    // deadline, and a button that keeps taking clicks meanwhile queues duplicate proposals into
+    // someone's chat.
+    //
+    // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage answers
+    // `{isError: true, degraded: "clipboard"}` — and by then the runtime has copied the text and
+    // said so. Reading `isError` alone (which is what writeFailed does, correctly, for DATA
+    // writes) would put the error strip up after every successful standalone click.
+    const weeklyButton = document.getElementById("weekly-btn");
+    weeklyButton.onclick = async () => {
+      clearError();
+      weeklyButton.disabled = true;
+      try {
+        const result = await oma.sendMessage(t("weeklyPrompt"));
+        if (result && result.isError === true && !result.degraded) showError(t("askFailed"));
+      } catch (error) {
+        showError(String(error?.message || error || t("askFailed")));
+      } finally {
+        weeklyButton.disabled = false;
+      }
     };
     document.getElementById("add-btn").onclick = () => openEditor(null);
     document.getElementById("modal-close").onclick = closeEditor;
@@ -1386,6 +1379,10 @@
     }, 60000);
 
     void nextOccurrence;
+    // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+    // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+    // card; absent = a widget in someone's conversation, where the card is ours to draw.
+    if (oma.standalone) document.body.classList.add("standalone");
     oma.ready(render);
     oma.onChange(render);
     oma.onPrefChange(() => render(latestState));

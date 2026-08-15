@@ -248,8 +248,13 @@ export function register(ctx) {
       outputSchema: { seq: z.number(), settings_version: z.number(), files_version: z.number(), schema_version: z.number() },
     },
     async () => {
+      // The four DECLARED keys, projected by name — never the store's whole answer. The store's
+      // probe also carries `live_n` (which app a wall display is showing), and that is not a
+      // data change: forwarding it would put a counter on the model's face that moves when nothing
+      // in the data moved, under a schema that never promised it.
       const v = store.dataVersion();
-      return { content: [{ type: "text", text: `seq ${v.seq} (settings ${v.settings_version}, files ${v.files_version}, schema v${v.schema_version})` }], structuredContent: v };
+      const out = { seq: v.seq, settings_version: v.settings_version, files_version: v.files_version, schema_version: v.schema_version };
+      return { content: [{ type: "text", text: `seq ${out.seq} (settings ${out.settings_version}, files ${out.files_version}, schema v${out.schema_version})` }], structuredContent: out };
     },
   );
 

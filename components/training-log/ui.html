@@ -8,73 +8,35 @@
 <meta name="oma-category" content="Health & Habits">
 
 <style>
-  body {
-    max-width: 760px;
-    margin-inline: auto;
-    background: transparent;
-    color: var(--color-text-primary);
-  }
+  /* No body rule. The old private 760px cap is manifest.stage.width: column now; outer padding,
+     ground and centring belong to the kit's stage contract, while colour already comes from the
+     kit for every app. */
 
   [hidden] {
     display: none !important;
   }
 
-  .app {
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-  }
-
+  /* `.app` is `.k-stage` now. Its border, radius, surface, shadow and clipping were all outer
+     frame chrome, so nothing app-specific remained in that rule for the app to keep. */
+  /* `.app-bar` is `.k-appbar` now: the row, gaps, padding, mark box, type scale and the chat-only
+     rule underneath all come from the kit. The app keeps only its own minimum bar height and the
+     mark's PAINT — identity is content, and stripping a frame must not strip a face. */
   .app-bar {
     min-height: 66px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
 
   .app-mark {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    flex: none;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--color-ring-primary) 38%, var(--color-border-primary));
-    border-radius: var(--border-radius-sm, 6px);
     background: color-mix(in oklab, var(--color-ring-primary) 10%, transparent);
     color: var(--color-text-info, var(--color-ring-primary));
   }
 
   .app-mark svg {
-    width: 25px;
-    height: 25px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.55;
     stroke-linecap: round;
     stroke-linejoin: round;
-  }
-
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .app-name {
-    margin: 0;
-    font-size: 19px;
-    font-weight: 680;
-    letter-spacing: 0;
-    line-height: 1.2;
   }
 
   .app-actions {
@@ -914,7 +876,6 @@
   }
 
   @media (max-width: 500px) {
-    .app-bar,
     .overview,
     .week-band {
       padding-inline: 12px;
@@ -1043,16 +1004,16 @@
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="app-bar k-row">
-    <div class="app-mark" aria-hidden="true">
+<div class="app k-stage">
+  <header class="app-bar k-appbar">
+    <div class="app-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 28 28">
         <path d="M3 11v6M7 8.5v11M10 13h8M21 8.5v11M25 11v6M7 14h14"/>
         <path d="M12 5.5h4M14 3.5v4" opacity=".55"/>
       </svg>
     </div>
-    <div class="identity">
-      <div class="eyebrow" data-i18n="eyebrow">Strength rhythm</div>
+    <div class="identity k-appcopy">
+      <div class="eyebrow k-eyebrow" data-i18n="eyebrow">Strength rhythm</div>
       <h1 class="app-name" data-i18n="appName">Training Log</h1>
     </div>
     <div class="app-actions k-row">
@@ -1356,7 +1317,8 @@
       missingVolume: "volume not entered",
       missingFeel: "not entered",
       noSessionsThisWeek: "No sessions logged this week",
-      reviewPrompt: "Review my training for this week ({start} to {end}). Fixed plan: {plan}. This week's sessions: {sessions}. Assess completion, fatigue, and the main lift trends, then recommend specific load, reps, and sets for the next session. Do not record recommendations as completed workouts."
+      reviewPrompt: "Review my training for this week ({start} to {end}). Fixed plan: {plan}. This week's sessions: {sessions}. Assess completion, fatigue, and the main lift trends, then recommend specific load, reps, and sets for the next session. Do not record recommendations as completed workouts.",
+      askFailed: "Couldn't reach the assistant — try again."
     },
     zh: {
       documentTitle: "训练日志",
@@ -1475,7 +1437,8 @@
       missingVolume: "未填训练量",
       missingFeel: "未填",
       noSessionsThisWeek: "本周还没有 session",
-      reviewPrompt: "请复盘我本周（{start} 至 {end}）的训练。固定计划：{plan}。本周记录：{sessions}。请判断完成度、疲劳和三主项趋势，并给出下一次训练的具体重量、次数和组数建议；不要把建议写成已完成记录。"
+      reviewPrompt: "请复盘我本周（{start} 至 {end}）的训练。固定计划：{plan}。本周记录：{sessions}。请判断完成度、疲劳和三主项趋势，并给出下一次训练的具体重量、次数和组数建议；不要把建议写成已完成记录。",
+      askFailed: "没能联系上助手，请重试。"
     }
   };
   const MAIN_LIFTS = [
@@ -1772,6 +1735,11 @@
         strip.hidden = true;
       }, 3200);
     }
+  }
+
+  function clearError() {
+    clearTimeout(statusTimer);
+    document.getElementById("statusStrip").hidden = true;
   }
 
   function toolFailure(response, fallback) {
@@ -2314,11 +2282,24 @@
     }
   }
 
-  function requestMemorySeed() {
-    oma.sendMessage(t("seedPrompt"));
+  // Both assistant hand-offs await the bridge and stop accepting clicks while it is in flight,
+  // so one slow request cannot queue duplicates. Clipboard fallback is degraded delivery, not a
+  // failure: the runtime has already copied the prompt and told the user by the time it returns.
+  async function requestMemorySeed() {
+    const button = document.getElementById("seedButton");
+    clearError();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("seedPrompt"));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      button.disabled = false;
+    }
   }
 
-  function requestWeeklyReview() {
+  async function requestWeeklyReview() {
     const plans = planRows(latestData.planItems);
     const sessions = sessionRows(latestData.sessionItems);
     const week = datesOfWeek(today());
@@ -2333,7 +2314,17 @@
       item.fields.volume_note || t("missingVolume"),
       `${t("feelLabel")}: ${item.fields.feel || t("missingFeel")}`
     ].join(", ")).join(separator) || t("noSessionsThisWeek");
-    oma.sendMessage(t("reviewPrompt", { start, end, plan: planText, sessions: sessionText }));
+    const button = document.getElementById("reviewButton");
+    clearError();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("reviewPrompt", { start, end, plan: planText, sessions: sessionText }));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      button.disabled = false;
+    }
   }
 
   document.getElementById("recordButton").onclick = () => openRecord();
@@ -2368,6 +2359,10 @@
       completedSets.clear();
     }
   };
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means
+  // the viewer or panel host already framed the page, so the kit must not draw a second card.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready(requestRefresh);
   oma.onChange(requestRefresh);

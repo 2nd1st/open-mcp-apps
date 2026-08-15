@@ -44,20 +44,9 @@ Wonder Atlas hard-contract check
     display: none !important;
   }
 
-  html,
-  body {
-    width: 100%;
-    margin: 0;
-    overflow-x: clip;
-    overflow-y: visible;
-  }
-
-  body {
-    padding: 12px;
-    color: var(--ink);
-    background: transparent;
-    font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
-  }
+  /* No document rule. Padding, ground, margin, type and root clipping belong to the kit's stage
+     contract now; `.k-stage` uses `clip`, not `hidden`, so the page remains the scroll container
+     and the sticky app bar below can follow the viewport instead of dying inside the root. */
 
   button {
     color: inherit;
@@ -73,53 +62,49 @@ Wonder Atlas hard-contract check
     outline-offset: 3px;
   }
 
-  .atlas {
-    position: relative;
-    width: min(100%, 1120px);
-    margin: 0 auto;
-    overflow: clip;
-    background:
-      radial-gradient(circle at 9% 0%, color-mix(in oklab, var(--blue) 9%, transparent), transparent 30%),
-      radial-gradient(circle at 92% 4%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 28%),
-      var(--surface);
-    border: 1px solid var(--line);
-    border-radius: 28px;
-    box-shadow: var(--shadow);
-  }
+  /* `.atlas` is `.k-stage` now: the kit draws one card in chat and no card on a screen the app
+     owns. The old width, border, radius, shadow, fill and clipping were all frame, so none remain
+     on the root; its blue-and-gold gradient survives below as app-bar content paint. */
 
+  /* `.topbar` is `.k-appbar` now — row, gaps, padding, mark box, title/eyebrow scale and the
+     chat-only rule come from the kit. Sticky is app behaviour, and works because every stage
+     ancestor clips with `overflow: clip`, never `hidden`, so no ancestor becomes a scrollport. */
   .topbar {
-    position: relative;
+    position: sticky;
+    top: 0;
     z-index: 5;
-    display: flex;
     min-height: 78px;
-    padding: 15px 18px;
-    align-items: center;
-    gap: 14px;
-    border-bottom: 1px solid var(--line-soft);
     background: color-mix(in oklab, var(--surface) 91%, transparent);
     backdrop-filter: blur(18px);
+    isolation: isolate;
   }
 
-  .brand {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 11px;
+  /* The radius-28 card's gradient was Wonder Atlas's face, not its frame. It now lives inside the
+     content bar, above either the app's standalone glass fill or the kit's chat-card fill. */
+  .topbar::before {
+    position: absolute;
+    inset: 0;
+    z-index: 0;
+    content: "";
+    background:
+      radial-gradient(circle at 9% 0%, color-mix(in oklab, var(--blue) 9%, transparent), transparent 30%),
+      radial-gradient(circle at 92% 4%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 28%);
+    pointer-events: none;
   }
 
-  .brand-mark {
+  .topbar > * {
     position: relative;
-    display: grid;
-    width: 45px;
-    height: 45px;
-    flex: 0 0 auto;
-    place-items: center;
+    z-index: 1;
+  }
+
+  /* The mark keeps its PAINT and loses its box: compass fill, ring and inset glow are identity,
+     while dimensions and radius are the kit's stage contract. */
+  .brand-mark {
     color: var(--blue);
     background:
       radial-gradient(circle, color-mix(in oklab, var(--gold) 28%, var(--surface)) 0 18%, transparent 19%),
       color-mix(in oklab, var(--blue) 9%, var(--surface));
     border: 1px solid color-mix(in oklab, var(--blue) 24%, var(--line));
-    border-radius: 50%;
     box-shadow: inset 0 0 0 5px color-mix(in oklab, var(--surface) 66%, transparent);
   }
 
@@ -145,8 +130,6 @@ Wonder Atlas hard-contract check
   }
 
   .brand-mark svg {
-    width: 24px;
-    height: 24px;
     stroke: currentColor;
     fill: none;
     stroke-width: 1.45;
@@ -154,26 +137,21 @@ Wonder Atlas hard-contract check
     stroke-linejoin: round;
   }
 
-  .brand-copy {
-    min-width: 0;
+  .eyebrow {
+    font-family: var(--font-mono, ui-monospace, monospace);
   }
 
-  .eyebrow {
+  /* These two content eyebrows are outside `.k-appbar`, so they retain the atlas's small-map
+     typography; the app-bar eyebrow itself gets the shared recipe. */
+  .empty-copy .eyebrow,
+  .trail-header .eyebrow {
     display: block;
     margin: 0 0 2px;
     color: var(--quiet);
-    font-family: var(--font-mono, ui-monospace, monospace);
     font-size: 9px;
     font-weight: 750;
     letter-spacing: .15em;
     text-transform: uppercase;
-  }
-
-  .brand-copy h1 {
-    margin: 0;
-    font-size: 18px;
-    line-height: 1.1;
-    letter-spacing: -.025em;
   }
 
   .brand-copy p {
@@ -1086,7 +1064,8 @@ Wonder Atlas hard-contract check
     .progress-pill {
       order: 3;
       width: 100%;
-      margin-left: 56px;
+      /* Align the wrapped live count with copy after the kit's 34px mark + 11px gap. */
+      margin-left: 45px;
       justify-content: flex-start;
       border: 0;
       background: transparent;
@@ -1129,14 +1108,6 @@ Wonder Atlas hard-contract check
   }
 
   @media (max-width: 700px) {
-    body {
-      padding: 8px;
-    }
-
-    .atlas {
-      border-radius: 22px;
-    }
-
     .hero {
       grid-template-columns: 1fr;
     }
@@ -1202,27 +1173,10 @@ Wonder Atlas hard-contract check
   }
 
   @media (max-width: 500px) {
-    body {
-      padding: 6px;
-    }
-
-    .atlas {
-      border-radius: 18px;
-    }
-
     .topbar {
       min-height: 0;
       padding: 12px;
       gap: 10px;
-    }
-
-    .brand-mark {
-      width: 40px;
-      height: 40px;
-    }
-
-    .brand-copy h1 {
-      font-size: 16px;
     }
 
     .brand-copy p {
@@ -1431,21 +1385,19 @@ Wonder Atlas hard-contract check
 </style>
 </head>
 <body>
-<main class="atlas" id="app">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24">
-          <circle cx="12" cy="12" r="8.2"></circle>
-          <path d="M14.9 9.1l-1.8 4-4 1.8 1.8-4z"></path>
-          <path d="M12 1.8v2.1M12 20.1v2.1M1.8 12h2.1M20.1 12h2.1"></path>
-        </svg>
-      </div>
-      <div class="brand-copy">
-        <span class="eyebrow" data-i18n="appEyebrow">World explorer</span>
-        <h1 data-i18n="appName">Wonder Atlas</h1>
-        <p data-i18n="appSubtitle">A map made from real questions</p>
-      </div>
+<main class="atlas k-stage" id="app">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <circle cx="12" cy="12" r="8.2"></circle>
+        <path d="M14.9 9.1l-1.8 4-4 1.8 1.8-4z"></path>
+        <path d="M12 1.8v2.1M12 20.1v2.1M1.8 12h2.1M20.1 12h2.1"></path>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <span class="eyebrow k-eyebrow" data-i18n="appEyebrow">World explorer</span>
+      <h1 data-i18n="appName">Wonder Atlas</h1>
+      <p data-i18n="appSubtitle">A map made from real questions</p>
     </div>
 
     <div class="progress-pill" aria-live="polite">
@@ -1946,6 +1898,12 @@ Wonder Atlas hard-contract check
   }
 
   function resultFailed(result) {
+    // sendMessage's standalone clipboard hand-off is degraded, not failed: by this point the
+    // runtime has already copied the prompt and told the user, so it must not raise the red bar.
+    return !!(result && result.isError === true && !result.degraded);
+  }
+
+  function writeResultFailed(result) {
     return !!(result && (result.isError === true || result.ok === false));
   }
 
@@ -2150,7 +2108,7 @@ Wonder Atlas hard-contract check
     nodes.exploreButton.disabled = true;
     try {
       const result = await oma.updateItem(selectedItem.id, { explored: !selectedItem.fields.explored });
-      if (resultFailed(result)) throw new Error(t("writeFailed"));
+      if (writeResultFailed(result)) throw new Error(t("writeFailed"));
     } catch (error) {
       showError(error && error.message ? error.message : t("writeFailed"));
     } finally {
@@ -2158,6 +2116,10 @@ Wonder Atlas hard-contract check
     }
   };
 
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
   oma.ready(render);
   oma.onChange(render);
   oma.onPrefChange(function () {

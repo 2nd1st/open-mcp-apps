@@ -529,7 +529,7 @@ const CHAPTERS = {
     // meets it exactly where it applies — after the workflow, before the save.
     "Before you save: read their sentence back") +
     `\n## More chapters\n\nget_app_guide {topic: "style"} — design tokens, house style, app shell, first-screen layout.\n` +
-    `{topic: "embed"} — putting one app inside another. {topic: "functions"} — exposing callable functions (data-in/data-out, no UI).\n`,
+    `{topic: "embed"} — putting one app inside another, and the \`@live\` region for an always-on screen.\n{topic: "functions"} — exposing callable functions (data-in/data-out, no UI).\n`,
   style: () => PREAMBLE + pick(...STYLE_TITLES) +
     `\n## Related\n\nget_app_guide {topic: "basics"} for the API contract and a working template.\n`,
   embed: () => PREAMBLE + `## Embedding one app inside another
@@ -543,16 +543,54 @@ const h = await oma.embed("habit-streaks", { into: document.getElementById("slot
 \`\`\`
 
 opts: \`into\` (required — the element to mount in) · \`preset\`: \`"live"\` (default — the child gets
-the full data loop, writes allowed per its own caps) | \`"readonly"\` (prefs + first page, no
-writes) | \`"inert"\` (renders provided \`html\`, calls nothing) · \`collection\` (bind the child to a
-collection; defaults to its own) · \`html\`/\`snapshot\` (supply source/rows yourself — otherwise the
-engine's stored source, tier and caps are resolved for you) · \`heights: {min,max}\`, or \`false\` to
-hand sizing to your CSS (thumbnails, previews). Returns \`{ el, unmount, refresh }\`.
+the full data loop, writes allowed per its own caps) | \`"inert"\` (renders provided \`html\`, calls
+nothing) · \`collection\` (bind the child to a collection; defaults to its own) · \`html\`/\`snapshot\`
+(supply source/rows yourself — otherwise the engine's stored source, tier and caps are resolved
+for you) · \`heights: {min,max}\`, or \`false\` to hand sizing to your CSS (thumbnails, previews).
+Returns \`{ el, unmount, refresh }\`.
 
 The child runs behind the same runner machine the loader uses: its trust tier and capability
 grants are the ENGINE's answer for that app — embedding does not widen them. Before reaching
 for embed, remember several apps can read the SAME collection; that is still the cheapest
 "one view inside another" and needs no mounting at all.
+
+## \`@live\` — a region that shows whatever the AI just opened
+
+One reserved name: \`oma.embed("@live", {into})\` mounts the app the AI opened LAST, and swaps it
+by itself when the AI opens another. It is how you build an always-on screen — a spare tablet on
+a wall, a second monitor — as an ORDINARY app you design, opened at \`/view/<your app>\`.
+
+\`\`\`js
+oma.embed("@live", {
+  into: document.getElementById("region"),
+  heights: false,                       // a wall fills its CSS box; the app inside scrolls
+  onApp: (name) => label(name),         // name = what is on screen now, null while waiting
+});
+\`\`\`
+
+Two faces, and you write for both because one document serves both. On a STANDALONE page it
+follows: mount, unmount, mount the next one. In a CHAT it is a quiet tile that reads nothing at
+all — a region that swapped apps under someone's conversation would be wrong, so it does not.
+Test it in the browser view; a chat shows you the tile.
+
+The switch arrives on ONE channel — the engine's \`/events\` stream (SSE) — and there is no poll
+behind it. While the feed is down the region simply keeps showing the app it already has, rather
+than blanking; \`EventSource\` reconnects on its own, and the first frame after it does carries the
+current pointer, so a display that missed a switch catches up without a reload. (The data inside a
+mounted app is a different axis and does have the adaptive poll behind it — this is about WHICH
+app is on screen.)
+
+\`\`\`json
+{"stage": {"width": "fluid", "display": true}}
+\`\`\`
+
+**Declare \`stage.display\` on any app that carries an \`@live\` region.** It says "I am the frame,
+not the picture", and it is what keeps the wall from being aimed at itself: an app that declares
+it is never recorded as the last-opened one, and the region refuses to mount an app that declares
+it. Without the declaration, opening your wall points the wall at your wall.
+
+The shipped \`live\` app in the App Store is the reference: a full-bleed region, a \`.k-appbar\`
+naming what is on screen, and nothing else. Copy it and make it yours.
 
 get_app_guide {topic: "basics"} for the API contract.
 `,

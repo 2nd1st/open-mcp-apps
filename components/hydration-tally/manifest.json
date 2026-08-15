@@ -15,5 +15,8 @@
   "uses_shared": [
     "locale",
     "confirm_delete"
-  ]
+  ],
+  "stage": {
+    "width": "column"
+  }
 }

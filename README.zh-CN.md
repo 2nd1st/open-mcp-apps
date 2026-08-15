@@ -2,21 +2,21 @@
 
 [English](README.md) | **简体中文**
 
-> 给你的 AI 一个持久、可复用的 UI。它把组件搭一次——你永久拥有。
+> 给你的 AI 一个持久、可复用的 UI。它把 app 搭一次——你永久拥有。
 
 **open-mcp-apps** 是一个基于 [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
-(`ui://`, SEP-1865)构建的开放引擎——MCP Apps 是 Model Context Protocol 的**两个官方 extension**
-之一,走协议新设的 Extensions Track。它给任何支持 MCP Apps 的 host(Claude Desktop、claude.ai、
-Codex、ChatGPT……)提供 extension 本身不提供的三样东西:
+(`ui://`, `io.modelcontextprotocol/ui`)构建的开放引擎——MCP Apps 是 core MCP 规范之外的 extension,
+也是**第一个官方 extension**,2026 年 1 月 GA。它给任何支持 MCP Apps 的 host(Claude Desktop、
+claude.ai、Codex、ChatGPT……)提供 extension 本身不提供的三样东西:
 
-1. **一个 AI 可写入的组件 registry。** 想要一个还不存在的 UI——AI 读一份 authoring guide,针对一个
-   极小的 `window.oma` API 写出单文件 HTML 组件并保存。从那一刻起 `open_<name>` 就是一个 tool,在
+1. **一个 AI 可写入的 app registry。** 想要一个还不存在的 UI——AI 读一份 authoring guide,针对一个
+   极小的 `window.oma` API 写出单文件 HTML app 并保存。从那一刻起你随时能按名字打开它,在
    这个对话和以后每个对话里都在。
-2. **持久、带版本的数据——与 UI 分离。** 组件绑定到通用的 *collections*(item 的集合),背后是 SQLite
+2. **持久、带版本的数据——与 UI 分离。** app 绑定到通用的 *collections*(item 的集合),背后是 SQLite
    加一条 append-only 的 `change_event` ledger。每次修改都是幂等的 domain command(`command_id`),带
    乐观并发(`expected_version`)。AI 和人编辑同一份 store——widget 只是一个视图。
-3. **一个让 AI 写的组件真正能跑的 shell runtime。** 在提供 `ui://` 时,引擎用官方 MCP App bridge、
-   host 主题(Claude 的 design tokens,明/暗)、和 `window.oma` 数据 API 把组件包起来。你写的是
+3. **一个让 AI 写的 app 真正能跑的 shell runtime。** 在提供 `ui://` 时,引擎用官方 MCP App bridge、
+   host 主题(Claude 的 design tokens,明/暗)、和 `window.oma` 数据 API 把 app 包起来。你写的是
    视图;协议、持久化、幂等、主题都是引擎的事。
 
 ## The loop(循环)
@@ -34,7 +34,7 @@ get_app_guide ──► AI 写 HTML ──► save_app
 open_kanban  →  内联渲染、带主题、持久——以后每个对话都能复用
 ```
 
-组件会不断积累。每个都是单一用途、彼此独立的——一块看板、一个追踪器、一个分账器——为你眼前的任务
+app 会不断积累。每个都是单一用途、彼此独立的——一块看板、一个追踪器、一个分账器——为你眼前的任务
 铸造,并为你下次需要时留存。
 
 ## 长什么样
@@ -47,7 +47,8 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ![Claude——新对话里打开同一个 reading list,已经攒到八本](.github/screenshots/host-claude.webp)
 
-内置 App Store 自带 21 个现成 app——真实可交互的活预览,一键安装:
+内置 App Store——在 0.5.0 重建成了一个真正的店面——自带 22 个现成 app,带真实可交互的活预览,
+一键安装:
 
 ![App Store——现成 app 的活预览](.github/screenshots/app-store.webp)
 
@@ -64,6 +65,8 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 open-mcp-apps 是一个本地 MCP server。先把它**接上**你的 host(见下);之后 **onboarding 在 host 里
 单独发生**——那才是 AI 建你第一个 app 的地方。安装需要 shell,所以聊天 app(Claude Desktop、Codex)
 自己装不了,用下面之一:
+
+**前置:Node 22 或更新,以及 `git`。** 安装器会检查这两样,缺哪个就报错停下,而不是装到一半。
 
 **普通用户——一条命令:**
 
@@ -89,31 +92,35 @@ curl -fsSL https://raw.githubusercontent.com/2nd1st/open-mcp-apps/main/install.s
 (不用 shell)之后再做。*
 
 **卸载:** `node uninstall.mjs` 把 server 从所有检测到的 host 注销——但**保留你的数据**:共享 store
-原样留着,以后重装即恢复全部组件和数据。加 `--purge` 连共享 store 一起删(不可逆);加 `--check`
+原样留着,以后重装即恢复全部 app 和数据。加 `--purge` 连共享 store 一起删(不可逆);加 `--check`
 只读预览会发生什么、不做任何改动:
 
 ```bash
 node uninstall.mjs           # 从所有检测到的 host 注销——数据保留
-node uninstall.mjs --purge   # 连共享 store 一起删(组件 + 数据),不可逆
+node uninstall.mjs --purge   # 连共享 store 一起删(app + 数据),不可逆
 node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
 ```
 
 **重置逃生门:** 整个 store 就是一个 SQLite 文件 `open-mcp-apps.db`,位于
 `~/Library/Application Support/open-mcp-apps/`(macOS)、`%APPDATA%\open-mcp-apps\`(Windows)或
 `$XDG_DATA_HOME` 否则 `~/.local/share/open-mcp-apps/`(Linux)。彻底退出 host,删掉这个文件
-(连同 `-wal`/`-shm` 同伴)即从零开始——组件和数据全部清空、不可逆,安装本身保留。
+(连同 `-wal`/`-shm` 同伴)即从零开始——app 和数据全部清空、不可逆,安装本身保留。
 
 **然后开始用——在 host 里。** 重启 host。第一次用?对 AI 说一句,比如 **"我刚装了 open-mcp-apps,
 给我介绍下怎么用、给几个例子,并建议几个适合我的 app。"** 它会看自己能建什么、翻它对你的了解(记忆 +
 历史对话,不够就问你几句),然后为你建一两个贴合的 app。这一步与安装分开、在 host 里。或者直接问:
 
 - *"给我做个板子管我现在手头的事"* → AI 现写、填初始数据、打开(持久)
-- *"make me a habit tracker"* → 看它读 guide、写组件、保存、打开
+- *"make me a habit tracker"* → 看它读 guide、写 app、保存、打开
 - 关掉 app、重开、再问一次 → 一切都还在
 
 **首次权限:** 头几个 tool call 各弹一次批准框——选 **"Always allow"**。工具集刻意做得小而稳定:只读
-tool 一般免批准,而单个 `open_app` tool 覆盖打开*每一个*组件(包括 AI 之后创建的),所以头几次点完
-就永久零弹窗。你也可以在 **Settings → Connectors → open-mcp-apps → Tool permissions** 里批量设。注意:
+tool 一般免批准,而默认情况下单个 `open_app` tool 就覆盖打开*每一个* app(包括 AI 之后创建的),
+一次授权全包,之后不会再有新东西来问你。**Claude Desktop 和 Claude Code 这两个宿主是例外**:
+安装器给它们写了 `OMA_DYNAMIC_TOOLS=1`,于是每个 app 各有一个自己的 `open_<name>` tool——代价是
+每个 app 各花一次授权提示。那是针对这两个宿主聊天面 bridge 回归的**临时**绕行(`install.mjs` 里
+自标 TEMPORARY,[`KNOWN-ISSUES.md`](KNOWN-ISSUES.md) 有整条),宿主修好就撤掉。你也可以在
+**Settings → Connectors → open-mcp-apps → Tool permissions** 里批量设。注意:
 Desktop 自动更新偶尔会重置这些决定(上游
 [#56954](https://github.com/anthropics/claude-code/issues/56954))——重新允许即可。一个对话里多个
 widget 并存没问题(habit-streaks + meal-planner 并排)。
@@ -144,20 +151,20 @@ PORT=9000      # 换个地方起
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server;单一 `open_app` 打开路径(per-app `open_<name>` tool 需 opt-in) |
+| `src/server.mjs` | stdio MCP server;单一 `open_app` 打开路径(per-app `open_<name>` tool 默认关,`OMA_DYNAMIC_TOOLS=1` 才开) |
 | `src/http.mjs` | `/mcp`(无状态 Streamable HTTP)+ `/view/<name>` 浏览器 viewer,绑定 `127.0.0.1` |
-| `src/store.mjs` | SQLite:item + 组件 registry + `change_event` ledger(幂等,乐观并发) |
-| `src/shell-runtime.js` | 注入每个组件的浏览器 runtime(`window.oma`) |
+| `src/store.mjs` | SQLite:item + app registry + `change_event` ledger(幂等,乐观并发) |
+| `src/shell-runtime.js` | 注入每个 app 的浏览器 runtime(`window.oma`) |
 | `src/shell.mjs` | 在提供时用 runtime + design-token 兜底包裹存储的 HTML |
-| `src/guide.mjs` | AI 生成组件前读的 authoring 契约 |
+| `src/guide.mjs` | AI 生成 app 前读的 authoring 契约 |
 | `install-app.mjs` | 安装你自己写的 app(从文件)——唯一一扇不经过 AI 的注册表入口 |
-| `components/` | seed 时装 3 个 system 组件(settings、dashboard、app-store)+ 21 个 App Store app——不自动安装;在 app-store app 里浏览、带示例数据实时预览、一键安装 |
+| `components/` | seed 时装 3 个 system app(settings、dashboard、app-store)+ 22 个 App Store app——不自动安装;在 app-store app 里浏览、带示例数据实时预览、一键安装 |
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 421 条断言,走真实 stdio——含运行时组件创建
+node test/server-smoke.mjs   # 421 条断言,走真实 stdio——含运行时 app 创建
 node test/http-smoke.mjs     #  61 条断言,走 HTTP transport(含 SSE /events、viewer)
-node test/provenance.mjs     #  39 条断言,验组件 author(信任层)不可被覆写
+node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
 ```
@@ -179,11 +186,12 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 在删除之前永远在沙盒里。
 
 **[`RUNTIME.md`](RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
-以及只咬非 AI 作者的那些坑。带版本号,且被测试双向钉住。
+以及只咬非 AI 作者的那些坑。它带一个版本号(`oma.contract`),`test/runtime-contract.mjs` 把它钉在
+两个 runtime 的真实表面上,所以它不会悄悄跟它们漂开。
 
 ## 设计取向(为什么这么建)
 
-- **UI 和数据分开持久,都带版本。** 组件是视图;collections 是真相;ledger 是历史。换掉任一个不丢另一个。
+- **UI 和数据分开持久,都带版本。** app 是视图;collections 是真相;ledger 是历史。换掉任一个不丢另一个。
 - **AI 只说 domain command,从不碰 SQL、从不碰裸 state。** 这是人 + AI 并发编辑安全的原因(command 层
   的幂等 + 乐观并发)。
 - **Extension 优先。** 一切走 MCP Apps 的 bridge——没有 host 私有 API。一套代码应服务每个能渲染
@@ -193,13 +201,13 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 
 ## 安全模型
 
-信任按组件的来源分层。本地编写的组件和 system 组件跑在 **direct mode**。引擎同时内置一个 **runner**——
-一个沙箱化的 `srcdoc` iframe,CSP-first 文档 + 最小只读 bridge——作为任何非本地可信组件的强制执行模式;
+信任按 app 的来源分层。本地编写的 app 和 system app 跑在 **direct mode**。引擎同时内置一个 **runner**——
+一个沙箱化的 `srcdoc` iframe,CSP-first 文档 + 最小只读 bridge——作为任何非本地可信 app 的强制执行模式;
 另有保留的 `security:*` / `policy:*` 配置 key(通用 data 写入碰不到)和一个 out-of-band 特权写入器。
 
 **诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 App Store 的 app(全部第一方出品)——
 都以 direct mode 全信任本地运行;目前还没有任何第三方内容需要沙箱。runner *已建成并测试过,但处于休眠*:
-它是将来共享/发布组件的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
+它是将来共享/发布 app 的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
 [`SECURITY.md`](SECURITY.md)。
 
 ## Host 支持(2026-07-22 实测;ChatGPT web 行 2026-07-28 更新)
@@ -211,7 +219,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 | **Codex desktop**(ChatGPT app,`enable_mcp_apps` flag)—— 对**本地**引擎实测;远程未确立 | ✅ 实验性 | ◐ widget 点击的更新/勾选已通;新增仍被 host 侧拦([openai/codex#28912](https://github.com/openai/codex/issues/28912),见 KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code**(CLI,`claude mcp`) | —(设计上走文本 fallback) | — | ✅ | ✅ |
 | **codex CLI / IDE** | —(设计上走文本 fallback) | — | ✅ | ✅ |
-| **ChatGPT web**(Work mode) | ✅ 2026-07-28 实测(远程 HTTPS)——满高渲染,未被截断 | ✅ widget 按钮新增一条,落盘成功 | ✅ | ✅ |
+| **ChatGPT web**(Work mode) | ✅ 2026-07-28 实测(远程 HTTPS)——满高渲染,未被截断;页面刷新后 widget 会丢数据(缓解已 ship,但尚未在这个宿主上复测——见 KNOWN-ISSUES) | ✅ widget 按钮新增一条,落盘成功 | ✅ | ✅ |
 
 一切走 MCP Apps 的 bridge,所以上游 host 的修复(如 #28912)不改一行也能让本项目受益。
 
@@ -224,15 +232,35 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 早期 v0——在 Claude Desktop 端到端验证;跨厂商渲染 + 共享 store 在 Codex desktop 和浏览器 viewer 上
 验证。
 
+**0.5.0 改了什么**(breaking,也是迄今最大的一次改动——完整交代见
+[`CHANGELOG.md`](CHANGELOG.md)):
+
+- **app 的 declaration 成了一等对象。** `save_app` 收 `ui` 和 `manifest` 两个槽,而不再是埋在文档里的
+  一段 manifest 块;每次修订两个槽一起快照,所以 restore 拿回来的是一对,不是单份文档。
+- **app 可以对外暴露 function**——一个 data→data 的闭包,AI 用 `call_function` 调,由引擎在这个 app
+  自己的 collection 上执行。这个席位在 `createEngine` 处 opt-in、缺省不给,所以托管部署没法从构造上
+  继承到它。
+- **删一行由引擎确认**,确认点在每条路径都必经的那个 store 事务里。app 作者不必再自己写确认 UI——
+  原来自带「点一次待命、再点才删」的那些 app,这段都被摘掉了。
+- **`promote_app`** 一步把一次性的 `visual` 原地升成常驻的 app;**`edit_app` 收带哈希校验的
+  `{offset, length}` 区间**,读过一个窗口的模型可以直接改它,不用再把锚点字符串传回来。
+- **Settings 与 App Store 整体重建**——左栏导航、原地详情页,以及上面那张图里的店面。
+- 底下换了地基:**SDK v1 → v2**、支持的协议版本里加进 `2026-07-28`、工具面审计到 **33 个 tool**。
+  改名和删掉的 tool 意味着升级后宿主会再要你批准一次工具。
+
+现状:
+
 - [x] 引擎:registry + shell + 通用 data command + ledger
-- [x] 只装 system 组件(settings、dashboard、app-store);21 个 App Store app 可在 app-store 里浏览预览、一键安装
-- [x] AI 组件创建循环(guide → save → 动态 tool)
+- [x] 只装 system app(settings、dashboard、app-store);22 个 App Store app 可在 app-store 里浏览预览、一键安装
+- [x] AI 建 app 的循环(guide → save → 打开)
 - [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key
 - [x] 多 host 发现式安装器(Claude Desktop · Claude Code · Codex)+ 共享的用户级 store
 - [ ] `npx` 一条命令安装
-- [ ] 远程(Streamable HTTP)模式 → claude.ai / ChatGPT / 移动端
-- [ ] 组件 export/import → 分享 → 社区库
+- [ ] 远程(Streamable HTTP)作为一种*受支持*的形态 → claude.ai / ChatGPT / 移动端——transport
+      本身已经在(`src/http.mjs`),也在 HTTPS 上实测过;缺的是托管那一半,因为引擎按设计绑死
+      `127.0.0.1`
+- [ ] app export/import → 分享 → 社区 App Store
 
 ## 许可
 
@@ -241,7 +269,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 - **引擎** —— `components/` 以外的一切 —— 是 **AGPL-3.0-only**([`LICENSE`](LICENSE))。
   把改过的版本作为网络服务运行,就必须向使用者提供你修改版的源码(AGPL §13);
   对引擎的改进因此始终保持开放。
-- **官方组件** —— [`components/`](components/) 里你运行和编辑的那些 app —— 是 **MIT**
+- **官方 app** —— [`components/`](components/) 里你运行和编辑的那些 app —— 是 **MIT**
   ([`components/LICENSE`](components/LICENSE))。任何 app 都可自由打开、复制、fork、
   再分发;改你自己的 dashboard 永远不该是个法律问题。
 
@@ -249,7 +277,9 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 **不**在任何一个许可的授予范围内 —— 见 [`TRADEMARKS.md`](TRADEMARKS.md)。代码尽管 fork,
 但请给你的 fork 起自己的名字。
 
-组件的贡献不需要签任何东西 —— MIT 进 MIT 出。引擎的贡献请先开 issue:
+版权所有 © 2026 2nd1st。
+
+app 的贡献不需要签任何东西 —— MIT 进 MIT 出。引擎的贡献请先开 issue:
 CLA 是计划中的,但目前仍是草稿
 ([`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CLA.md`](CLA.md))。
 

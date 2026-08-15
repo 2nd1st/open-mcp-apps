@@ -30,6 +30,9 @@
     "density",
     "confirm_delete"
   ],
+  "stage": {
+    "width": "column"
+  },
   "collections": {
     "family-dinners": {
       "label_field": "dish",

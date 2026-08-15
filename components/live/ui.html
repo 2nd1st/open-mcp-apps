@@ -1,0 +1,184 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="description" content="An always-on screen that shows whatever app your AI just opened, and switches by itself when it opens another.">
+<meta name="oma-category" content="System">
+<title>Live Display</title>
+<style>
+  * { box-sizing: border-box; }
+  :root {
+    color-scheme: light dark;
+    --accent: var(--color-text-info, var(--color-ring-primary));
+  }
+  /* No body rule, no root width, no card of its own: the kit's stage contract owns all three
+     (`.k-stage` below), and this app declares `"stage": {"width": "fluid"}` because a wall has no
+     reading column — it is as wide as the screen it hangs on. */
+  .wall { display: flex; flex-direction: column; min-height: 0; }
+
+  /* The top bar is `.k-appbar` with two additions and no third: what is on screen, and the time.
+     Anything more is furniture on a screen nobody is standing at. */
+  .mark {
+    border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
+    background: color-mix(in oklab, var(--accent) 12%, transparent);
+    color: var(--accent);
+  }
+  .mark svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .now {
+    margin-left: auto;
+    color: var(--color-text-secondary);
+    font-size: 15px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: .01em;
+    white-space: nowrap;
+  }
+  .now[hidden] { display: none; }
+
+  /* THE BRICK'S SEAT. Nothing is drawn here — the region is a hole in the page that
+     `oma.embed("@live")` fills, and every pixel inside it belongs to whichever app is on screen.
+     A border or a padding here would be this app decorating another one's work. */
+  #region {
+    position: relative;
+    overflow: hidden;
+    border-top: 1px solid var(--color-border-secondary);
+  }
+  /* `heights: false` hands sizing to exactly this rule (see the mount below). */
+  #region iframe { width: 100%; height: 100%; border: 0; }
+  /* The floor belongs to the CHAT face only. On a standalone screen the height is measured and
+     set inline, and a min-height here would survive the collapse that measurement depends on —
+     it did, and the region came out 220px short of the window every time. */
+  body:not(.standalone) #region { min-height: 220px; }
+  body.standalone #region { border-top: 0; }
+
+  /* The one thing this app draws for itself: what to do when the brick is not available at all —
+     an App Store preview, or any other sandboxed mount, where `oma.embed` reads undefined. */
+  .notice {
+    display: grid;
+    align-content: center;
+    justify-items: center;
+    gap: 6px;
+    min-height: 220px;
+    padding: 28px 22px;
+    text-align: center;
+  }
+  .notice b { color: var(--color-text-secondary); font-size: 13px; font-weight: 650; }
+  .notice span { max-width: 36ch; color: var(--color-text-tertiary); font-size: 12px; line-height: 1.55; }
+</style>
+</head>
+<body>
+<main class="wall k-stage">
+  <header class="k-appbar">
+    <div class="mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><rect x="2.5" y="4" width="19" height="13" rx="2"/><path d="M8 20h8m-4-3v3"/></svg>
+    </div>
+    <div class="k-appcopy">
+      <p class="k-eyebrow" id="eyebrow">Live display</p>
+      <h1 id="title">Waiting for an app</h1>
+    </div>
+    <div class="now" id="clock" hidden aria-label="Current time"></div>
+  </header>
+
+  <section id="region" aria-live="polite" aria-label="The app your AI opened last"></section>
+</main>
+
+<script type="module">
+  const oma = window.oma;
+  const $ = (id) => document.getElementById(id);
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. Standalone = a screen
+  // this app owns (a browser tab, a panel host), where the page is framed already and this app
+  // must not draw a card of its own.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  // ---- the clock -------------------------------------------------------------------------
+  // This device's time zone, deliberately: the display hangs in a room, and the room's clock is
+  // the only one that means anything to whoever walks past it. The locale preference decides the
+  // NOTATION (24h vs 12h among them); "auto" is the browser's own default, which is the honest
+  // answer when nobody has said otherwise.
+  let clockTimer = 0;
+  function drawClock() {
+    const on = oma.pref("show_clock", true);
+    const el = $("clock");
+    el.hidden = !on;
+    if (!on) return;
+    const locale = oma.pref("locale", "auto");
+    try {
+      el.textContent = new Date().toLocaleTimeString(locale === "auto" ? undefined : locale,
+        { hour: "numeric", minute: "2-digit" });
+    } catch { el.textContent = new Date().toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" }); }
+  }
+  function startClock() {
+    drawClock();
+    clearTimeout(clockTimer);
+    // Re-draw ON the minute rather than every 30s: a wall clock that changes a beat late is a
+    // wall clock that is wrong, and one polling twice a minute is doing it for no one.
+    const ms = 60000 - (Date.now() % 60000) + 250;
+    clockTimer = setTimeout(startClock, ms);
+  }
+  startClock();
+  oma.onPrefChange(drawClock);
+
+  // ---- the brick -------------------------------------------------------------------------
+  // `oma.embed("@live")` is the whole feature: a region showing the app the AI opened last, which
+  // swaps itself when the AI opens another. This app declares `"stage": {"display": true}`, which
+  // is what keeps opening THIS app from pointing the wall at itself.
+  const region = $("region");
+
+  // THREE STATES, and the difference between the last two is not decoration: on a screen of its
+  // own, "waiting" is a promise — something will appear here. In a chat nothing ever will, and a
+  // header that says otherwise is the app lying about the context it can see it is in.
+  function label(name) {
+    if (name) {
+      $("eyebrow").textContent = "Live display · following";
+      $("title").textContent = name;
+      return;
+    }
+    $("eyebrow").textContent = oma.standalone ? "Live display" : "Always-on screen";
+    $("title").textContent = oma.standalone ? "Waiting for an app" : "Live display";
+  }
+  label(null);
+
+  // SIZE THE HOLE. The brick mounts with `heights: false`, which hands sizing to this app's CSS —
+  // right for a wall, where the app on screen should fill what is left of the window rather than
+  // grow the page. The number is MEASURED, not guessed: what surrounds the region differs by door
+  // (the browser viewer draws a bar and a page card with margins; `?chrome=0` draws neither), and
+  // a hard-coded allowance was wrong by exactly one bottom margin the first time it was tried.
+  //
+  // Collapse, then measure. With the region at zero, the BODY BOX plus its margins is everything
+  // else this page costs — the bar's clearance, the card's padding, the app bar — so what is left
+  // of the window is the region's answer. The body box and not `documentElement.scrollHeight`:
+  // the viewer's own stylesheet sets `html{min-height:100%}`, which floors that reading at the
+  // viewport and makes the subtraction come out zero every time. Scroll-independent by
+  // construction, which a `getBoundingClientRect().top` reading would not have been.
+  function sizeRegion() {
+    if (!oma.standalone) return;   // in a chat the host owns the height; growing to fill it is wrong
+    region.style.height = "0px";
+    const cs = getComputedStyle(document.body);
+    const chrome = document.body.offsetHeight + (parseFloat(cs.marginTop) || 0) + (parseFloat(cs.marginBottom) || 0);
+    region.style.height = Math.max(240, window.innerHeight - chrome) + "px";
+  }
+
+  if (typeof oma.embed === "function") {
+    sizeRegion();
+    addEventListener("resize", sizeRegion);
+    oma.embed("@live", { into: region, heights: false, onApp: label })
+      .catch((e) => console.error("[live] the display region failed to mount", e));
+  } else {
+    // Sandboxed — an App Store preview, or an install this engine runs behind the runner. The
+    // brick is direct-mode only (it mounts other apps, which is exactly what a sandbox is for
+    // refusing), so say what this app is instead of failing silently.
+    region.innerHTML = "";
+    const n = document.createElement("div");
+    n.className = "notice";
+    const b = document.createElement("b");
+    b.textContent = "Open this on a screen of its own";
+    const s = document.createElement("span");
+    s.textContent = "The live region follows your AI from a standalone browser view — a spare tablet, a second monitor. It stays empty in a preview.";
+    n.append(b, s);
+    region.appendChild(n);
+  }
+</script>
+</body>
+</html>

@@ -5,13 +5,14 @@
 > Give your AI a persistent, reusable UI. It builds the app once — you keep it forever.
 
 **open-mcp-apps** is an open engine built on [MCP Apps](https://modelcontextprotocol.io/extensions/apps/overview)
-(`ui://`, SEP-1865) — one of the two official extensions to the Model Context Protocol, adopted
-into the protocol's new Extensions Track. It gives any MCP-Apps-capable host (Claude Desktop,
-claude.ai, Codex, ChatGPT, …) three things the extension itself doesn't provide:
+(`ui://`, `io.modelcontextprotocol/ui`) — an extension to the core Model Context Protocol
+specification, and the first official one, GA since January 2026. It gives any MCP-Apps-capable
+host (Claude Desktop, claude.ai, Codex, ChatGPT, …) three things the extension itself
+doesn't provide:
 
 1. **An app registry the AI can write to.** Ask for a UI that doesn't exist — the AI reads
    the authoring guide, writes a single-file HTML app against a tiny `window.oma` API,
-   and saves it. From that moment `open_<name>` is a tool, in this chat and every future one.
+   and saves it. From that moment you can open it by name, in this chat and every future one.
 2. **Persistent, versioned data — separate from the UI.** Apps bind to generic
    *collections* of items backed by SQLite plus an append-only `change_event` ledger. Every
    mutation is an idempotent domain command (`command_id`) with optimistic concurrency
@@ -49,7 +50,8 @@ Come back in another chat — or another host — and it's still there, with you
 
 ![Claude — a new chat opens the same reading list, now eight books long](.github/screenshots/host-claude.webp)
 
-The built-in App Store ships 21 ready-made apps — real, working previews, installed in a click:
+The built-in App Store — rebuilt in 0.5.0 as a real storefront — ships 22 ready-made apps, with
+working previews and one-click install:
 
 ![The App Store — live previews of ready-made apps](.github/screenshots/app-store.webp)
 
@@ -67,6 +69,9 @@ open-mcp-apps runs as a local MCP server. First get it **connected** to your hos
 **onboarding happens inside the host, separately** — that's where the AI builds your first app.
 Installing needs a shell, so the chat apps (Claude Desktop, Codex) can't install themselves — use one
 of these:
+
+**Prerequisites: Node 22 or newer, and `git`.** The installer checks for both and stops with a
+message rather than half-installing if either is missing.
 
 **As a user — one command:**
 
@@ -123,9 +128,14 @@ is separate from install and lives in the host. Or just ask directly:
 
 **First-run permissions:** the first few tool calls each show an approval dialog — pick
 **"Always allow"**. The tool set is small and stable on purpose: read-only tools generally
-skip approval, and the single `open_app` tool covers opening *every* app
-(including ones the AI creates later), so after those first clicks it's zero-prompt forever.
-You can also batch it in **Settings → Connectors → open-mcp-apps → Tool permissions**.
+skip approval, and by default the single `open_app` tool covers opening *every* app
+(including ones the AI creates later) behind that one grant, so nothing new asks again.
+Two hosts are the exception: the installer registers **Claude Desktop and Claude Code** with
+`OMA_DYNAMIC_TOOLS=1`, which gives every app its own `open_<name>` tool — the price is one
+approval prompt per app. That is a deliberate, temporary workaround for a chat-surface bridge
+regression on those hosts (it is marked TEMPORARY in `install.mjs` and written up in
+[`KNOWN-ISSUES.md`](KNOWN-ISSUES.md)); it comes off when the host is fixed.
+You can also batch approvals in **Settings → Connectors → open-mcp-apps → Tool permissions**.
 Note: a Desktop auto-update occasionally resets these decisions (upstream
 [#56954](https://github.com/anthropics/claude-code/issues/56954)) — just re-allow.
 Multiple widgets in one conversation work fine (habit-streaks + meal-planner side by side).
@@ -160,14 +170,14 @@ only thing standing between the internet and your data.
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server; single `open_app` path (per-app `open_<name>` tools opt-in) |
+| `src/server.mjs` | stdio MCP server; single `open_app` path (per-app `open_<name>` tools off unless `OMA_DYNAMIC_TOOLS=1`) |
 | `src/http.mjs` | `/mcp` (stateless Streamable HTTP) + `/view/<name>` browser viewer, bound to `127.0.0.1` |
 | `src/store.mjs` | SQLite: items + app registry + `change_event` ledger (idempotent, OCC) |
 | `src/shell-runtime.js` | browser runtime injected into every app (`window.oma`) |
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
 | `src/guide.mjs` | the authoring contract the AI reads before generating an app |
 | `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
-| `components/` | 3 system apps installed on seed (settings, dashboard, app-store) + 21 App Store apps — not auto-installed; browse the app-store app for live previews with sample data and one-click install |
+| `components/` | 3 system apps installed on seed (settings, dashboard, app-store) + 22 App Store apps — not auto-installed; browse the app-store app for live previews with sample data and one-click install |
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
@@ -236,7 +246,7 @@ for shared/published apps later, where review + sandboxing arrive together. See
 | **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) — tested against a **local** engine; remote not established | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
 | **Claude Code** (CLI, `claude mcp`) | — (text fallback by design) | — | ✅ | ✅ |
 | **codex CLI / IDE** | — (text fallback by design) | — | ✅ | ✅ |
-| **ChatGPT web** (Work mode) | ✅ live-tested 2026-07-28 (remote HTTPS) — renders at full height, no clamping | ✅ a widget button added a row and it stuck | ✅ | ✅ |
+| **ChatGPT web** (Work mode) | ✅ live-tested 2026-07-28 (remote HTTPS) — renders at full height, no clamping; a widget loses its data after a page refresh (mitigation shipped, awaiting live re-test here — see KNOWN-ISSUES) | ✅ a widget button added a row and it stuck | ✅ | ✅ |
 
 Everything rides the MCP Apps bridge, so host fixes upstream (e.g. #28912) benefit this
 project with zero changes.
@@ -251,14 +261,39 @@ signed in (we have seen it work under an account sign-in; not yet established un
 Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared store proven
 on Codex desktop and the browser viewer.
 
+**What 0.5.0 changed** (breaking, and the largest change so far —
+[`CHANGELOG.md`](CHANGELOG.md) has the full account):
+
+- **An app's declaration is a first-class object.** `save_app` takes `ui` and `manifest` as two
+  slots instead of a manifest block buried in the document, and every revision snapshots both, so
+  restoring brings back the pair.
+- **An app can expose a function** — a data→data closure the AI calls with `call_function`, run by
+  the engine against that app's own collections. The seat is opt-in at `createEngine` and absent by
+  default, so a hosted deployment cannot inherit it.
+- **Deleting a row is confirmed by the engine**, inside the store transaction every path passes
+  through. App authors no longer write confirmation UI; the apps that carried their own
+  arm-then-delete had it removed.
+- **`promote_app`** turns a one-off `visual` into a kept app in one atomic step, and **`edit_app`
+  takes a hash-checked `{offset, length}` range**, so a model that has read a window can edit it
+  without sending an anchor back up.
+- **Settings and the App Store were rebuilt** — rail navigation, in-place detail pages, and the
+  storefront pictured above.
+- Underneath: **SDK v1 → v2**, `2026-07-28` in the supported protocol versions, and a tool surface
+  audited down to **33 tools**. Renamed and removed tools mean hosts will ask you to approve the
+  tools once more after upgrading.
+
+Where it stands:
+
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system apps installed (settings, dashboard, app-store); 21 App Store apps with live previews, one-click install
-- [x] AI app creation loop (guide → save → dynamic tool)
+- [x] system apps installed (settings, dashboard, app-store); 22 App Store apps with live previews, one-click install
+- [x] AI app creation loop (guide → save → open)
 - [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
 - [ ] `npx` one-command install
-- [ ] remote (Streamable HTTP) mode → claude.ai / ChatGPT / mobile
+- [ ] remote (Streamable HTTP) as a *supported* shape → claude.ai / ChatGPT / mobile — the
+      transport exists (`src/http.mjs`) and has been live-tested over HTTPS; what's missing is the
+      hosted story, since the engine binds `127.0.0.1` by design
 - [ ] app export/import → sharing → community App Store (review + runner sandbox activate here)
 
 ## License

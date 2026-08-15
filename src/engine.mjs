@@ -32,7 +32,7 @@ import { register as registerSettingsTools } from "./tools/settings.mjs";
 
 // Part of this module's public surface (server.mjs / http.mjs / index.mjs import them from here),
 // so the move into contracts.mjs is invisible to callers.
-export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor } from "./contracts.mjs";
+export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor } from "./contracts.mjs";
 
 // WHO is calling, carried across await points. Two writers, one reader:
 //   · the HTTP entry wraps each /mcp dispatch in run({ fallback }) — its User-Agent/body-derived

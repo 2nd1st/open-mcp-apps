@@ -162,9 +162,9 @@ console.log("\n4. the claims RUNTIME.md makes about the engine, checked against 
   const contracts = readFileSync(join(ROOT, "src", "contracts.mjs"), "utf-8");
   ok("the 200,000-byte document limit is the store's real limit",
     /MAX_APP_HTML = 200_000/.test(store) && doc.includes("200,000 bytes"));
-  ok("the sandboxed child really is sandbox=allow-scripts with no allow-same-origin",
+  ok("the sandboxed child really is sandbox=allow-scripts allow-forms with no allow-same-origin",
     /sandbox[^\n]*allow-scripts/.test(runtimeSrc) && !/allow-same-origin/.test(runtimeSrc)
-    && doc.includes('sandbox="allow-scripts"'));
+    && doc.includes('sandbox="allow-scripts allow-forms"'));
   ok("the child CSP really is default-src 'none'",
     /RUNNER_CSP_POLICY = "default-src 'none'/.test(runner) && doc.includes("default-src 'none'"));
   ok("the unreviewed tier really grants no call_tools",

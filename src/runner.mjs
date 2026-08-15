@@ -53,10 +53,15 @@ import { viaOf, sansRequestState, withConfirmation, RUNTIME_CONTRACT } from "./r
 //
 // `form-action` is listed EXPLICITLY because it is the one outbound shape that does NOT fall
 // back to `default-src`: a form posting to an attacker's URL is a navigation, not a fetch, so
-// every other directive here misses it. It was closed anyway — by the sandbox lacking
-// `allow-forms` (measured 2026-07-28, docs/spec-conformance.md §8) — but that made a whole
-// exfiltration channel depend on ONE attribute staying absent. Depth costs nothing here, and
-// third-party apps arriving by share link (T19 P-c) is exactly when single points stop being fine.
+// every other directive here misses it. It is now the PRIMARY wall on that channel, and the
+// depth it was written for is what let the wall move: the sandbox used to withhold `allow-forms`
+// as well, and 2026-08-15 measured what that attribute was really costing — Chrome refuses a
+// sandboxed form BEFORE dispatching `submit`, so withholding it did not just block the POST, it
+// deleted the event every app's `onsubmit` handler is built on. The attribute is granted now
+// (shell-runtime.js, oma.embed) and the channel stands on three walls that each block the
+// SUBMISSION while leaving the EVENT alone: this directive, the embedder's `frame-src 'none'`,
+// and the bridge's unconditional cancel (BRIDGE below). Both new walls were measured on the same
+// day against a form posting to an off-site action: each one blocked it on its own.
 export const RUNNER_CSP_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'";
 export const RUNNER_CSP = '<meta http-equiv="Content-Security-Policy" content="' + RUNNER_CSP_POLICY + '">';
 
@@ -282,12 +287,21 @@ export const SELF_HEIGHT_UNPIN_SCRIPT =
 // They used to hand-roll a broadcast each and had already drifted — only one of them survived a
 // host that rejects postMessage, only one of them reported at all without ResizeObserver.
 //
-// `screenHeightCap` travels under its own name because capBroadcastHeight's source CALLS it by that
-// name — and it belongs HERE, not in the unpin source, because the bound only exists for the
-// message below. Its absence would be silent: the whole postMessage is inside a catch.
+// `screenHeightCap` travels WITH the broadcast because capBroadcastHeight's body calls it, and it
+// belongs here rather than in the unpin source because the bound only exists for the message below.
+//
+// It is declared under the name the function HAS AT RUNTIME, not the one written above — and that
+// is the whole fix for a bug that shipped in 0.5.0. `capBroadcastHeight.toString()` is injected
+// verbatim, so its body calls its sibling by whatever name the BUNDLER left there: in dist/shell.js
+// (minify: true) both are two letters, and declaring the helper as the literal `screenHeightCap`
+// left every child calling an `Eh` that exists only back in the bundle. A ReferenceError — inside
+// omaSendHeight's catch, so it was perfectly silent — and the consequence was that no sandboxed
+// child EVER reported a height: every embed sat at the initial 140px for the life of the page
+// (measured in Chrome, 2026-08-14). Nothing here could see it, because everything here reads the
+// SOURCE module, where the two names already agree. Reading .name makes them agree in both worlds.
 const HEIGHT_BROADCAST_SOURCE =
   SELF_HEIGHT_UNPIN_SOURCE +
-  "var screenHeightCap=" + screenHeightCap.toString() + ";" +
+  "var " + screenHeightCap.name + "=" + screenHeightCap.toString() + ";" +
   "var omaNaturalHeight=" + measureNaturalBodyHeight.toString() + ";" +
   "var omaCapHeight=" + capBroadcastHeight.toString() + ";" +
   "var omaWatchHeight=" + watchNaturalHeight.toString() + ";" +
@@ -381,6 +395,17 @@ export const BRIDGE = [
   'if(!isReady){isReady=true;readyCbs.splice(0).forEach(function(cb){try{cb(S)}catch(e){}});}',
   'else if(ch){changeCbs.forEach(function(cb){try{cb(S)}catch(e){}});}}',
   "});",
+  // The SUBMISSION is never the app's to make; the EVENT always is. `allow-forms` on the frame
+  // (shell-runtime.js oma.embed) exists only so `submit` gets dispatched at all — Chrome refuses a
+  // sandboxed form before dispatch, which deleted the event every `onsubmit` handler in the
+  // library is built on. Nothing downstream of that handler may leave this document, so the
+  // default action is cancelled unconditionally here: an app that simply FORGOT `preventDefault()`
+  // then behaves exactly as it did while the attribute was withheld — nothing happens — instead of
+  // navigating its own frame to a CSP-blocked page and blanking the widget on screen.
+  // This is a listener on `document`, and `submit` bubbles: the app's own handler on the form is
+  // the TARGET phase and has already run by the time this fires. No stopPropagation — a delegated
+  // handler on document further down the list still receives the event, just not the navigation.
+  'document.addEventListener("submit",function(e){e.preventDefault();});',
   'function b64bytes(b){var s=atob(b),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}',
   'window.oma={ get state(){return S}, ready:function(cb){isReady?cb(S):readyCbs.push(cb)}, onChange:function(cb){changeCbs.push(cb)},',
   'addItem:function(o){return req("addItem",o||{})}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f})},',
@@ -400,7 +425,17 @@ export const BRIDGE = [
   // Same contract number the direct runtime reports — the whole point of oma.contract is that an
   // app cannot tell which runtime it landed in by reading it, only which VOCABULARY it may use.
   'get contract(){return ' + RUNTIME_CONTRACT + '},',
-  'get toolInput(){return TI}, get standalone(){return false} };',
+  // THE PARENT'S CONTEXT, INHERITED. An app reads `oma.standalone` to answer one question — am I
+  // a card in someone's conversation, or do I own a screen — and the answer for a child is the
+  // answer for the document it was mounted into: a wall at /view is a screen, and the app the
+  // `@live` brick hangs there owns every pixel of its region. Hard-coded `false` said "you are in
+  // a chat" to an app standing on a display, so the kit drew it the card the stage contract exists
+  // to prevent (components/_system.css `body:not(.standalone)`). Read LAZILY off the global rather
+  // than captured into a local: the flag script and this one then have no ordering contract at all.
+  // The name is deliberately NOT `__OMA_STANDALONE__` — that global means "a shell frames me,
+  // don't unpin my height" (SELF_HEIGHT_UNPIN_SOURCE), and a runner child IS measured by its
+  // parent (omaRunHeight), so borrowing that name would silently freeze every child's height.
+  'get toolInput(){return TI}, get standalone(){return !!window.__OMA_CHILD_SA__} };',
   HEIGHT_BROADCAST_SOURCE,
   "omaWatchHeight(omaSendHeight);",
   "})();</scr" + "ipt>",
@@ -411,14 +446,20 @@ export const BRIDGE = [
  *  <script> BEFORE its <head>, which per HTML parsing runs before an injected CSP meta is
  *  parsed, so its network egress escapes the policy entirely (reproduced in Chrome). The
  *  untrusted markup goes wholesale inside OUR <body>: its doctype/head degrade to tag-soup,
- *  its scripts still execute — but only AFTER the CSP (the FIRST element of OUR <head>). */
-export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE } = {}) {
+ *  its scripts still execute — but only AFTER the CSP (the FIRST element of OUR <head>).
+ *
+ *  `standalone` is the EMBEDDER's own context, handed down (the bridge's `oma.standalone`). It is
+ *  written only when true, so a chat-side child stays byte-identical to the document this composed
+ *  before the option existed. */
+export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE, standalone = false } = {}) {
   // Layer order is the cascade: neutral fallbacks, then the embedder's (substituted) tokens, then
   // the kit, then the app's own markup and <style>. The child's THEME arrives at runtime as
   // inline custom properties on its <html>, which outrank all of these — same as in the parent.
   return "<!doctype html><html><head>" + RUNNER_CSP + '<meta charset="utf-8">' +
     (fallbackCss ? '<style data-oma="token-fallback">' + fallbackCss + "</style>" : "") +
-    tokenCss + kitStyle(kitCss) + bridge + "</head><body>" + html + "</body></html>";
+    tokenCss + kitStyle(kitCss) +
+    (standalone ? '<scr' + 'ipt data-oma="child-context">window.__OMA_CHILD_SA__=1;</scr' + "ipt>" : "") +
+    bridge + "</head><body>" + html + "</body></html>";
 }
 
 // (The per-iframe sliding-window rate limiter — RATES/stamps/rate() — retired 2026-08-04,

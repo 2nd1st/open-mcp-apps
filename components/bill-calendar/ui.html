@@ -14,78 +14,48 @@
     --warning: var(--color-text-warning, var(--color-text-danger, var(--color-ring-primary)));
     --danger: var(--color-text-danger, var(--color-ring-primary));
   }
-  html, body { margin: 0; overflow: visible; }
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-text-sm-size);
-  }
+  /* No body rule. Padding, ground and the frame are the kit's stage contract now; colour, font
+     and margin the kit already sets for every app. The explicit `overflow: visible` was a
+     workaround for the old private card frame, and the root's overflow belongs to the kit too. */
   button, input, select { font: inherit; }
   button { color: inherit; }
   button:focus-visible, input:focus-visible, select:focus-visible {
     outline: 2px solid var(--color-ring-primary);
     outline-offset: 2px;
   }
-  .shell {
-    width: min(1120px, 100%);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-width: 0;
-  }
+  /* The root is `.k-stage` now: the kit draws one card in a chat and no card when the app owns
+     the screen. The old `.shell` rule was only that private frame, so nothing from it survives. */
+  /* `.topbar` is `.k-appbar` now: row, gaps, padding, mark box, type scale and the chat-only rule
+     come from the kit. Its 68px minimum remains app-specific and keeps the live controls steady. */
+  .topbar { min-height: 68px; }
+  /* The mark keeps its PAINT and loses its box: identity is content, and stripping the frame must
+     not strip the face. */
   .brand-mark {
-    display: grid;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
-    place-items: center;
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg,
       color-mix(in oklab, var(--warning) 14%, var(--color-background-primary)),
       color-mix(in oklab, var(--info) 7%, var(--color-background-primary)));
     color: var(--warning);
-  }
-  .brand-mark svg { width: 20px; height: 20px; }
-  .identity { min-width: 0; }
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
   }
   .summary {
     margin-top: 3px;
     color: var(--color-text-secondary);
     font-size: var(--font-text-sm-size, 12px);
   }
+  /* Ask AI used to fail silently, so it gets the fleet's one minimal asynchronous error surface. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+  .error-strip[hidden] { display: none; }
   .top-actions {
     display: flex;
     align-items: center;
@@ -603,7 +573,6 @@
     .calendar-scroll { border-right: 0; }
   }
   @media (max-width: 640px) {
-    body { padding: 8px; }
     .topbar { gap: 10px; padding: 12px; }
     .top-actions { gap: 6px; }
     .top-actions .button { width: 36px; padding: 8px; }
@@ -638,19 +607,17 @@
 </style>
 </head>
 <body>
-<main id="app" class="shell">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21Z"/><path d="M9.5 8h5M9.5 12h5M9.5 16H13"/>
-        </svg>
-      </div>
-      <div class="identity">
-        <div class="kicker" data-i18n="kicker">BILLS DUE</div>
-        <h1 data-i18n="appName">Bill calendar</h1>
-        <div class="summary" data-i18n="summary">Know what lands next.</div>
-      </div>
+<main id="app" class="shell k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7 3h10v18l-2.5-1.5L12 21l-2.5-1.5L7 21Z"/><path d="M9.5 8h5M9.5 12h5M9.5 16H13"/>
+      </svg>
+    </div>
+    <div class="identity k-appcopy">
+      <div class="kicker k-eyebrow" data-i18n="kicker">BILLS DUE</div>
+      <h1 data-i18n="appName">Bill calendar</h1>
+      <div class="summary" data-i18n="summary">Know what lands next.</div>
     </div>
     <div class="top-actions">
       <button class="button ghost" id="summarize" type="button" aria-label="Summarize what’s due with AI" data-i18n-aria="summarizeAria">
@@ -665,6 +632,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview-band" aria-label="Bill overview" data-i18n-aria="billOverview">
     <div class="due-overview">
@@ -801,7 +772,8 @@
       formError: "Add a name, valid amount, three-letter currency, and due date.",
       agendaEmpty: "No bills in this month.",
       summarizePrompt: "Summarize what's due from my bill calendar and flag anything unusual, such as a high amount, duplicate-looking charge, missed payment, or bills bunching together. Upcoming: {upcoming}. Overdue: {overdue}.",
-      none: "none"
+      none: "none",
+      askFailed: "Couldn't reach the assistant — try again."
     },
     zh: {
       documentTitle: "账单日历",
@@ -859,7 +831,8 @@
       formError: "请填写名称、有效金额、三位币种代码和到期日。",
       agendaEmpty: "这个月没有账单。",
       summarizePrompt: "请总结我的账单日历，并标记异常情况，例如金额过高、疑似重复、漏付或多笔账单集中到期。待支付：{upcoming}。已逾期：{overdue}。",
-      none: "无"
+      none: "无",
+      askFailed: "没能联系上助手，请重试。"
     }
   };
   const validStatuses = new Set(["upcoming", "overdue", "paid"]);
@@ -928,6 +901,24 @@
     for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
     for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
   };
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = $("errorStrip");
+  const errorText = $("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
+  }
   const statusOf = (item) => validStatuses.has(item.group) ? item.group : "upcoming";
   const frequencyLabel = (value) => t({ monthly: "monthly", weekly: "weekly", quarterly: "quarterly", annual: "annual", "one-off": "oneOff" }[value] || "oneOff");
   const safeCurrency = (value) => String(value || oma.pref("currency", "USD")).trim().toUpperCase().slice(0, 3) || "USD";
@@ -1272,8 +1263,11 @@
     $("formError").textContent = "";
     setComposer(false);
   };
-  // oma.sendMessage falls back to the clipboard in standalone mode, so this stays visible.
-  $("summarize").onclick = () => {
+  // oma.sendMessage falls back to the clipboard in standalone mode, so this stays visible there:
+  // the channel is degraded, not missing. Awaiting it prevents duplicate summaries crossing the
+  // bridge, and only a non-degraded error belongs on the strip.
+  const summarizeButton = $("summarize");
+  summarizeButton.onclick = async () => {
     const today = clockNow();
     const start = new Date(today.getFullYear(), today.getMonth(), today.getDate(), 12);
     const upcoming = currentState.items.filter((item) => {
@@ -1284,7 +1278,16 @@
       .sort((a, b) => String(a.fields.due_date).localeCompare(String(b.fields.due_date)));
     const upcomingText = upcoming.length ? upcoming.slice(0, 12).map(escapeSummary).join("; ") : t("none");
     const overdueText = overdue.length ? overdue.map(escapeSummary).join("; ") : t("none");
-    oma.sendMessage(t("summarizePrompt", { upcoming: upcomingText, overdue: overdueText }));
+    clearError();
+    summarizeButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("summarizePrompt", { upcoming: upcomingText, overdue: overdueText }));
+      if (result && result.isError === true && !result.degraded) showError(t("askFailed"));
+    } catch (error) {
+      showError(String(error?.message || error || t("askFailed")));
+    } finally {
+      summarizeButton.disabled = false;
+    }
   };
 
   oma.ready((state) => {

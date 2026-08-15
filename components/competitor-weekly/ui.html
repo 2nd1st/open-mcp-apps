@@ -21,23 +21,13 @@
     --accent-line: color-mix(in oklab, var(--accent) 25%, var(--color-border-primary));
   }
 
-  html, body { margin: 0; }
-  body {
-    padding: 12px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
-  }
+  /* No body rule. Padding, ground and the frame are the kit's stage contract now; colour, font
+     and margin the kit already sets for every app. */
   button, input, textarea { font: inherit; }
-  .shell { width: min(100%, 1060px); margin: 0 auto; }
-  .product {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: calc(var(--border-radius-lg, 14px) + 4px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
+  /* `.shell.product.k-stage` is the one root now: the 1060px private width and the product's
+     self-drawn card frame are gone, so the kit draws exactly one card in chat and none when the
+     app owns the screen. Positioning stays because the decorative ring below anchors to it. */
+  .product { position: relative; }
   .product::before {
     position: absolute;
     top: -190px;
@@ -50,50 +40,47 @@
     pointer-events: none;
   }
 
+  /* `.topbar` is `.k-appbar` now: row, gaps, padding, mark box and type scale come from the kit,
+     along with the rule drawn only when this bar is inside a chat card. */
   .topbar {
     position: relative;
     z-index: 1;
-    display: flex;
     min-height: 70px;
-    align-items: center;
-    gap: 12px;
-    padding: 13px 17px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
+  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
+     strips frames, never faces. */
   .mark {
-    display: grid;
-    width: 41px;
-    height: 41px;
-    flex: 0 0 auto;
-    place-items: center;
     border: 1px solid var(--accent-line);
-    border-radius: var(--border-radius-md, 10px);
     background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 15%, transparent), var(--ink-3));
     color: var(--accent);
   }
   .mark svg {
-    width: 23px;
-    height: 23px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.65;
   }
-  .identity { min-width: 0; }
-  .eyebrow,
   .micro-label {
     color: var(--color-text-tertiary);
     font: 700 9.5px/1.2 var(--font-mono);
     letter-spacing: .1em;
     text-transform: uppercase;
   }
-  .identity h1 {
-    margin: 3px 0 0;
-    font-size: 16px;
-    line-height: 1.15;
-    letter-spacing: -.015em;
+  /* Ask AI crosses an asynchronous host bridge, so failures need a visible, reusable surface. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--danger);
+    background: color-mix(in oklab, var(--danger) 8%, transparent);
+    font-size: 12px;
   }
+  .error-strip[hidden] { display: none; }
   .live-state {
     display: inline-flex;
     align-items: center;
@@ -495,8 +482,8 @@
   }
 
   @media (max-width: 560px) {
-    body { padding: 8px; }
-    .topbar { flex-wrap: wrap; padding: 11px 12px; }
+    /* Outer padding and app-bar sizing belong to the stage contract; only content layout adapts. */
+    .topbar { flex-wrap: wrap; }
     .live-state { display: none; }
     .compile-btn { margin-left: auto; }
     .brief-copy { padding: 23px 17px 17px; }
@@ -526,11 +513,7 @@
   }
 
   @media (max-width: 380px) {
-    body { padding: 0; }
-    .product { border-inline: 0; border-radius: 0; box-shadow: none; }
     .topbar { min-height: 62px; }
-    .mark { width: 36px; height: 36px; }
-    .identity h1 { font-size: 14px; }
     .compile-btn { padding-inline: 9px; }
     .brief-metrics { grid-template-columns: 1fr 1fr; }
     .brief-metric { border-bottom: 1px solid var(--color-border-secondary); }
@@ -542,10 +525,10 @@
 </style>
 </head>
 <body>
-<main class="shell">
-  <article class="product">
-    <header class="topbar">
-      <div class="mark" aria-hidden="true">
+<main class="shell product k-stage">
+  <article>
+    <header class="topbar k-appbar">
+      <div class="mark k-appmark" aria-hidden="true">
         <svg viewBox="0 0 24 24">
           <circle cx="12" cy="12" r="8.5"></circle>
           <circle cx="12" cy="12" r="4.2"></circle>
@@ -554,13 +537,17 @@
           <circle cx="12" cy="12" r=".7"></circle>
         </svg>
       </div>
-      <div class="identity">
-        <div class="eyebrow" data-i18n="eyebrow">Creator intelligence</div>
+      <div class="identity k-appcopy">
+        <div class="eyebrow k-eyebrow" data-i18n="eyebrow">Creator intelligence</div>
         <h1 data-i18n="appName">Competitor Weekly</h1>
       </div>
       <div class="live-state" data-i18n="watchlistLive">Watchlist live</div>
       <button id="compileBtn" class="k-btn sec compile-btn" type="button" data-i18n="buildNextBrief">Build next brief</button>
     </header>
+
+    <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+      <span id="errorText"></span>
+    </div>
 
     <section class="brief" aria-labelledby="weeklyHeadline">
       <div class="brief-copy">
@@ -711,7 +698,8 @@
       resume: "Resume",
       pause: "Pause",
       remove: "Remove",
-      buildPrompt: "Build Competitor Weekly for: {active}. For each account, gather this week's public activity and add ONE competitor-reports row with fields {fields}. Skip paused accounts. Report observable evidence and the change in pattern. Do not rewrite, imitate, or ghostwrite their content."
+      buildPrompt: "Build Competitor Weekly for: {active}. For each account, gather this week's public activity and add ONE competitor-reports row with fields {fields}. Skip paused accounts. Report observable evidence and the change in pattern. Do not rewrite, imitate, or ghostwrite their content.",
+      askFailed: "Couldn't reach the assistant — try again."
     },
     zh: {
       documentTitle: "竞品周报",
@@ -800,7 +788,8 @@
       resume: "恢复",
       pause: "暂停",
       remove: "移除",
-      buildPrompt: "请为这些账号生成竞品周报：{active}。逐个收集本周公开动态，并各写入一条 competitor-reports 记录，字段为 {fields}。跳过已暂停账号，只报告可观察证据和相对上周的模式变化；不要改写、模仿或代写他们的内容。"
+      buildPrompt: "请为这些账号生成竞品周报：{active}。逐个收集本周公开动态，并各写入一条 competitor-reports 记录，字段为 {fields}。跳过已暂停账号，只报告可观察证据和相对上周的模式变化；不要改写、模仿或代写他们的内容。",
+      askFailed: "没能联系上助手，请重试。"
     }
   };
 
@@ -836,6 +825,25 @@
     for (const node of document.querySelectorAll("[data-i18n-placeholder]")) node.placeholder = t(node.dataset.i18nPlaceholder);
     for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
   };
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means
+  // the host already frames the page, so the kit draws no card; absent means this is a chat card.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = $("errorStrip");
+  const errorText = $("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
+  }
+
   function weekLabel(weekStart) {
     const start = dateOnly(weekStart);
     const end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 6);
@@ -952,7 +960,8 @@
     renderDecisions();
     renderReports();
     renderWatchlist();
-    $("compileBtn").hidden = oma.standalone || !model.accounts.some((a) => a.fields.status !== "paused");
+    // Standalone keeps this working hand-off visible: sendMessage degrades to the clipboard there.
+    $("compileBtn").hidden = !model.accounts.some((a) => a.fields.status !== "paused");
   }
 
   function renderTabs(weeks) {
@@ -1225,12 +1234,25 @@
     await pull();
   };
 
-  $("compileBtn").onclick = () => {
+  // AWAITED, and disabled while in flight so repeated clicks cannot queue duplicate briefs.
+  // Clipboard degradation is success, not failure: the runtime has already copied the prompt and
+  // told the user by the time it returns `{isError: true, degraded: "clipboard"}`.
+  const compileButton = $("compileBtn");
+  compileButton.onclick = async () => {
     const active = model.accounts.filter((a) => a.fields.status !== "paused").map((a) => a.fields.handle).join(", ");
-    oma.sendMessage(t("buildPrompt", {
-      active,
-      fields: "{week_start: this week's Monday as YYYY-MM-DD, handle, posts_count, engagement, top_post (short quote only), top_post_stats, themes (comma-separated), formats, change_note (what changed vs last week)}"
-    }));
+    clearError();
+    compileButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("buildPrompt", {
+        active,
+        fields: "{week_start: this week's Monday as YYYY-MM-DD, handle, posts_count, engagement, top_post (short quote only), top_post_stats, themes (comma-separated), formats, change_note (what changed vs last week)}"
+      }));
+      if (result && result.isError === true && !result.degraded) showError(t("askFailed"));
+    } catch (error) {
+      showError(String(error?.message || error || t("askFailed")));
+    } finally {
+      compileButton.disabled = false;
+    }
   };
 
   oma.ready(pull);

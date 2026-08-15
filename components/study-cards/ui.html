@@ -8,12 +8,9 @@
 <meta name="description" content="A focused spaced-repetition study desk with honest due dates, a ten-week review heatmap, deck mastery covers, inline card creation, and AI-assisted batch card making.">
 
 <style>
-  body {
-    max-width: 760px;
-    margin-inline: auto;
-    background: transparent;
-    color: var(--color-text-primary);
-  }
+  /* No body rule. The width is a declaration now (manifest.stage.width: column), while the
+     ground and outer padding belong to the kit's stage contract; colour already comes from the
+     kit for every app. */
 
   [hidden] {
     display: none !important;
@@ -30,37 +27,25 @@
     outline-offset: 2px;
   }
 
-  .app {
-    position: relative;
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 8px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-  }
-
+  /* `.app` is `.k-stage` now: the kit draws one card in a chat and no card when this app owns the
+     screen. Its old border, radius, fill, shadow and hidden overflow were only a private frame;
+     nothing else in the app positions against this root, so no app-owned rule remains. */
+  /* `.app-bar` is `.k-appbar` now: row, gap, padding, the mark's box, title/eyebrow scale and the
+     chat-only rule under the bar all come from the kit. The minimum height keeps this desk's
+     established header rhythm without redrawing any chrome. */
   .app-bar {
-    position: relative;
     min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
 
+  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
+     strips frames, never faces. */
   .app-mark {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    flex: none;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 35%, var(--color-border-primary));
-    border-radius: var(--border-radius-sm, 8px);
     background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, var(--color-background-primary));
     color: var(--color-text-info, var(--color-ring-primary));
   }
 
   .app-mark svg {
-    width: 25px;
-    height: 25px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
@@ -68,26 +53,11 @@
     stroke-width: 1.45;
   }
 
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .app-name {
-    margin: 0;
-    font-size: 19px;
-    font-weight: 720;
-    letter-spacing: 0;
-    line-height: 1.2;
+  .brand-summary {
+    margin-top: 3px;
+    color: var(--color-text-secondary);
+    font-size: 10.5px;
+    line-height: 1.35;
   }
 
   .bar-actions {
@@ -1140,10 +1110,6 @@
   }
 
   @media (max-width: 650px) {
-    .app-bar {
-      flex-wrap: wrap;
-    }
-
     .bar-actions {
       display: flex;
       width: 100%;
@@ -1189,7 +1155,6 @@
   }
 
   @media (max-width: 500px) {
-    .app-bar,
     .overview {
       padding-inline: 12px;
     }
@@ -1372,18 +1337,19 @@
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="app-bar k-row">
-    <div class="app-mark" aria-hidden="true">
+<div class="app k-stage">
+  <header class="app-bar k-appbar">
+    <div class="app-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 28 28">
         <path d="M5 6.5h13.5a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2z"/>
         <path d="M8.5 3.5H22a2 2 0 0 1 2 2v13.5M9 11h7M9 15h5"/>
         <path d="M18.5 4.5v5l1.8-1.2 1.7 1.2v-5"/>
       </svg>
     </div>
-    <div class="identity">
-      <div class="eyebrow" data-t="eyebrow">Daily recall desk</div>
+    <div class="identity k-appcopy">
+      <div class="eyebrow k-eyebrow" data-t="eyebrow">Daily recall desk</div>
       <h1 class="app-name" data-t="appName">Study Cards</h1>
+      <div class="brand-summary" data-t="metaDescription">A focused spaced-repetition study desk with honest due dates, a ten-week review heatmap, deck mastery covers, inline card creation, and AI-assisted batch card making.</div>
     </div>
   </header>
 
@@ -1763,7 +1729,8 @@
       intervalLabel: "{count}-day interval",
       noCards: "No cards",
       aiMakePrompt: "Help me create a source-grounded spaced-repetition deck. Ask me to paste study material or name a topic if I have not provided one. Then make 8–15 atomic cards in a sensible deck, using only the supplied material for factual claims and flagging any necessary inference. Prefer prompts that require recall, not recognition; keep each back concise but sufficient; split multi-part ideas. When the batch is ready, use data_batch to add every item to collection study-cards. Every command must include collection: study-cards, group set to the deck name, and fields {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}. Finish with a compact list of the decks and cards added.",
-      aiExplainPrompt: "Explain this study card in a way that makes it easier to remember. Deck: {deck}. Prompt: {front}. Stored answer: {back}. Give one compact explanation, one memory hook, and one quick check question. Do not change the card unless I ask."
+      aiExplainPrompt: "Explain this study card in a way that makes it easier to remember. Deck: {deck}. Prompt: {front}. Stored answer: {back}. Give one compact explanation, one memory hook, and one quick check question. Do not change the card unless I ask.",
+      askFailed: "Couldn't reach the assistant — try again."
     },
     zh: {
       documentTitle: "学习卡片 · 间隔复习桌",
@@ -1870,7 +1837,8 @@
       intervalLabel: "{count} 天间隔",
       noCards: "没有卡片",
       aiMakePrompt: "请帮我制作一套有材料依据的间隔复习卡组。如果我还没有提供材料，请先让我粘贴学习材料或给出主题。然后基于材料制作 8–15 张原子化卡片，事实只使用我提供的内容，必要推断要明确标注。题面优先要求主动回想而不是识别；背面简洁但足够；多部分知识点拆开。批次准备好后，使用 data_batch 把每一项写入 study-cards 集合。每条命令都必须包含 collection: study-cards，group 设为卡组名，fields 为 {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}。完成后用精炼清单告诉我新增了哪些卡组和卡片。",
-      aiExplainPrompt: "请用更容易记住的方式讲解这张学习卡。卡组：{deck}。题面：{front}。已存答案：{back}。给出一段精炼解释、一个记忆钩子和一道快速自测题；除非我要求，否则不要修改卡片。"
+      aiExplainPrompt: "请用更容易记住的方式讲解这张学习卡。卡组：{deck}。题面：{front}。已存答案：{back}。给出一段精炼解释、一个记忆钩子和一道快速自测题；除非我要求，否则不要修改卡片。",
+      askFailed: "没能联系上助手，请重试。"
     }
   };
 
@@ -1892,6 +1860,11 @@
   let manualPending = false;
   let statusTimer = 0;
   let sessionRatings = { again: 0, hard: 0, good: 0, easy: 0 };
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   function localeCode() {
     const value = oma.pref("locale", "auto");
@@ -2062,6 +2035,11 @@
     strip.hidden = false;
     clearTimeout(statusTimer);
     if (!persistent) statusTimer = setTimeout(() => { strip.hidden = true; }, 3800);
+  }
+
+  function clearStatus() {
+    clearTimeout(statusTimer);
+    document.getElementById("statusStrip").hidden = true;
   }
 
   function activityDates(cards) {
@@ -2433,17 +2411,42 @@
     render(oma.state || latestState);
   }
 
-  function makeCardsWithAi() {
-    oma.sendMessage(t("aiMakePrompt"));
+  // AWAITED, and every button for the same hand-off is dead while the bridge is in flight, so a
+  // second visible entry point cannot queue a duplicate proposal into someone's chat.
+  // A DEGRADED RESULT IS NOT A FAILURE: standalone answers `{isError: true, degraded: "clipboard"}`
+  // after the runtime has already copied the prompt and told the user; only an undegraded error
+  // belongs on this app's existing status strip.
+  async function makeCardsWithAi() {
+    const buttons = [document.getElementById("studioAiButton"), document.getElementById("emptyAiButton")];
+    clearStatus();
+    for (const button of buttons) button.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("aiMakePrompt"));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      for (const button of buttons) button.disabled = false;
+    }
   }
 
-  function explainCurrentCard() {
+  async function explainCurrentCard() {
     const card = currentReviewCard(cardsFrom(latestState));
     if (!card) {
       showStatus(t("explainUnavailable"), "warn");
       return;
     }
-    oma.sendMessage(t("aiExplainPrompt", { deck: card.deck, front: card.front, back: card.back }));
+    const button = document.getElementById("explainButton");
+    clearStatus();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(t("aiExplainPrompt", { deck: card.deck, front: card.front, back: card.back }));
+      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
+    } catch (error) {
+      showStatus(String(error?.message || error || t("askFailed")), "bad");
+    } finally {
+      button.disabled = false;
+    }
   }
 
   function focusManualForm() {

@@ -68,7 +68,7 @@ An app runs in one of two modes, decided by its **provenance**, not by anything 
 | | direct | behind the runner |
 |---|---|---|
 | when | author is local (the AI, you via `install-app.mjs`, a seed, the App Store) | any other author — `install-app.mjs --sandboxed`, and whatever a hosted publishing pipeline installs |
-| where it runs | in the widget document itself | in an `about:srcdoc` iframe, `sandbox="allow-scripts"` (opaque origin — the parent cannot read into it, and it cannot read out) |
+| where it runs | in the widget document itself | in an `about:srcdoc` iframe, `sandbox="allow-scripts allow-forms"` (opaque origin — the parent cannot read into it, and it cannot read out; `allow-forms` buys the `submit` **event**, which Chrome otherwise never dispatches — the submission itself is cancelled in the bridge and blocked by CSP) |
 | `window.oma` | the real object | a message-passing bridge with the same names |
 | capability limits | none — co-equal with the AI | enforced per call; a refusal rejects the promise |
 | collection binding | what it declared, else its own name | **always its own name**, whatever it declared |
@@ -140,6 +140,15 @@ consumers), `bind` (was loader-only — now the internal `__OMA_BIND__` hook, no
 
 ```js
 oma.embed(name, opts)               // mount another app inside this one (depth 1 — a child cannot embed)
+oma.embed("@live", opts)            // ONE reserved name: a region showing the app the AI opened
+                                    // LAST, swapping itself as it opens others. Extra opt:
+                                    // onApp(name|null), fired on every switch. Standalone follows;
+                                    // in a chat it is a static tile that reads nothing. An app
+                                    // carrying one declares "stage": {"display": true} (§8.1.1).
+                                    // The switch rides /events (SSE) and nothing else — no poll
+                                    // behind it. A dropped feed leaves the last app on screen;
+                                    // EventSource reconnects and the connect frame carries the
+                                    // current pointer, so the display catches up by itself.
 oma.viewBase                        // base path for app→app links, default "/view/"
 ```
 
@@ -227,7 +236,7 @@ nothing is broken.
 
 ### 8.1 The kit selects nothing on its own
 
-The kit is **25 classes**, and it styles **only** those classes. It does not touch `button`,
+The kit is **30 classes**, and it styles **only** those classes. It does not touch `button`,
 `input`, `h1`, `table` or any other bare element — a hand-written `<button>` gets the browser's
 1996 default, next to a `.k-btn` that looks native to the host. That contrast **is** the bug
 report; there will not be another one.
@@ -240,12 +249,68 @@ controls  .k-btn (+ .sec .ghost .danger)   .k-chip (+ .on .static)   .k-field (i
           .k-switch (styled checkbox)      .k-tabs > .k-tab (+ .on)
 status    .k-badge (+ .info .ok .warn .bad)   .k-dot (group colour)   .k-icon (16px inline SVG)
 motion    .k-stagger (list entrance; set style="--i:N")   .k-pop   .k-skel (loading shimmer)
+page      .k-stage (your root container)   .k-appbar (+ .k-appmark .k-appcopy .k-eyebrow)
 ```
 
 The kit already sets `*{box-sizing:border-box}`, a sensible `body`, and reduced-motion handling —
 don't re-declare those. Write your own CSS for what makes **this** app different from every other
 one. If you catch yourself styling a button, chip, card, input or empty state from scratch, use the
 class; if you need a variant, override the kit class rather than inventing a parallel one.
+
+### 8.1.1 `.k-stage` — do not draw your own card
+
+Your app is shown in two places and they want opposite chrome. **In a chat** it is a card floating
+in someone's conversation, and something has to draw that card. **On a screen it owns** — the
+browser viewer, a panel host — the page is framed already, and a second frame inside the first is a
+double bezel your users will see as sloppiness.
+
+You do not decide which one you are in. Put your root container inside `<body>`, give it
+`k-stage`, and add one line at mount:
+
+```html
+<body>
+  <main class="k-stage">…your whole page…</main>   <!-- a fixed-position modal stays OUTSIDE -->
+</body>
+```
+```js
+if (oma.standalone) document.body.classList.add("standalone");
+```
+
+That is the whole contract. The kit draws the border, radius, surface and shadow in a chat, drops
+them entirely on a phone-width frame (where the host's own frame is the card), and draws nothing at
+all when `standalone`. **Do not** put a border, border-radius, box-shadow or `max-width` on that
+element yourself, and do not set `padding` or `background` on `body` — those are exactly the
+declarations this contract exists to own.
+
+How wide the page may get is a **declaration**, not a number in your CSS. In `manifest.json`:
+
+```json
+"stage": { "width": "column" }
+```
+
+`column` (the default; omit the key and you get it) is a 760px reading column — lists, counters,
+forms. `wide` is 1120px — calendars, boards, anything with lanes or many columns. `fluid` has no
+limit, for a layout with its own sidebar. The engine writes the answer onto `<body>` as
+`stage-column|wide|fluid`; you never read it.
+
+The same object takes `"display": true` — "this app is a frame for OTHER apps", which is what an
+always-on screen built on `oma.embed("@live")` is (§4, direct mode). Declaring it exempts your app
+from the last-opened pointer, so opening the frame never aims the frame at itself.
+
+Your header goes in `.k-appbar` — a content header, so no rule and no fill of its own; the kit adds
+the rule under it in a chat, where the bar is the card's title bar:
+
+```html
+<header class="k-appbar">
+  <span class="k-appmark">…your icon…</span>       <!-- the kit sizes it, YOU paint it -->
+  <div class="k-appcopy"><p class="k-eyebrow">SECTION</p><h1>App name</h1></div>
+  <div class="tail">…buttons…</div>
+</header>
+```
+
+Finally: **never write `overflow: hidden` on `html` or `body`.** In a fixed-height frame that is the
+scrollport's own overflow — the wheel stops working and everything below the fold becomes
+unreachable. `overflow-x: clip` on your `.k-stage` is the belt you actually wanted.
 
 ### 8.2 Colour comes from the host, never from you
 

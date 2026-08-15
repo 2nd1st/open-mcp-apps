@@ -44,5 +44,8 @@
   "kind": "app",
   "scene": {
     "category_id": "system"
+  },
+  "stage": {
+    "width": "column"
   }
 }

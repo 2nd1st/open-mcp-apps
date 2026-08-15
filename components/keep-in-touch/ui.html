@@ -14,59 +14,24 @@
     --positive: var(--color-text-success, var(--color-ring-primary));
     --attention: var(--color-text-warning, var(--color-text-danger, var(--color-ring-primary)));
   }
-  html, body { margin: 0; overflow: hidden; }
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-text-md-size, 14px);
-  }
+  /* No body rule. Padding, ground and the frame are the kit's stage contract now; colour, font
+     and margin the kit already sets for every app. The old root `overflow: hidden` also killed
+     the scroll wheel in fixed-height hosts, leaving everything below the fold unreachable. */
   button, input, select { font: inherit; }
   button { color: inherit; }
-  .app {
-    position: relative;
-    width: min(100%, 980px);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-  .brand { display: flex; align-items: center; gap: 11px; min-width: 0; }
-  .title-wrap { min-width: 0; }
+  /* `.k-stage` owns the outer card and width track. Positioning stays here because the toast is
+     absolute and belongs to this app rather than the viewport. */
+  .app { position: relative; }
+  /* `.topbar` is `.k-appbar` now: row, gap, padding, mark box, type scale and the chat-only rule
+     all come from the kit. The app keeps only its deliberate bar height. */
+  .topbar { min-height: 68px; }
+  /* The mark keeps its PAINT and loses its box: identity is content, and the contract strips
+     frames, never faces. */
   .brand-mark {
-    position: relative;
-    display: grid;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
-    place-content: center;
     border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-secondary));
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 15%, transparent), color-mix(in oklab, var(--positive) 7%, transparent));
     color: var(--accent);
   }
-  .brand-mark svg { width: 21px; height: 21px; }
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  h1 { margin: 0; font-size: 16px; line-height: 1.2; letter-spacing: -.01em; }
   .subtitle {
     display: -webkit-box;
     margin-top: 3px;
@@ -457,6 +422,13 @@
     transform: translateX(-50%);
   }
   .toast[hidden] { display: none; }
+  /* The existing toast is also the one error surface; a second strip would make two competing
+     places to read the result of the same action. */
+  .toast.error {
+    border-color: color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--color-text-danger) 8%, var(--color-background-primary));
+    color: var(--color-text-danger);
+  }
   @media (prefers-reduced-motion: no-preference) {
     button, .person-card, .add-panel, .orbit-progress {
       transition: transform 180ms cubic-bezier(.2,.8,.3,1), border-color 180ms ease, background 180ms ease, box-shadow 180ms ease, stroke-dashoffset 650ms cubic-bezier(.2,.8,.3,1);
@@ -469,12 +441,10 @@
     @keyframes contacted { 45% { transform: scale(1.012); box-shadow: 0 0 0 4px color-mix(in oklab, var(--color-text-success) 16%, transparent), var(--shadow-sm); } }
     @keyframes toast-in { from { opacity: 0; transform: translate(-50%, 8px) scale(.96); } }
   }
+  /* Narrow outer padding and card geometry are not retuned here: the kit drops the chat frame
+     below 560px because the host's widget frame is already the card. */
   @media (max-width: 640px) {
-    body { padding: 8px; }
     .topbar { gap: 10px; min-height: 60px; padding: 11px 12px; }
-    .brand { flex: 1; gap: 9px; }
-    .brand-mark { width: 34px; height: 34px; }
-    .brand-mark svg { width: 19px; height: 19px; }
     .top-actions { gap: 6px; }
     .rhythm-button span, .add-toggle span { display: none; }
     .rhythm-button, .add-toggle { width: 36px; padding: 0; }
@@ -549,20 +519,18 @@
 </style>
 </head>
 <body>
-<div class="app">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h6A2.5 2.5 0 0 1 15 6.5v2A2.5 2.5 0 0 1 12.5 11H9l-3.5 2.5V11A2.5 2.5 0 0 1 4 8.5Z"/>
-          <path d="M11 14h3.5l3.5 2.5V14a2.5 2.5 0 0 0 2-2.5v-2A2.5 2.5 0 0 0 17.5 7"/>
-        </svg>
-      </div>
-      <div class="title-wrap">
-        <div class="kicker">CONTACT RHYTHM</div>
-        <h1>Keep in touch</h1>
-        <div class="subtitle">A gentle queue for the people who matter.</div>
-      </div>
+<div class="app k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 6.5A2.5 2.5 0 0 1 6.5 4h6A2.5 2.5 0 0 1 15 6.5v2A2.5 2.5 0 0 1 12.5 11H9l-3.5 2.5V11A2.5 2.5 0 0 1 4 8.5Z"/>
+        <path d="M11 14h3.5l3.5 2.5V14a2.5 2.5 0 0 0 2-2.5v-2A2.5 2.5 0 0 0 17.5 7"/>
+      </svg>
+    </div>
+    <div class="title-wrap k-appcopy">
+      <div class="kicker k-eyebrow">CONTACT RHYTHM</div>
+      <h1>Keep in touch</h1>
+      <div class="subtitle">A gentle queue for the people who matter.</div>
     </div>
     <div class="top-actions">
       <button class="btn ghost rhythm-button" id="rhythmButton" type="button" aria-label="Plan outreach with AI">
@@ -734,30 +702,70 @@
 
   function showToast(text) {
     const toast = document.getElementById("toast");
-    toast.textContent = text;
-    toast.hidden = false;
     clearTimeout(toastTimer);
+    toast.textContent = text;
+    toast.classList.remove("error");
+    toast.hidden = false;
     toastTimer = setTimeout(() => { toast.hidden = true; }, 2600);
   }
 
-  function draftHello(item, metric) {
+  function showError(message) {
+    const toast = document.getElementById("toast");
+    clearTimeout(toastTimer);
+    toast.textContent = message;
+    toast.classList.add("error");
+    toast.hidden = false;
+    toastTimer = setTimeout(() => {
+      toast.hidden = true;
+      toast.classList.remove("error");
+    }, 7000);
+  }
+
+  function clearError() {
+    const toast = document.getElementById("toast");
+    if (!toast.classList.contains("error")) return;
+    clearTimeout(toastTimer);
+    toast.hidden = true;
+    toast.classList.remove("error");
+  }
+
+  async function draftHello(button, item, metric) {
     const person = String(item.fields.person || "this person");
     const relationship = relationshipOf(item);
     const channel = String(item.fields.channel || "message");
     const context = String(item.fields.context || "Reconnect warmly");
-    oma.sendMessage(`Draft a warm, specific check-in for ${person}, my ${relationship.toLowerCase()}, to send via ${channel}. We last connected on ${formatDate(item.fields.last_contact)} and they are ${statusText(metric).toLowerCase()} in my keep-in-touch queue. Pick up naturally on this context: "${context}". Keep it genuine, avoid guilt about the gap, and make it easy to reply.`);
+    clearError();
+    button.disabled = true;
+    try {
+      const result = await oma.sendMessage(`Draft a warm, specific check-in for ${person}, my ${relationship.toLowerCase()}, to send via ${channel}. We last connected on ${formatDate(item.fields.last_contact)} and they are ${statusText(metric).toLowerCase()} in my keep-in-touch queue. Pick up naturally on this context: "${context}". Keep it genuine, avoid guilt about the gap, and make it easy to reply.`);
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      button.disabled = false;
+    }
   }
 
-  function planOutreach() {
+  async function planOutreach(button) {
     const entries = sortedItems(latestState.items);
-    if (!entries.length) {
-      oma.sendMessage("Help me set up a sustainable keep-in-touch rhythm. Suggest a small set of relationship groups, realistic contact cadences, and a simple way to decide who to add first.");
-      return;
+    clearError();
+    button.disabled = true;
+    try {
+      if (!entries.length) {
+        const result = await oma.sendMessage("Help me set up a sustainable keep-in-touch rhythm. Suggest a small set of relationship groups, realistic contact cadences, and a simple way to decide who to add first.");
+        if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+        return;
+      }
+      const snapshot = entries.slice(0, 5).map(({ item, metric }) =>
+        `${item.fields.person || "Unnamed person"} (${relationshipOf(item)}): ${statusText(metric).toLowerCase()}, usually via ${item.fields.channel || "any channel"}`
+      ).join("; ");
+      const result = await oma.sendMessage(`Help me plan a thoughtful, low-pressure outreach session from this keep-in-touch queue: ${snapshot}. Prioritise two or three people, suggest a natural order, and give me a brief opening idea for each based on their timing.`);
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      button.disabled = false;
     }
-    const snapshot = entries.slice(0, 5).map(({ item, metric }) =>
-      `${item.fields.person || "Unnamed person"} (${relationshipOf(item)}): ${statusText(metric).toLowerCase()}, usually via ${item.fields.channel || "any channel"}`
-    ).join("; ");
-    oma.sendMessage(`Help me plan a thoughtful, low-pressure outreach session from this keep-in-touch queue: ${snapshot}. Prioritise two or three people, suggest a natural order, and give me a brief opening idea for each based on their timing.`);
   }
 
 
@@ -801,7 +809,7 @@
     const draft = iconButton("Draft a hello with AI", "M4 15.5V17l1.5-1.5H14a2 2 0 0 0 2-2v-7a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v9Z M7 8h6M7 11h4");
     draft.className = "draft";
     draft.append(document.createTextNode("Draft a hello"));
-    draft.onclick = () => draftHello(item, metric);
+    draft.onclick = async () => { await draftHello(draft, item, metric); };
     const contacted = iconButton(`Mark ${item.fields.person || "person"} contacted today`, "m5 10 3 3 7-7");
     contacted.className = "contact-primary";
     contacted.append(document.createTextNode("Contacted today"));
@@ -929,7 +937,10 @@
 
   document.getElementById("addToggle").onclick = () => setPanel(!panelOpen);
   // Visible outside a chat host too: oma.sendMessage degrades to the clipboard in standalone mode.
-  document.getElementById("rhythmButton").onclick = planOutreach;
+  // All three calls are awaited and their initiating button is dead in flight, so a slow bridge
+  // cannot queue duplicate messages. Clipboard degradation is a completed hand-off, not failure.
+  const rhythmButton = document.getElementById("rhythmButton");
+  rhythmButton.onclick = async () => { await planOutreach(rhythmButton); };
   document.getElementById("cancelAdd").onclick = () => setPanel(false);
   document.getElementById("addForm").onsubmit = (event) => {
     event.preventDefault();
@@ -1023,7 +1034,8 @@
     "Ask how the first month in her new product role has felt.": "问问她新产品岗位的第一个月感觉怎么样。",
     "She was planning the garden beds—ask what ended up thriving.": "她之前在规划花坛，问问后来哪些植物长得最好。",
     "Congratulate him on the launch and hear what the team learned.": "祝贺他完成发布，并问问团队有哪些收获。",
-    "Share the decision on the new project direction and thank her for the nudge.": "分享新项目方向的决定，并感谢她此前的推动。"
+    "Share the decision on the new project direction and thank her for the nudge.": "分享新项目方向的决定，并感谢她此前的推动。",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -1066,6 +1078,10 @@
       }
     });
   }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means
+  // the viewer or panel host already framed the page, so the kit must not draw another card.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready((state) => { render(state); applyUiLocale(); });  // App Store apps install EMPTY — samples live in oma-fixtures (preview only)
   oma.onChange((state) => { render(state); applyUiLocale(); });

@@ -14,61 +14,24 @@
     --bp-danger: var(--color-text-danger, var(--color-text-primary));
   }
 
-  body {
-    max-width: 860px;
-    margin-inline: auto;
-    background: transparent;
-  }
+  /* No body rule. The private 860px cap that lived there is a stage declaration now
+     (manifest.stage.width: column); centring, padding and ground belong to the kit's stage
+     contract rather than to the page the host already frames. */
 
-  .shell {
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-md, 8px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-  }
+  /* `.shell` is `.k-stage` now. Its overflow, border, radius, fill and shadow were only a
+     self-drawn card frame, so none survive: the kit draws exactly one card in a chat and no card
+     when this ledger owns the screen. This shell had no separate layout job to preserve. */
 
-  .app-bar {
-    min-height: 66px;
-    padding: var(--k-s3) var(--k-s4);
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
+  /* `.app-bar` is `.k-appbar` now: row, gap, padding, mark box and title/eyebrow scale come from
+     the kit, along with the rule drawn only when this header belongs to a chat card. */
+  .app-bar { min-height: 66px; }
 
+  /* The mark keeps its PAINT and loses its box. Identity is content; the stage contract strips
+     frames, never faces. */
   .mark {
-    display: grid;
-    width: 40px;
-    height: 40px;
-    flex: none;
-    place-items: center;
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md, 8px);
     color: var(--color-text-secondary);
     background: var(--color-background-secondary);
-  }
-
-  .mark .k-icon {
-    width: 19px;
-    height: 19px;
-  }
-
-  .identity {
-    min-width: 0;
-  }
-
-  .eyebrow {
-    margin: 0 0 2px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .identity .k-h1 {
-    margin: 0;
-    font-size: 17px;
-    line-height: 1.25;
   }
 
   .header-state {
@@ -570,7 +533,6 @@
 
   body[data-density="compact"] .app-bar {
     min-height: 58px;
-    padding-block: 8px;
   }
 
   body[data-density="compact"] .metric {
@@ -595,10 +557,6 @@
   }
 
   @media (max-width: 600px) {
-    .app-bar {
-      padding-inline: var(--k-s3);
-    }
-
     .header-state {
       display: none;
     }
@@ -663,16 +621,16 @@
 
 </head>
 <body>
-<main class="shell" aria-labelledby="app-title">
-  <header class="app-bar k-row">
-    <span class="mark" aria-hidden="true">
+<main class="shell k-stage" aria-labelledby="app-title">
+  <header class="app-bar k-appbar">
+    <span class="mark k-appmark" aria-hidden="true">
       <svg class="k-icon" viewBox="0 0 20 20">
         <path d="M4 4.5h12M4 10h7M4 15.5h9"></path>
         <path d="M2.5 4.5h.1M2.5 10h.1M2.5 15.5h.1"></path>
       </svg>
     </span>
-    <div class="identity k-grow">
-      <p class="eyebrow" id="eyebrow">SYSTEM BUILD LEDGER</p>
+    <div class="identity k-grow k-appcopy">
+      <p class="eyebrow k-eyebrow" id="eyebrow">SYSTEM BUILD LEDGER</p>
       <h1 class="k-h1" id="app-title">Builder progress</h1>
     </div>
     <span class="k-badge info header-state" id="header-state">Waiting for builds</span>
@@ -1188,6 +1146,11 @@
     }
     workspace.append(grid);
   }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready(render);
   oma.onChange(render);

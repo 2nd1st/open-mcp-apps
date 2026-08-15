@@ -32,7 +32,7 @@ import { coercePref, latestPref } from "./runtime-core.mjs";
 // Migration-format pin: stamped into PRAGMA user_version AND every change_event payload (`sv`).
 // Export/import + SaaS sync read this to know which event shape they are looking at — bump it on
 // any breaking payload/schema change and translate old values on read. Never reuse a number.
-export const SCHEMA_VERSION = 6;
+export const SCHEMA_VERSION = 7;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS item (
@@ -117,6 +117,21 @@ CREATE INDEX IF NOT EXISTS idx_event_file ON change_event(seq)
 -- expression index for the same json_extract they already established as the access pattern.
 CREATE INDEX IF NOT EXISTS idx_event_collection
   ON change_event(json_extract(payload, '$.collection'), seq);
+
+-- THE LIVE POINTER (v7): which app was opened last — the whole state of a wall display.
+-- A VOLATILE FIELD, NOT HISTORY, and the CHECK is what says so: exactly one row, overwritten in
+-- place, no ledger event, no seq. "What is on screen now" has one value and no past, and appending
+-- an event per open would bury the record of what the user and the AI actually DID under a stream
+-- of glances (Leo 2026-08-14). Losing this table costs a display its first frame and nothing
+-- else — which is why it is created by plain additive DDL and read with a COALESCE default.
+-- The n column is a monotonic counter, NOT a seq: it is how a process that cannot hear another's
+-- in-process "live" emit still notices a switch (see dataVersion().live_n and the /events probe).
+CREATE TABLE IF NOT EXISTS live_pointer (
+  id  INTEGER PRIMARY KEY CHECK (id = 1),
+  app TEXT NOT NULL,
+  ts  TEXT NOT NULL,
+  n   INTEGER NOT NULL
+);
 
 `;
 
@@ -311,6 +326,17 @@ export function manifestShapeError(m) {
   if (m.uses_shared != null && !Array.isArray(m.uses_shared)) return "manifest.uses_shared must be an array";
   if (m.kind != null && !APP_KINDS.has(m.kind)) return `manifest.kind must be one of ${[...APP_KINDS].join("|")}`;
   if (m.scene != null && (typeof m.scene !== "object" || Array.isArray(m.scene))) return "manifest.scene must be an object";
+  // `stage` — how the app wants to sit on a screen ({width: "column"|"wide"|"fluid"}, read by
+  // contracts.mjs stageWidthFor). SHAPE only, and deliberately no enum on `width`: a track name
+  // this build has never heard of is exactly the "written for a newer engine" case the paragraph
+  // above promises to keep saveable, and the reader falls back to the default rather than break.
+  if (m.stage != null && (typeof m.stage !== "object" || Array.isArray(m.stage))) return "manifest.stage must be an object";
+  if (m.stage?.width != null && typeof m.stage.width !== "string") return "manifest.stage.width must be a string";
+  // `stage.display` — "this app is a surface that shows OTHER apps" (contracts.mjs
+  // stageDisplayFor). Same shape-only treatment as width, one axis narrower: a boolean has no
+  // vocabulary to grow, so the type IS the whole check, and the reader still demands `true`
+  // rather than truthiness.
+  if (m.stage?.display != null && typeof m.stage.display !== "boolean") return "manifest.stage.display must be a boolean";
   return null;
 }
 
@@ -556,6 +582,21 @@ function migrateV5toV6(db) {
       failures.map((f) => `  ${f.name}@${f.version}: ${f.error}`).join("\n"));
 }
 
+// ────────────────────────────────────────────────────────── v6 → v7: the live pointer arrives
+// One additive CREATE TABLE (live_pointer, see SCHEMA) and nothing else: no row is read, no row is
+// rewritten, and an interruption leaves a v6 store exactly as it was.
+//
+// So why a RUNG at all, when the idempotent DDL every open runs would create the table anyway?
+// Because the ladder is the only place that states which builds may WRITE this file, and that is
+// the property a wall display depends on. Several hosts share one store; a v0.5.0 process would
+// not refuse — it would happily keep serving open_app and never move a pointer it has never heard
+// of, and the display would sit on a stale app while the AI opened three others. A silently wrong
+// answer is worse than a refusal that names the fix, so the version gate is the mechanism and this
+// rung is where it is declared. The table itself stays disposable (see SCHEMA).
+function migrateV6toV7(db) {
+  db.exec(SCHEMA);
+}
+
 /** Which app_history row did each save event write?
  *
  *  The primary key is (aggregate_id, seq): from v0.4.x a save stamps the app's version with the
@@ -680,9 +721,9 @@ export function openStore(path, { readOnly = false } = {}) {
       db.close();
       throw new Error(`store schema is v${uvGate}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
     }
-    if (hasTables && uvGate !== 4 && uvGate !== 5 && uvGate !== SCHEMA_VERSION) {
+    if (hasTables && uvGate !== 4 && uvGate !== 5 && uvGate !== 6 && uvGate !== SCHEMA_VERSION) {
       db.close();
-      throw new Error(`store schema is v${uvGate} — this build migrates v4 (the last released store) and v5, and opens v${SCHEMA_VERSION}. ` +
+      throw new Error(`store schema is v${uvGate} — this build migrates v4 (v0.4.2), v5 and v6 (v0.5.0), and opens v${SCHEMA_VERSION}. ` +
         `For an older store: read what matters out with the release that wrote it, then start fresh. ` +
         `(Nothing is touched by this refusal — the file is exactly as it was.)`);
     }
@@ -700,31 +741,33 @@ export function openStore(path, { readOnly = false } = {}) {
   } else {
     // ONE transaction for the whole open: DDL, the retained migrations and the user_version stamp
     // live or die together — an interrupted open leaves rows, table shape AND version alike
-    // untouched, at whichever version the file arrived. Four states are spoken here, and only four:
+    // untouched, at whichever version the file arrived. Five states are spoken here, and only five:
     //   · a FRESH file (no tables) gets the current schema;
-    //   · v4 — the last RELEASED store (v0.4.2) — climbs v4→v5→v6 in this one open;
-    //   · v5 — released by nobody, but the shape a mid-development store carries — takes v5→v6;
-    //   · v6 — current — runs the idempotent DDL and proceeds.
+    //   · v4 — the store v0.4.2 released — climbs v4→v5→v6→v7 in this one open;
+    //   · v5 — released by nobody, but the shape a mid-development store carries — takes v5→v6→v7;
+    //   · v6 — the store v0.5.0 released, so the rung with real users behind it — takes v6→v7;
+    //   · v7 — current — runs the idempotent DDL and proceeds.
     // Anything older refuses with the way forward named. The ladder reaches back to the last public
     // release and no further: that is the whole compatibility promise, and it is a CHAIN — a rung
     // is written once and every older store climbs through it, never one direct step per origin.
     // `.immediate()` takes the write lock up front: the v5→v6 step reads before it writes, and a
     // deferred transaction could observe another process's writes between the two.
     db.transaction(() => {
-      // The gate above already refused everything but fresh / v4 / v5 / v6 — re-read, don't re-judge.
+      // The gate above already refused everything but fresh / v4 / v5 / v6 / v7 — re-read, don't re-judge.
       const uv = db.pragma("user_version", { simple: true });
       const fresh = !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='item'").get();
       if (fresh) {
         db.exec(SCHEMA);
         db.pragma(`user_version = ${SCHEMA_VERSION}`);
-      } else if (uv === 4 || uv === 5) {
+      } else if (uv === 4 || uv === 5 || uv === 6) {
         try {
           if (uv === 4) migrateV4toV5(db);
-          migrateV5toV6(db);
+          if (uv <= 5) migrateV5toV6(db);
+          migrateV6toV7(db);
         } catch (e) {
           // A v4 reader has never heard of v5 — name the store they actually have before the
           // rung's own verdict. The refusal semantics stay the rung's; only the address is added.
-          if (uv === 4) e.message = `your store is v4 (written by v0.4.2), which climbs v4→v5→v6 in one open — the second rung refused: ${e.message}`;
+          if (uv === 4) e.message = `your store is v4 (written by v0.4.2), which climbs v4→v5→v6→v7 in one open — the v5→v6 rung refused: ${e.message}`;
           throw e;
         }
         db.pragma(`user_version = ${SCHEMA_VERSION}`);
@@ -884,6 +927,16 @@ export function openStore(path, { readOnly = false } = {}) {
        ON CONFLICT(app, path) DO UPDATE SET sha256 = @sha256, size = @size, mime = @mime,
          version = @version, updated_at = @ts`),
     delFile: db.prepare("DELETE FROM file WHERE app = @app AND path = @path"),
+
+    // The live pointer (see SCHEMA). ONE statement writes it, and it is an UPSERT rather than a
+    // read-then-write: two hosts opening apps at the same instant must produce two different
+    // values of `n`, never the same one twice, or a display sitting on the losing write would
+    // see a counter that never moved and stay on the app nobody is looking at.
+    touchLive: db.prepare(
+      `INSERT INTO live_pointer (id, app, ts, n) VALUES (1, @app, @ts, 1)
+       ON CONFLICT(id) DO UPDATE SET app = @app, ts = @ts, n = n + 1`),
+    liveGet: db.prepare("SELECT app, ts, n FROM live_pointer WHERE id = 1"),
+    liveN: db.prepare("SELECT COALESCE((SELECT n FROM live_pointer WHERE id = 1), 0) AS v"),
 
     // Undo reads. lastEventFor is served by the PK index on seq (DESC scan, LIMIT 1).
     lastEventFor: db.prepare("SELECT seq, aggregate_id, event_type, payload FROM change_event WHERE aggregate_id = ? ORDER BY seq DESC LIMIT 1"),
@@ -1766,7 +1819,37 @@ export function openStore(path, { readOnly = false } = {}) {
     snapshot,
     queryItems,
     // One cheap read answering "did anything change?" — the adaptive-poll / SSE-fallback probe.
-    dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION }),
+    // `live_n` rides ALONG this read rather than in one of its own: the /events probe already pays
+    // for this call every 2s, and "did the display's app change?" is the same question about a
+    // different axis. It is NOT on the data_version TOOL face — see src/tools/data.mjs, which
+    // projects the four declared keys (opening an app is not a data change, and the model must
+    // not start reading one as if it were).
+    dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION, live_n: q.liveN.get().v }),
+    /** Remember which app was opened LAST — the entire state of every `@live` brick on screen.
+     *
+     *  Deliberately not a ledger event (2026-08-14: "it does not need the ledger — that would
+     *  only make it dirty"). The ledger is the
+     *  record of what HAPPENED and it only grows; this is one field describing what is ON SCREEN,
+     *  and it has no past worth keeping. Writing an event per open would also make every glance
+     *  move the global seq — which every widget in every host polls — so opening an app would
+     *  spuriously refresh every other one.
+     *
+     *  Emits "live" AFTER the write, like notify() does for "change": in-process subscribers (the
+     *  SSE /events route) get push latency, and anyone else compares dataVersion().live_n.
+     *  Returns the new {app, ts, n}, or null when the name is not one (the caller has already
+     *  checked the app exists; this only keeps a malformed value out of the column). */
+    touchLiveApp(name) {
+      const app = String(name ?? "");
+      if (!APP_NAME_RE.test(app)) return null;
+      const ts = new Date().toISOString();
+      q.touchLive.run({ app, ts });
+      const row = q.liveGet.get();
+      try { events.emit("live", { app: row.app, ts: row.ts, n: row.n }); } catch {}
+      return row;
+    },
+    /** {app, ts, n} — or null when no app has been opened yet (a fresh store, or one whose
+     *  pointer row was never written). Null is an ANSWER: an `@live` brick renders its wait. */
+    livePointer: () => q.liveGet.get() || null,
     getApp: (name) => q.compByName.get(name) || null,
     // No arguments = every row, exactly as before: the registry's own consumers (the settings
     // App Store pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's

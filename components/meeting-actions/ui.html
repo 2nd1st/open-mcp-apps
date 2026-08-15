@@ -21,67 +21,41 @@
   }
 
   * { box-sizing: border-box; }
-  html, body { margin: 0; }
-  body {
-    max-width: 860px;
-    margin-inline: auto;
-    padding: 16px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font: 400 var(--font-text-md-size, 14px)/1.45 var(--font-sans);
-  }
+  /* No body rule. The private 860px cap is a stage declaration now
+     (manifest.stage.width: column), while outer padding and ground belong to the kit's stage
+     contract; colour, type and margin already come from the kit for every app. */
   button { font: inherit; }
   button:focus-visible { outline: 2px solid var(--color-ring-primary); outline-offset: 2px; }
 
-  .app {
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-lg, 14px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-  }
+  /* `.app` is `.k-stage` now. Its old rule was only a self-drawn card — border, radius,
+     background and shadow, notably without clipping — so nothing load-bearing remains. The kit
+     draws that card once in chat and no card at all when the app owns the screen. */
 
-  .app-header {
-    display: flex;
-    min-height: 74px;
-    align-items: center;
-    gap: 12px;
-    padding: 14px 18px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
+  /* `.app-header` is `.k-appbar` now: row, gap, padding and the contextual rule beneath it come
+     from the kit. This app keeps only its own bar height and the mark's PAINT below. */
+  .app-header { min-height: 74px; }
   .app-mark {
-    display: grid;
-    width: 44px;
-    height: 44px;
-    flex: none;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--accent) 30%, var(--color-border-primary));
-    border-radius: var(--border-radius-md, 10px);
     background: var(--accent-soft);
     color: var(--accent);
   }
   .app-mark svg, .context-mark svg, .signal-icon svg, .status-chip svg, .complete-button svg {
-    width: 20px;
-    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.65;
   }
-  .identity { min-width: 0; }
-  .eyebrow, .brief-kicker, .lane-kicker, .signal-label, .client-name {
+  .context-mark svg, .signal-icon svg, .status-chip svg, .complete-button svg {
+    width: 20px;
+    height: 20px;
+  }
+  .brief-kicker, .lane-kicker, .signal-label, .client-name {
     font-family: var(--font-mono);
     font-weight: 700;
     letter-spacing: .075em;
     text-transform: uppercase;
   }
-  .eyebrow {
-    margin-bottom: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-    line-height: 1;
-  }
-  h1 { margin: 0; font-size: 18px; font-weight: 700; line-height: 1.15; letter-spacing: -.025em; }
   .source-badge {
     display: flex;
     align-items: center;
@@ -364,12 +338,7 @@
   }
 
   @media (max-width: 480px) {
-    body { padding: 8px; }
-    .app { border-radius: var(--border-radius-md, 10px); }
-    .app-header { min-height: 64px; padding: 11px 12px; }
-    .app-mark { width: 38px; height: 38px; }
-    .app-mark svg { width: 18px; height: 18px; }
-    h1 { font-size: 16px; }
+    .app-header { min-height: 64px; }
     .source-badge { padding: 6px 8px; font-size: 9.5px; }
     .source-badge .wide { display: none; }
     .brief { padding: 19px 14px 17px; }
@@ -399,8 +368,6 @@
   }
 
   @media (max-width: 370px) {
-    body { padding: 6px; }
-    .eyebrow { font-size: 8.5px; }
     .source-badge { gap: 6px; padding-inline: 7px; }
     .brief { padding-inline: 12px; }
     .brief h2 { font-size: 27px; }
@@ -413,12 +380,12 @@
 </style>
 </head>
 <body>
-<main class="app">
-  <header class="app-header">
-    <div class="app-mark" aria-hidden="true">
+<main class="app k-stage">
+  <header class="app-header k-appbar">
+    <div class="app-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M6 4.5h12v15H6z"></path><path d="M9 8h6M9 11.5h3"></path><path d="m13.5 15 1.6 1.6 3-3.1"></path></svg>
     </div>
-    <div class="identity"><div class="eyebrow" data-i18n="eyebrow">After the call</div><h1 data-i18n="appName">Meeting Actions</h1></div>
+    <div class="identity k-appcopy"><div class="eyebrow k-eyebrow" data-i18n="eyebrow">After the call</div><h1 data-i18n="appName">Meeting Actions</h1></div>
     <div class="source-badge"><span data-i18n="sourceSynced">Context synced</span></div>
   </header>
 
@@ -722,6 +689,11 @@
       $("error").hidden = false;
     }
   });
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready((state) => { applyI18n(); render(state); });
   oma.onChange(render);

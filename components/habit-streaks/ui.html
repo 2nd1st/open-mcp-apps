@@ -14,85 +14,61 @@
     --cell: 15px;
     --cell-gap: 4px;
   }
-  html, body { margin: 0; overflow: hidden; }
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-text-md-size, 14px);
-  }
+  /* No body rule at all. Padding, ground and the frame are the kit's stage contract now
+     (components/_system.css, keyed on .k-stage below); colour, font and margin the kit already
+     set for every app. The `overflow: hidden` that used to sit here with them was the worst of
+     the three: on a fixed-height frame it is the root's overflow, so the scroll wheel died and
+     everything below the fold was unreachable. */
   button, input { font: inherit; }
   button { color: inherit; }
   button:focus-visible, input:focus-visible {
     outline: 2px solid var(--color-ring-primary);
     outline-offset: 2px;
   }
-  .shell {
-    position: relative;
-    max-width: 980px;
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-width: 0;
-  }
+  /* The root container is `.k-stage` — the kit draws the card in a chat and nothing at all on a
+     screen it owns, and reads the width track off the body class the engine stamped from
+     manifest.stage.width. What is left here is the one thing the kit must not assume: this
+     element is the positioning context for the editor overlay below (`position: absolute`). */
+  .shell { position: relative; }
+  /* `.topbar` is `.k-appbar` now: row, gaps, padding, the mark's box and the title/eyebrow scale
+     all come from the kit, and so does the rule under it — but only in a chat, where this bar is
+     the card's title bar. On a full screen it is the top of a page and wants no rule. */
+  .topbar { min-height: 68px; }
+  /* The mark keeps its PAINT and loses its box: the gradient and the accent ring are this app's
+     face, and the stage contract strips frames, never faces. */
   .brand-mark {
-    display: grid;
-    place-items: center;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
     border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
-    border-radius: var(--border-radius-md);
     background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 17%, transparent), color-mix(in oklab, var(--positive) 7%, transparent));
     color: var(--accent);
   }
   .brand-mark svg {
-    width: 20px;
-    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
     stroke-linejoin: round;
     stroke-width: 1.8;
   }
-  .brand-copy { min-width: 0; }
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  .brand h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
-  }
   .brand-summary {
     margin-top: 3px;
     color: var(--color-text-secondary);
     font-size: var(--font-text-sm-size, 12px);
   }
+  /* The app had no way to say anything went wrong — so the one asynchronous hand-off it makes
+     (Ask AI) could only fail silently. Same strip project-pulse uses, so a person who has seen
+     one has seen both. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+  .error-strip[hidden] { display: none; }
   .top-actions {
     display: flex;
     gap: 8px;
@@ -479,11 +455,11 @@
     @keyframes check-pop { 50% { transform: scale(1.18); } }
     @keyframes editor-in { from { opacity: 0; transform: translateY(8px) scale(.985); } }
   }
+  /* Narrow: the OUTER shape (body padding, the card's border and radius) is not listed here any
+     more — it belongs to the kit's stage contract, which drops the frame entirely below 560 for
+     the reason a phone makes plain: the host's widget frame is already the card. */
   @media (max-width: 640px) {
-    body { padding: 8px; }
-    .shell { border-radius: var(--border-radius-md); }
     .topbar { gap: 10px; padding: 12px; }
-    .brand { gap: 9px; }
     .brand-summary { display: none; }
     .btn { min-height: 34px; padding: 8px 10px; }
     .overview-band { grid-template-columns: 1fr; gap: 10px; padding: 12px; }
@@ -503,21 +479,19 @@
 
 </head>
 <body>
-<main class="shell">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7.3 6.4A7 7 0 1 1 5 11.8"></path>
-          <path d="M4 6v4h4"></path>
-          <path d="m8.2 12 2.3 2.3 5.2-5.2"></path>
-        </svg>
-      </div>
-      <div class="brand-copy">
-        <div class="kicker">DAILY RHYTHM</div>
-        <h1>Habit streaks</h1>
-        <div class="brand-summary">Keep daily promises visible and moving.</div>
-      </div>
+<main class="shell k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7.3 6.4A7 7 0 1 1 5 11.8"></path>
+        <path d="M4 6v4h4"></path>
+        <path d="m8.2 12 2.3 2.3 5.2-5.2"></path>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <div class="kicker k-eyebrow">DAILY RHYTHM</div>
+      <h1>Habit streaks</h1>
+      <div class="brand-summary">Keep daily promises visible and moving.</div>
     </div>
     <div class="top-actions">
       <button id="suggestButton" class="btn ghost" type="button" aria-label="Ask AI to suggest habits">
@@ -526,6 +500,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview-band" aria-label="Habit overview">
     <div class="overview-main">
@@ -1099,7 +1077,8 @@
     "Your rhythm starts with one small mark.": "从今天的一次小小记录开始。",
     "Add a habit above, or ask the AI to “suggest three tiny daily habits for me.”": "在上方添加一个习惯，或让 AI 为你推荐三个轻量的每日习惯。",
     "days": "天",
-    "day": "天"
+    "day": "天",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -1140,6 +1119,25 @@
     });
   }
 
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = document.getElementById("errorStrip");
+  const errorText = document.getElementById("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
+  }
+
   oma.ready((state) => {
     render(state);
     applyUiLocale();
@@ -1172,11 +1170,33 @@
     input.focus();
   };
 
-  // oma.sendMessage falls back to the clipboard in standalone, so this hand-off stays visible.
-  document.getElementById("suggestButton").onclick = () => {
+  // oma.sendMessage falls back to the clipboard in standalone, so this hand-off stays visible
+  // there — the channel is degraded, not missing, and hiding the button would remove a working
+  // feature from the browser view.
+  //
+  // AWAITED, and the button is dead while it is in flight: the call crosses a bridge with a 10s
+  // deadline, and a button that keeps accepting clicks in the meantime queues duplicate proposals
+  // into someone's chat.
+  //
+  // A DEGRADED RESULT IS NOT A FAILURE. sendMessage answers `{isError: true, degraded: "clipboard"}`
+  // whenever there is no chat attached — and by then the runtime has already copied the text and
+  // told the user so. Reading `isError` alone (the obvious spelling) would put a red strip under
+  // every successful standalone click. What is left after the degradations is the real failure:
+  // a rejection, or an error the runtime could not soften.
+  const suggestButton = document.getElementById("suggestButton");
+  suggestButton.onclick = async () => {
     const habits = habitGroups(latestState).map((group) => group.habit);
     const context = habits.length ? ` I currently track ${habits.join(", ")}.` : "";
-    oma.sendMessage(`Based on what you know about me, suggest three small, sustainable daily habits worth tracking.${context} Give each a realistic numeric daily target, avoid duplicating what I already track, and briefly explain why each fits me.`);
+    clearError();
+    suggestButton.disabled = true;
+    try {
+      const result = await oma.sendMessage(`Based on what you know about me, suggest three small, sustainable daily habits worth tracking.${context} Give each a realistic numeric daily target, avoid duplicating what I already track, and briefly explain why each fits me.`);
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      suggestButton.disabled = false;
+    }
   };
 
   document.getElementById("editorClose").onclick = closeEditor;

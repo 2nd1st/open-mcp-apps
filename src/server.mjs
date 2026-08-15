@@ -27,7 +27,9 @@ const store = openStore(); // fixed per-user data dir (see store.mjs) — OMA_DB
 // accepted here, it is structurally absent. And any local process that could reach the port can
 // read the SQLite file directly, so a token would be a lock beside an open wall. The one way out of
 // the machine is a tunnel the user deliberately starts, which is its own deliberate act and not
-// something default-on creates. See docs/viewer-devmode-design.md §7.
+// something default-on creates. The reasoning is written out in
+// docs/archive/2026-08-14-v05-cleanup/viewer-devmode-design.md §7 (archived 2026-08-14: a spec for a
+// dev mode that was never built — §7's threat reading is why this paragraph exists, not a plan).
 //
 // Awaited because the viewer's URL is what makes the app links in tool results real (viewUrl in
 // tools/apps.mjs), and the engine has to be built knowing it. startViewer never throws and never

@@ -10,6 +10,11 @@
 //                        the terminal, the human watches/edits the same data in a tab).
 //   GET  /               index of apps with /view links.
 //
+// There is no /live route. An always-on display — a spare tablet on a wall showing whatever the
+// AI just opened — is an APP that places the `@live` brick (shell-runtime.js), opened at
+// /view/<its name> like any other. The engine's half is the pointer this file already pushes on
+// the /events frame; the screen's half belongs to whoever designs the screen.
+//
 // Run: node src/http.mjs   (PORT=8787 by default)
 // NOTE: anything that can reach this port can read/write the store — keep it local, and
 // treat a tunnel URL as a secret while it's up.
@@ -20,8 +25,8 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as resolvePath } from "node:path";
-import { openStore } from "./store.mjs";
-import { createEngine, hostContext, tierOf, defaultCollectionFor } from "./engine.mjs";
+import { openStore, APP_NAME_RE } from "./store.mjs";
+import { createEngine, hostContext, tierOf, defaultCollectionFor, stageWidthFor, stageDisplayFor } from "./engine.mjs";
 import { wrapApp, wrapLoader } from "./shell.mjs";
 import { RUNNER_CSP_POLICY } from "./runner.mjs";
 
@@ -195,16 +200,41 @@ const server = http.createServer(async (req, res) => {
         "x-accel-buffering": "no",
       });
       res.write("retry: 3000\n\n");
-      let lastSeq = store.dataVersion().seq;
-      const send = (seq) => { try { res.write(`data: ${JSON.stringify({ seq })}\n\n`); } catch {} };
-      send(lastSeq);
-      const onChange = (ev) => { if (ev.seq !== lastSeq) { lastSeq = ev.seq; send(lastSeq); } };
+      const v0 = store.dataVersion();
+      let lastSeq = v0.seq, lastLiveN = v0.live_n;
+      // TWO AXES, ONE FRAME. `live` is which app was opened last (store.touchLiveApp) — a key
+      // ADDED to the payload, never one changed, because every client in the wild reads `d.seq`
+      // and ignores the rest (src/shell-runtime.js onmessage), so a second event type would only
+      // be a channel nothing old subscribes to. Null until an app has been opened at all.
+      const send = () => {
+        const p = store.livePointer();
+        try { res.write(`data: ${JSON.stringify({ seq: lastSeq, live: p ? { app: p.app, ts: p.ts } : null })}\n\n`); } catch {}
+      };
+      // Connect = the CURRENT state, whole. A display is opened long after the app it should
+      // be showing was; waiting for the next change would leave it blank until the AI happened to
+      // do something, which on a screen nobody is sitting at could be hours.
+      send();
+      const onChange = (ev) => { if (ev.seq !== lastSeq) { lastSeq = ev.seq; send(); } };
+      const onLive = (ev) => { if (ev.n !== lastLiveN) { lastLiveN = ev.n; send(); } };
       store.events.on("change", onChange);
+      store.events.on("live", onLive);
+      // The cross-process fallback now watches both axes: the chat host that opens an app is
+      // usually a DIFFERENT process from this viewer (stdio server vs `npm run serve`), and its
+      // "live" emit cannot reach our emitter any more than its "change" can. live_n is the counter
+      // that makes the switch visible here — the app name alone could not (opening the same app
+      // twice is a real event on a display that has since been reloaded).
       const probe = setInterval(() => {
-        try { const s = store.dataVersion().seq; if (s !== lastSeq) { lastSeq = s; send(s); } } catch {}
+        try {
+          const d = store.dataVersion();
+          if (d.seq !== lastSeq || d.live_n !== lastLiveN) { lastSeq = d.seq; lastLiveN = d.live_n; send(); }
+        } catch {}
       }, 2000);
       const beat = setInterval(() => { try { res.write(":hb\n\n"); } catch {} }, 25000);
-      req.on("close", () => { store.events.off("change", onChange); clearInterval(probe); clearInterval(beat); });
+      req.on("close", () => {
+        store.events.off("change", onChange);
+        store.events.off("live", onLive);
+        clearInterval(probe); clearInterval(beat);
+      });
       return; // response stays open — the SSE stream owns it from here
     }
 
@@ -215,6 +245,30 @@ const server = http.createServer(async (req, res) => {
       if (!comp) return html(res, 404, `<h3>No app "${view[1]}"</h3>`);
       // Same binding rule the open_app tool uses — one answer to "what does this app open on".
       const collection = url.searchParams.get("collection") || defaultCollectionFor(comp);
+      // ?chrome=0 — serve the BARE widget: no viewer bar, no page stage (shell-runtime.js
+      // `SA.chrome !== false`). The switch already existed for the hosted shell; the URL is
+      // how a LOCAL embedder reaches it. Both parts of that chrome are wrong inside a host
+      // panel: the bar carries an "All apps" link OUT of the app — which a shell that opened
+      // this app as a dedicated place must not offer — and the stage draws a page-sized card
+      // around a widget that is already framed by the panel it sits in. Opt-in and default-off:
+      // a person who opens /view in a tab still gets the tab's chrome.
+      //
+      // EXCEPT for an app that declared itself a display (`manifest.stage.display` — contracts.mjs
+      // stageDisplayFor). That declaration already says what the chrome asks: this app IS the
+      // frame, not a widget someone framed. A wall on a spare tablet with an "← All apps" bar
+      // above it and a rounded card under it is the viewer decorating a screen the app was written
+      // to own, edge to edge — the same double bezel the stage contract removed one level down.
+      // So the default flips for those apps only, and `?chrome=1` is the way back: a person
+      // developing a wall still wants a tab to look like a tab. Both doors below read this one
+      // answer, because a display served through the loader (non-local tier) is the same screen.
+      const chromeParam = url.searchParams.get("chrome");
+      const chrome = chromeParam === "0" || (chromeParam !== "1" && stageDisplayFor(comp)) ? { chrome: false } : {};
+      // ?nav=intent — app→app links stop navigating this document and become a message to the
+      // embedder instead (shell-runtime.js SA.navIntent). Orthogonal to chrome=0 on purpose:
+      // chrome is about what this page DRAWS, this is about who decides where a link GOES. A
+      // panel host that opens each app as its own place needs the second and usually wants the
+      // first; a plain tab wants neither. Default off — the link works as written.
+      const nav = url.searchParams.get("nav") === "intent" ? { navIntent: true } : {};
       // Tier branch (docs/security-model.md §2.3). DIRECT mode — the real window.oma, and this
       // route's connect-src 'self' reaches /rpc — is for local apps only. A non-local one
       // gets the universal loader instead, which reads app_html over /rpc, sees the tier and
@@ -228,16 +282,20 @@ const server = http.createServer(async (req, res) => {
       // settings' App Store preview has relied on exactly this since it shipped).
       if (tierOf(comp.author) !== "local")
         return html(res, 200, wrapLoader({
-          standalone: { endpoint: "/rpc", collection, app: view[1],
+          standalone: { endpoint: "/rpc", collection, app: view[1], ...chrome, ...nav,
             ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         }), { "content-security-policy": VIEW_CSP });
       return html(res, 200, wrapApp(comp.ui, {
+        // The width track the app declared, written onto its body for the kit (contracts.mjs
+        // stageWidthFor / shell.mjs stampStage). Same rule the ui:// resource applies, from the
+        // same function — a second copy would be a second answer waiting to disagree.
+        stage: stageWidthFor(comp),
         // viewBase reaches the RUNTIME only when the operator set one. App→app links
         // default to a relative "/view/", which is correct for a plain local server and wrong behind
         // a path-prefixed proxy — where OMA_VIEW_BASE is exactly the operator saying what the prefix
         // is. Passing it unconditionally would turn every in-app link absolute (127.0.0.1), which
         // silently breaks the ordinary `localhost:PORT` visit: different origin, same server.
-        standalone: { endpoint: "/rpc", collection, app: view[1], ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
+        standalone: { endpoint: "/rpc", collection, app: view[1], ...chrome, ...nav, ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
       }), { "content-security-policy": VIEW_CSP });
     }
 

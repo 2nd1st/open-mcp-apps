@@ -21,71 +21,31 @@
 
   * { box-sizing: border-box; }
   [hidden] { display: none !important; }
-  html, body { margin: 0; width: 100%; overflow: hidden; }
-  body {
-    padding: 12px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-  }
+  /* No html/body frame here. The stage kit owns the document margin, ground, padding and
+     overflow policy; removing `overflow: hidden` is what lets a fixed-height host scroll past
+     the first screen instead of trapping the wheel in the root. */
   button, input, textarea { color: inherit; font: inherit; }
   button { cursor: pointer; }
 
+  /* `.app` opts into the stage contract below. Its positioning and flex column are load-bearing:
+     the editor layer is an absolute child and the page sections need this layout context. The
+     card frame, private width and clipping belong to the kit now, so keeping them here would draw
+     a second bezel when the host already framed the page. */
   .app {
     position: relative;
     display: flex;
     flex-direction: column;
-    width: min(100%, 1240px);
-    margin: 0 auto;
-    overflow: hidden;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--border-radius-lg);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
   }
 
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    background: var(--surface);
-    border-bottom: 1px solid var(--line);
-  }
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-width: 0;
-  }
+  /* `.topbar` is `.k-appbar` now: the kit supplies the row, gaps, padding, mark box, title scale
+     and chat-only rule beneath it. The app keeps its 68px rhythm and its own subtitle. */
+  .topbar { min-height: 68px; }
+  /* The mark keeps its PAINT — accent colour, fill and ring are identity content. The kit strips
+     the private box, never the face. */
   .brand-mark {
-    display: grid;
-    flex: 0 0 auto;
-    width: 37px;
-    height: 37px;
-    place-items: center;
     color: var(--accent);
     background: color-mix(in oklab, var(--accent) 12%, var(--surface));
     border: 1px solid var(--line-strong);
-    border-radius: var(--border-radius-md);
-  }
-  .brand-mark svg { width: 20px; height: 20px; }
-  .brand-copy { min-width: 0; }
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
   }
   .subtitle {
     display: -webkit-box;
@@ -514,6 +474,21 @@
     outline: 2px solid var(--color-ring-primary);
     outline-offset: 2px;
   }
+  /* Ask AI is an asynchronous bridge. This small strip is the app's one error surface so a real
+     failure is visible without treating the standalone clipboard degradation as a failure. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--line));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+  .error-strip[hidden] { display: none; }
   .editor-actions { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 16px; }
   .action-right { display: flex; gap: 8px; margin-left: auto; }
   .button {
@@ -565,10 +540,7 @@
   }
 
   @media (max-width: 640px) {
-    body { padding: 8px; }
-    .app { border-radius: var(--border-radius-md); }
     .topbar { gap: 10px; padding: 12px 13px; }
-    .brand { gap: 9px; }
     .btn { padding-right: 10px; padding-left: 10px; }
     .overview { flex-wrap: wrap; gap: 8px 10px; padding: 10px 12px; }
     .overview-number { min-width: 140px; padding-right: 12px; }
@@ -590,20 +562,18 @@
 </style>
 </head>
 <body>
-<div class="app" id="app">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
-          <circle cx="12" cy="12" r="5.5"></circle>
-          <path d="M3.5 4v5.5M6 4v5.5M3.5 7h2.5M4.75 9.5V20M20 4v16M20 4c-2 1.8-2 5.2 0 7"></path>
-        </svg>
-      </div>
-      <div class="brand-copy">
-        <div class="kicker">WEEKLY MEAL MAP</div>
-        <h1>Meal planner</h1>
-        <p class="subtitle">Arrange planned meals across a weekly calendar.</p>
-      </div>
+<div class="app k-stage" id="app">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5.5"></circle>
+        <path d="M3.5 4v5.5M6 4v5.5M3.5 7h2.5M4.75 9.5V20M20 4v16M20 4c-2 1.8-2 5.2 0 7"></path>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <div class="kicker k-eyebrow">WEEKLY MEAL MAP</div>
+      <h1>Meal planner</h1>
+      <p class="subtitle">Arrange planned meals across a weekly calendar.</p>
     </div>
     <div class="top-actions">
       <button class="btn ghost" id="aiPlan" type="button">
@@ -614,6 +584,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview" aria-label="Week overview">
     <div class="overview-number">
@@ -1082,22 +1056,34 @@
     render(currentState);
   };
 
-  document.getElementById("aiPlan").onclick = () => {
-    const days = Array.from({ length: 7 }, (_, index) => addDays(selectedWeekStart, index));
-    const slotMap = buildSlotMap(currentState, days);
-    const existing = [];
-    for (const day of days) {
-      for (const type of mealTypes) {
-        const item = slotMap.get(`${localISO(day)}|${type}`);
-        if ((item?.fields.dish || "").trim()) {
-          existing.push(`${item.fields.date} ${type}: ${item.fields.dish} (${Math.max(1, Number.parseInt(item.fields.servings, 10) || 1)} servings)`);
+  const aiPlan = document.getElementById("aiPlan");
+  // oma.sendMessage falls back to the clipboard outside a chat host, so that standalone hand-off
+  // remains useful. Await it and surface only a real bridge failure: `{isError:true, degraded:
+  // "clipboard"}` is the successful no-chat result, not an error to show to the person.
+  aiPlan.onclick = async () => {
+    clearError();
+    aiPlan.disabled = true;
+    try {
+      const days = Array.from({ length: 7 }, (_, index) => addDays(selectedWeekStart, index));
+      const slotMap = buildSlotMap(currentState, days);
+      const existing = [];
+      for (const day of days) {
+        for (const type of mealTypes) {
+          const item = slotMap.get(`${localISO(day)}|${type}`);
+          if ((item?.fields.dish || "").trim()) {
+            existing.push(`${item.fields.date} ${type}: ${item.fields.dish} (${Math.max(1, Number.parseInt(item.fields.servings, 10) || 1)} servings)`);
+          }
         }
       }
+      const open = 21 - existing.length;
+      const kept = existing.length ? ` Keep these ${existing.length} existing meals unchanged: ${existing.join("; ")}.` : "";
+      const result = await oma.sendMessage(`Please plan this week in my meal-planner collection (${localISO(days[0])} through ${localISO(days[6])}). Fill the ${open} open breakfast, lunch, and dinner slots with practical, varied dishes.${kept} For every new item, use group as the meal type and the exact fields {date, meal_type, dish, servings, ingredients_note}.`);
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      aiPlan.disabled = false;
     }
-    const open = 21 - existing.length;
-    const kept = existing.length ? ` Keep these ${existing.length} existing meals unchanged: ${existing.join("; ")}.` : "";
-    // oma.sendMessage falls back to the clipboard outside a chat host, so this stays visible in standalone.
-    oma.sendMessage(`Please plan this week in my meal-planner collection (${localISO(days[0])} through ${localISO(days[6])}). Fill the ${open} open breakfast, lunch, and dinner slots with practical, varied dishes.${kept} For every new item, use group as the meal type and the exact fields {date, meal_type, dish, servings, ingredients_note}.`);
   };
 
   renderLegend();
@@ -1141,7 +1127,8 @@
     "Next week": "下一周",
     "Lemon herb chicken": "柠檬香草鸡",
     "Key ingredients, prep reminders, or what to use up…": "主要食材、准备提醒，或需要优先用掉的食材…",
-    "serving": "份"
+    "serving": "份",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -1176,6 +1163,25 @@
         if (translated !== value) element.setAttribute(attribute, translated);
       }
     });
+  }
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means the
+  // browser viewer or panel host already framed this page, so the kit draws no card; absent means
+  // this is a widget in a conversation, where the kit draws exactly one.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = document.getElementById("errorStrip");
+  const errorText = document.getElementById("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
   }
 
   oma.ready((state) => {

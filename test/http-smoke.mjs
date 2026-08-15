@@ -33,6 +33,13 @@ for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f)
   // a NON-local fixture (author not in {agent,human,seed}) — proves /view fails closed for it
   store.execute({ type: "save_app", command_id: "seed-nonlocal", name: "nonlocal-fixture",
     ui: "<!DOCTYPE html><html><body><div id='x'>nonlocal</div></body></html>", actor: "library-test" });
+  // a DISPLAY fixture — an app declaring itself a frame for other apps (manifest.stage.display).
+  // Its own fixture rather than the shipped `live` template on purpose: what §6b proves is the
+  // ENGINE's rule, and a test that reads it off a store entry would go quiet the day that entry
+  // is renamed or restyled.
+  store.execute({ type: "save_app", command_id: "seed-display", name: "display-fixture",
+    ui: "<!DOCTYPE html><html><body><div id='wall'>wall</div></body></html>",
+    manifest: { stage: { width: "fluid", display: true } }, actor: "seed" });
   store.close();
 }
 
@@ -253,6 +260,23 @@ try {
   const runtimeSrc = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
   ok("runtime honors SA.events and SA.chrome (invariant)",
     runtimeSrc.includes('SA.events || "/events"') && runtimeSrc.includes("SA.chrome !== false"));
+  // A viewer page is sized by the window or by the panel that frames it, never by the app — so an
+  // app taller than that has to stay reachable. The declaration is on the ROOT (the box whose
+  // overflow the viewport uses) and never on the body (a scroll container that cannot scroll, which
+  // is where a sticky bar goes to die). Asserted on the source because the effect is a browser one.
+  ok("the standalone viewer keeps an over-tall app reachable (root overflow, not body)",
+    runtimeSrc.includes('document.documentElement.style.setProperty("overflow-y", "auto", "important")')
+    && !runtimeSrc.includes('document.body.style.setProperty("overflow-y", "auto"'));
+  // ...and the URL door onto that same switch, for an embedder with no server of its own to
+  // pass opts through (a host plugin pointing an iframe at /view). Opt-in and default-off:
+  // the plain visit keeps the viewer bar, which is the only navigation a browser tab has.
+  const bare = await (await fetch(`${BASE}/view/dashboard?chrome=0`)).text();
+  ok("/view?chrome=0 asks the runtime for the bare widget",
+    bare.includes('"chrome":false') && bare.includes('id="grid"'));
+  ok("...and /view without it keeps the viewer chrome", !page.includes('"chrome":false'));
+  const bareLoader = await (await fetch(`${BASE}/view/nonlocal-fixture?chrome=0`)).text();
+  ok("...on the loader path too, where the embedded app is a sandboxed child",
+    bareLoader.includes('"chrome":false') && bareLoader.includes('data-oma="loader"'));
 
   // ── the viewer the stdio server starts on its own ────────────────────────────────────────
   // Not a unit test of http.mjs: the claim is end-to-end and each link in it fails independently —
@@ -317,6 +341,7 @@ try {
     const ctl = new AbortController();
     const killer = setTimeout(() => ctl.abort(), 12_000); // hard stop — the suite must never hang on the stream
     const seqs = [];
+    const frames = [];   // whole payloads — the `live` axis rides the same frame as `seq`
     try {
       const evRes = await fetch(`${BASE}/events`, { signal: ctl.signal });
       ok("/events answers as text/event-stream", evRes.ok && (evRes.headers.get("content-type") || "").includes("text/event-stream"));
@@ -334,7 +359,7 @@ try {
             buf = lines.pop(); // keep the trailing partial line
             for (const line of lines) {
               if (!line.startsWith("data:")) continue;
-              try { const o = JSON.parse(line.slice(5).trim()); if (typeof o.seq === "number") seqs.push(o.seq); } catch {}
+              try { const o = JSON.parse(line.slice(5).trim()); frames.push(o); if (typeof o.seq === "number") seqs.push(o.seq); } catch {}
             }
           }
         } catch {} // aborting the controller lands here — expected teardown
@@ -347,6 +372,22 @@ try {
         body: JSON.stringify({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", group: "To Do", fields: { title: "sse ping" } } }) });
       const gotNext = await waitSeqs(2, 4000);
       ok("a further event with a strictly higher seq arrives after the write", gotNext && seqs[seqs.length - 1] > firstSeq);
+      // THE LIVE AXIS, on the same frame. `live` is a key ADDED, never one changed — the first
+      // frame carries the CURRENT pointer (a display opened hours after the last open must not
+      // sit blank waiting for the next one), and opening an app pushes a new one.
+      ok("every frame carries the live key, present from the very first one",
+        frames.length > 0 && frames.every((f) => "live" in f));
+      const beforeOpen = frames.length;
+      await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ name: "open_app", arguments: { app: "dashboard" } }) });
+      const dl = Date.now() + 4000;
+      while (Date.now() < dl && !frames.slice(beforeOpen).some((f) => f.live && f.live.app === "dashboard")) await new Promise((r) => setTimeout(r, 25));
+      const pushed = frames.slice(beforeOpen).find((f) => f.live && f.live.app === "dashboard");
+      ok("opening an app pushes it down the SAME stream, with a timestamp",
+        !!pushed && typeof pushed.live.ts === "string");
+      // …and it did NOT pretend to be a data change: the seq on that frame is the one already
+      // standing. A moved seq here would make every widget in every host refetch on a glance.
+      ok("…without moving the seq, because nobody wrote anything", pushed && pushed.seq === seqs[seqs.length - 1]);
       ctl.abort();
       await pump;
     } catch (e) {
@@ -355,6 +396,58 @@ try {
     } finally {
       clearTimeout(killer);
     }
+  }
+
+  console.log("6b. @live — the display brick, and the route that used to be one");
+  {
+    // THE ROUTE IS GONE, and 404 is the assertion. An always-on display is an APP now — one that
+    // places `oma.embed("@live")` and opens at /view like everything else — so a surviving /live
+    // would be a second answer to a question that now has exactly one.
+    ok("/live is no longer a route", (await fetch(`${BASE}/live`)).status === 404);
+    ok("…and neither is /live/<name>, the pinned form included", (await fetch(`${BASE}/live/dashboard`)).status === 404);
+
+    // WALL ① — the outer one, and the only half of the anti-nesting rule reachable without a
+    // browser: an open_* door does not move the pointer for an app declaring `stage.display`. The
+    // pointer means "the app the AI put in front of the user", and a display is the FRAME around
+    // whatever it names, so recording it would aim the wall at itself. Read straight off the row.
+    const ptr = () => {
+      const ro = new Database(DB, { readonly: true });
+      try { return ro.prepare("SELECT app, n FROM live_pointer WHERE id = 1").get() || null; }
+      finally { ro.close(); }
+    };
+    const open = (app) => fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name: "open_app", arguments: { app } }) }).then((r) => r.json());
+    await open("counter");
+    const before = ptr();
+    ok("an ordinary open moves the pointer to that app", !!before && before.app === "counter");
+    const displayOpen = await open("display-fixture");
+    const after = ptr();
+    ok("…and a DISPLAY app still opens perfectly normally", !displayOpen.isError);
+    ok("…while leaving the pointer exactly where it was — the name AND the counter behind it",
+      !!after && after.app === before.app && after.n === before.n);
+
+    // WALL ② and the chat face both live in the brick, which runs in a browser: pinned in source
+    // here, the way the retired loader's mount path was. No test in this file runs one.
+    ok("the runtime carries the reserved brick, wired into embed before anything else",
+      runtimeSrc.includes('const LIVE_NAME = "@live"')
+      && runtimeSrc.includes("if (n === LIVE_NAME) return embedLive(opts)"));
+    ok("…and the brick refuses to mount an app that declares itself a display, without retrying",
+      /stage\.display === true\) \{ drop\(\); idle\(\); return; \}/.test(runtimeSrc));
+    ok("…and in a chat it is a static tile that reads no pointer and polls nothing",
+      /if \(!SA\) \{[\s\S]{0,200}?liveTile\("Live region"/.test(runtimeSrc));
+    // Follow mode routes even a LOCAL app through the sandboxed embed, because a direct mount
+    // into the display's document cannot be undone (redeclared globals, orphaned listeners). If
+    // this ever becomes a direct mount, the second app the wall switches to dies on its own line.
+    ok("…and switches through oma.embed, the one mount with an unmount",
+      /function embedLive\(opts\)[\s\S]*?window\.oma\.embed\(name, \{[\s\S]*?handle\.unmount\(\)/.test(runtimeSrc));
+    // The feed itself survives the route: it is the brick's one input, and it still latches so a
+    // brick mounted after the connect frame is not left waiting for the next open (possibly hours).
+    ok("the runtime forwards the live axis to every brick — a SET of them, no window global left",
+      runtimeSrc.includes('if ("live" in d) pushLivePointer(d.live)')
+      && runtimeSrc.includes("const liveCbs = new Set()") && !runtimeSrc.includes("__OMA_LIVE__"));
+    const shellSrc = readFileSync(join(ROOT, "src", "shell.mjs"), "utf-8");
+    ok("…and the loader is a loader again: it mounts the app it was told to mount, once",
+      !shellSrc.includes("startLive") && !shellSrc.includes("liveFollow") && !shellSrc.includes("__OMA_LIVE__"));
   }
 
   console.log("7. chunked upload lifecycle ACROSS stateless /mcp requests (memoized per-store channel)");

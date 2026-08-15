@@ -27,6 +27,9 @@
     "date_format",
     "density"
   ],
+  "stage": {
+    "width": "column"
+  },
   "collections": {
     "elder-meds": {
       "label_field": "name",

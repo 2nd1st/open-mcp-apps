@@ -865,6 +865,175 @@ function ownKitCss() {
 // data_changes call and re-walks only when something actually happened there.
 const liveEmbeds = new Set();
 
+// ---- the live pointer: which app the AI last put in front of the user ---------------------
+// The engine pushes it on the SAME SSE frame as `seq` (src/http.mjs /events) — one connection,
+// two axes — and it is the entire input of the `@live` brick further down. Not on `window.oma`:
+// a channel that decides what a page MOUNTS would, on the author API, be an invitation for one
+// widget to replace another. The brick is the only consumer, and it is in this file.
+//
+// It LATCHES and replays on subscribe. The frame the server sends AT CONNECT is the one carrying
+// the app to mount (a display opened hours after the last open must not sit blank), so a brick
+// that mounts a moment after that frame lands would otherwise wait for the next open — which may
+// be tomorrow. Proving the mount always beats the frame is a race nobody should have to win.
+//
+// A SET of subscribers, not one slot: a wall may carry two bricks (a big panel and a strip), and
+// a single slot would let the second one silently take the feed away from the first.
+//
+// SSE is the only carrier. `live_n` exists on the store's own version read for a process that
+// cannot hear the in-process emit, but it is deliberately NOT on the data_version TOOL face
+// (opening an app is not a data change), so there is no poll to fall back to — and none is
+// wanted: EventSource reconnects by itself, and a display with no feed is a display showing the
+// last app it was given, which is the right failure.
+let liveSeen = false, liveLast = null;
+const liveCbs = new Set();
+/** cb(pointer|null) on every pointer frame, replayed immediately if one already arrived.
+ *  Returns an unsubscribe — a brick that unmounts must stop being called. */
+function onLivePointer(cb) {
+  liveCbs.add(cb);
+  if (liveSeen) { try { cb(liveLast); } catch (e) { console.error("[oma] live handler threw", e); } }
+  return () => liveCbs.delete(cb);
+}
+function pushLivePointer(p) {
+  liveSeen = true;
+  liveLast = p;
+  for (const cb of [...liveCbs]) { try { cb(p); } catch (e) { console.error("[oma] live handler threw", e); } }
+}
+
+// ---- "@live": the display brick -----------------------------------------------------------
+// `oma.embed("@live", {into})` — a region that shows whatever app the AI opened last, and swaps
+// it by itself when the AI opens another. `@` is not a legal app name (store.mjs APP_NAME_RE
+// starts at [a-z]), so the name space this borrows is one no app can ever reach.
+const LIVE_NAME = "@live";
+
+/** The brick's own quiet state: a title and a line under it. Built as DOM, never innerHTML —
+ *  one of the strings is an app name off the wire, and textContent costs nothing. */
+function liveTile(title, body) {
+  const el = document.createElement("div");
+  el.setAttribute("data-oma", "live-tile");
+  el.style.cssText = "display:grid;align-content:center;justify-items:center;gap:5px;box-sizing:border-box;"
+    + "min-height:120px;height:100%;padding:24px 20px;text-align:center;"
+    + "font-family:var(--font-sans,-apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif)";
+  const h = document.createElement("div");
+  h.style.cssText = "font-size:13px;font-weight:650;color:var(--color-text-secondary,color-mix(in srgb,CanvasText 65%,Canvas))";
+  h.textContent = title;
+  const p = document.createElement("div");
+  p.style.cssText = "font-size:12px;line-height:1.5;max-width:34ch;color:var(--color-text-tertiary,color-mix(in srgb,CanvasText 45%,Canvas))";
+  p.textContent = body;
+  el.appendChild(h);
+  el.appendChild(p);
+  return el;
+}
+
+/** The `@live` branch of oma.embed. Returns the same {el, unmount, refresh} handle every embed
+ *  returns, so an app treats it like any other child. */
+function embedLive(opts) {
+  const stage = document.createElement("div");
+  stage.setAttribute("data-oma", "live-region");
+  stage.style.cssText = "display:block;width:100%;height:100%";
+  opts.into.appendChild(stage);
+
+  // THE CHAT FACE — a tile, and nothing else. Two reasons, either one sufficient. (1) The pointer
+  // travels over an SSE stream from the engine's own origin, which a widget inside a chat host
+  // does not have; there is nothing here to listen to. (2) Even if there were: a region that
+  // swaps apps under someone's conversation because the AI opened something elsewhere is not a
+  // feature, it is a page rewriting itself while being read. So: no pointer read, no poll, no
+  // data dependency at all — the brick says what it is and waits for a screen that can host it.
+  // `oma.standalone` is the judge, the same one the kit's stage contract uses.
+  if (!SA) {
+    stage.appendChild(liveTile("Live region", "Shows the last-opened app on a standalone display."));
+    return {
+      el: stage, coll: null,
+      refresh: () => Promise.resolve(),
+      async tick() {},
+      unmount() { try { stage.remove(); } catch { /* already gone */ } },
+    };
+  }
+
+  let mounted = null;          // {name, handle} — the app on screen
+  let dead = false;            // unmount(); every in-flight fetch checks it
+  let gen = 0;                 // an A→B switch can land while A's source is still in flight, and
+                               // the late answer must abandon rather than mount over B
+  const announce = (name) => { if (typeof opts.onApp === "function") try { opts.onApp(name); } catch (e) { console.error("[oma] onApp threw", e); } };
+  const wait = (title, body) => { stage.textContent = ""; stage.appendChild(liveTile(title, body)); };
+  const idle = () => { wait("Waiting for an app", "Ask your assistant to open one — it appears here."); announce(null); };
+  const drop = () => {
+    if (mounted) { try { mounted.handle.unmount(); } catch { /* already torn down */ } mounted = null; }
+    stage.textContent = "";
+  };
+
+  // EVERY app is mounted through oma.embed, including a local one, which every other path
+  // direct-mounts. A direct mount cannot be undone: app code runs in THIS document, so a classic
+  // script's top-level const/class lands in the shared global lexical scope and the second app to
+  // declare a name dies on redeclaration before its first line runs — and nothing removes the
+  // first app's listeners, timers or observers. An iframe has an unmount; a document does not.
+  // Local apps lose nothing to the runner around them: TIER_CAPS.local grants every capability.
+  const go = async (name) => {
+    // The same app opened again is not a switch: its data path is already live, and remounting
+    // would throw away a scroll position and any open editor for nothing.
+    if (mounted && mounted.name === name) return;
+    const mine = ++gen;
+    try {
+      const r = await rawCall("app_html", { name });
+      const sc = (r && r.structuredContent) || {};
+      if (dead || mine !== gen) return;
+      if (!sc.html) { drop(); wait("Nothing to show", 'The app "' + name + '" is no longer in the registry.'); announce(null); return; }
+      // WALL ② — the inner one. A display never mounts a display. The outer wall (src/tools/
+      // apps.mjs) keeps an open_* door from ever writing a display's name into the pointer; this
+      // one holds when the value got there anyway — a row written before that wall existed, a
+      // store edited by hand, a door written after it. TERMINAL, not retried: the answer will not
+      // improve on a second fetch, and the next pointer frame supersedes it through `gen`.
+      if (sc.declaration && sc.declaration.stage && sc.declaration.stage.display === true) { drop(); idle(); return; }
+      drop();
+      const handle = await window.oma.embed(name, {
+        into: stage,
+        html: sc.html,
+        caps: sc.caps || {},
+        tier: sc.tier == null ? "local" : sc.tier,
+        // The binding the ENGINE computed, passed explicitly: embed's own default is the app
+        // NAME, and an app whose rows live in a differently named collection would mount blank.
+        collection: sc.collection || name,
+        // Sizing is the WALL's decision, not the brick's — a region that fills a screen wants
+        // `heights:false` and its own CSS; one sitting in a column wants the default ladder.
+        ...(opts.heights === undefined ? {} : { heights: opts.heights }),
+        ...(opts.fit ? { fit: opts.fit } : {}),
+      });
+      if (dead || mine !== gen) { try { handle.unmount(); } catch { /* nothing built */ } return; }
+      mounted = { name, handle };
+      announce(name);
+    } catch (e) {
+      if (dead || mine !== gen) return;
+      drop();
+      // KEEP TRYING. Nobody is sitting at this screen to press reload, so a server restart or a
+      // dropped request must heal by itself; a definitive answer (the app is gone, the app is a
+      // display) does not retry. The next pointer change supersedes this loop by moving `gen`.
+      wait("Couldn't load " + name, "Retrying…");
+      announce(null);
+      setTimeout(() => { if (!dead && mine === gen) go(name); }, 5000);
+    }
+  };
+
+  idle();
+  const off = onLivePointer((p) => {
+    const name = p && p.app;
+    if (name) go(name);   // null = nothing has ever been opened; the waiting state already says so
+  });
+
+  return {
+    el: stage,
+    get coll() { return mounted ? mounted.handle.coll : null; },
+    refresh: () => (mounted ? mounted.handle.refresh() : Promise.resolve()),
+    // The mounted child is its OWN entry in liveEmbeds (oma.embed put it there), so the
+    // embedder's probe already reaches it. Nothing for the brick itself to poll.
+    async tick() {},
+    unmount() {
+      dead = true;
+      off();
+      drop();
+      try { stage.remove(); } catch { /* already gone */ }
+    },
+  };
+}
+
 // ---- the public API apps are written against ----
 window.oma = {
   /** Current snapshot: { collection, items: [{id, group, position, fields, version}], version,
@@ -1083,10 +1252,19 @@ window.oma = {
    * `fit` renders the child at its natural `width` px and scales the frame to fill `into`
    * (thumbnails, previews) — sizing via heights is off while it is on.
    * Returns { el, unmount, refresh }.
+   *
+   * `name` may also be the ONE reserved brick, `"@live"`: a region showing whatever app the AI
+   * opened last, swapping by itself as it opens others. Extra opts there: `onApp(name|null)`
+   * (fires on every switch, and with null while the region is waiting). See embedLive — and note
+   * the depth budget is unchanged, because the app the brick resolves IS the one level.
    */
   async embed(name, opts = {}) {
     const n = String(name);
     if (!opts.into || typeof opts.into.appendChild !== "function") throw new Error("embed: opts.into element required");
+    // The reserved brick, taken before anything else: it resolves its own target, so none of the
+    // source/binding/preset machinery below applies to it. `@` cannot begin an app name
+    // (store.mjs APP_NAME_RE), so this branch can never shadow a real app.
+    if (n === LIVE_NAME) return embedLive(opts);
     const preset = opts.preset || "live";
     let html = opts.html, caps = opts.caps, tier = opts.tier;
     // Inert children never call anything, so provided html is all they need; every other
@@ -1157,7 +1335,18 @@ window.oma = {
     });
 
     const frame = document.createElement("iframe");
-    frame.setAttribute("sandbox", "allow-scripts");
+    // allow-forms is here for the EVENT, not for the submission. Without it Chrome refuses the
+    // form at `HTMLFormElement::PrepareForSubmission` — BEFORE dispatching `submit` — so an app's
+    // `onsubmit` handler never runs at all and its own `preventDefault()` never gets the chance.
+    // Every add/edit form in the library hangs off that handler (17 of the 23 apps in
+    // `components/` carry a `<form>`, and every single one pairs it with `preventDefault`), so the
+    // whole "add an item" half of every app was dead in any runner-mounted view while the same app
+    // direct-mounted at /view worked (measured 2026-08-15 in Chrome 151: `fired:false` under
+    // `allow-scripts`, `fired:true` under `allow-scripts allow-forms`).
+    // The submission itself stays closed, now by three independent walls instead of one attribute:
+    // the child's own `form-action 'none'`, the embedder's `frame-src 'none'`, and the bridge's
+    // unconditional cancel (runner.mjs BRIDGE) — see the RUNNER_CSP_POLICY note.
+    frame.setAttribute("sandbox", "allow-scripts allow-forms");
     // heights:false hands ALL sizing to the embedder's own CSS (scaled thumbnails, preview
     // fit) — no inline size properties to out-specificity a stylesheet. `fit` implies it.
     const H = opts.fit || opts.heights === false ? null : opts.heights || { min: 60, max: 20000 };
@@ -1351,7 +1540,14 @@ window.oma = {
     if (preset === "live") liveEmbeds.add(handle);
 
     frame.onload = () => { Promise.race([boot, new Promise((r) => setTimeout(r, 1200))]).then(push, push); };
-    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE });
+    // CONTEXT IS INHERITED, ONE PRESET EXCEPTED. A mounted child sits in whatever this document
+    // sits in: on a standalone page — the viewer, a panel host, a wall built on `@live` — the page
+    // is framed already, and a child that thinks it is in a chat draws the card the kit's stage
+    // contract exists to prevent, floating inside a region that was supposed to be its ground.
+    // `inert` is the exception because it is not a mount at all: it is a PICTURE of an app, and
+    // what the store's grid depicts is the widget as a chat would show it. Its thumbnails are that
+    // card on purpose, and they keep it whichever page the store itself is open on.
+    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE, standalone: !!SA && preset !== "inert" });
     opts.into.appendChild(frame);
     return handle;
   },
@@ -1385,9 +1581,10 @@ window.oma = {
    *               may never do so; this promise resolved long before that.
    *   · ChatGPT — a system modal appears ("An app wants to send this prompt", editable, with
    *               Cancel/Send); pressing Send delivers it with no further confirmation.
-   * Either way the outcome happens after we are done, and nothing on the wire reports it (see
-   * docs/wo/proposal-trusted-user-action.md), so the honest thing an app can do is point the
-   * user at the chat — which this does, once, on the caller's behalf.
+   * Either way the outcome happens after we are done, and nothing on the wire reports it
+   * (see docs/archive/2026-08-14-v05-cleanup/proposal-trusted-user-action.md — the proposal that
+   * would give us one; it was never sent, and archiving it did not decide it), so the honest thing
+   * an app can do is point the user at the chat — which this does, once, on the caller's behalf.
    */
   sendMessage(text) {
     const t = String(text);
@@ -1420,8 +1617,9 @@ window.oma = {
     //
     // The honest position is that the protocol gives us no completion signal at all — `ui/message`
     // resolves when the HOST accepts the request, and what the user does next never comes back on
-    // any wire (docs/wo/proposal-trusted-user-action.md). A runtime-level guess cannot be right on
-    // every host, so it is the CALLER's to decide what, if anything, to show; the JSDoc above says
+    // any wire (docs/archive/2026-08-14-v05-cleanup/proposal-trusted-user-action.md). A runtime-level
+    // guess cannot be right on every host, so it is the CALLER's to decide what, if anything, to
+    // show; the JSDoc above says
     // what the resolved value does and does not mean. Known consequence, recorded in KNOWN-ISSUES:
     // call sites are fire-and-forget again, so on a host that only stages the text a click can look
     // like nothing happened.
@@ -1555,6 +1753,25 @@ if (SA) {
   prefsPromise = syncPrefs();  // SA.app is already set — even eager consumers are safe
   ensureSystemBadge();         // same corner affordance as in a chat host
   walk().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
+  // A VIEWER IS A WINDOW ONTO AN APP, so what does not fit in it has to stay reachable.
+  //
+  // This page's height is the window's (a tab) or the frame's (a panel host sizing it from its
+  // own layout) — never the app's. Seven of the shipped apps declare `html,body{overflow:hidden}`
+  // (habit-streaks, hydration-tally, keep-in-touch, meal-planner, spending-journal on both boxes;
+  // event-countdowns and savings-goals on the body), which is correct advice to a host that gives
+  // the app exactly the height it asked for and false here: the ROOT's overflow is the one the
+  // viewport uses, so `hidden` there means the wheel does nothing and everything below the fold is
+  // gone for good. Measured in a host panel (2026-08-15, habit-streaks at 1712×537): document
+  // 1127px, viewport 537px, not one scrollable element in the tree — 590px of the app unreachable,
+  // and the same reading in a plain 537px-tall tab, so this predates any panel host.
+  //
+  // `auto` and only on the ROOT. It costs nothing when the app fits (no overflow, no scrollbar),
+  // and the body is deliberately left alone: a body with an auto height is a scroll container that
+  // can never scroll, and `position:sticky` binds to it and dies there — the store's and settings'
+  // capsule bars are exactly that shape (see runner.mjs unpinDocumentHeight, which repealed the
+  // same declaration for the same reason). Inline + !important because it is the app's own rule
+  // being overridden, and on <html>, which no app rewrites.
+  try { document.documentElement.style.setProperty("overflow-y", "auto", "important"); } catch (e) { /* no root, no app */ }
   // Viewer SHELL (standalone pages only — host chats render the bare widget): a slim fixed top
   // bar so a browser-opened app has navigation and identity instead of floating raw in the tab.
   // Attached to <html> like omaNotify (apps rewrite body.innerHTML), body pushed down via
@@ -1589,6 +1806,48 @@ if (SA) {
     if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", mountBar);
     else mountBar();
   } catch { /* the bar is cosmetic — never let it break the app */ }
+  // ---- app→app links as an INTENT, for a shell that owns where apps open ------------------
+  // SA.navIntent (the /view door: `?nav=intent`) — opt-in, default off.
+  //
+  // An app links to another app the only way a document can: `<a href="{oma.viewBase}{name}">`
+  // (app-store's Open button, the badge's settings link). In a browser tab that is exactly right.
+  // Inside a PANEL HOST it is wrong in a way the link cannot know: the host opened THIS app as a
+  // place — with a conversation, a workspace, a tab of its own — and following the link swaps the
+  // document underneath all of that. The store then keeps browsing inside its own frame, one app
+  // deep, with none of the things the host built around it. Reported from a real panel host
+  // (2026-08-14): "the whole flow is strange" — the container model, quietly bypassed by an anchor.
+  //
+  // So the navigation becomes a REQUEST: preventDefault and tell the embedder which app was
+  // asked for. The message type is the one the hosted shell already listens for
+  // (openmcp:open-app), so an engine now has one way to say "the user wants app X" and every
+  // panel host — a hosted shell, an editor plugin, whatever comes next — reads the same word.
+  //
+  // Three refusals, each for its own reason:
+  //   · parent === window — a top-level tab has nobody to tell, and a preventDefault there would
+  //     turn every in-app link into a dead one;
+  //   · a link that is not to an app under this document's own viewBase — we intercept our own
+  //     navigation vocabulary and nothing else;
+  //   · a modified click (new tab, download, middle button) — the user asked the BROWSER for
+  //     something, and that request is not ours to reinterpret.
+  if (SA.navIntent) try {
+    const linkRoot = new URL(linkBase(), location.href).href;
+    if (parent !== window) document.addEventListener("click", (e) => {
+      if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+      const a = e.target && e.target.closest && e.target.closest("a[href]");
+      if (!a) return;
+      const target = a.getAttribute("target");
+      if (target && target !== "_self") return;
+      let href;
+      try { href = new URL(a.getAttribute("href"), location.href).href; } catch { return; }
+      if (href.indexOf(linkRoot) !== 0) return;
+      const name = href.slice(linkRoot.length).replace(/[?#].*$/, "");
+      // The store's own name shape (store.mjs APP_NAME_RE): a deeper path under the view base is
+      // not an app link, and an embedder must never be handed a name it would have to validate.
+      if (!/^[a-z][a-z0-9-]{0,31}$/.test(name)) return;
+      e.preventDefault();
+      parent.postMessage({ type: "openmcp:open-app", name: name }, "*");
+    }, true);
+  } catch { /* an embedder that cannot be told keeps the plain link */ }
   // Local realtime (SSE): /events pushes ledger seqs the moment anything commits; a moved seq
   // runs the same changes-check the poll would (walk only when OUR collection moved). Any
   // failure just leaves the adaptive poll as the fallback (EventSource auto-reconnects).
@@ -1603,6 +1862,10 @@ if (SA) {
             if (ready && state.collection) checkOwnChanges().catch(() => {});
             for (const h of liveEmbeds) h.tick();
           }
+          // The OTHER axis on the same frame: which app was opened last (null = none yet).
+          // `in`, not truthiness — null is an answer, and an engine that predates the key says
+          // nothing at all rather than "no app". Every `@live` brick on the page is downstream.
+          if ("live" in d) pushLivePointer(d.live);
         } catch {}
       };
     } catch {}

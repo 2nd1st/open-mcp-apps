@@ -203,6 +203,13 @@ function mount(html) {
   const scripts = [...doc.querySelectorAll("script")].map((s) => ({ type: s.type, text: s.textContent }));
   for (const s of doc.querySelectorAll("script")) s.remove();
   for (const el of doc.querySelectorAll("head style")) document.head.appendChild(el.cloneNode(true));
+  // Copying innerHTML leaves the app's BODY TAG behind, attributes and all — this document's body
+  // is the loader's, not the app's. One attribute has to survive that: the stage class the server
+  // stamped on (shell.mjs stampStage), because the kit's page-level shape reads it from body and
+  // an app mounted through this door would otherwise be the one copy laid out on the wrong track.
+  // Only \`stage-*\` is carried: every other body class the app wrote is dropped here today, and
+  // widening that is a separate question with its own blast radius.
+  for (const c of [...doc.body.classList]) if (c.indexOf("stage-") === 0) document.body.classList.add(c);
   document.body.innerHTML = doc.body.innerHTML;
   for (const sp of scripts) {
     const el = document.createElement("script");
@@ -283,6 +290,34 @@ oma.ready(async (state) => {
 });
 `;
 
+// ─────────────────────────────────────────────────────────── the stage class, written in bytes
+/** Write `stage-<width>` onto a document's own <body> tag.
+ *
+ *  The kit's stage block (components/_system.css) keys its width track on a body class, and this
+ *  is how the class gets there. A CLASS ATTRIBUTE, not a script: the alternative is a line of JS
+ *  that runs after parse, which means a first paint at the wrong width on every open — and this
+ *  answer is known at serve time, so nothing has to be measured or awaited to produce it.
+ *
+ *  Which width is a question for the app's declaration (contracts.mjs stageWidthFor); this
+ *  function only writes what it is handed, and writes NOTHING when handed nothing — an app that
+ *  declares no stage keeps a byte-identical document.
+ *
+ *  Three body shapes exist in the wild and all three are handled: `<body>`, `<body class="x">`
+ *  (quoted or not) and `<body data-…>`. Only the FIRST match is rewritten, the same naive-but-
+ *  consistent assumption wrapApp already makes about `<head>` below: a document whose first
+ *  `<body` is inside a script string is a document whose first `<head` is too. */
+const STAGE_WIDTHS = new Set(["column", "wide", "fluid"]);
+export function stampStage(html, width) {
+  if (!width || !STAGE_WIDTHS.has(width)) return html;
+  const cls = `stage-${width}`;
+  return html.replace(/<body\b([^>]*)>/i, (m, attrs) => {
+    const q = attrs.match(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
+    if (!q) return `<body class="${cls}"${attrs}>`;
+    const cur = q[1] ?? q[2] ?? q[3] ?? "";
+    return `<body${attrs.replace(q[0], ` class="${(cur + " " + cls).trim()}"`)}>`;
+  });
+}
+
 // JSON destined for an inline <script> block: escape "<" so a string that came from a URL
 // (e.g. /view's ?collection=) can never spell "</script>" or "<!--" and break out of the tag.
 // Still valid JSON — JSON.parse and the JS parser both read < as "<".
@@ -335,7 +370,12 @@ function hostTokenStyle(tokens) {
  *
  *  The loader carries `app` in `standalone` rather than as its own global: __OMA_APP__
  *  is the identity of the document's OWN app (the broken-mount notice names it), and the loader
- *  is not the app — it mounts one. state.app is where the loader reads the name. */
+ *  is not the app — it mounts one. state.app is where the loader reads the name.
+ *
+ *  ONE app, once. This document briefly also carried a FOLLOW mode (`standalone.live`, the /live
+ *  route) that swapped the mounted app whenever the AI opened another; that is an app's job now,
+ *  not a route's — `oma.embed("@live")` is the brick, and a wall is an ordinary app that places
+ *  it. Which is why the loader is a loader again: it mounts what it was told to mount. */
 export function wrapLoader(opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
 ${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}${viewBaseScript(opts.viewBase)}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
@@ -362,6 +402,9 @@ ${SELF_HEIGHT_UNPIN_SCRIPT}
  * different door; see viewBaseScript.
  * opts.app — app name, injected as window.__OMA_APP__ so the runtime knows
  * its identity on the dynamic-tools resource path (the generic loader cannot carry it).
+ * opts.stage — "column" | "wide" | "fluid": the width track the app declared, written onto its
+ * <body> as `stage-<width>` for the kit (see stampStage). Absent = an app that declared none,
+ * and then this function returns exactly the bytes it always did.
  */
 export function wrapApp(appHtml, opts = {}) {
   // The early-error buffer is a CLASSIC script and goes FIRST: app classic inline scripts
@@ -385,14 +428,19 @@ export function wrapApp(appHtml, opts = {}) {
     SELF_HEIGHT_UNPIN_SCRIPT + "\n" +
     `<script type="module" data-oma="runtime">${runtime()}</script>\n`;
 
+  // The stage class rides on the app's own <body>, so it is written before the head injection —
+  // which only ever touches <head>/<html>, and cannot reach a body tag that comes after it.
+  const staged = stampStage(appHtml, opts.stage);
+
   // Put the shell BEFORE the app's own markup/scripts so window.oma exists first
   // (module scripts execute in document order).
-  if (/<head[^>]*>/i.test(appHtml)) {
-    return appHtml.replace(/<head[^>]*>/i, (m) => m + "\n" + inject);
+  if (/<head[^>]*>/i.test(staged)) {
+    return staged.replace(/<head[^>]*>/i, (m) => m + "\n" + inject);
   }
-  if (/<html[^>]*>/i.test(appHtml)) {
-    return appHtml.replace(/<html[^>]*>/i, (m) => m + "\n<head>" + inject + "</head>");
+  if (/<html[^>]*>/i.test(staged)) {
+    return staged.replace(/<html[^>]*>/i, (m) => m + "\n<head>" + inject + "</head>");
   }
-  // Fragment: build a full document around it.
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body>${appHtml}</body></html>`;
+  // Fragment: build a full document around it — the body tag is ours, so it is stamped here.
+  const cls = opts.stage && STAGE_WIDTHS.has(opts.stage) ? ` class="stage-${opts.stage}"` : "";
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body${cls}>${staged}</body></html>`;
 }

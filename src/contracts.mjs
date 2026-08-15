@@ -206,6 +206,59 @@ const defaultCollectionFor = (comp) => {
   return comp.name ?? null;
 };
 
+// -------------------------------------------------------------------------- stage width track
+/** Which width track a stored app runs on — the kit's `.k-stage` reads it off the body class
+ *  (components/_system.css), and this is the ONE place the answer is computed.
+ *
+ *  `stage.width` is an optional manifest field, and optional in the strong sense: an app that
+ *  says nothing gets NO class, because `column` is the kit's base rule. So an un-migrated app's
+ *  document is unchanged byte for byte, which is what makes this whole contract safe to ship
+ *  under a fleet that has not adopted it.
+ *
+ *  UNKNOWN VALUES FALL BACK RATHER THAN FAIL, the same way the store IGNORES a manifest key it
+ *  does not know (store.mjs manifestError): a document written for a newer engine must still open
+ *  on an older one, so a fourth track invented later reads as `column` here instead of as a
+ *  broken page.
+ *
+ *  The two system apps carry no manifest.json at all (seed reads components/<name>/ and finds
+ *  none) and both are the rail-and-main shape the `fluid` track exists for, so their answer is
+ *  written here rather than invented at each call site. It is inert until they adopt `.k-stage` —
+ *  every rule keyed on the body class also requires that element. */
+const SYSTEM_STAGE_WIDTH = { settings: "fluid", "app-store": "fluid" };
+const STAGE_WIDTHS = new Set(["column", "wide", "fluid"]);
+const stageWidthFor = (comp) => {
+  if (!comp) return null;
+  if (comp.manifest) {
+    try {
+      const w = JSON.parse(comp.manifest)?.stage?.width;
+      if (STAGE_WIDTHS.has(w)) return w;
+    } catch { /* a manifest that no longer parses must not break OPENING the app */ }
+  }
+  return SYSTEM_STAGE_WIDTH[comp.name] ?? null;
+};
+
+/** Does this app declare itself a DISPLAY — a surface whose job is showing OTHER apps?
+ *  `manifest.stage.display: true`, and the sibling of stage.width for a reason: both answer
+ *  "how does this app sit on a screen", and an app that owns a wall answers both at once.
+ *
+ *  ONE consequence, and it is the whole point: an open_* door does NOT move the live pointer for
+ *  an app that declares this. The pointer means "the app the AI last put in front of the user",
+ *  and a display is the FRAME that shows whatever the pointer names — recording it would aim the
+ *  wall at itself, and the `@live` brick inside it would mount the wall inside the wall. The
+ *  declaration is how an app says "I am the frame, not the picture"; the engine does not guess it
+ *  from anything (an app that embeds `@live` and forgets to declare is simply an app that also
+ *  gets pointed at, which is a choice its author is allowed to make — the brick's own second wall
+ *  is what keeps that from nesting).
+ *
+ *  STRICTLY `true`. Every other value — absent, false, "yes", 1 — is not a declaration, for the
+ *  same reason stageWidthFor falls back rather than fails: a key this build does not understand
+ *  must leave the app opening exactly as it did before. */
+const stageDisplayFor = (comp) => {
+  if (!comp || !comp.manifest) return false;
+  try { return JSON.parse(comp.manifest)?.stage?.display === true; }
+  catch { return false; }   // a manifest that no longer parses must not break OPENING the app
+};
+
 // ------------------------------------------------------------------ trust tiers & caps
 // docs/security-model.md §2.3 step 1 + §3: app_html returns {html, author, tier, caps}.
 // The ENGINE is the single reader of security:*/policy:* when building caps; the RUNNER
@@ -419,7 +472,7 @@ export {
   RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE,
   itemShape, snapshotSchema, ackSchema, fileMetaShape, capsShape,
   RESERVED_APP_NAMES, SEEDED_APPS, SHARED_PREFS, LOCKED_APPS, SCENE_CATEGORIES,
-  tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor,
+  tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor,
   CAP_NAMES, TIER_CAPS, coerceCap, capValueHelp,
   cmdArgs,
   RESULT_BUDGET, EOT, sizeOf, textWindow, answer, toMcp,

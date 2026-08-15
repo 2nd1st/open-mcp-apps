@@ -310,6 +310,35 @@ ok("app_html keeps model context tiny", chtml.content[0].text.length < 200);
 const openMissing = await client.callTool({ name: "open_app", arguments: { app: "does-not-exist" } });
 ok("open_app rejects unknown app", openMissing.isError === true);
 
+console.log("6a. the live pointer — the app opened LAST, recorded beside the ledger, not in it");
+{
+  const probe = openStore(DB);
+  ok("open_app moved the pointer to the app it opened", probe.livePointer()?.app === "smoke-notes");
+  // A failed open puts nothing on screen, so it must not move a pointer that says what IS on
+  // screen. (openMissing, just above, is that failed open.)
+  const before = probe.livePointer();
+  const bad = await client.callTool({ name: "open_app", arguments: { app: "still-not-a-thing" } });
+  ok("…and a failed open leaves it exactly where it was",
+    bad.isError === true && JSON.stringify(probe.livePointer()) === JSON.stringify(before));
+  // TWO DOORS, ONE ACT: this suite runs OMA_DYNAMIC_TOOLS=1, so the opt-in per-app tool is live
+  // here. A display must not depend on which door the host happened to offer the model.
+  await client.callTool({ name: "open_habit_streaks", arguments: {} });
+  const perApp = probe.livePointer();
+  ok("the per-app open_<name> door records too", perApp.app === "habit-streaks" && perApp.n === before.n + 1);
+  // THE RULING THIS IMPLEMENTS: opening an app is not a data change. An event here would move the
+  // global seq that every widget on every host polls — so a glance would refresh the world.
+  const seqBefore = probe.dataVersion().seq;
+  await client.callTool({ name: "open_app", arguments: { app: "smoke-notes" } });
+  ok("…and neither door writes a ledger event — the seq stands still",
+    probe.dataVersion().seq === seqBefore && probe.livePointer().app === "smoke-notes");
+  // The store's probe carries live_n for the cross-process SSE fallback; the TOOL face declares
+  // four keys and must answer with exactly those.
+  const dv = await client.callTool({ name: "data_version", arguments: {} });
+  ok("…and data_version's tool face never mentions the pointer",
+    !("live_n" in (dv.structuredContent || {})) && probe.dataVersion().live_n > 0);
+  probe.close();
+}
+
 console.log("6b. data_collections — discoverability");
 const colls = await client.callTool({ name: "data_collections", arguments: {} });
 ok("lists the kanban collection with count", colls.structuredContent.collections.some((c) => c.collection === "kanban" && c.items === 1));
@@ -825,7 +854,14 @@ const policySrc = readSrc(join(ROOT, "src", "tool-policy.mjs"), "utf8");
 // form-action is pinned with the rest because it is the one directive that does NOT inherit
 // default-src: drop it and a form post walks out while every other directive still reads 'none'.
 ok("runner CSP policy present (default/connect/frame/form-action all 'none')", loaderDoc.includes("default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'"));
-ok("child iframe sandboxed with allow-scripts", /setAttribute\(\s*"sandbox"\s*,\s*"allow-scripts"\)/.test(loaderDoc));
+ok("child iframe sandboxed with allow-scripts", /setAttribute\(\s*"sandbox"\s*,\s*"allow-scripts allow-forms"\)/.test(loaderDoc));
+// allow-forms buys the `submit` EVENT (Chrome suppresses it entirely without the token, which
+// killed every `onsubmit` handler in the library); the SUBMISSION is cancelled unconditionally in
+// the child, so the grant can never turn into a navigation. Pinned together — the grant without
+// the cancel is the regression this pair exists to catch. The cancel is pinned on the SOURCE (it
+// travels inside the BRIDGE string, whose quoting the bundler is free to rewrite).
+ok("the child cancels every form submission the grant now lets it receive",
+  /addEventListener\("submit",\s*function\(e\)\{e\.preventDefault\(\);\}\)/.test(runnerSrc));
 // a prose comment mentions allow-same-origin — what matters is that no sandbox VALUE
 // (setAttribute arg or sandbox= attribute) ever grants it
 const sandboxValues = [
@@ -1245,9 +1281,13 @@ ok("default chapter carries the API contract AND a working template", /window\.o
 // loud simply missing).
 //
 // This is PULL-priced — paid by the one author who asks, not by every conversation — so the trade
-// is a bigger guide for a better app. But the L0 additions are ON PROBATION: docs/l0-first-hit.md
-// has a before leg, an after leg re-runs the same 14 prompts, and prose that does not move those
-// numbers should come back OUT rather than sit here being plausible.
+// is a bigger guide for a better app. But the L0 additions are ON PROBATION, and the probation is
+// the numbers quoted two paragraphs up, not a document: the before leg is 11/11 empty first apps
+// and 3/11 dropped requirements over those 14 prompts, the after leg is re-running the same 14,
+// and prose that does not move those numbers should come back OUT rather than sit here being
+// plausible. (This used to cite `docs/l0-first-hit.md`, a write-up that was never written in this
+// repo — no such file has ever existed here. A citation nobody can open is worse than none: it
+// reads as evidence and cannot be checked.)
 // 25,000 (was 22,000): the time-derived rendering lesson bought ~1.7K with a measurement behind
 // it — the +45-day audit found ~1 in 5 shipped apps lying about time, the single largest defect
 // class. Same probation as every L0 addition: the t+45 quality-round gate is its number, and if

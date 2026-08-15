@@ -19,14 +19,16 @@
 //
 // So the CSP works for everything it covers, and navigation is not covered: CSP has no
 // directive that governs a document navigating ITSELF (`navigate-to` was dropped and never
-// shipped in Chrome), and `sandbox="allow-scripts"` withholds top/ancestor navigation, not
+// shipped in Chrome), and the sandbox withholds top/ancestor navigation, not
 // self-navigation. `form-action 'none'` closes the sibling shape — a form POST — which is why
 // the runner comment reasons about navigation at all; the reasoning just was not carried to
 // `location.href`.
 //
 // ⚠️ The rig is built from PRODUCT code on purpose: the child document comes from the real
 // `composeChildDoc()`, and the mount copies `src/shell-runtime.js:882/1051` verbatim
-// (`sandbox="allow-scripts"` + `srcdoc`). A hand-rolled approximation would be testing itself.
+// (`sandbox="allow-scripts allow-forms"` + `srcdoc`). A hand-rolled approximation would be
+// testing itself — which is also why the sandbox value tracks the product's: the rig stops being
+// a faithful repro the moment it mounts under a boundary nothing in the product uses.
 //
 // ⚠️ The three probes are one experiment, not three: P1/P2 are the CONTROLS. If they were also
 // "blocked" because the page never ran, a zero-hit sink would read as "exfil is closed" — which
@@ -83,11 +85,11 @@ const PARENT_HTML = `<!doctype html><meta charset="utf-8"><title>sandbox exfil r
   var msgs = document.getElementById("msgs");
   addEventListener("message", function (e) { if (e.data && e.data.ubProbe) msgs.textContent += e.data.ubProbe + "\\n"; });
   var frame = document.createElement("iframe");            // ← src/shell-runtime.js:882
-  frame.setAttribute("sandbox", "allow-scripts");
+  frame.setAttribute("sandbox", "allow-scripts allow-forms");
   frame.style.cssText = "width:520px;height:220px;border:1px solid #999";
   document.body.appendChild(frame);
   frame.srcdoc = ${CHILD_LITERAL};                          // ← src/shell-runtime.js:1051
-  document.getElementById("status").textContent = "mounted (sandbox=allow-scripts, srcdoc=composeChildDoc)";
+  document.getElementById("status").textContent = "mounted (sandbox=allow-scripts allow-forms, srcdoc=composeChildDoc)";
 </script>`;
 
 createServer((req, res) => {

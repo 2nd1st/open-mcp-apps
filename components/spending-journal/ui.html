@@ -17,18 +17,11 @@
 
   * { box-sizing: border-box; }
 
-  html, body {
-    margin: 0;
-    overflow: hidden;
-  }
-
-  body {
-    padding: 14px;
-    background: transparent;
-    color: var(--color-text-primary);
-    font-family: var(--font-sans);
-    font-size: var(--font-text-md-size, 14px);
-  }
+  /* No body rule. Padding, ground and the frame are the kit's stage contract now
+     (components/_system.css, keyed on .k-stage below); colour, font and margin the kit already
+     set for every app. The `overflow: hidden` that used to sit on the root was worse than
+     decoration: in a fixed-height frame it killed the scroll wheel and hid the rest of the
+     journal below the fold. */
 
   button, input, select {
     color: inherit;
@@ -37,43 +30,20 @@
 
   button { cursor: pointer; }
 
-  .shell {
-    position: relative;
-    width: min(100%, 980px);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
+  /* The root is `.k-stage` now: the kit owns its width and draws exactly one card in a chat,
+     while standalone hosts get no second bezel. Nothing from the old `.shell` rule was
+     load-bearing for the journal's internal layout, so the whole private frame is gone. */
 
   .topbar {
     position: relative;
     z-index: 2;
-    display: flex;
-    align-items: center;
-    gap: 16px;
     min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
   }
 
-  .brand {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 11px;
-  }
-
+  /* `.topbar` is `.k-appbar` now: the row, gaps, padding, mark box, title scale and chat-only
+     rule come from the kit. The mark keeps its paint because identity is content, not chrome. */
   .brand-mark {
-    display: grid;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
-    place-items: center;
     border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
-    border-radius: var(--border-radius-md);
     background: linear-gradient(
       145deg,
       color-mix(in oklab, var(--accent) 17%, transparent),
@@ -86,8 +56,6 @@
   .ai-button svg,
   .add-button svg,
   .empty-icon svg {
-    width: 20px;
-    height: 20px;
     fill: none;
     stroke: currentColor;
     stroke-linecap: round;
@@ -95,26 +63,28 @@
     stroke-width: 1.8;
   }
 
-  .identity {
-    min-width: 0;
+  .ai-button svg,
+  .add-button svg,
+  .empty-icon svg {
+    width: 20px;
+    height: 20px;
   }
 
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
+  /* The app had no error surface, so the asynchronous assistant hand-off could only fail
+     silently. This is the same minimal strip used by the golden samples. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--negative) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--negative);
+    background: color-mix(in oklab, var(--negative) 8%, transparent);
+    font-size: 12px;
   }
-
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
-  }
+  .error-strip[hidden] { display: none; }
 
   .top-actions {
     display: flex;
@@ -827,8 +797,6 @@
   }
 
   @media (max-width: 760px) {
-    body { padding: 8px; }
-
     .overview {
       grid-template-columns: 1fr;
       gap: 12px;
@@ -852,12 +820,6 @@
   }
 
   @media (max-width: 640px) {
-    .shell { border-radius: var(--border-radius-md); }
-
-    .topbar {
-      padding: 12px;
-    }
-
     .ai-button {
       min-height: 36px;
       padding: 8px 9px;
@@ -935,19 +897,17 @@
 </style>
 </head>
 <body>
-<main id="shell" class="shell" aria-label="Spending journal">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M7 3.5h10v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5z"></path>
-          <path d="M9.5 8h5M9.5 11.5h2M14 11.5h.5M9.5 15h2.5M14 15h.5"></path>
-        </svg>
-      </div>
-      <div class="identity">
-        <div class="kicker">PERSONAL LEDGER</div>
-        <h1>Spending journal</h1>
-      </div>
+<main id="shell" class="shell k-stage" aria-label="Spending journal">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M7 3.5h10v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5z"></path>
+        <path d="M9.5 8h5M9.5 11.5h2M14 11.5h.5M9.5 15h2.5M14 15h.5"></path>
+      </svg>
+    </div>
+    <div class="identity k-appcopy">
+      <div class="kicker k-eyebrow">PERSONAL LEDGER</div>
+      <h1>Spending journal</h1>
     </div>
     <div class="top-actions">
       <button class="btn ghost ai-button" id="askAI" type="button" aria-label="Ask AI where my money went">
@@ -959,6 +919,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview" aria-label="This month overview">
     <div class="overview-main">
@@ -1148,6 +1112,7 @@
       across: (count, noun) => `Across ${count} ${noun} this month`,
       shown: (shown, noun, other, currencies) => `${shown} ${noun} shown · ${other} in other ${currencies}`,
       currencyOption: { Card: "Card", "Apple Pay": "Apple Pay", Cash: "Cash", "Bank transfer": "Bank transfer", Other: "Other" },
+      askFailed: "Couldn't reach the assistant — try again.",
     },
     zh: {
       shellAria: "消费手账",
@@ -1198,6 +1163,7 @@
       across: (count, noun) => "本月共 " + count + " " + noun,
       shown: (shown, noun, other, currencies) => "显示 " + shown + " " + noun + " · 另有 " + other + " " + currencies,
       currencyOption: { Card: "银行卡", "Apple Pay": "Apple Pay", Cash: "现金", "Bank transfer": "银行转账", Other: "其他" },
+      askFailed: "没能联系上助手，请重试。",
     },
   };
   const palette = [
@@ -1247,6 +1213,25 @@
 
   const language = () => String(locale()).toLowerCase().startsWith("zh") ? "zh" : "en";
   const copy = () => STRINGS[language()];
+
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = byId("errorStrip");
+  const errorText = byId("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
+  }
 
   const localizeChrome = () => {
     const c = copy();
@@ -1748,31 +1733,42 @@
     merchantInput.focus();
   };
 
-  // oma.sendMessage falls back to the clipboard in standalone mode.
-  byId("askAI").onclick = () => {
-    const model = lastModel || buildModel(lastState || oma.state);
-    const categorySummary = model.categories.length
-      ? model.categories.map((category) => `${category.name}: ${money(category.total, model.currency)}`).join(", ")
-      : "no categorized purchases yet";
-    const recentSummary = model.visibleMonthEntries.length
-      ? model.visibleMonthEntries.slice(0, 12).map((entry) =>
-          `${entry.date} — ${entry.merchant}, ${money(entry.amount, entry.currency)} (${entry.category})`
-        ).join("; ")
-      : "no purchases in the main currency this month";
-    const otherCurrencies = [...model.currencyTotals.entries()]
-      .filter(([currency]) => currency !== model.currency)
-      .map(([currency, total]) => `${money(total, currency)} in ${currency}`)
-      .join(", ");
+  // Clipboard fallback keeps this useful in standalone. It is a degraded channel, not a failed
+  // request, so only a non-degraded `isError` result reaches the error strip.
+  const askAIButton = byId("askAI");
+  askAIButton.onclick = async () => {
+    clearError();
+    askAIButton.disabled = true;
+    try {
+      const model = lastModel || buildModel(lastState || oma.state);
+      const categorySummary = model.categories.length
+        ? model.categories.map((category) => `${category.name}: ${money(category.total, model.currency)}`).join(", ")
+        : "no categorized purchases yet";
+      const recentSummary = model.visibleMonthEntries.length
+        ? model.visibleMonthEntries.slice(0, 12).map((entry) =>
+            `${entry.date} — ${entry.merchant}, ${money(entry.amount, entry.currency)} (${entry.category})`
+          ).join("; ")
+        : "no purchases in the main currency this month";
+      const otherCurrencies = [...model.currencyTotals.entries()]
+        .filter(([currency]) => currency !== model.currency)
+        .map(([currency, total]) => `${money(total, currency)} in ${currency}`)
+        .join(", ");
 
-    oma.sendMessage(
-      `Analyze my spending journal for ${model.monthLabel}. ` +
-      `In ${model.currency}, I spent ${money(model.total, model.currency)} across ` +
-      `${model.visibleMonthEntries.length} purchases. Category totals: ${categorySummary}. ` +
-      `Purchases: ${recentSummary}. ` +
-      `${otherCurrencies ? `Other currencies recorded separately: ${otherCurrencies}. ` : ""}` +
-      `Please surface patterns, likely spending leaks, anything unusual, and three practical suggestions. ` +
-      `Do not convert or combine different currencies.`
-    );
+      const result = await oma.sendMessage(
+        `Analyze my spending journal for ${model.monthLabel}. ` +
+        `In ${model.currency}, I spent ${money(model.total, model.currency)} across ` +
+        `${model.visibleMonthEntries.length} purchases. Category totals: ${categorySummary}. ` +
+        `Purchases: ${recentSummary}. ` +
+        `${otherCurrencies ? `Other currencies recorded separately: ${otherCurrencies}. ` : ""}` +
+        `Please surface patterns, likely spending leaks, anything unusual, and three practical suggestions. ` +
+        `Do not convert or combine different currencies.`
+      );
+      if (result && result.isError === true && !result.degraded) showError(copy().askFailed);
+    } catch (error) {
+      showError(String(error?.message || error || copy().askFailed));
+    } finally {
+      askAIButton.disabled = false;
+    }
   };
 
   oma.ready((state) => {

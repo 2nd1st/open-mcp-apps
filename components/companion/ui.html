@@ -69,19 +69,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   * { box-sizing: border-box; }
 
-  html,
-  body {
-    width: 100%;
-    margin: 0;
-    overflow-x: hidden;
-  }
-
-  body {
-    padding: var(--k-s3, 12px);
-    background: transparent;
-    color: var(--cp-ink);
-    font-family: var(--font-sans);
-  }
+  /* The kit owns document width, margin, padding, font and ground now. Keep only this app's ink
+     colour: the pearl palette is content paint, not stage chrome. Removing `overflow-x:hidden` is
+     also what lets the stage contract's root `overflow-x:clip` do its job without making the page
+     a dead-end scroll container. */
+  body { color: var(--cp-ink); }
 
   button,
   input,
@@ -89,21 +81,10 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   button { letter-spacing: 0; }
 
-  .companion {
-    position: relative;
-    width: min(100%, 760px);
-    margin-inline: auto;
-    overflow: hidden;
-    border: 1px solid var(--cp-line);
-    border-radius: 12px;
-    background:
-      radial-gradient(circle at 12% 9%, color-mix(in oklab, var(--cp-gold-soft) 64%, transparent) 0 5%, transparent 15%),
-      radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--cp-rose) 66%, transparent) 0 7%, transparent 20%),
-      radial-gradient(circle at 62% 70%, color-mix(in oklab, var(--cp-mist) 74%, transparent) 0 9%, transparent 23%),
-      linear-gradient(148deg, var(--cp-page), var(--cp-mist));
-    box-shadow: 0 22px 64px var(--cp-shadow);
-    isolation: isolate;
-  }
+  /* `.companion` is `.k-stage` now: the kit draws the one card in chat and no card on a screen it
+     owns. Keep position/isolation because the two pearl glows below are still this app's artwork;
+     the frame itself (width, border, radius, shadow, background and overflow) belongs to the kit. */
+  .companion { position: relative; isolation: isolate; }
 
   .companion::before,
   .companion::after {
@@ -131,34 +112,23 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     background: radial-gradient(circle, color-mix(in oklab, var(--cp-gold-soft) 58%, transparent), transparent 70%);
   }
 
-  .companion.compact .app-bar,
   .companion.compact .tab-shell,
   .companion.compact .panel-body { padding-inline: var(--k-s3, 12px); }
 
-  .app-bar {
-    min-height: 62px;
-    padding: 10px 16px;
-    border-bottom: 1px solid color-mix(in oklab, var(--cp-line) 72%, transparent);
-    background: color-mix(in oklab, var(--cp-glass) 86%, transparent);
-    backdrop-filter: blur(18px) saturate(1.08);
-  }
+  /* `.app-bar` is `.k-appbar` now — row, gaps, padding, mark box, title/eyebrow scale and the
+     chat-only rule all come from the kit. Its minimum height remains an app-specific rhythm. */
+  .app-bar { min-height: 62px; }
 
+  /* The mark keeps its PAINT and loses its box: the metal ring, pearl fill and inset glow are this
+     app's face, and the stage contract strips frames, never faces. */
   .app-mark {
-    display: grid;
-    width: 36px;
-    height: 36px;
-    flex: none;
-    place-items: center;
     border: 1px solid var(--cp-metal);
-    border-radius: var(--border-radius-full, 999px);
     background: color-mix(in oklab, var(--cp-pearl) 78%, transparent);
     color: var(--cp-gold);
     box-shadow: inset 0 0 0 4px color-mix(in oklab, var(--cp-glass) 68%, transparent);
   }
 
   .app-mark svg {
-    width: 19px;
-    height: 19px;
     fill: none;
     stroke: currentColor;
     stroke-width: 1.25;
@@ -166,26 +136,8 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     stroke-linejoin: round;
   }
 
-  .identity { min-width: 0; }
-
   .eyebrow {
-    margin: 0 0 1px;
-    color: var(--cp-faint);
     font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .app-name {
-    margin: 0;
-    color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 19px;
-    font-weight: 560;
-    letter-spacing: 0;
-    line-height: 1.15;
   }
 
   .memory-badge {
@@ -257,6 +209,13 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     display: grid;
     justify-items: center;
     padding: 8px 10px 14px;
+    /* The companion's four-layer pearl gradient used to be the card frame. Keep that face on the
+       hero band so it survives when `.k-stage` correctly stops drawing a frame on a full screen. */
+    background:
+      radial-gradient(circle at 12% 9%, color-mix(in oklab, var(--cp-gold-soft) 64%, transparent) 0 5%, transparent 15%),
+      radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--cp-rose) 66%, transparent) 0 7%, transparent 20%),
+      radial-gradient(circle at 62% 70%, color-mix(in oklab, var(--cp-mist) 74%, transparent) 0 9%, transparent 23%),
+      linear-gradient(148deg, var(--cp-page), var(--cp-mist));
     text-align: center;
   }
 
@@ -1084,8 +1043,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   }
 
   @media (max-width: 560px) {
-    body { padding: 8px; }
-    .app-bar { padding-inline: 12px; }
     .memory-badge { display: none; }
     .companion-tabs .k-tab { gap: 3px; padding-inline: 5px; font-size: 10.5px; }
     .companion-tabs .k-icon { margin-right: 2px; }
@@ -1101,7 +1058,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   }
 
   @media (max-width: 390px) {
-    .app-name { font-size: 17px; }
     .character-name { font-size: 28px; }
     .key-value { padding-inline: 4px; }
     .key-value strong { font-size: 17px; }
@@ -1111,13 +1067,13 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 </style>
 </head>
 <body>
-  <main class="companion" id="app">
-    <header class="app-bar k-row">
-      <div class="app-mark" aria-hidden="true">
+  <main class="companion k-stage" id="app">
+    <header class="app-bar k-appbar">
+      <div class="app-mark k-appmark" aria-hidden="true">
         <svg viewBox="0 0 24 24"><path d="M12 3.5c1.7 2.8 4.3 5.1 7.4 6.2-3.1 1.1-5.7 3.4-7.4 6.2-1.7-2.8-4.3-5.1-7.4-6.2C7.7 8.6 10.3 6.3 12 3.5zM18.1 15.6c.6 1.2 1.5 2.1 2.7 2.7-1.2.5-2.1 1.5-2.7 2.7-.5-1.2-1.5-2.2-2.7-2.7 1.2-.6 2.2-1.5 2.7-2.7z"/></svg>
       </div>
-      <div class="identity">
-        <p class="eyebrow" data-i18n="app.eyebrow">SHARED MEMORY</p>
+      <div class="identity k-appcopy">
+        <p class="eyebrow k-eyebrow" data-i18n="app.eyebrow">SHARED MEMORY</p>
         <h1 class="app-name" data-i18n="app.name">Companion</h1>
       </div>
       <span class="k-badge memory-badge k-num" id="memoryCountBadge" data-label="0 memories" aria-label="0 memories"></span>
@@ -1348,6 +1304,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         "action.deleted": "Memory removed.",
         "error.read": "The shared memory could not refresh.",
         "error.write": "That change was not saved. Existing memories were not altered.",
+        "error.assistant": "Couldn't reach the assistant — try again.",
         "prompt.seed": "Please create my Companion memory space from what you genuinely know about me. Do not use a generic template and do not invent personal facts. Create one companion-profile row with an English persona, four concise personalized topics, and a timeless status_line. Maintain companion-knows across all seven kinds only when you have real evidence. Generate an original vertical 2:3 near-half-body portrait with a pearl-white mist background and warm-gold detail, save it with file_write, and put its path in portrait or its data URI in image_data. Then add our first companion-memories row for {date}: what_we_talked must be a third-person summary and my_thought must be the companion's first-person private reflection.",
         "prompt.reflect": "As {name}, return to our conversation today ({date}) in your established persona. Begin with one specific detail you truly remember and tell me what stayed with you, then ask one gentle question. After we have a meaningful exchange, add exactly one companion-memories row for today: what_we_talked is a concise third-person summary of our discussion, and my_thought is your first-person private thought. Do not overwrite older memories.",
         "prompt.topic": "As {name}, begin naturally from this saved topic: \"{topic}\". Connect it to one detail you truly remember about me, offer one thought of your own, and ask a single unforced question. Do not add a memory until we have actually had a meaningful exchange.",
@@ -1461,6 +1418,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         "action.deleted": "这条记忆已移除。",
         "error.read": "共同记忆暂时无法刷新。",
         "error.write": "这次修改没有保存，已有记忆没有被改变。",
+        "error.assistant": "没能联系上助手，请重试。",
         "prompt.seed": "请根据你真正了解的我建立 Companion 共同记忆空间。不要使用通用模板，也不要编造私人事实。创建一条 companion-profile：persona、topics 和 status_line 都使用自然中文；topics 写四个简洁且真正个性化的话题，status_line 写不会随时间过期的角色底色。只有在有真实依据时才维护 companion-knows 的七个 kind。生成原创竖幅 2:3 近半身立绘，使用珍珠白光雾背景和暖金细节，用 file_write 保存后把路径写入 portrait，或把 data URI 写入 image_data。然后为 {date} 写第一条 companion-memories：what_we_talked 是第三人称对话小结，my_thought 是角色第一人称的私下想法。",
         "prompt.reflect": "请以 {name} 的既定 persona 回到我们今天（{date}）的对话。先提起一个你确实记得的具体细节，告诉我什么留在了你心里，再温和地问我一个问题。等我们真正深聊之后，为今天新增且只新增一条 companion-memories：what_we_talked 是第三人称简短小结，my_thought 是你第一人称的私下想法。不要覆盖旧回忆。",
         "prompt.topic": "请以 {name} 的 persona 从这个已保存的话题自然开始：\"{topic}\"。把它和你确实记得的一个细节连接起来，说一点你自己的想法，再问我一个不施压的问题。真正深聊前不要新增回忆。",
@@ -2108,9 +2066,12 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       const oldDisabled = button.disabled;
       button.disabled = true;
       try {
-        await Promise.resolve(oma.sendMessage(message));
+        const result = await oma.sendMessage(message);
+        // Standalone delivery degrades to the clipboard with `isError:true`; the runtime has
+        // already shown that hand-off, so only a non-degraded error belongs in the red strip.
+        if (result && result.isError === true && !result.degraded) showError(t("error.assistant"));
       } catch (error) {
-        showError(String(error?.message || t("error.write")));
+        showError(String(error?.message || error || t("error.assistant")));
       } finally {
         button.disabled = oldDisabled;
       }
@@ -2180,6 +2141,10 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     document.getElementById("retryButton").onclick = () => requestRefresh(latestState);
 
     void nextOccurrence;
+    // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+    // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+    // card; absent = a widget in someone's conversation, where the card is ours to draw.
+    if (oma.standalone) document.body.classList.add("standalone");
     oma.ready(requestRefresh);
     oma.onChange(requestRefresh);
     oma.onPrefChange(render);

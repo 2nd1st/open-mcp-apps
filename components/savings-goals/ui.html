@@ -18,15 +18,10 @@
     --ease: cubic-bezier(.2, .8, .3, 1);
   }
 
-  body {
-    margin: 0;
-    padding: 14px;
-    overflow: hidden;
-    color: var(--color-text-primary);
-    background: transparent;
-    font-family: var(--font-sans);
-    font-size: var(--font-text-md-size);
-  }
+  /* No body rule. Padding, ground and the frame belong to the kit's stage contract now;
+     colour, font and margin are already set for every app. The old `overflow: hidden` was
+     especially harmful on a fixed-height host: it made the root a scroll trap, so content below
+     the fold could never be reached. */
 
   button,
   input {
@@ -48,44 +43,19 @@
     opacity: .38;
   }
 
-  #shell {
-    width: min(100%, 920px);
-    margin: 0 auto;
-    overflow: hidden;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-md, var(--shadow-sm));
-  }
+  /* The root is `.k-stage` — the kit draws one card in chat and no card on a screen the host
+     already owns. The `#shell` ID stays for the composer's state selectors and the app's script;
+     its private border, radius, shadow, background, overflow and width are gone. */
 
-  .topbar {
-    display: flex;
-    align-items: center;
-    gap: 16px;
-    min-height: 68px;
-    padding: 13px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
+  /* `.topbar` is `.k-appbar` now: the kit owns the row, gaps, padding, mark box, title scale and
+     the chat-only rule below the bar. The app keeps only its own minimum height. */
+  .topbar { min-height: 68px; }
 
-  .brand {
-    display: flex;
-    align-items: center;
-    gap: 11px;
-    min-width: 0;
-  }
-
-  .brand > div:last-child {
-    min-width: 0;
-  }
+  /* The brand mark keeps its PAINT — gradient, accent and ring — because identity is content; the
+     stage contract strips frames, never faces. */
 
   .brand-mark {
-    display: grid;
-    place-items: center;
-    width: 37px;
-    height: 37px;
-    flex: 0 0 auto;
     border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
-    border-radius: var(--border-radius-md);
     background: linear-gradient(
       145deg,
       color-mix(in oklab, var(--accent) 16%, var(--color-background-primary)),
@@ -94,33 +64,28 @@
     color: var(--accent);
   }
 
-  .brand-mark svg {
-    width: 21px;
-    height: 21px;
-  }
-
-  .kicker {
-    margin-bottom: 2px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .11em;
-    text-transform: uppercase;
-  }
-
-  h1 {
-    margin: 0;
-    font-size: 16px;
-    line-height: 1.2;
-    letter-spacing: -.01em;
-  }
-
   #shellSummary {
     margin-top: 3px;
     color: var(--color-text-secondary);
     font-size: var(--font-text-sm-size, 12px);
   }
+
+  /* Ask-AI used to have no visible failure path. This small strip gives the awaited bridge call a
+     place to explain a real error while leaving standalone clipboard degradation alone. */
+  .error-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 10px 16px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 8px);
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    font-size: 12px;
+  }
+
+  .error-strip[hidden] { display: none; }
 
   .top-actions {
     display: flex;
@@ -830,23 +795,9 @@
   }
 
   @media (max-width: 640px) {
-    body {
-      padding: 8px;
-    }
-
     .topbar {
       min-height: 60px;
       padding: 11px 12px;
-    }
-
-    .brand-mark {
-      width: 34px;
-      height: 34px;
-    }
-
-    .brand-mark svg {
-      width: 20px;
-      height: 20px;
     }
 
     #shellSummary {
@@ -992,20 +943,18 @@
 
 </head>
 <body>
-<div id="shell">
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark" aria-hidden="true">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M7.5 6.5h9M8.5 4h7M6.5 9.5h11l1 9A1.5 1.5 0 0 1 17 20H7a1.5 1.5 0 0 1-1.5-1.5l1-9Z"/>
-          <path d="M9 13.5h6M12 11v5"/>
-        </svg>
-      </div>
-      <div>
-        <div class="kicker">MONEY GOALS</div>
-        <h1>Savings runway</h1>
-        <div id="shellSummary">Prioritized targets, clear progress</div>
-      </div>
+<div id="shell" class="k-stage">
+  <header class="topbar k-appbar">
+    <div class="brand-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M7.5 6.5h9M8.5 4h7M6.5 9.5h11l1 9A1.5 1.5 0 0 1 17 20H7a1.5 1.5 0 0 1-1.5-1.5l1-9Z"/>
+        <path d="M9 13.5h6M12 11v5"/>
+      </svg>
+    </div>
+    <div class="brand-copy k-appcopy">
+      <div class="kicker k-eyebrow">MONEY GOALS</div>
+      <h1>Savings runway</h1>
+      <div id="shellSummary">Prioritized targets, clear progress</div>
     </div>
     <div class="top-actions">
       <button id="planButton" class="button ghost with-icon" type="button" aria-label="Plan with AI">
@@ -1023,6 +972,10 @@
       </button>
     </div>
   </header>
+
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
+    <span id="errorText"></span>
+  </div>
 
   <section class="overview" aria-label="Savings overview">
     <div class="overview-primary">
@@ -1634,7 +1587,8 @@
     "Target date passed": "目标日期已过",
     "Due today": "今天到期",
     "currencies": "种货币",
-    "Average across": "平均覆盖"
+    "Average across": "平均覆盖",
+    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
   };
   const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
   const isZhUi = () => locale().toLowerCase().startsWith("zh");
@@ -1681,6 +1635,25 @@
     });
   }
 
+  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
+  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
+  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  if (oma.standalone) document.body.classList.add("standalone");
+
+  const errorStrip = document.getElementById("errorStrip");
+  const errorText = document.getElementById("errorText");
+  let errorTimer = null;
+  function showError(message) {
+    clearTimeout(errorTimer);
+    errorText.textContent = message;
+    errorStrip.hidden = false;
+    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
+  }
+  function clearError() {
+    clearTimeout(errorTimer);
+    errorStrip.hidden = true;
+  }
+
   oma.ready(state => {
     goalCurrency.value = cleanCurrency(oma.pref("currency", "USD"));
     render(state);
@@ -1724,21 +1697,37 @@
   };
 
   // Keep this visible in standalone: oma.sendMessage falls back to the clipboard outside a chat host.
-  document.getElementById("planButton").onclick = () => {
-    const goals = sortGoals(latestState.items).map(item => {
-      const remaining = Math.max(0, amount(item, "target_amount") - amount(item, "current_amount"));
-      return `priority ${priority(item)}: ${item.fields.title || "Untitled goal"} — ` +
-        `${formatMoney(amount(item, "current_amount"), item.fields.currency)} saved of ` +
-        `${formatMoney(amount(item, "target_amount"), item.fields.currency)}, ` +
-        `${formatMoney(remaining, item.fields.currency)} remaining, target date ${item.fields.target_date || "not set"}, ` +
-        `status ${item.group === "reached" ? "reached" : "active"}`;
-    }).join("; ");
+  // AWAITED, and the button is dead while it is in flight: the bridge has a deadline, and accepting
+  // clicks meanwhile would queue duplicate plans into someone's chat.
+  //
+  // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage answers
+  // `{isError: true, degraded: "clipboard"}` after the runtime has copied the prompt and told the
+  // user so. Only a non-degraded error deserves the strip below.
+  const planButton = document.getElementById("planButton");
+  planButton.onclick = async () => {
+    clearError();
+    planButton.disabled = true;
+    try {
+      const goals = sortGoals(latestState.items).map(item => {
+        const remaining = Math.max(0, amount(item, "target_amount") - amount(item, "current_amount"));
+        return `priority ${priority(item)}: ${item.fields.title || "Untitled goal"} — ` +
+          `${formatMoney(amount(item, "current_amount"), item.fields.currency)} saved of ` +
+          `${formatMoney(amount(item, "target_amount"), item.fields.currency)}, ` +
+          `${formatMoney(remaining, item.fields.currency)} remaining, target date ${item.fields.target_date || "not set"}, ` +
+          `status ${item.group === "reached" ? "reached" : "active"}`;
+      }).join("; ");
 
-    oma.sendMessage(
-      `Please propose a practical savings pace and plan to hit my goals by their target dates, ` +
-      `respecting the priority order. Suggest weekly and monthly contributions, call out any timing ` +
-      `conflicts, and recommend how to split available savings between active goals. Current goals: ${goals || "none yet"}.`
-    );
+      const result = await oma.sendMessage(
+        `Please propose a practical savings pace and plan to hit my goals by their target dates, ` +
+        `respecting the priority order. Suggest weekly and monthly contributions, call out any timing ` +
+        `conflicts, and recommend how to split available savings between active goals. Current goals: ${goals || "none yet"}.`
+      );
+      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
+    } catch (error) {
+      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
+    } finally {
+      planButton.disabled = false;
+    }
   };
 </script>
 </body>

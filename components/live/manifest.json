@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "settings": [
+    {
+      "key": "show_clock",
+      "type": "boolean",
+      "label": "Show the clock",
+      "default": true,
+      "desc": "A quiet time readout in the corner of the display, in this device's time zone."
+    }
+  ],
+  "uses_shared": ["locale"],
+  "stage": {
+    "width": "fluid",
+    "display": true
+  }
+}

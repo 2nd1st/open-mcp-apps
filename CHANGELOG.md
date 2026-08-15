@@ -7,6 +7,297 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.1 — 2026-08-15
+
+**An app stops being a guest in someone's conversation and starts owning a screen.** 0.5.0 made an
+app's declaration a first-class object; this release asks the question that follows from it — *where
+is this app standing?* — and finds that there are three answers, not one. **In a chat** it is a card
+floating in a conversation and something has to draw that card. **On a page it owns** — the browser
+viewer, a display on a wall — the frame is already there, and a second border inside it is a double
+bezel. **Inside a panel host** it is neither: a region the host has laid out, which wants no chrome
+of ours and treats "open another app" as a request rather than as navigation.
+
+Three things came out of that. The **stage contract** lets an app name which ground it is on and
+hand the drawing to the kit — every one of the twenty-one apps that predate it is converted, and the
+twenty-second was born under it, so no app in the store draws its own card or carries a root width
+in CSS any more. **`@live`** is a brick rather than a route: a region that shows whatever the AI
+opened last and switches by itself, and the wall built out of it is an ordinary app you can restyle,
+split, or throw away and rewrite. And the **panel host becomes a context the engine can be told
+about**, through two opt-in URL words that a normal tab never sees.
+
+Underneath, three defects that had been shipping in silence: no sandboxed app could submit a form,
+no sandboxed app had ever reported its height, and a viewer whose app did not fit simply lost
+whatever fell below the fold.
+
+### Breaking
+
+- **Store schema v6 → v7 — a store opened by this release cannot be opened by 0.5.0.** The upgrade
+  is one added table written on first open, and it is disposable: losing it costs a wall display its
+  first frame and nothing else. The refusal is the point rather than a side effect, for the reason
+  spelled out under `@live` below — several hosts share one store, and a 0.5.0 process would go on
+  serving `open_app` while never moving a pointer it has never heard of, leaving a display parked on
+  an app nobody is looking at. v4, v5 and v6 stores all upgrade in place, as before.
+- **Nothing else breaks.** No tool was added, removed or renamed and no tool's input schema moved —
+  the served tool surface is byte-identical to the one 0.5.0 shipped, so no host has to re-approve
+  anything. `oma.contract` stays at **2**: the widget runtime lost no name, and additions never bump
+  it. `manifest.stage` is a new **optional** field, and an app that declares nothing gets a
+  byte-identical document — which is exactly what made it safe to ship the contract under a fleet
+  before converting the fleet.
+
+### The stage contract — an app stops drawing its own card
+
+An app is shown in two places that want opposite chrome. **In a chat** it is a card floating in
+someone's conversation, and something has to draw that card. **On a screen it owns** — the browser
+viewer, a panel host — the page is framed already, and the app's own border inside that frame is a
+double bezel. Every app in the store answered this privately: nine drew a full card, four a light
+one, three folded it into a gradient; twenty-one carried a root `max-width`, in ten different
+numbers; seven pinned `overflow: hidden` on `html`/`body`, which on a fixed-height frame kills the
+scroll wheel outright.
+
+The kit now owns the answer, and an app opts in by naming it. Put your root container in `<body>`,
+give it **`.k-stage`**, and add `if (oma.standalone) document.body.classList.add("standalone")`. The
+kit draws the border, radius, surface and shadow in a chat, **drops the frame entirely below 560px**
+(where the host's own widget frame is the card, and a rounded box inside it is the same double bezel
+one level up), and draws nothing at all when standalone. `.k-appbar` is the matching header recipe —
+a content header with no rule of its own, which becomes the card's title bar in a chat.
+
+How wide the page may get becomes a **declaration** instead of a number in CSS. `manifest.json`
+takes an optional `"stage": {"width": "column" | "wide" | "fluid"}` — 760px reading column (the
+default), 1120px for boards and calendars, or unbounded for a layout with its own rail. The engine
+writes the answer onto `<body>` as `stage-column|wide|fluid` on all three doors that serve an app
+(`/view`, the per-app `ui://` resource, and the universal loader's mount source); an app that
+declares nothing gets no class and a byte-identical document, which is what makes this safe to ship
+under a fleet that has not adopted it. An unknown track name falls back to the default rather than
+failing, the same way the store ignores a manifest key it has not heard of: a document written for a
+newer engine must still open on an older one. **No tool surface changed** — the class travels in the
+document's bytes, not in a new result field.
+
+`habit-streaks` and `project-pulse` are the first two apps converted, as the reference diff for the
+rest of the fleet. Both declare `wide`: the board's three lanes had been sharing a 760px column
+(214px minimums plus gaps ate 662 of it), and now get 356px each.
+
+**The remaining nineteen followed**, so every app in the store now answers the question the same
+way: no app draws its own card, none carries a root width in CSS, and the seven `html`/`body`
+`overflow: hidden` declarations are gone — that last one is a bug fix, not tidiness, because on a
+fixed-height frame it was the root's overflow and the scroll wheel simply died. Of those nineteen,
+eleven declare `column` and eight `wide` — eleven and ten across the whole converted fleet — and not
+one of them needed `fluid`; `meal-planner` gave up the library's widest
+private value (1240px) once its calendar's real requirement was measured at `126 + 7 × 122 = 980px`.
+Two apps that used to **hide** their Ask-AI control when standalone now keep it: `oma.sendMessage`
+falls back to the clipboard there, so hiding it removed a working feature from the browser view.
+Every hand-off is awaited, disables its button in flight, and judges failure as
+`isError === true && !degraded` — a clipboard degradation is not an error, and reading `isError`
+alone would put a red strip under every successful standalone click.
+
+The one thing that needed care in every app: **stripping a frame must not strip a face.** Six apps
+had painted their identity onto the very element the contract deletes — `companion`'s four-layer
+pearl gradient, `wonder-atlas`'s blue-and-gold on a 28px radius, `job-kit`'s grid texture and
+masthead bar, and the decorative rings in `client-pipeline` and `hydration-tally`. Each moved into
+a content section rather than disappearing with the border. `wonder-atlas` also kept its sticky
+top bar working, which is only possible because the kit clips with `overflow: clip` and never
+`hidden`: `hidden` would make an ancestor a scrollport and strand the sticky element inside it.
+(`dashboard` carried the fleet's last `overflow-x: hidden` on a `body`, and now clips too.)
+
+**A mounted child inherits the page's context.** The contract's judge is `oma.standalone`, and
+behind the sandboxed runner that value was hard-coded `false` — so an app mounted by `oma.embed`
+was told it sat in a chat no matter what it was actually standing on. On a page that owns its
+screen that is the double bezel again, one level further in: a card with its own border and radius
+floating inside a region that was supposed to be its ground. It shows brightest on a wall built
+from `oma.embed("@live")`, where that region is the whole display. A child now reads the
+embedder's own answer instead. **One preset is exempt on purpose**: `inert` is not a mount but a
+*picture* of an app, and what the App Store's grid depicts is the widget as a chat would show it —
+those thumbnails keep their card whichever page the store itself is open on. The fact travels in
+the composed document's bytes, and the line carrying it is written **only when true** — so a
+chat-side child is composed exactly as it was before the option existed. The bridge in every child
+did gain the getter that reads it; with no flag present it computes the same `false` the hard-coded
+literal used to return.
+
+### `@live` — a brick, not a route: the screen that shows whatever the AI just opened
+
+A display nobody is sitting at — a spare tablet on a wall, a second monitor — should show the app
+the AI opened last and **switch by itself** when it opens another. This release builds that, and
+the shape it settled on is the news.
+
+The first cut was a route, `GET /live`. It never shipped: a route is a screen the engine designed,
+and the engine has no business designing screens. So the engine's half is a **primitive** now —
+**`oma.embed("@live", {into})`**, a region any app can place — and the screen is an **app**, opened
+at `/view/<its name>` like every other app, which you can restyle, split in two, put a clock beside,
+or throw away and write your own. `@` cannot begin an app name (`APP_NAME_RE` starts at `[a-z]`), so
+the brick borrows a name space no app can ever collide with, and the depth budget is untouched: the
+app the brick resolves **is** the one level of nesting `embed` allows.
+
+The brick has two faces, because it is asked in two places. **On a standalone page** it follows the
+pointer: mount, and on every switch unmount the old app and mount the new one — through the sandboxed
+embed, including for a local app, which every other path mounts directly. A direct mount cannot be
+undone; app code runs in the display's own document, so the second app's top-level declarations
+collide with the first's and it dies before its first line while nothing removes the first's
+listeners and timers. Local apps lose no capability by it. **Inside a chat** it is a quiet tile
+saying what it is, and reads nothing at all — no pointer, no poll, no data dependency. The stream it
+would need is same-origin to the engine and a widget in a chat host has no such origin; and a region
+that swapped apps under someone's conversation would be wrong even if it could.
+
+What makes it work is one field. The app opened last is stored as a **single overwritten row**
+(`live_pointer`, schema v7) and **appends nothing to the ledger** — opening an app is not a data
+change, and an event per open would both bury the record of what was actually done under a stream of
+glances and move the global `seq` that every widget on every host polls, so a glance would refresh
+the world. Both doors that open an app record it (`open_app` and the opt-in per-app `open_<name>`),
+and only after the app is known to exist — a failed open puts nothing on screen, so it moves nothing.
+`/events` carries the pointer alongside `seq` on the same frame, sent once at connect (a display
+opened hours later must not sit blank waiting for the next open) and again on every switch, with a
+counter behind it so the switch is visible to a viewer in a different process from the chat host
+that caused it.
+
+Making the display an app creates one problem a route did not have: **the display can be opened**.
+`manifest.json` takes an optional `"stage": {"display": true}` — the sibling of `stage.width`,
+because both answer "how does this app sit on a screen" — and it buys two walls. An open door does
+not move the pointer for an app that declares it, so the wall is never aimed at itself; and the brick
+refuses to mount a declared display however the pointer came to name one, which covers a row written
+by an older build or a store edited by hand. Two walls rather than one because they fail differently:
+the first keeps the bad value from being written, the second holds when it was written anyway.
+
+**A store opened by this release cannot be opened by 0.5.0** (schema v7). That is the point rather
+than a side effect: several hosts share one store, and an older process would go on serving
+`open_app` without ever moving a pointer it has never heard of, leaving the display parked on an app
+nobody is looking at. The upgrade itself is one added table on first open, and it is disposable —
+losing it costs the display its first frame and nothing else.
+
+**A declared display opens chrome-less.** `/view/<name>` puts a viewer bar above the app and a
+page-sized card around it — right for a tab, wrong for a screen the app was written to own, where
+it is that same double bezel one level up: an "← All apps" link over a wall nobody is standing at,
+and a rounded card under a region meant to reach every edge. `stage.display: true` already says
+this app is the frame rather than the picture, so it now decides this too, and **`?chrome=1`** is
+the way back for anyone building one in a tab. Both doors read the one answer, because a display
+served through the universal loader (a non-local tier) is the same screen. Nothing else moves:
+`/view` still defaults to the tab's chrome for every app that declares no display, and `?chrome=0`
+still strips it for any of them.
+
+**The App Store ships one, and it is the worked example.** `live` is the twenty-second app on the
+shelf — a full-bleed `@live` region under a bar that says only what it is — and it is the reference
+for the whole `stage.display` class, the way `habit-streaks` is the reference for the width tracks.
+It is also the only app in the store that needed `stage.width: "fluid"`. Install it on a spare
+tablet, open it at `/view/live`, and the display is done; the point of making it an app rather than
+a route is that the next line you write in it is yours.
+
+One property is worth stating because it is not obvious from the API: **the switch rides `/events`
+and nothing else.** There is no poll behind it. A dropped feed leaves the last app on screen,
+`EventSource` reconnects on its own, and the connect frame carries the current pointer — so a
+display that missed a switch catches up rather than staying wrong. That is a different axis from
+data freshness, which does have a poll behind it; `RUNTIME.md` and the authoring guide now say so in
+both places, so nobody carries the guarantee across from one to the other.
+
+### The panel host — a region someone laid out, not a page
+
+A third kind of ground showed up in real use: a host that opens an app inside a panel it manages,
+with its own tabs, sessions and containers around it. Two things we do are wrong there, and neither
+is visible from inside the app, so the engine now lets **whoever opens the page** say so. Both are
+**opt-in** and orthogonal on purpose — `chrome` is about what this page *draws*, `nav` is about
+where a link *goes*; a panel host usually wants both, a plain tab wants neither.
+
+- **`?chrome=0`** opens a URL door onto the switch `/view` already had: no "← All apps" bar, no
+  page-sized stage, just the app. (`?chrome=1` is the way back for a display, which now defaults the
+  other way — see above.)
+- **`?nav=intent`** turns app→app links into a message instead of a navigation. There is exactly one
+  way apps link to each other — `<a href="{oma.viewBase}{name}">`, which is the App Store's Open
+  button and the settings link in every widget's corner — and in a browser tab following it is
+  exactly right. In a panel host it replaces the document *underneath* the destination the host had
+  prepared, so a click on Open leaves the store's own frame showing a different app while every
+  container the host built goes unused. With this on, the runtime catches such clicks in the capture
+  phase and posts `{type: "openmcp:open-app", name}` to the embedder instead, which is the word the
+  hosted shell was already listening for. **Three cases are deliberately not intercepted**, each for
+  its own reason: a top-level page (`parent === window`), where there is nobody to tell and
+  `preventDefault` would merely break every link; a link that is not under this document's
+  `viewBase` or whose last segment is not an app name, because this only claims our own navigation
+  vocabulary; and a click carrying a modifier key or a `target`, where the user is talking to the
+  browser and that request is not ours to rewrite. Known boundary: an app on a non-local tier runs
+  inside the runner's sandboxed child, which this listener cannot reach — every AI-written app and
+  every App Store install is local.
+
+### Fixed
+
+- **No sandboxed app could submit a form**, which is to say the "add an item" half of most apps was
+  dead everywhere the runner mounts them — every app inside an `@live` region, every `oma.embed`
+  child, and the hosted `/app` shell built on the same loader. The frame carried
+  `sandbox="allow-scripts"`, and the missing
+  token was read for years as "the app cannot POST a form off-site." It is not: Chrome refuses a
+  sandboxed form inside `PrepareForSubmission`, **before it dispatches `submit`**, so the app's own
+  `onsubmit` handler never ran and the `preventDefault()` inside it never got the chance. Nothing
+  went wrong on screen — no error the user could see, no request on the wire, just a button that did
+  nothing — while the same app opened at `/view`, where a local app is direct-mounted, worked
+  perfectly. 17 of the 23 apps in `components/` hang their add/edit form off that handler.
+  `allow-forms` is granted now, and the submission stays closed by three walls that each block the
+  navigation while leaving the event alone: the child's `form-action 'none'`, the embedder's
+  `frame-src 'none'`, and an unconditional cancel in the bridge. That third one is what makes the
+  grant free rather than merely safe — an app that forgets `preventDefault()` behaves exactly as it
+  did before instead of navigating its own frame to a blocked page and going blank. This is also the
+  bill for a piece of depth bought in July: `form-action 'none'` was added to the runner CSP
+  specifically so that no exfiltration channel would depend on one attribute staying absent, and
+  that is precisely what let the attribute be granted the moment it turned out to be blocking
+  something else.
+
+- **No sandboxed app has been able to report its height since the runner shipped**, so every
+  embedded frame sat at its initial 140px for the life of the page — the app inside it scrolling in a
+  letterbox — on the settings badge's live embed and on every loader embed alike. The child's
+  height machinery is injected by `toString()`, and one injected body calls a sibling **by name**;
+  `dist/shell.js` is minified, so the name that body asked for was the bundler's two-letter one while
+  the helper beside it was declared under the name written in the source. The ReferenceError landed
+  inside the broadcast's own `catch` and was perfectly silent. Nothing could see it either: every
+  test reads the source module, where the two names already agree. The helper is now declared under
+  the name it has at runtime, and a test builds the real artifact and runs the injected source the
+  way the browser does. Frames that never grew now size to their content (measured in Chrome:
+  140px → 413px); `fit` thumbnails, which never used this channel, are unaffected.
+
+- **An app taller than the viewer's window lost everything below the fold.** The viewer is a window
+  onto an app, and the height of that page belongs to the window (in a tab) or to the frame (in a
+  panel host that lays one out) — never to the app. Seven of the shipped apps declared
+  `html, body { overflow: hidden }`, which is right on a host that gives an app whatever height it
+  asks for and is a dead scroll wheel on a fixed-height frame: the root element's overflow *is* the
+  viewport's. Measured on a 537px-tall frame holding a 1127px document, there was not one scrollable
+  element in the whole tree, and 590px of the app was unreachable — the same reading in an ordinary
+  537px browser tab, so this long predates any panel host. Two independent repairs: those seven
+  declarations are gone with the stage contract above, and the viewer's standalone path now puts
+  `overflow-y: auto` on the root element unconditionally, so an app that reintroduces the mistake —
+  or that is simply taller than the window — still scrolls. It costs nothing when the app fits: no
+  overflow, no scrollbar. `body` is deliberately left alone, because an auto-height `body` is a
+  scroll container that can never scroll, and binding one strands every `position: sticky`
+  descendant inside it — which is exactly the shape of the App Store's and settings' pinned bars.
+
+- **A release could silently skip an edit the publisher was told it MUST make.** The snapshot
+  publisher applies a short list of scrubs to the temp copies before staging — two of them rewrite
+  the READMEs' link to the internal security document into a link to `SECURITY.md`, because the
+  internal `docs/` tree never enters a public snapshot. A scrub whose literal text had drifted
+  (someone reworded that paragraph) pushed a `NO-OP` line into a summary that is only ever printed
+  and the run continued, so the release went out reporting success with a README pointing at a file
+  no reader has. The field is called `mustFind` and now means it: a miss aborts the run, names the
+  scrub and the pattern, and says the two honest ways forward — retarget it, or delete the entry so
+  that dropping a scrub is a decision somebody made rather than a miss nobody read. Found by the
+  guards-with-escape-hatches sweep on 2026-08-04 as its fifth instance of one shape — *a guard that,
+  under some condition, stops judging, and nothing guards that condition.*
+
+### Also
+
+- **Both READMEs were realigned to what the engine actually does**, which mostly meant repairing
+  three places where the document was older than the code: the MCP Apps extension is described by
+  its current identifier and status rather than by the SEP number it carried while it was still a
+  proposal; "from that moment `open_<name>` is a tool" became true only under `OMA_DYNAMIC_TOOLS=1`,
+  and the paragraph now says which two hosts the installer turns it on for, that the price is one
+  approval prompt per app, and that it is a deliberate and temporary workaround with a
+  `KNOWN-ISSUES.md` entry behind it; and the host matrix carries the ChatGPT-web data-after-refresh
+  caveat instead of a row that read unqualified green. The install section also states its
+  prerequisites (Node 22 or newer, and `git`) rather than letting the installer be the one to
+  mention them.
+- **`RUNTIME.md` and the authoring guide** gained the `@live` brick and both halves of the `stage`
+  declaration, so the two things an app *author* can reach for in this release are reachable from
+  the documents they are actually pointed at. The two URL words are addressed to whoever **opens**
+  the page rather than to whoever writes the app, and this entry is their contract.
+- **Three reported "upstream drifts" were the instrument moving, not upstream.** The dependency
+  watcher was reading a search API whose result window shifts on its own, so it kept reporting
+  changes nobody had made. Fixed at the instrument before the baseline was refreshed — a baseline
+  rebuilt on top of a lying probe would have made the lie permanent.
+- **Release tooling**: the rule that used to be enforced by a directory's existence now lives in the
+  publisher's forbidden-path families, so it holds after the directory is gone; and the dead-name
+  list learned the 0.5.0 generation of renamed tools, so a grep that lands on an old name reports it
+  instead of returning a plausible-looking hit.
+
 ## 0.5.0 — 2026-08-14
 
 **Breaking, and the largest change since the engine existed.** Three things moved at once: an app's
