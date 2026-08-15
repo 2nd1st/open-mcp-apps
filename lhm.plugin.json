@@ -1,0 +1,19 @@
+{
+  "identifier": "2nd1st-open-mcp-apps",
+  "name": "open-mcp-apps",
+  "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
+  "version": "0.5.4",
+  "homepage": "https://github.com/2nd1st/open-mcp-apps#readme",
+  "author": "2nd1st",
+  "tags": [
+    "mcp",
+    "mcp-apps",
+    "model-context-protocol",
+    "claude",
+    "ai",
+    "ui",
+    "widgets",
+    "sqlite",
+    "persistent-ui"
+  ]
+}

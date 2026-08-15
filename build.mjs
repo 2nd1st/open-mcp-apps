@@ -16,13 +16,20 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 // so esbuild's legalComments has nothing to preserve and we have to emit it ourselves. Derived from
 // what was actually bundled (esbuild's metafile), so it cannot drift from the dependency list.
 function thirdPartyNotices(metafile) {
-  const names = new Set();
+  // The package root comes out of the input path itself, at its LAST `node_modules/` segment —
+  // not from `node_modules/<name>` assembled by hand. npm's layout makes those two the same thing;
+  // pnpm's does not. There the real files sit at `node_modules/.pnpm/<name>@<ver>/node_modules/<name>`,
+  // so a match on the FIRST segment yields `.pnpm` — the content-addressed store, not a package —
+  // and reading its package.json is an ENOENT that fails `prepare` and with it the whole install.
+  // (Measured 2026-08-16 on the published tree: `pnpm install` dies here, which is also why the
+  // Glama build of this repo has never gone green. Under npm nothing changes: same paths, same set.)
+  const roots = new Map();
   for (const input of Object.keys(metafile.inputs)) {
-    const m = input.match(/node_modules\/((?:@[^/]+\/)?[^/]+)/);
-    if (m) names.add(m[1]);
+    const m = input.match(/^(.*node_modules\/((?:@[^/]+\/)?[^/]+))\//);
+    if (m && !roots.has(m[2])) roots.set(m[2], m[1]);
   }
-  const blocks = [...names].sort().map((name) => {
-    const root = join(HERE, "node_modules", name);
+  const blocks = [...roots.keys()].sort().map((name) => {
+    const root = join(HERE, roots.get(name));
     const { version, license } = JSON.parse(readFileSync(join(root, "package.json"), "utf8"));
     let text = null;
     for (const f of ["LICENSE", "LICENSE.md", "LICENCE", "LICENSE.txt"]) {

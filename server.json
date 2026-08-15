@@ -1,0 +1,44 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.2nd1st/open-mcp-apps",
+  "description": "Persistent, interactive MCP Apps — the AI builds an app once, you both reuse it",
+  "version": "0.5.5",
+  "websiteUrl": "https://openmcp.app",
+  "repository": {
+    "url": "https://github.com/2nd1st/open-mcp-apps",
+    "source": "github"
+  },
+  "packages": [
+    {
+      "registryType": "npm",
+      "identifier": "@2nd1st/open-mcp-apps",
+      "version": "0.5.5",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "OMA_DB",
+          "description": "Path to the SQLite store. Defaults to a fixed per-user data directory; set this to isolate a store.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "filepath"
+        },
+        {
+          "name": "OMA_VIEWER",
+          "description": "Browser viewer on loopback. On by default; set to 0 to turn it off.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        },
+        {
+          "name": "OMA_DYNAMIC_TOOLS",
+          "description": "Set to 1 to also expose one open_<name> tool per saved app. Off by default, because it costs prompt cache.",
+          "isRequired": false,
+          "isSecret": false,
+          "format": "string"
+        }
+      ]
+    }
+  ]
+}

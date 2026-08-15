@@ -1,8 +1,8 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.5.4",
+  "version": "0.5.5",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
-  "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
+  "description": "Persistent, interactive MCP Apps for any MCP host: the AI builds an app once, you both reuse it — data outlives the conversation.",
   "directories": {
     "test": "test"
   },
@@ -39,7 +39,8 @@
     ".": {
       "types": "./index.d.ts",
       "default": "./index.mjs"
-    }
+    },
+    "./package.json": "./package.json"
   },
   "engines": {
     "node": ">=22"

@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "open-mcp-apps": {
+      "command": "npx",
+      "args": ["-y", "@2nd1st/open-mcp-apps"]
+    }
+  }
+}

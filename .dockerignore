@@ -1,0 +1,19 @@
+# Keep the build context to what the image actually needs. node_modules is the big one:
+# better-sqlite3 is a native module, so a host-built copy is the wrong ABI inside the image
+# and must be rebuilt there rather than carried in.
+node_modules
+dist
+.git
+.github
+docs
+research
+test/filestore-tmp
+test/files
+test/repro
+*.db
+*.db-wal
+*.db-shm
+*.log
+.env
+.env.*
+.DS_Store

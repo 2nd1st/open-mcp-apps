@@ -40,7 +40,26 @@ const has = (p) => existsSync(join(ROOT, p));
 const rx = (s) => new RegExp(s);
 
 const CONFIG_PATH = "docs/doc-facts.config.json";
+// A tree with no `docs/` at all has no documentation to keep honest, and this runner ships into
+// exactly such a tree: the public snapshot carries `test/` but never `docs/` (see the ALLOWLIST in
+// scripts/publish.mjs), so on the public repo this file used to exit 1 on every push — `npm test`
+// is a `&&` chain and doc-facts sits second, which reds the whole run and stops the other 21 suites
+// from ever executing there. That is the same class of defect the ALLOWLIST already names for
+// index.mjs ("a snapshot without it ships a test suite that cannot start, and reds CI on the first
+// push"); this is its documentation-side twin, and the fix belongs here rather than in the snapshot
+// because shipping a `docs/` we deliberately withhold would be the wrong repair.
+//
+// The distinction that keeps the guard intact: NO `docs/` means nothing to check, so skip and pass.
+// A `docs/` that EXISTS but has lost its config is the real defect this branch was written for —
+// a repo with documentation and no rules describing it — and that still fails loudly. So the
+// public snapshot goes green without the internal tree gaining a way to silently disable the suite.
 if (!has(CONFIG_PATH)) {
+  if (!has("docs")) {
+    console.log(`doc-facts: no docs/ under ${ROOT} — nothing to check, skipped.`);
+    console.log(`  (This tree carries the runner but not the documentation it checks; the public`);
+    console.log(`   snapshot is built that way on purpose. A tree WITH docs/ and no config fails.)`);
+    process.exit(0);
+  }
   console.error(`doc-facts: no ${CONFIG_PATH} under ${ROOT}\n` +
     `  This runner is repo-agnostic — it needs a config describing THIS repo's docs.\n` +
     `  Copy the engine's as a starting point and edit it.`);

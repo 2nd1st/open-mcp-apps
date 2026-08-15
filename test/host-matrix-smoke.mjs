@@ -25,7 +25,26 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
-const m = JSON.parse(readFileSync(join(ROOT, "docs", "host-matrix.json"), "utf8"));
+const BOOK = join(ROOT, "docs", "host-matrix.json");
+
+// The book this guard reads lives under `docs/`, and `docs/` never enters the public snapshot
+// (see the ALLOWLIST in scripts/publish.mjs) while `test/` always does. So on the public repo this
+// file threw ENOENT on every push — the same defect the ALLOWLIST already names for index.mjs, and
+// the twin of the one in test/doc-facts.mjs. It hid behind that one: `npm test` is a `&&` chain and
+// doc-facts fails second, so until doc-facts was fixed this line had never been reached there.
+//
+// ABSENT is not EMPTY. Section 0 below refuses to pass on an empty corpus on purpose ("a green run
+// over zero rows proves nothing"), and that rule is untouched: a book that EXISTS must still have
+// rows. What is being distinguished here is the tree that never carried the book at all — there is
+// no ledger to keep honest, so there is no claim to make about it either way, and the honest
+// outcome is to say so and skip rather than to invent a verdict about a file nobody shipped.
+if (!existsSync(BOOK)) {
+  console.log(`host-matrix: no docs/host-matrix.json under ${ROOT} — nothing to guard, skipped.`);
+  console.log(`  (This tree carries the guard but not the ledger; the public snapshot is built`);
+  console.log(`   that way on purpose. A tree WITH the book still has to satisfy every rule below.)`);
+  process.exit(0);
+}
+const m = JSON.parse(readFileSync(BOOK, "utf8"));
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note) => (cond

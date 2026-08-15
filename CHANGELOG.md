@@ -7,6 +7,67 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.5 — 2026-08-16
+
+**Everything here is about the copy of this repository other people get.** The runtime did not
+change — the tool surface is byte-identical to 0.5.4 — but three things that only ever failed
+*somewhere else* are fixed, and the files other machines read about us now live in the repo
+instead of in someone's head.
+
+### Fixed
+
+- **`pnpm install` had never worked, on any version.** The `prepare` script bundles the widget
+  runtime and, on the way, collects the licences of everything it bundles — reading each
+  dependency's `package.json` at `node_modules/<name>`. That path is npm's layout. pnpm's is
+  `node_modules/.pnpm/<name>@<version>/node_modules/<name>`, so the first segment after
+  `node_modules` is `.pnpm` — the content-addressed store, not a package — and reading *its*
+  `package.json` is an `ENOENT` that fails `prepare` and with it the entire install. The package
+  root now comes out of the bundler's own input paths (their **last** `node_modules` segment), so
+  both layouts state their own truth; assembling the path by hand could never have worked under
+  pnpm, where transitive dependencies are not at the root at all. Measured on the published tree:
+  `pnpm install` reproduced the failure, and reproduces success after. npm's output is unchanged,
+  byte for byte. This is also why the Glama build of this repo had never gone green.
+- **The public repository's CI had never been green either, and nobody could see why.** `npm test`
+  is an `&&` chain with `doc-facts` second, and `doc-facts` reads `docs/` — which never enters a
+  public snapshot, while `test/` always does. So it exited 1 on every push and **the other 21
+  suites had never run there at all**. Both documentation-reading runners now distinguish *no
+  `docs/` at all* (nothing to check — skip, and say so) from *a `docs/` with no rules describing
+  it* (the defect they were written for — still loud). Verified against the real public snapshot:
+  `npm ci`, `node build.mjs`, `npm test` all exit 0, 21 suites green, two honest skips.
+- **The package would not let you read its own `package.json`.** `exports` is a closed list, and
+  that path was not on it — so the single most common line tooling and agents use to learn a
+  package's version threw `ERR_PACKAGE_PATH_NOT_EXPORTED`. It is on the list now, and nothing else
+  was opened.
+
+### Added
+
+- **A Dockerfile that is an entry point, not a badge** — directories that grade MCP servers do it
+  by building them, and one that withholds servers whose build does not reproduce. Two measured
+  traps are recorded in the file itself: `better-sqlite3` ships no install script but does ship a
+  `binding.gyp`, so npm implicitly runs `node-gyp rebuild` and dies without a toolchain — to
+  produce a binary the loader then ignores in favour of the prebuilt one it shipped; and
+  `node:22-slim`/`24-slim` are Debian bookworm (glibc 2.36) while that prebuilt wants GLIBC_2.38,
+  which builds green and dies on the first query. Hence `--ignore-scripts` and a trixie base.
+  Verified on arm64 and amd64: a real `initialize` answers, `tools/list` returns 33.
+- **The contracts other people's machines read**: `server.json` (the official MCP Registry, where
+  this server is now listed), `.mcp.json` (a standard client config sample), `glama.json`,
+  `lhm.plugin.json`. They were living in a scratch directory and on a laptop; a file whose whole
+  purpose is that a stranger can check it against what a directory says should be in the repo.
+- **Docs**: `docs/ecosystem-listings.md` (who lists us, and which of those entries has gone stale)
+  and `docs/official-directories.md` (what the ChatGPT and Claude directories actually require,
+  read from their own pages).
+
+### Changed
+
+- **The READMEs were rebuilt for the reader they actually have.** Both are read by an assistant far
+  more often than by a person browsing: someone pastes the page and asks how to install this. So a
+  fact table and three complete, runnable host-config blocks come first, the deep material moved
+  below, and `will`/`soon` promises became unchecked roadmap items. Two of the five assertion counts
+  quoted in them turned out to be wrong, and one machine-checked pin had been silently dead since
+  the App Store rename.
+- One sentence per medium, instead of three drifting ones: the npm description, the registry entry
+  and the GitHub About now say the same thing at three lengths.
+
 ## 0.5.4 — 2026-08-15
 
 **The whole repository is now MIT.** The engine was AGPL-3.0-only and `components/` was MIT; that
