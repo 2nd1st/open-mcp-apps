@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // functions.mjs — the function pillar (W3): declared, callable, data→data closures.
 //

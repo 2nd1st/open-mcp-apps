@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // seed.mjs — load the built-in SYSTEM apps (components/<name>/ entries) into a registry.
 // CLI: node seed.mjs   (idempotent per content: re-seeding same content just bumps version)

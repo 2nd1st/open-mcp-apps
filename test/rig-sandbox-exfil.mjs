@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/rig-sandbox-exfil.mjs — does the runner CSP actually stop a child from leaking data?
 //

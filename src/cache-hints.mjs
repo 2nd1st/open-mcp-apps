@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // cache-hints.mjs — the SEP-2549 cache POLICY, plus the tools/list `$schema` trim.
 //

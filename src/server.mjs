@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // server.mjs — stdio entry point (Claude Desktop / any local MCP host), and the target of the
 // package's `bin`: from a clone, `npm install -g .` (or `npm link`) puts an `open-mcp-apps`

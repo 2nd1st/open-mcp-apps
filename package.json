@@ -1,6 +1,6 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.5.2",
+  "version": "0.5.4",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
   "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
   "directories": {
@@ -28,7 +28,7 @@
     "persistent-ui"
   ],
   "author": "2nd1st",
-  "license": "AGPL-3.0-only",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "open-mcp-apps": "src/server.mjs"

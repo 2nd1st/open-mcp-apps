@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/confirmation.mjs — the W-S confirmation layer (redesign §2.5-A/B), pinned end to end.
 //

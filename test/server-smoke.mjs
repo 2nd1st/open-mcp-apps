@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/server-smoke.mjs — end-to-end proof of the ENGINE over real stdio.
 // Covers the creation loop itself: seed apps present → generic data flow →

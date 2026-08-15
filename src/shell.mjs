@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // shell.mjs — wraps a stored app's HTML with the oma shell at ui:// serve time.
 // Injects (1) the bundled shell runtime (window.oma + MCP bridge) and (2) a design-token
@@ -68,8 +68,8 @@ body { font-family: var(--font-sans); color: var(--color-text-primary); }
 // while CSS was 32-47% of every app. So the kit is now INJECTED into every rendered
 // document — the author gets it for free, and the guide (get_app_guide) teaches it.
 //
-// It stays in components/ and stays MIT (components/LICENSE names "the design-kit CSS"
-// explicitly); this module only READS it, so the licence of the bytes is unchanged.
+// It stays in components/ and stays MIT (the root LICENSE now covers the whole tree, the
+// design kit included); this module only READS it, so the licence of the bytes is unchanged.
 // Read once at first use, like the runtime bundle above.
 let kitCss = null;
 export function KIT_CSS() {

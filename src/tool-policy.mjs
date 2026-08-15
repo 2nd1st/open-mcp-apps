@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tool-policy.mjs — the SINGLE source of truth for "control-plane" tools: the ones a
 // rendered or previewed app (ANY tier, incl. local) may NEVER reach via callTool.

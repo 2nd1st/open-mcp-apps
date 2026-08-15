@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/manifest-grammar.mjs — the declaration reader is a security boundary, so its grammar is a
 // golden file rather than a claim in a comment.

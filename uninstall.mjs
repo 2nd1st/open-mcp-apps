@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // uninstall.mjs — remove open-mcp-apps from the AI hosts on this machine (the reverse of install.mjs).
 //

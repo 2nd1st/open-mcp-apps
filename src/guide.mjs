@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // guide.mjs — the app authoring contract, returned by the get_app_guide tool.
 // This is what an AI reads BEFORE writing an app. Keep it tight, exact, example-led.

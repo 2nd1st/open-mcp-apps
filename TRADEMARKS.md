@@ -16,7 +16,7 @@ The following names, and any associated logos and wordmarks, are reserved:
 
 ## What this means
 
-You are welcome to exercise every freedom the AGPL and MIT licenses give you —
+You are welcome to exercise every freedom the MIT license gives you —
 including running, modifying, forking, and redistributing the code. But that
 copyright grant does not let you use the reserved names or logos in a way that
 could imply the project, a fork, a product, or a service is official, endorsed,

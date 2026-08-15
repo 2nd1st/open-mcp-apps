@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // app-store.mjs — the built-in APP STORE: the high-quality apps shipped in this
 // repo's components/ dir, browsable via the `app-store` system app and installable into the

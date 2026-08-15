@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tools/files.mjs — the per-app file plane (scope b): list / read / write / chunked upload / delete / usage.
 // Registered by engine.mjs. Moved here verbatim: the tool surface is byte-identical to before

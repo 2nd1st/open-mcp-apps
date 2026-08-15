@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/seed-smoke.mjs — proves seed.mjs stores the FILE's bytes and is idempotent across runs,
 // and that the system UI kit reaches apps by INJECTION rather than by being baked into

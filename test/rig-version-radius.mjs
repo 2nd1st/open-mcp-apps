@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/rig-version-radius.mjs — enumerate every consumer of a `version` number before the axes merge.
 //

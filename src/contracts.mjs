@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // contracts.mjs — the annotations, shapes and capability policy that the tool modules share.
 // Extracted from engine.mjs so src/tools/*.mjs can import them without a cycle: engine.mjs

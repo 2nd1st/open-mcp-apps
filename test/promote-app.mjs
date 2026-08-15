@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/promote-app.mjs — the visual→app upgrade transaction + suggested_kind diagnostic
 // (W-P §8-R3, re-shaped by W-N: the manifest is a first-class slot, so the promote flips a key

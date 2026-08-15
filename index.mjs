@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // index.mjs — package barrel: the public API for library consumers
 // (npm users, embedders, hosted multi-tenant back ends). Everything here is a

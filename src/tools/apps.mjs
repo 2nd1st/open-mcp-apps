@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tools/apps.mjs — the app registry surface: the per-app wiring, the universal opener,
 // and the creation loop (guide / list / read / save).

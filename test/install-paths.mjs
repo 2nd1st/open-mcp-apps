@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/install-paths.mjs — the four install-path defects found by walking the PUBLIC surface, v0.4.2.
 //

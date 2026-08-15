@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // engine.mjs — builds the complete MCP server (tools + resources) around a store.
 // Shared by every entry point: stdio (server.mjs), Streamable HTTP (http.mjs), and the

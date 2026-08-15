@@ -1,72 +1,64 @@
 # Licensing
 
-open-mcp-apps ships under **two licenses**, split by directory, plus a
-**trademark reservation** and a **contributor agreement**. This file is the map;
-the license texts themselves are authoritative.
+open-mcp-apps ships under **one license — MIT** — for every file in the
+repository, plus a **trademark reservation**. This file is the map; the license
+text itself is authoritative.
 
-Copyright © 2026 **2nd1st**, for both halves. Every source file carries its own
-`SPDX-License-Identifier`, so a scanner does not have to infer any of this.
+Copyright © 2026 **2nd1st**. The engine's source files carry an
+`SPDX-License-Identifier: MIT` header, so a scanner does not have to infer the
+license from this document.
 
-## The engine — AGPL-3.0-only
+## Everything — MIT
 
-Everything in this repository **except** the `components/` directory is the
-engine: the registry, the shell runtime, the data/command layer, the host
-adapters, the HTTP/stdio servers, and the build. It is licensed under the
-**GNU Affero General Public License, version 3.0** (see [`LICENSE`](LICENSE)).
+The engine (the registry, the shell runtime, the data/command layer, the host
+adapters, the HTTP/stdio servers, the build) and the `components/` library (the
+single-file HTML apps, their fixtures, the `_system.css` design kit, and the demo
+data) are all licensed under the **MIT License** — see the single root
+[`LICENSE`](LICENSE), which governs the whole tree.
 
-The AGPL is a network copyleft license: anyone who runs a modified version of
-the engine as a network service must offer the source of their modified version
-to the users of that service (AGPL §13). This keeps the engine — and any
-improvements to it — open for everyone who builds on it.
-
-SPDX identifier: `AGPL-3.0-only`.
-
-## The components / library — MIT
-
-The `components/` directory is the official **components/library** layer: the
-single-file HTML apps (dashboard, settings, app-store, and the example apps),
-their fixtures, the `_system.css` design kit, and the demo data. These are
-licensed under the **MIT License** (see [`components/LICENSE`](components/LICENSE)).
-
-The apps a person runs and edits are content, not engine internals. MIT means
-users may open, copy, modify, fork, and redistribute any component freely —
-including the ones we ship — without the copyleft obligations that govern the
-engine. The permissive license here is deliberate: it must never be a legal
-question whether you can change your own dashboard.
+MIT means you may use, copy, modify, merge, publish, distribute, sublicense, and
+sell copies of any part of this project, including running a modified version as
+a hosted service, with no obligation to publish your changes. The one condition
+is the usual one: keep the copyright notice and the permission notice with any
+substantial portion you redistribute.
 
 SPDX identifier: `MIT`.
 
-## Which file is under which license
+**Until v0.5.2 this repository was split by directory** — the engine was
+AGPL-3.0-only and `components/` was MIT, under a separate `components/LICENSE`.
+That split is gone: the root `LICENSE` is now the single source of truth, and
+`components/` inherits it like every other directory. Nothing was taken away —
+the engine moved to strictly more permissive terms, and the apps are governed by
+the same MIT text they always were.
 
-| Path | License |
-| --- | --- |
-| `components/**` | MIT |
-| everything else (`src/`, `index.mjs`, `*.mjs`, build, tests, docs) | AGPL-3.0-only |
+## Trademarks — not granted by the license
 
-When in doubt, the `LICENSE` file nearest a file (walking up the tree) governs
-it: `components/LICENSE` covers that directory, the root `LICENSE` covers the rest.
+The MIT license does not grant any right to the project's names or logos. The
+names **"open-mcp-apps"**, **"openmcp.app"**, **"SecondFirst"**, and
+**"2nd1st"**, and any associated logos, are reserved. See
+[`TRADEMARKS.md`](TRADEMARKS.md).
 
-## Trademarks — not granted by either license
-
-Neither the AGPL nor the MIT license grants any right to the project's names or
-logos. The names **"open-mcp-apps"**, **"openmcp.app"**, **"SecondFirst"**, and
-**"2nd1st"**, and any associated logos, are reserved. See [`TRADEMARKS.md`](TRADEMARKS.md).
+This is deliberate and it does not move with the license. Fork the code freely;
+give your fork its own name.
 
 ## Contributing
 
-What a contribution needs depends on which half of the split it lands in.
+Nothing to sign. Inbound is MIT, outbound is MIT, and MIT already grants
+everything the project would otherwise ask for — so there is no agreement to
+execute, now or later, for any part of the tree.
 
-**`components/` (MIT)** — nothing beyond the usual. Inbound is MIT, outbound is
-MIT, and MIT already grants everything the project would otherwise ask for. No
-agreement to sign, now or later.
+**There used to be a CLA** covering engine contributions. Its only reason to
+exist was the split: keeping the engine under a copyleft license while retaining
+the right to offer it under other terms required contributors to grant those
+terms explicitly. Under MIT the grant is already in the license every
+contributor's patch arrives under, so the signing ceremony has nothing left to
+do. `CLA.md` and the CLA check workflow were removed in v0.5.4; contributors who
+signed it previously are unaffected — that agreement only ever granted rights
+that MIT grants anyway.
 
-**The engine (AGPL)** — a Contributor License Agreement is intended, because the
-project keeps the engine under the AGPL while retaining the right to offer it
-under other terms (e.g. embedded in the maintainers' own hosted service), and a
-single merged contribution could otherwise bind the whole project to the AGPL,
-its own maintainers included. [`CLA.md`](CLA.md) is a **draft and not yet in
-effect** — the grantee is deliberately unfilled until there is a settled legal
-entity to name. Until it is finalised, open an issue before a non-trivial engine
-change and provenance gets sorted out with you directly.
+**Sign your commits off** (`git commit -s`). That adds a `Signed-off-by:` line
+asserting the [Developer Certificate of Origin](https://developercertificate.org/)
+— that the work is yours to submit. DCO is a provenance record, not a license
+grant, so it is unaffected by the relicense and still applies.
 
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for the working details.

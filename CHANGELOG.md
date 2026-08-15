@@ -7,6 +7,50 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.4 — 2026-08-15
+
+**The whole repository is now MIT.** The engine was AGPL-3.0-only and `components/` was MIT; that
+directory split is gone and the root `LICENSE` governs everything. No engine behavior changed in
+this release — the tool surface is byte-for-byte the document it was in 0.5.2.
+
+> **Why the version jumps from 0.5.2 to 0.5.4.** A failed npm publish followed by an unpublish of
+> the whole package burned the version numbers `0.5.2` and `0.5.3` on the registry — npm never lets
+> an unpublished version number be reused. Skipping to `0.5.4` keeps the GitHub tag and the npm
+> version 1:1, which is worth more than a contiguous sequence. **`v0.5.3` never existed**; the
+> GitHub tag `v0.5.2` is unaffected and still points at the release it always did.
+
+### License
+
+- **Relicensed the engine from AGPL-3.0-only to MIT**, and folded `components/LICENSE` into the
+  single root [`LICENSE`](LICENSE). Every `SPDX-License-Identifier` header moved with it.
+- **Why.** The AGPL was chosen to keep engine improvements open, and it does do that — but it was
+  costing the engine the thing it exists for, which is being embedded. This project is a *library
+  and a server other people's software runs*, and the ecosystem it has to sit inside is uniformly
+  permissive: the MCP SDKs are MIT, the reference hosts and the surrounding tooling are MIT, and
+  container registries and app directories routinely refuse GPL-family dependencies outright. Every
+  one of those is a place where an AGPL engine is not evaluated and rejected so much as never picked
+  up — the license does its filtering before anyone reads the code. Network copyleft protects
+  against a competitor running a closed fork as a service; embedding is the growth surface that
+  matters far more here, and the AGPL taxed the second to insure against the first.
+- **For existing users this is strictly a loosening.** MIT removes obligations, it adds none: every
+  freedom the AGPL granted, MIT still grants, and the §13 duty to publish the source of a modified
+  hosted version is simply gone. Nothing that was permitted becomes forbidden. Code already
+  received under the AGPL stays validly licensed under it — that grant is irrevocable — so no
+  downstream user has to do anything.
+- **The trademark reservation is unchanged.** The project's names and logos are still reserved and
+  are still not granted by the license — the reserved list is in [`TRADEMARKS.md`](TRADEMARKS.md),
+  unedited by this release. Brand protection does not travel with the copyright license, and a more
+  permissive license is exactly when that distinction earns its keep: fork the code freely, and give
+  your fork its own name.
+- **The CLA is retired.** `CLA.md` and the `.github/workflows/cla.yml` check are removed. The CLA
+  existed for one reason — keeping the engine under copyleft while retaining the right to offer it
+  under other terms required contributors to grant those terms explicitly. Under MIT, inbound is
+  outbound: every patch already arrives under the license the project ships, so the signing ceremony
+  had nothing left to do. Contributions now need nothing signed, engine and apps alike. Anyone who
+  signed previously is unaffected; that agreement only ever granted rights MIT grants anyway.
+- **DCO sign-off (`git commit -s`) still applies.** It is a provenance record, not a license grant,
+  so the relicense leaves it exactly where it was.
+
 ## 0.5.2 — 2026-08-15
 
 **Packaging only: the engine is now on npm, so installing it no longer requires cloning it.** Not

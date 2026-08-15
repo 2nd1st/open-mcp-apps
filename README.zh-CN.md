@@ -285,23 +285,18 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 
 ## 许可
 
-按目录分成**两个许可**([`LICENSING.md`](LICENSING.md) 有完整对照表):
-
-- **引擎** —— `components/` 以外的一切 —— 是 **AGPL-3.0-only**([`LICENSE`](LICENSE))。
-  把改过的版本作为网络服务运行,就必须向使用者提供你修改版的源码(AGPL §13);
-  对引擎的改进因此始终保持开放。
-- **官方 app** —— [`components/`](components/) 里你运行和编辑的那些 app —— 是 **MIT**
-  ([`components/LICENSE`](components/LICENSE))。任何 app 都可自由打开、复制、fork、
-  再分发;改你自己的 dashboard 永远不该是个法律问题。
+全仓**统一 MIT** —— 引擎和 [`components/`](components/) 里的 app 一视同仁
+([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md))。随便用、fork、改、嵌入、
+把改过的版本作为托管服务跑;再分发实质部分时保留版权声明即可 —— 义务只有这一条。
+v0.5.2 之前引擎是 AGPL-3.0-only、按目录分成两个许可,改动的来龙去脉见
+[`LICENSING.md`](LICENSING.md)。
 
 名称 **open-mcp-apps**、**openmcp.app**、**SecondFirst**、**2nd1st** 及其 logo
-**不**在任何一个许可的授予范围内 —— 见 [`TRADEMARKS.md`](TRADEMARKS.md)。代码尽管 fork,
+**不**在许可的授予范围内 —— 见 [`TRADEMARKS.md`](TRADEMARKS.md)。代码尽管 fork,
 但请给你的 fork 起自己的名字。
 
 版权所有 © 2026 2nd1st。
 
-app 的贡献不需要签任何东西 —— MIT 进 MIT 出。引擎的贡献请先开 issue:
-CLA 是计划中的,但目前仍是草稿
-([`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CLA.md`](CLA.md))。
+贡献无需签署任何协议 —— MIT 进,MIT 出([`CONTRIBUTING.md`](CONTRIBUTING.md))。
 
 © 2026 [2nd1st](https://github.com/2nd1st)

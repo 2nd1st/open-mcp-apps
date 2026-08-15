@@ -49,31 +49,26 @@ open-mcp-apps is the **engine**: the registry, the shell runtime, the data/comma
 adapters. It stays standard-first (no host-private APIs) so one codebase serves every host that renders
 `ui://`. Bug fixes, new host adapters, guide improvements, and example apps are all welcome.
 
-## License and the CLA
+## License
 
-This project is dual-licensed by directory: the **engine** (everything outside
-`components/`) is **AGPL-3.0-only**, and the official **apps** in
-`components/` are **MIT**. See [LICENSING.md](LICENSING.md) for the full map and
-[TRADEMARKS.md](TRADEMARKS.md) for the reserved names.
+This project is **MIT throughout** — the engine and the official apps in
+`components/` alike. See [LICENSING.md](LICENSING.md) for the map and
+[TRADEMARKS.md](TRADEMARKS.md) for the reserved names, which the license does
+not grant.
 
-What that means for you depends on which half you're touching.
+**Nothing to sign, ever.** MIT in, MIT out. MIT already grants everything the
+project could ask for, so no contribution needs an agreement now and none will
+later — engine and apps alike, whether you contribute as an individual or on
+behalf of an employer.
 
-**Apps (`components/`) — nothing to sign, ever.** They are MIT in, MIT out.
-MIT already grants everything the project could ask for, so an app PR needs
-no agreement now and will not need one later. New example apps and fixes to
-existing ones are the easiest contribution to land.
-
-**The engine (everything else) — open an issue first.** A Contributor License
-Agreement is intended here: it is what lets the engine stay AGPL while remaining
-offerable under other terms (including embedded in the maintainers' own hosted
-service), and without it a single merged contribution could bind the whole
-project — its maintainers included — to the AGPL. [CLA.md](CLA.md) is **in
-effect for engine contributions**: your first PR gets a CLA check, and you sign
-by replying to its prompt with one comment — once, against your GitHub identity.
-`components/` contributions need no agreement. Contributing on behalf of an
-employer? Open an issue first — corporate CLAs are handled case by case.
+There used to be a CLA for engine contributions. It existed only because the
+engine was AGPL while the project retained the right to offer it under other
+terms; that grant now lives in the license every patch already arrives under, so
+the CLA and its check workflow were removed in v0.5.4. If you signed it earlier,
+nothing about your contribution changes — it granted rights MIT grants anyway.
 
 **Sign your commits off** (`git commit -s`). That adds a `Signed-off-by:` line
 asserting the [Developer Certificate of Origin](https://developercertificate.org/)
-— that the work is yours to submit. It applies to both halves, costs one flag,
-and is the provenance record the project relies on today.
+— that the work is yours to submit. DCO is a provenance record, not a license
+grant, so the relicense leaves it exactly where it was: it costs one flag, and
+it is the provenance record the project relies on today.

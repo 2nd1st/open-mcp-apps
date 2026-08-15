@@ -322,25 +322,20 @@ Where it stands:
 
 ## License
 
-Two licenses, split by directory ([`LICENSING.md`](LICENSING.md) has the full map):
-
-- **The engine** — everything outside `components/` — is **AGPL-3.0-only**
-  ([`LICENSE`](LICENSE)). Run a modified version as a network service and you
-  must offer its source to your users (AGPL §13). Improvements to the engine
-  stay open.
-- **The official apps** in [`components/`](components/) — the apps you run
-  and edit — are **MIT** ([`components/LICENSE`](components/LICENSE)). Open, copy,
-  fork, and redistribute any app freely; changing your own dashboard is never a
-  legal question.
+**MIT**, for the whole repository — the engine and the apps in
+[`components/`](components/) alike ([`LICENSE`](LICENSE) ·
+[`LICENSING.md`](LICENSING.md)). Use it, fork it, modify it, embed it, run a
+modified version as a hosted service; keep the copyright notice with substantial
+portions you redistribute. That is the whole obligation. Up to v0.5.2 the engine
+was AGPL-3.0-only under a directory split — see [`LICENSING.md`](LICENSING.md)
+for what changed and why.
 
 The names **open-mcp-apps**, **openmcp.app**, **SecondFirst**, and **2nd1st**,
-and their logos, are **not** granted by either license — see
+and their logos, are **not** granted by the license — see
 [`TRADEMARKS.md`](TRADEMARKS.md). Fork the code freely; give your fork its own name.
 
 Copyright © 2026 2nd1st.
 
-App contributions need nothing signed — MIT in, MIT out. For engine
-contributions, open an issue first: a CLA is intended but is still a draft
-([`CONTRIBUTING.md`](CONTRIBUTING.md) · [`CLA.md`](CLA.md)).
+Contributions need nothing signed — MIT in, MIT out ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
 
 © 2026 [2nd1st](https://github.com/2nd1st)

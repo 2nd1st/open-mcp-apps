@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tools/registry.mjs — registry lifecycle: version history, restore, render health, delete.
 // Registered by engine.mjs. Moved here verbatim: the tool surface is byte-identical to before

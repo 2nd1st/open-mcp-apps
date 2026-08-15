@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/files-smoke.mjs — the FILE channel end-to-end (real bytes on disk): content-addressed dedup,
 // blob-first/ref-second GC, read-time integrity, orphan sweep, per-app isolation. Store-plane invariants

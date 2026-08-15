@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // files.mjs — the per-app FILE channel: unstructured user files (scope b) that are too big or too
 // binary for the 32 KiB item `fields` JSON. Design: scratchpad/FILE-STORAGE-design.md.

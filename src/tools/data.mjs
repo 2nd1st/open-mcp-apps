@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tools/data.mjs — the generic collection tools: the read and mutation surface every widget shares.
 // Registered by engine.mjs. Moved here verbatim: the tool surface is byte-identical to before

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/runtime-contract.mjs — RUNTIME.md describes the two window.oma surfaces. This makes it true.
 //

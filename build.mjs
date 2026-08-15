@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // build.mjs — bundle the shell runtime (App bridge + window.oma) into dist/shell.js.
 // Run: node build.mjs             — fail loudly if esbuild is missing
@@ -55,7 +55,7 @@ const out = await build({
   minify: true,
   // minify strips comments, so the bundle's own licence has to be stated in a banner, and the
   // bundled packages' notices appended from their LICENSE files (see thirdPartyNotices).
-  banner: { js: "/*! SPDX-License-Identifier: AGPL-3.0-only | Copyright (C) 2026 2nd1st */" },
+  banner: { js: "/*! SPDX-License-Identifier: MIT | Copyright (C) 2026 2nd1st */" },
   metafile: true,
   write: false,
 });

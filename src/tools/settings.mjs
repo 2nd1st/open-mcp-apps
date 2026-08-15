@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // tools/settings.mjs — the settings pane surface: prefs schema, permissions overview, and the privileged
 // policy writer.

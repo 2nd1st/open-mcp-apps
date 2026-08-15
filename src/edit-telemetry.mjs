@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: AGPL-3.0-only
+// SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // edit-telemetry.mjs — the R1 tripwire's data source (W-E, redesign §8-R1).
 //
