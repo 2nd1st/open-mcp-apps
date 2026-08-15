@@ -24,12 +24,13 @@ substantial portion you redistribute.
 
 SPDX identifier: `MIT`.
 
-**Until v0.5.2 this repository was split by directory** — the engine was
-AGPL-3.0-only and `components/` was MIT, under a separate `components/LICENSE`.
-That split is gone: the root `LICENSE` is now the single source of truth, and
-`components/` inherits it like every other directory. Nothing was taken away —
-the engine moved to strictly more permissive terms, and the apps are governed by
-the same MIT text they always were.
+**Up to and including v0.5.2 this repository was split by directory** — the
+engine was AGPL-3.0-only and `components/` was MIT, under a separate
+`components/LICENSE`. **v0.5.4 ended that split** (there is no v0.5.3): the root
+`LICENSE` is now the single source of truth, and `components/` inherits it like
+every other directory. Nothing was taken away — the engine moved to strictly
+more permissive terms, and the apps are governed by the same MIT text they
+always were.
 
 ## Trademarks — not granted by the license
 

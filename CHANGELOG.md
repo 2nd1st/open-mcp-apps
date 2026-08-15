@@ -7,6 +7,49 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.7 — 2026-08-16
+
+**Three defects that were only ever visible from outside.** All three were found by looking at what
+a stranger receives rather than at what this repository contains: the text an MCP client is actually
+handed by `list_apps`, a link a reader on GitHub actually clicks, and the security alerts the public
+repository page actually shows. None of them had ever failed a test. The runtime's only behavioural
+change is that one line of listing text — the tool surface is otherwise byte-identical to 0.5.6.
+
+### Fixed
+
+- **`list_apps` told the model every app was `undefined` characters long.** The rendered row read a
+  row field named `html_size`; the query behind it has produced `length(ui) AS ui_size` since the
+  manifest split,
+  and a missing property in JavaScript is `undefined`, not an error. So every row of every listing,
+  in every host, printed `(undefined chars, by …)` — while the structured half stayed correct,
+  because it spreads the store row rather than naming fields. Found by driving the *published* npm
+  package as a client would (`npx -y @2nd1st/open-mcp-apps`, initialize → `save_app` → `list_apps`),
+  which is also why the test now asserts on the rendered text and not on the structured payload.
+- **A link in this file 404'd for every reader.** The v0.3.0 entry links `CLA.md`, which was deleted
+  in 0.5.4 with the MIT relicense. It now points at the file inside the last release that carried
+  it. `doc-facts` had the name exempted — correctly, as a record of what once was — but an
+  exemption for a *name* cannot see that the name is wrapped in a *hyperlink*.
+- **Nine Dependabot alerts on the public repository, not one of them on a dependency we declare.**
+  Every one of them arrived through somebody else's `package.json`: `hono` and `@hono/node-server`
+  by two paths at once (`@modelcontextprotocol/node` and `@modelcontextprotocol/sdk`, deduped to a
+  single copy), `ip-address` under the sdk's `express-rate-limit`, `fast-uri` under its `ajv`. Every
+  repair was a patch release that already sat inside a `^` range we had written — hono
+  4.12.31→4.13.2, `@hono/node-server` 1.19.14→1.19.17, fast-uri 3.1.4→3.1.5, ip-address
+  10.2.0→10.5.0 — so `npm audit fix` *without* `--force` was the entire fix: `package.json` did not
+  change by one byte, and `package-lock.json` moved twelve lines. `npm audit --omit=dev` reports 0
+  afterwards. Dependency updates enter through this repository and reach the public one with the
+  next snapshot, which is why the alert PRs raised over there get closed rather than merged: that
+  repository's history is a fast-forward of curated snapshots, and a merge commit of its own would
+  make the following release unpushable.
+
+### Changed
+
+- **`scripts/publish.mjs` now checks link closure over the staged snapshot** (step 7b): every
+  relative markdown link in a published `.md` must resolve inside the published file set. This
+  covers the two cases nothing else could — a target deleted from the repo, and a target that
+  exists here but is not in the `ALLOWLIST`, which no check run against the internal tree can
+  detect by construction. It aborts before any push and names which of the two it hit.
+
 ## 0.5.6 — 2026-08-16
 
 **The public CI is green for the first time.** 0.5.5 fixed two of the three things that broke the
@@ -341,8 +384,10 @@ still strips it for any of them.
 shelf — a full-bleed `@live` region under a bar that says only what it is — and it is the reference
 for the whole `stage.display` class, the way `habit-streaks` is the reference for the width tracks.
 It is also the only app in the store that needed `stage.width: "fluid"`. Install it on a spare
-tablet, open it at `/view/live`, and the display is done; the point of making it an app rather than
-a route is that the next line you write in it is yours.
+tablet, open it at `/view/live`, and the display is done (note: the viewer binds `127.0.0.1`, so a
+*separate* device reaches `/view/live` only through a tunnel you start yourself — see README's
+"The browser viewer, and the port it binds"; on this machine it is a second window, no tunnel); the
+point of making it an app rather than a route is that the next line you write in it is yours.
 
 One property is worth stating because it is not obvious from the API: **the switch rides `/events`
 and nothing else.** There is no poll behind it. A dropped feed leaves the last app on screen,
@@ -1494,7 +1539,9 @@ Stores upgrade themselves on first open (schema v3) — see the upgrade notes.
   time weeks after they were built) gets rules, a correct snippet (UTC parse, DST, off-by-one
   all handled), and a 45-day self-check.
 - **CLA in effect** for engine contributions — individual grantee, signed once on your first
-  PR, in the PR ([`CLA.md`](CLA.md)).
+  PR, in the PR ([`CLA.md`](https://github.com/2nd1st/open-mcp-apps/blob/v0.5.2/CLA.md) — the
+  file was deleted in v0.5.4 with the MIT relicense, so this points at the last release that
+  carried it; a relative link here 404s for every reader).
 - The seeder **never overwrites a component it didn't write**: a user app that took a system
   name survives upgrades; the system component ships degraded instead.
 

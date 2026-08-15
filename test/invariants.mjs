@@ -230,6 +230,73 @@ console.log("3. one answer to \"what does this app open on\"");
     `${unlisted.join(", ")} appears in both files but is not in MIRRORED — add it there`);
 }
 
+// ── the version's other three homes: the two publishing directories ───────────────────────────
+// lhm.plugin.json sat at 0.5.4 through two releases and `lhm plugin update` answered "Updated
+// 2nd1st-open-mcp-apps@0.5.4 (merged into the existing version)" — the owner update was folded
+// into an OLD version's entry, LobeHub's badge never moved, and nothing in the tree said a word.
+// It lives here rather than in doc-facts (which pins the READMEs' version cells) because doc-facts
+// SKIPS a tree with no docs/, and docs/ is the one thing the public snapshot never carries — while
+// both of these files do.
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
+  const readIfPresent = (rel) => existsSync(join(ROOT, rel))
+    ? JSON.parse(readFileSync(join(ROOT, rel), "utf-8"))
+    : null;
+
+  const server = readIfPresent("server.json");
+  const lhm = readIfPresent("lhm.plugin.json");
+  ok("server.json is here to be checked (the MCP Registry's publish contract)", !!server,
+    "server.json is missing from the repo root — publish.mjs ships it without complaint, so its absence is silent");
+  ok("lhm.plugin.json is here to be checked (LobeHub's owner declaration)", !!lhm,
+    "lhm.plugin.json is missing from the repo root — publish.mjs ships it without complaint, so its absence is silent");
+
+  // Reached by path, never copied by value, so a shape change — a second `packages` entry, say —
+  // grows the check instead of slipping past an index frozen at 0.
+  const homes = [];
+  if (server) {
+    homes.push(["server.json", "version", server.version]);
+    (Array.isArray(server.packages) ? server.packages : [])
+      .forEach((p, i) => homes.push(["server.json", `packages[${i}].version`, p?.version]));
+  }
+  if (lhm) homes.push(["lhm.plugin.json", "version", lhm.version]);
+
+  const npmEntries = (server?.packages || []).filter((p) => p?.registryType === "npm");
+  ok("server.json declares an npm package (else the identifier pin below checks nothing)",
+    npmEntries.length >= 1,
+    "server.json packages[] carries no entry with registryType \"npm\" — the identifier assertion " +
+    "would pass vacuously");
+
+  const behind = homes.filter(([, , v]) => v !== pkg.version);
+  ok(`${homes.length} directory version field(s) say ${pkg.version}, like package.json`,
+    behind.length === 0,
+    behind.map(([f, key, v]) => `${f} → ${key} is ${JSON.stringify(v)}, set it to "${pkg.version}"`).join("\n      ") +
+    `\n      package.json's version is the one source; a release has to carry every copy of it out the door.`);
+
+  // The registry proves ownership by matching the PUBLISHED npm package's `mcpName` against
+  // server.json's `name`, and installs what `identifier` points at. Drift is a rejected publish,
+  // or a listing that resolves to a package this repo does not own.
+  if (server) {
+    const misnamed = npmEntries.filter((p) => p.identifier !== pkg.name);
+    ok(`server.json's npm identifier is the package this repo publishes (${pkg.name})`,
+      misnamed.length === 0,
+      misnamed.map((p) => `server.json → packages[].identifier is ${JSON.stringify(p.identifier)}, ` +
+        `set it to "${pkg.name}" (package.json's name)`).join("\n      "));
+    ok(`server.json's server name equals package.json's mcpName (${pkg.mcpName})`,
+      server.name === pkg.mcpName,
+      `server.json → name is ${JSON.stringify(server.name)} but package.json → mcpName is ` +
+      `${JSON.stringify(pkg.mcpName)} — the registry verifies ownership by these two being one string`);
+  }
+
+  // Frozen, deliberately NOT derived from pkg.name: LobeHub keys its catalogue on this string, so
+  // editing it does not rename the listing — it abandons the claimed one for a new empty entry.
+  const LHM_IDENTIFIER = "2nd1st-open-mcp-apps";
+  if (lhm) ok(`lhm.plugin.json keeps the identifier LobeHub has on file (${LHM_IDENTIFIER})`,
+    lhm.identifier === LHM_IDENTIFIER,
+    `lhm.plugin.json → identifier is ${JSON.stringify(lhm.identifier)}, put it back to ` +
+    `"${LHM_IDENTIFIER}" — that key is already claimed at LobeHub, and changing it here does not ` +
+    `rename the listing, it opens a second, empty one`);
+}
+
 // ── a `bin` we ship under a name we do not own on npm ─────────────────────────────────────────
 // Declaring `bin: {"open-mcp-apps": …}` makes `npx open-mcp-apps` LOOK like a way to run this
 // project. It is not: that name on the npm registry belongs to an unrelated package, so the npx

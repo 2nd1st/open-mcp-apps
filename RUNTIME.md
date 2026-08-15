@@ -14,9 +14,12 @@ Everything below was measured against a real engine in a real browser, not read 
 > ### 🔴 This file is the API surface. It is not the whole contract.
 >
 > The complete authoring contract — the API **plus** the visual kit, the house style, the app-shell
-> bones and the worked examples — is the `GUIDE` the engine hands its AI. It is **28,588 bytes**
-> against this file's 10,559, and until now the only human-readable pointer to it was a comment in
-> `install-app.mjs`. Print it:
+> bones and the worked examples — is the `GUIDE` the engine hands its AI, **29,022 bytes** of it.
+> This file used to be a third of that, and the argument for reading the GUIDE was simply that it
+> was the bigger document. It isn't much bigger any more — but the gap closed from **this** side,
+> when §8 and §9 were added, and neither of them is the house style or the examples. Size was never
+> the reason; scope was. Until this file existed the only human-readable pointer to the GUIDE was a
+> comment in `install-app.mjs`. Print it:
 >
 > ```bash
 > node -e 'import("./src/guide.mjs").then(m => console.log(m.GUIDE))'

@@ -1,9 +1,8 @@
 # Trademarks
 
-The open-source licenses that cover this project — the GNU Affero General Public
-License v3.0 for the engine, and the MIT License for the `components/` directory
-— grant **copyright** permissions only. They do **not** grant any right to use
-the project's names or logos.
+The open-source license that covers this project — the MIT License, for every
+file in the repository — grants **copyright** permissions only. It does **not**
+grant any right to use the project's names or logos.
 
 ## Reserved names and marks
 

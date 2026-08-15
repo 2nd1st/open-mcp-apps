@@ -295,6 +295,13 @@ ok(`registry lists ${seedCount} seeds + smoke-notes`, listC.structuredContent.ap
   ok("a user-authored app is NOT marked that way",
     /smoke-notes[^\n]*(?!ships with the engine)/.test(listText) && !/smoke-notes[^\n]*ships with the engine/.test(listText));
   ok("with an app of their own, no build nudge is printed", !/NO apps of their own/.test(listText));
+  // The rendered row is its own assertion target: the structured half spreads the store row and so
+  // stays right no matter what the text interpolates. The text read `c.html_size` while the query
+  // has produced `ui_size` since the manifest split, and a missing property is `undefined`, not an
+  // error — so every row said "(undefined chars, by …)" to the model, in every host, for months.
+  ok("every row prints a real size",
+    !/undefined/.test(listText) && /smoke-notes v\d+ \(\d+ chars, by /.test(listText),
+    listText.split("\n").find((l) => /undefined/.test(l)) || "");
 }
 
 console.log("6. universal opener: zero-wait open of a just-saved app");

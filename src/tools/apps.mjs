@@ -380,7 +380,11 @@ export function register(ctx) {
       // and they are OPT-IN. With the default configuration those tools do not exist, so printing
       // the arrow was telling the model to call something that would fail — and the universal
       // open_app, which always works, is what it should reach for instead.
-      const line = (c) => `- ${c.name} v${c.version} (${c.html_size} chars, by ${c.author})` +
+      // `ui_size`, not `html_size`: the column is `length(ui) AS ui_size` (store.mjs allComps) and
+      // has been since the manifest split. The old name survived here alone, and JS answers a
+      // missing property with `undefined` rather than an error — so every row printed
+      // "(undefined chars, by …)" to the model, in every host, for every app.
+      const line = (c) => `- ${c.name} v${c.version} (${c.ui_size} chars, by ${c.author})` +
         (SEEDED_APPS.has(c.name) ? " [ships with the engine — not one of the user's apps]" : "") +
         ` — ${c.description || "no description"}` +
         // A REAL link, only when this engine actually has a viewer to link to (local http server /

@@ -27,7 +27,7 @@
 
 import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { execFileSync } from "node:child_process";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { dirname, join, basename, relative } from "node:path";
 
 const SELF_ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
@@ -126,9 +126,14 @@ function docFiles() {
 const { active: ACTIVE, archived: ARCHIVED } = docFiles();
 
 // --------------------------------------------------------------------------------- helpers
+/** Docs write big numbers the way people read them — `29,022`, not `29022`. The comparison in
+ *  DERIVED is on strings, so the computed side has to be spelled the doc's way or a pin fails on
+ *  punctuation alone. Regex rather than toLocaleString: no ICU build to depend on. */
+const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+
 /** Compute a derived value from source. Kinds are deliberately few and declarative — a config
  *  that can express arbitrary code is a config nobody can audit. */
-function compute(c) {
+async function compute(c) {
   if (c.kind === "jsonField") return JSON.parse(read(c.file))[c.field];
   if (c.kind === "countMatches") {
     const outer = read(c.file).match(rx(c.outer));
@@ -145,22 +150,39 @@ function compute(c) {
     }
     return names.length;
   }
+  // The one kind that cannot be answered by reading bytes off disk: the SIZE of a string the
+  // source BUILDS. `GUIDE` is a template literal, so its file bytes and its runtime bytes differ
+  // by every escape written into it — measuring the file would pin a number nobody quotes. So
+  // import the module and measure the VALUE. That is reading a fact out of source, not running a
+  // suite, which is why it belongs in the always-on pass and not under --deep. A throw comes back
+  // as null so the guard below reports it as one loud failed assertion rather than taking the
+  // whole runner down with a stack trace.
+  if (c.kind === "exportBytes") {
+    try {
+      const mod = await import(pathToFileURL(join(ROOT, c.file)).href);
+      const v = mod[c.export];
+      return typeof v === "string" ? Buffer.byteLength(v, "utf8") : null;
+    } catch { return null; }
+  }
   throw new Error("unknown compute kind: " + c.kind);
 }
 
 // ------------------------------------------------------------------------------ 1. DERIVED
 console.log("1. DERIVED — a number in a doc is recomputable from its source");
 for (const d of CFG.derived) {
-  const value = compute(d.compute);
+  const value = await compute(d.compute);
   // A derivation that comes back empty is a broken derivation, not a value of zero. Without this
   // the checks below would compare every doc against `null` and pass by never matching.
   if (value == null || value === 0) { ok(`${d.what}: derivation produced a value`, false, `computed ${value} — the pattern probably stopped matching its source`); continue; }
+  // `format` spells the computed value the way the doc writes it. It is presentation only — the
+  // pin is still on the number, and an entry without it compares exactly as it always did.
+  const shown = d.format === "thousands" ? thousands(value) : String(value);
   for (const [file, pattern] of d.where) {
     if (!has(file)) continue;
     const m = read(file).match(rx(pattern));
-    ok(`${file}: ${d.what} says ${m ? m[1] : "—"}, source says ${value}`,
-      m != null && String(m[1]) === String(value),
-      m == null ? `no match for /${pattern}/ — the doc was reworded, so this check silently stopped checking` : `doc says ${m[1]}, computed ${value}`);
+    ok(`${file}: ${d.what} says ${m ? m[1] : "—"}, source says ${shown}`,
+      m != null && String(m[1]) === shown,
+      m == null ? `no match for /${pattern}/ — the doc was reworded, so this check silently stopped checking` : `doc says ${m[1]}, computed ${shown}`);
   }
 }
 

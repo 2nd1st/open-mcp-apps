@@ -11,7 +11,7 @@ actually work.
 git clone https://github.com/2nd1st/open-mcp-apps && cd open-mcp-apps
 npm install
 node build.mjs      # bundle the browser shell runtime → dist/
-npm test            # server + http + seed smokes
+npm test            # every suite in the "test" script of package.json
 ```
 
 The store lives in a fixed per-user directory. During development, point it at a throwaway file with
@@ -19,21 +19,24 @@ The store lives in a fixed per-user directory. During development, point it at a
 
 ## Tests
 
-Three real smoke suites, no framework — keep them green and add assertions for new behavior:
+Real smoke suites, no framework — keep them green and add assertions for new behavior. The
+authoritative list is the `test` script in [`package.json`](package.json), and `npm test` runs all
+of it. The ones you are most likely to run on their own while developing:
 
 - `node test/server-smoke.mjs` — the stdio MCP server over a real transport (incl. runtime app creation)
 - `node test/http-smoke.mjs` — the HTTP transport
 - `node test/seed-smoke.mjs` — the seed / design-kit pipeline
-
-`npm test` runs all three.
+- `node test/doc-facts.mjs --deep` — the numbers in the docs against the code they describe
+  (`npm test` runs this one without `--deep`, which skips the checks that need a test run)
 
 ## Authoring apps
 
 Apps are single-file HTML against the tiny `window.oma` API. The authoritative contract is what
 the engine serves from the **`get_app_guide`** tool (source: `src/guide.mjs`) — read it before
 writing one. Not in a host? Print it yourself:
-`node -e 'import("./src/guide.mjs").then(m => console.log(m.GUIDE))'` — it is roughly three times
-the size of `RUNTIME.md`, and everything about layout and the CSS kit lives only there. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or
+`node -e 'import("./src/guide.mjs").then(m => console.log(m.GUIDE))'` — `RUNTIME.md` covers the API
+and inlines the visual rules you cannot skip, but the house style and the worked examples live only
+in the guide. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or
 `window.open()`, no network/fetch. The guide spells out the patterns that work.
 
 ## Pull requests

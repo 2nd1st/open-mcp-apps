@@ -1,5 +1,6 @@
 # open-mcp-apps
 
+[![CI](https://github.com/2nd1st/open-mcp-apps/actions/workflows/ci.yml/badge.svg)](https://github.com/2nd1st/open-mcp-apps/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%402nd1st%2Fopen-mcp-apps?logo=npm&label=npm)](https://www.npmjs.com/package/@2nd1st/open-mcp-apps)
 [![license](https://img.shields.io/npm/l/%402nd1st%2Fopen-mcp-apps)](LICENSE)
 [![node](https://img.shields.io/node/v/%402nd1st%2Fopen-mcp-apps)](package.json)
@@ -29,7 +30,7 @@ doesn't provide:
 
 | | |
 |---|---|
-| **Version** | 0.5.6 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.5.7 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Run it** | `npx -y @2nd1st/open-mcp-apps` (stdio MCP server) |
@@ -140,9 +141,10 @@ node uninstall.mjs --check   # read-only: show what's registered and what would 
 - **`git`** — only on the installer path. The `npx` path above needs neither `git` nor a checkout.
   The installer checks for both and stops with a message rather than half-installing if either is
   missing.
-- **A host that renders `ui://`** if you want widgets rather than text. Terminal hosts (Claude
-  Code, codex CLI) drive the same data by design and show it in the browser viewer instead. The
-  per-host detail is in [Host support](#host-support).
+- **A host that renders `ui://`** if you want widgets *in the conversation*. Terminal hosts (Claude
+  Code, codex CLI) drive the same data by design and put the UI on a browser screen beside the
+  terminal instead — one that can follow along, showing whatever the AI just opened. The per-host
+  detail is in [Host support](#host-support).
 - **After installing or updating, fully quit and reopen the host** (Cmd-Q, not just closing the
   window) — it keeps its old server process on the old data until fully quit.
 
@@ -272,8 +274,8 @@ Live-tested 2026-07-22; ChatGPT web row updated 2026-07-28.
 | **Claude Desktop** (local stdio) | ✅ | ✅ full loop incl. `sendMessage` reply | ✅ | ✅ |
 | **Browser viewer** (`/view/<name>`) | ✅ | ✅ (no chat attached — `sendMessage` degrades to a notice) | via CLI AI | ✅ |
 | **Codex desktop** (ChatGPT app, `enable_mcp_apps` flag) — tested against a **local** engine; remote not established | ✅ experimental | ◐ updates/toggles from widget clicks work; adds still blocked host-side ([openai/codex#28912](https://github.com/openai/codex/issues/28912), see KNOWN-ISSUES) | ✅ | ✅ |
-| **Claude Code** (CLI, `claude mcp`) | — (text fallback by design) | — | ✅ | ✅ |
-| **codex CLI / IDE** | — (text fallback by design) | — | ✅ | ✅ |
+| **Claude Code** (CLI, `claude mcp`) | — in the chat, by design (text fallback) — but see **[a screen beside the terminal](#a-screen-beside-the-terminal)** | — in the chat | ✅ | ✅ |
+| **codex CLI / IDE** | — in the chat, by design (text fallback) — but see **[a screen beside the terminal](#a-screen-beside-the-terminal)** | — in the chat | ✅ | ✅ |
 | **ChatGPT web** (Work mode) | ✅ live-tested 2026-07-28 (remote HTTPS) — renders at full height, no clamping; a widget loses its data after a page refresh (mitigation shipped, awaiting live re-test here — see KNOWN-ISSUES) | ✅ a widget button added a row and it stuck | ✅ | ✅ |
 
 Everything rides the MCP Apps bridge, so host fixes upstream (e.g. #28912) benefit this
@@ -283,6 +285,28 @@ project with zero changes.
 is reached as an **MCP server**, not as a plugin — which is the right path for a self-hosted
 install anyway. Widget rendering in the ChatGPT desktop app also appears to depend on how you are
 signed in (we have seen it work under an account sign-in; not yet established under an API key).
+
+### A screen beside the terminal
+
+Those two `—` cells say the **chat** shows text. They do not say there is no UI. Since 0.5.1 the
+engine remembers which app was opened last and pushes that pointer to the viewer on the `/events`
+frame, and an app can place a region — `oma.embed("@live", {into})` — that mounts whatever the AI
+opened last and swaps itself when the AI opens another. The App Store ships one: install **`live`**,
+open `http://127.0.0.1:8787/view/live` in a window you then leave alone (a second monitor is the
+point of it), and the terminal keeps the conversation while that screen shows the app. The AI opens
+or writes from the CLI, the screen follows, and you can click, edit and type into it there. Headless
+CLI use is what it was built for.
+
+The costs are real and worth stating plainly. There is still **no widget in the transcript**.
+`sendMessage` degrades to a notice on a standalone page, exactly as in the **Browser viewer** row —
+clicks change data, they do not talk back to the chat. The viewer has to be running (`OMA_VIEWER`,
+on by default) with a browser pointed at it; this is not zero-config. And the listener is bound to
+`127.0.0.1`, so "a spare tablet on the wall" means *this machine's* screen unless you put up the
+tunnel described above and accept what that section says about it. Inside a chat host the same
+region deliberately draws a placeholder instead of following anything.
+
+*Described from the code as built, not measured on a host — the live-test dates above cover the
+table, not this section.*
 
 ## Writing an app yourself
 
@@ -361,7 +385,7 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 427 assertions over real stdio — incl. runtime app creation
+node test/server-smoke.mjs   # 428 assertions over real stdio — incl. runtime app creation
 node test/http-smoke.mjs     #  79 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline
