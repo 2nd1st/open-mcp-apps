@@ -26,7 +26,7 @@ claude.ai、Codex、ChatGPT……)提供 extension 本身不提供的三样东�
 
 | | |
 |---|---|
-| **版本** | 0.5.5([`CHANGELOG.md`](CHANGELOG.md)) |
+| **版本** | 0.5.6([`CHANGELOG.md`](CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **怎么跑** | `npx -y @2nd1st/open-mcp-apps`(stdio MCP server) |

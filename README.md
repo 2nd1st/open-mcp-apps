@@ -29,7 +29,7 @@ doesn't provide:
 
 | | |
 |---|---|
-| **Version** | 0.5.5 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.5.6 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Run it** | `npx -y @2nd1st/open-mcp-apps` (stdio MCP server) |

@@ -7,6 +7,25 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.6 — 2026-08-16
+
+**The public CI is green for the first time.** 0.5.5 fixed two of the three things that broke the
+chain there; the third was standing behind them. `npm test` stops at the first failure, so each
+repair only revealed the next one — and this one was invisible to me for a second reason worth
+recording: I verified 0.5.5 by running the snapshot on *this* machine, where Claude Desktop is
+installed. The runner has no MCP host at all.
+
+### Fixed
+
+- **`test/install-paths.mjs` could never pass on Linux.** Its fixtures build a fake `HOME` and
+  write Claude Desktop's config into it — at `Library/Application Support/Claude`, which is the
+  macOS shape. On Linux the installer looks under `~/.config`, found no host, exited 1, and took
+  the suites behind it down with it. The fixture now resolves that path the way `install.mjs` does,
+  per platform. Measured both ways: 30/30 on macOS, and 23 suites green in a Linux container.
+- **The same fixtures could write into the person running them.** A fake `HOME` is a complete
+  boundary only on macOS; elsewhere the installer honours `XDG_CONFIG_HOME` and `APPDATA`, which on
+  a developer machine point at the real user. The sandbox now names those too.
+
 ## 0.5.5 — 2026-08-16
 
 **Everything here is about the copy of this repository other people get.** The runtime did not

@@ -23,6 +23,30 @@ import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { openStore, SCHEMA_VERSION } from "../src/store.mjs";
 
+// Where Claude Desktop's config lives, per platform — the same three-way rule install.mjs uses
+// (`claudeCfgPath()`, install.mjs ~:91). Restated rather than imported because install.mjs is a
+// CLI that runs its work on import; the duplication is self-checking, since every assertion below
+// reads the file the installer actually wrote — a rule that drifted would fail these tests, not
+// hide behind them. Hard-coding the macOS shape is what kept this suite from EVER passing on
+// Linux CI: the installer looked under ~/.config, found no host at all, and exited 1 — which on a
+// fail-fast chain also hid every suite behind it (measured 2026-08-16 on a Linux container).
+const claudeCfgFor = (home) =>
+  process.platform === "darwin"
+    ? join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json")
+    : process.platform === "win32"
+      ? join(home, "AppData", "Roaming", "Claude", "claude_desktop_config.json")
+      : join(home, ".config", "Claude", "claude_desktop_config.json");
+
+// A fake HOME is only a complete boundary on macOS. Elsewhere the installer honours XDG_CONFIG_HOME
+// and APPDATA, which point at the REAL user on a developer machine — so the sandbox has to name
+// them too, or a test run would write into the person running it.
+const sandboxEnv = (home) => ({
+  ...process.env, HOME: home,
+  XDG_CONFIG_HOME: join(home, ".config"),
+  APPDATA: join(home, "AppData", "Roaming"),
+});
+
+
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const TMP = join(ROOT, "test", "tmp-install-paths");
 const rm = (p) => { for (const f of [p, p + "-wal", p + "-shm"]) if (existsSync(f)) unlinkSync(f); };
@@ -147,12 +171,11 @@ console.log("\n2. anything older than v4 refuses through the INSTALLER too, nami
 console.log("\n3. W-2 — a re-install keeps what the user put in the entry, and `unchanged` means it");
 {
   const HOME = join(TMP, "home2");
-  const cfgDir = join(HOME, "Library", "Application Support", "Claude");
-  mkdirSync(cfgDir, { recursive: true });
-  const cfg = join(cfgDir, "claude_desktop_config.json");
+  const cfg = claudeCfgFor(HOME);
+  mkdirSync(dirname(cfg), { recursive: true });
   writeFileSync(cfg, JSON.stringify({ mcpServers: {} }));
   const run = () => execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "claude", "--yes"],
-    { env: { ...process.env, HOME }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   const read = () => JSON.parse(readFileSync(cfg, "utf8")).mcpServers;
 
   run();
@@ -192,15 +215,14 @@ console.log("\n3. W-2 — a re-install keeps what the user put in the entry, and
 console.log("\n4. W-4 — a host that could not be registered fails the run, on stdout and in the exit code");
 {
   const HOME = join(TMP, "home4");
-  const cfgDir = join(HOME, "Library", "Application Support", "Claude");
-  mkdirSync(cfgDir, { recursive: true });
-  const cfg = join(cfgDir, "claude_desktop_config.json");
+  const cfg = claudeCfgFor(HOME);
+  mkdirSync(dirname(cfg), { recursive: true });
   writeFileSync(cfg, '{ "mcpServers": { "open-mcp-apps": <<<not json>>> ');
 
   let code = 0, stdout = "";
   try {
     stdout = execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "claude", "--yes"],
-      { env: { ...process.env, HOME }, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) { code = e.status; stdout = e.stdout || ""; }
 
   ok("the process exits non-zero", code !== 0, `exit code was ${code}`);
@@ -220,7 +242,7 @@ console.log("\n4. W-4 — a host that could not be registered fails the run, on 
   let code2 = 0, out2 = "";
   try {
     out2 = execFileSync(process.execPath, [join(ROOT, "install.mjs"), "--host", "claude", "--yes"],
-      { env: { ...process.env, HOME }, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
+      { env: sandboxEnv(HOME), encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] });
   } catch (e) { code2 = e.status; }
   ok("a healthy run still exits 0 and still says ✅", code2 === 0 && out2.includes("✅"));
 }

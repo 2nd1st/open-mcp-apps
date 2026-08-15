@@ -1,6 +1,6 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.5.5",
+  "version": "0.5.6",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
   "description": "Persistent, interactive MCP Apps for any MCP host: the AI builds an app once, you both reuse it — data outlives the conversation.",
   "directories": {
