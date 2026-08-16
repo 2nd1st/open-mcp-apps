@@ -179,21 +179,24 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       // `resources.subscribe` / `resources.listChanged` are what make a `subscriptions/listen`
       // filter mentioning our URIs honorable — the SDK narrows a requested filter against the
       // declared capabilities, so an undeclared bit means the client's subscription is silently
-      // dropped from the ack. `tools.listChanged` is declared ONLY with the per-app openers on:
-      // with them off the tool surface never moves, and claiming it might is an invitation for a
-      // host to re-list — the prompt-cache cost OMA_DYNAMIC_TOOLS exists to keep opt-in.
-      // `prompts.listChanged: false` is written out rather than left to the SDK, and the reason is
-      // that silence here does NOT mean "not declared": registering a prompt makes the SDK declare
-      // the capability itself, filling the bit in with `?? true`. Our one prompt is compiled into
-      // the binary and registered before the transport is attached, so the list provably cannot
-      // move for the life of the process — saying `true` would be a standing invitation to re-list
-      // something that never changes. This is the same reasoning as the `tools.listChanged` line
-      // above, stated where it can actually take effect.
+      // dropped from the ack. On the legacy wire the same bit promises `resources/subscribe`, and
+      // the handlers that keep that promise are registered further down, beside the prompts.
+      // EVERY listChanged bit is written out, true or false, and never left to the SDK — because
+      // silence here does NOT mean "not declared": registering a tool or a prompt makes the SDK
+      // declare that capability itself, filling the bit in with `?? true`. `tools.listChanged`
+      // learned this the hard way. It used to be a conditional spread that added the key only with
+      // the per-app openers on, meaning to say "off ⇒ the surface never moves, don't re-list" —
+      // and it said `true` in every mode for as long as it existed, because an absent key is not
+      // `false`; measured 2026-08-16, and test/capabilities.mjs pins both modes now. The intent
+      // was right: with the openers off the tool surface is fixed for the life of the process, and
+      // claiming it might move is an invitation to re-list — the prompt-cache cost OMA_DYNAMIC_TOOLS
+      // is defaulted off to avoid. `prompts` is the same ruling: one prompt, compiled in, registered
+      // before the transport is attached, so the list provably cannot move.
       capabilities: {
         extensions: { [EXTENSION_ID]: {} },
         resources: { subscribe: true, listChanged: true },
         prompts: { listChanged: false },
-        ...(dynamicTools ? { tools: { listChanged: true } } : {}),
+        tools: { listChanged: dynamicTools },
       },
       // Both eras, one engine: the SDK's default list is legacy-only, and a list with a modern
       // entry is ALSO the switch that registers `server/discover` (a MUST on 2026-07-28) — so
@@ -486,6 +489,19 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // person picks it out of a menu, so there is no risk for a seat flag to gate. Hosted
   // deployments share this createEngine and inherit it for the same reason.
   registerPrompts(ctx);
+
+  // The legacy-era subscription verbs, accepted and answered `{}`. Declaring `resources.subscribe`
+  // (above) is what a legacy host reads as "resources/subscribe will be honoured", and until this
+  // pair existed the honest answer to that verb was -32601 Method not found — measured 2026-08-16
+  // on every legacy wire era the SDK negotiates (2024-11-05 → 2025-11-25). Nothing else needed to
+  // change, because the engine never tracked subscribers in the first place: bridgeInvalidations
+  // (below) sends `notifications/resources/updated` for every app-plane write to whoever is on the
+  // connection, which is the strictly larger promise. So "subscribe" here is a receipt for a
+  // delivery that was already happening; the handlers exist so the declaration stops lying, not
+  // to gate anything. Modern (2026-07-28) hosts never send these — that era replaced them with
+  // `subscriptions/listen`, which the SDK serves itself off the same declared bit.
+  server.server.setRequestHandler("resources/subscribe", async () => ({}));
+  server.server.setRequestHandler("resources/unsubscribe", async () => ({}));
 
   // Must run AFTER every registration: it wraps the handler the SDK built around the finished set.
   // Only the `$schema` trim remains here — the SEP-2549 cache fields moved into ServerOptions

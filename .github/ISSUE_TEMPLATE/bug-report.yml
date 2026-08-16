@@ -1,0 +1,180 @@
+name: Bug report
+description: Something broke — in a chat widget, the browser viewer, the installer, or the engine itself. Asks for the host / version / channel / surface that make it reproducible.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Check [KNOWN-ISSUES.md](https://github.com/2nd1st/open-mcp-apps/blob/main/KNOWN-ISSUES.md) first.**
+        Most host-specific failures seen so far are already there with a measurement and a workaround —
+        widgets that hang on "Loading app…", a ChatGPT-web widget that comes back empty after a page
+        refresh, widget *adds* refused in Codex while updates pass. And if you have just installed or
+        updated: **fully quit and reopen the host** (Cmd-Q, not just closing the window) — it keeps its
+        old server process on the old code until you do.
+
+        Nearly every defect in this project's history turned out to be a property of
+        **host × host version × channel × surface**, not of the engine alone — that tuple is what the
+        [host support table](https://github.com/2nd1st/open-mcp-apps#host-support) is indexed by. The
+        first four fields below are that tuple. A report that fills them in can be placed against the
+        table and reproduced; one that leaves them out usually can't be.
+
+  - type: dropdown
+    id: host
+    attributes:
+      label: Host
+      description: >-
+        Which client was talking to the engine? Pick the one surface it happened on — Claude and
+        ChatGPT each have several, and the readings differ between them.
+      options:
+        - "Claude Desktop — chat"
+        - "Claude Desktop — cowork"
+        - "Claude Desktop — Code mode (Claude Code inside the Claude app)"
+        - "Claude Code — in a terminal (claude CLI)"
+        - "claude.ai in a browser — chat"
+        - "claude.ai in a browser — cowork"
+        - "ChatGPT web — chat"
+        - "ChatGPT web — Work mode"
+        - "ChatGPT desktop app — chat"
+        - "ChatGPT desktop app — Work mode"
+        - "Codex desktop — the Codex surface of the ChatGPT desktop app"
+        - "codex CLI / IDE extension"
+        - "No AI host involved — the browser viewer or an @live screen opened directly"
+        - "Other / not listed (say which below)"
+    validations:
+      required: true
+
+  - type: input
+    id: host_version
+    attributes:
+      label: Host version
+      description: >-
+        The exact build, not "latest" — this project has had a defect appear and disappear across
+        host auto-updates, and "latest" cannot tell those apart. Claude Desktop: the About panel.
+        Claude Code: `claude --version`. Codex: `codex --version`. Browser hosts have no build
+        number: give the date you tested and the browser with its version.
+      placeholder: "Claude Desktop 1.30096.5   ·   or: chatgpt.com in Chrome 141, tested 2026-08-16"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: channel
+    attributes:
+      label: Channel
+      description: How does the host reach the engine?
+      options:
+        - "Local stdio — the host launches the engine on this machine (npx, the installer, or a clone)"
+        - "Remote connector over HTTPS — a tunnel to your machine, or a hosted deployment"
+        - "Not sure"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: surface
+    attributes:
+      label: Where it broke
+      options:
+        - "The widget card inside the chat"
+        - "The browser viewer page (/view/<name> on 127.0.0.1:8787)"
+        - "An @live screen — the live app, or oma.embed(\"@live\") in an app of your own"
+        - "An app embedded inside another app's panel (oma.embed)"
+        - "The installer or uninstaller (install.sh, install.mjs, uninstall.mjs, --check)"
+        - "The engine process itself — fails to start, crashes, a tool errors with no UI involved"
+        - "The store — rows wrong or missing, a migration, the \"both tables\" refusal"
+        - "The authoring contract — get_app_guide, RUNTIME.md and window.oma disagree"
+        - "Other (say where below)"
+    validations:
+      required: true
+
+  - type: input
+    id: engine_version
+    attributes:
+      label: Engine version
+      description: >-
+        The `version` in `package.json` of the checkout your host runs — the installer's clone is
+        `~/open-mcp-apps` unless you set `OMA_DIR`. On the `npx` path it is whatever
+        `@2nd1st/open-mcp-apps` resolved to: `npm view @2nd1st/open-mcp-apps version` prints
+        today's latest, and a pinned `@x.y.z` in your host config is your answer. The engine also
+        announces itself to the host in the MCP handshake as `open-mcp-apps` plus its version —
+        quote that string if your host shows it.
+      placeholder: "x.y.z — as printed in package.json"
+    validations:
+      required: true
+
+  - type: input
+    id: app
+    attributes:
+      label: Which app
+      description: >-
+        Leave blank if no app is involved. Otherwise its name, and where it came from: the App
+        Store, your AI wrote it, or you installed your own with install-app.mjs.
+      placeholder: "habit-streaks (App Store)   ·   or: an app my AI built   ·   or: my own, via install-app.mjs"
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened
+      description: >-
+        What you did, in order, and what appeared. A screenshot helps for anything visual — drop it
+        in here.
+      placeholder: |
+        1. Asked the AI to open my habit tracker
+        2. The card appeared, then stayed on "Loading app…"
+        3. Clicked a row anyway — nothing
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: Does it happen every time?
+      options:
+        - "Every time"
+        - "Most times"
+        - "Once — I could not reproduce it"
+        - "Only after a specific action (say which above)"
+
+  - type: textarea
+    id: elsewhere
+    attributes:
+      label: Does it happen on another host or surface?
+      description: >-
+        Optional, but the single most useful line in the report: "works in the browser viewer, not
+        in the chat card" localises a defect to one side of the bridge in one sentence.
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: >-
+        The engine writes to stderr with an `[oma]` prefix, and the host keeps it. Claude Desktop:
+        `mcp-server-open-mcp-apps.log` under `~/Library/Logs/Claude` (macOS) or
+        `%APPDATA%\Claude\logs` (Windows). Claude Code: run it with `--debug`. Codex and others: your
+        host's MCP log. On a browser surface add the DevTools console — the widget logs `[oma]` lines
+        there too. Redact anything private; item contents are your data, not ours.
+      render: text
+
+  - type: input
+    id: env
+    attributes:
+      label: Node and OS
+      description: >-
+        For installer, engine-process and store problems: `node --version` and your OS. Node 22 or
+        newer is required, and the SQLite binding is native, so the exact Node matters.
+      placeholder: "v22.11.0 · macOS 15.6"
+
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before submitting
+      options:
+        - label: I checked [KNOWN-ISSUES.md](https://github.com/2nd1st/open-mcp-apps/blob/main/KNOWN-ISSUES.md) and this is not listed there — or it is, and my reading differs, which I said above.
+          required: true
+        - label: If I installed or updated just before this, I fully quit and reopened the host afterwards.
+        - label: I have not pasted private data (item contents, store files) into this issue.

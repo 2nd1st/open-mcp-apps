@@ -33,6 +33,50 @@ rmSync(join(ROOT, "test", "files"), { recursive: true, force: true }); // file-p
 let pass = 0, fail = 0;
 const ok = (name, cond) => (cond ? (pass++, console.log("  ✓ " + name)) : (fail++, console.log("  ✗ " + name)));
 
+// ---- choke point: what the MODEL reads must never carry a JS non-value spelled out.
+// abdf6af fixed one row of list_apps that had said "(undefined chars, by …)" to every model on
+// every host for months: a template read `c.html_size` where the query says `ui_size`, and JS
+// answers a missing property with `undefined` rather than an error, so nothing ever went red.
+// §5 pins that one line. This pins the SPECIES: twenty templates render model-visible text across
+// six tool modules, and pinning each is a bet on remembering the twenty-first — so the net sits at
+// the one place every call passes, client.callTool, wrapped once per client this suite opens.
+// Not `null`: "group: null" in prose is a judgement call, not a leak.
+const POISON = [/\bundefined\b/, /\bNaN\b/, /\[object Object\]/, /\[object Promise\]/];
+// Text that is somebody ELSE's bytes, where the words are the content's own — peeled off before
+// the scan. get_app_guide's whole text is the guide (prose about JS, where `undefined` is
+// vocabulary). get_app frames an app's source with engine prose ("// name v3 — chars 0–1200 of
+// 5000 — hash …"), so only the source window (structuredContent.text — or the manifest slot's
+// JSON) comes off and the frame stays under the net: 14 shipped ui.html say `undefined`/`NaN`,
+// as JS does. Deliberately NOT peeled: app_html / app_store_preview / file_read / ui_prefs_schema
+// carry their verbatim payload in structuredContent only — their text is a template interpolating
+// `entry.ui.length`, `meta.mime` and the like, exactly the values that go undefined.
+const VERBATIM = {
+  get_app_guide: () => "",
+  get_app: (text, sc) => text.replace(sc?.text ?? JSON.stringify(sc?.manifest ?? null, null, 2), ""),
+};
+const poison = [], scanned = { calls: 0 };
+const armPoisonScan = (c) => {
+  const raw = c.callTool.bind(c);
+  c.callTool = async (...a) => {
+    const r = await raw(...a);
+    const tool = a[0]?.name;
+    scanned.calls++;
+    for (const part of r?.content ?? []) {
+      if (part?.type !== "text") continue;
+      // The SDK's own argument check echoes the caller's input ("expected string, received
+      // undefined") — a report ABOUT the arguments, not a rendering. Every other isError text is
+      // engine prose (fail(), toFail(), a crashed handler) and stays in: error paths are exactly
+      // where a template goes unread. The prefix is the SDK's literal; if it changes, this reds
+      // by name and is a one-line fix.
+      if (r.isError && /^Input validation error: /.test(part.text)) continue;
+      const text = (VERBATIM[tool] ?? ((t) => t))(String(part.text), r.structuredContent);
+      for (const line of text.split("\n"))
+        for (const re of POISON) if (re.test(line)) poison.push({ tool, poison: re.source, line });
+    }
+    return r;
+  };
+};
+
 const client = new Client({ name: "smoke", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
@@ -41,6 +85,7 @@ await client.connect(new StdioClientTransport({
   // http-smoke covers the default (open_app-only) behavior.
   env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke", OMA_DYNAMIC_TOOLS: "1" },
 }));
+armPoisonScan(client);
 console.log("connected over stdio");
 
 console.log("0. server instructions teach when-to-use");
@@ -419,6 +464,7 @@ console.log("9. onboarding vs inventory — the instructions address the reader 
     const [ct2, st2] = IMT.createLinkedPair();
     const eng2 = createEngine(st); await eng2.connect(st2);
     const c2 = new Client({ name: "fresh", version: "1.0.0" }); await c2.connect(ct2);
+    armPoisonScan(c2);
     const txt = (await c2.callTool({ name: "list_apps", arguments: {} })).content.map((c) => c.text).join("\n");
     ok("a fresh install is TOLD the user has no apps yet, and what to do about it",
       /NO apps of their own/.test(txt) && /save_app/.test(txt), txt.slice(-160));
@@ -1833,6 +1879,7 @@ const [ct33, st33] = InMemoryTransport.createLinkedPair();
 const c33 = new Client({ name: "embed2", version: "1.0.0" });
 await eng33.connect(st33);
 await c33.connect(ct33);
+armPoisonScan(c33);
 const lc33 = await c33.callTool({ name: "list_apps", arguments: {} });
 ok("viewBase puts a real /view link on every listed app — and a bare engine prints none",
   /https:\/\/apps\.example\/u\/x\/view\//.test(lc33.content.find((c) => c.type === "text").text) &&
@@ -1896,6 +1943,15 @@ ok("viewBase puts a real /view link on every listed app — and a bare engine pr
 }
 await c32.close();
 store32.close();
+
+console.log("33. choke point: every tool call this suite made, read the way the model reads it");
+// The net armed at the top of the file (POISON / VERBATIM / armPoisonScan) reports here, once all
+// three clients are done. `scanned.calls > 0` is part of the condition: a net nobody walked
+// through is not a green, it is an unarmed net. Failures are named — tool and the offending
+// line — because ok() prints only the sentence.
+ok("no tool text ever leaks undefined/NaN/[object …] to the model", poison.length === 0 && scanned.calls > 0);
+console.log(`      ${scanned.calls} tool calls scanned, ${poison.length} hit(s)`);
+for (const h of poison.slice(0, 8)) console.log(`      ✗ ${h.tool} (${h.poison}): ${h.line.trim().slice(0, 160)}`);
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);

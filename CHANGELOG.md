@@ -7,6 +7,103 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.5.9 — 2026-08-16
+
+**What `initialize` declares, the engine now does.** The handshake every MCP host reads first is a
+set of promises about verbs, and two of them had never been kept: `resources.subscribe: true` was
+declared from the first release while `resources/subscribe` answered *Method not found* on every
+legacy wire era the SDK negotiates, and `tools.listChanged` — written to be `true` only with the
+per-app openers on — was `true` in every mode. Both are kept now, and a new suite calls the verbs
+those bits promise before a release goes out. Around that: an issue form on the public repository built on
+the four things a report needs, one sentence for the person who runs the server by hand and sees
+nothing, a net under every tool call so `undefined` can never again reach the model as prose, and a
+head comment in `src/server.mjs` brought back in line with the README it contradicted. The tool
+surface did not move — 44,911 B, byte-identical to 0.5.8 — because none of this rides `tools/list`.
+
+### Fixed
+
+- **Two capability bits declared things the engine did not do.** `initialize` is the first thing
+  every host reads, and its `capabilities` object is a set of claims about verbs; nothing in this
+  repository ever called the verbs the claims were about, which is how both stayed false for as
+  long as they did.
+
+  `resources: { subscribe: true }` had been declared since the first release. A legacy-era client —
+  which every shipping host is today — that took the declaration at its word and sent
+  `resources/subscribe` got `-32601 Method not found` back, on every legacy protocol version the SDK
+  negotiates (measured 2026-08-16, `2024-11-05` through `2025-11-25`). The engine had never tracked
+  subscribers and did not need to: for every app-plane write it already sends
+  `notifications/resources/updated` to everyone on the connection, which is the larger promise. What
+  was missing was a handler that accepts the request. `resources/subscribe` and
+  `resources/unsubscribe` now answer `{}`. The declaration is kept rather than withdrawn, because on
+  the 2026-07-28 wire the same bit is what makes a `subscriptions/listen` filter naming our URIs
+  honourable — and that verb the SDK serves itself.
+
+  `tools.listChanged` was written as a conditional: add the key only when `OMA_DYNAMIC_TOOLS=1` turns
+  the per-app openers on, so that a tool surface which is fixed for the life of the process would
+  not invite a host to re-list it. It said `true` in every mode for as long as it existed — an
+  absent key is not `false` to the SDK, which fills the bit in with `?? true` the moment a tool is
+  registered. Measured in all three settings (`0`, `1`, unset): `{"listChanged":true}` each time. It
+  is now written out unconditionally, `true` with the openers on and `false` without — the shape
+  `prompts.listChanged: false` already had on the line beside it. The comment above the declaration
+  described a behaviour that had never once been observed; it now describes this one.
+
+  A new suite, `test/capabilities.mjs`, is the gate. It starts the server over real stdio, reads what
+  was declared, and then calls each declared verb: `subscribe` and `unsubscribe` must be answered on
+  the legacy wire, the old verb must be refused *by era* on 2026-07-28 and its replacement routed,
+  and both `listChanged` bits are pinned as exact objects in both modes. Every call carries a
+  timeout, because a suite that can hang on a missing handler is a suite nobody waits for. Run
+  against the code as it was, three assertions went red by name.
+- **A comment at the top of `src/server.mjs` said the repository must not advertise `npx`, and the
+  README's first install path is `npx`.** The line — "nothing in this repository may advertise the
+  npx form" — was written when the only name on npm was somebody else's, and it stayed after
+  `@2nd1st/open-mcp-apps` (0.5.4) became this project's and the README's fact table opened with
+  `npx -y @2nd1st/open-mcp-apps`. The README was right and the comment was stale: the rule is
+  *scoped only* — bare `npx open-mcp-apps` still runs a stranger's package and always will. The
+  comment now says exactly that, records what it used to say and why, and names the coupling
+  `test/invariants.mjs` actually pins.
+
+### Added
+
+- **A bug-report form on the public repository, built around the four things a report needs.**
+  Nearly every defect in this project's history has been a property of *host × host version ×
+  channel × surface* rather than of the engine alone — `KNOWN-ISSUES.md` names the host in the first
+  word of most entries, and the same host has given opposite readings on two of its surfaces. So the
+  form's first four fields are that tuple: a host dropdown spelled the way the README's Host support
+  table spells them (Claude Desktop split into chat, cowork and Code mode; ChatGPT web and desktop
+  each split into chat and Work; Codex desktop apart from the CLI), the exact build rather than
+  "latest", local stdio or a remote connector, and where it broke (the widget card in the chat, the
+  browser viewer, an `@live` screen, an app embedded in another app's panel, the installer, the
+  engine process, the store, the authoring contract). Those, the engine version, what happened and
+  what you expected are required, plus one checkbox saying you looked at `KNOWN-ISSUES.md` first;
+  everything else is optional, because every required field costs completions. One template rather
+  than three: whether a report is a host defect or an engine bug is the triage question, and a
+  reporter cannot be asked to answer it. Blank issues stay enabled, and three contact links route
+  around the form — `KNOWN-ISSUES.md` before filing, Discussions for questions, ideas and app
+  wishes, and the private security-advisory channel `SECURITY.md` names. There is deliberately no
+  "app request" template: this project's answer to *I want an app* is to have your AI build it.
+- **The server says one sentence when a person runs it by hand.** Pasting the README's
+  `npx -y @2nd1st/open-mcp-apps` into a terminal produced, measured 2026-08-16 in a clean
+  environment, about a minute of install, then a viewer URL on stderr and a cursor that stopped —
+  zero bytes on stdout, because a stdio MCP server prints nothing until a host speaks on stdin.
+  Every next guess a person makes from there (Ctrl-C; open the URL and find an empty *Apps · 0*;
+  assume it installed and go looking in a host) leads nowhere near a widget. Nothing was broken;
+  nothing had said what the process was. Now, when — and only when — `stdin` is a terminal, one line
+  goes to stderr: this is a stdio MCP server, run by hand it will just sit here, put the command in
+  your host's MCP config and let the host start it. A host spawning the server over pipes never sees
+  the line, so no host transcript changes and stdout stays the protocol's alone. Both READMEs' fact
+  table renamed the row that invited the paste from **Run it** to **Command**, and it now says what
+  that line is for.
+- **A net under every tool call, so `undefined`, `NaN` and `[object Object]` cannot reach the model
+  as prose.** 0.5.7 fixed one row of `list_apps` that had told the model every app was `undefined`
+  characters long, and pinned that one row. The defect is a species, not a row: about twenty
+  templates across the engine render model-visible text, and pinning each is a bet on remembering
+  the twenty-first. `test/server-smoke.mjs` now wraps `callTool` once per client it opens and reads
+  every text part of every result the way the model reads it, peeling off only the places where the
+  words are somebody else's bytes (the authoring guide; an app's own source inside `get_app`) and
+  the SDK's echo of a caller's malformed arguments. A row of `app_history` deliberately broken to
+  print `undefined chars` was caught by name, on calls no existing assertion had been reading; the
+  tree as shipped scans clean.
+
 ## 0.5.8 — 2026-08-16
 
 **Four green lights that could not have gone red.** The largest group below shares a shape rather

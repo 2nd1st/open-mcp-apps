@@ -1,0 +1,17 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Known issues — read before filing
+    url: https://github.com/2nd1st/open-mcp-apps/blob/main/KNOWN-ISSUES.md
+    about: >-
+      Host-specific failures already measured, each with a cause and a workaround. Check whether
+      yours is one of them before opening a report.
+  - name: Questions, ideas, app wishes
+    url: https://github.com/2nd1st/open-mcp-apps/discussions
+    about: >-
+      Not sure it is a defect? Want an app the App Store does not have? Ask here. The usual answer
+      to "I want an app" is to have your AI build it — Discussions is where that conversation belongs.
+  - name: Security vulnerability
+    url: https://github.com/2nd1st/open-mcp-apps/security/advisories/new
+    about: >-
+      Report it privately as a GitHub security advisory — never as a public issue. SECURITY.md has
+      the details.

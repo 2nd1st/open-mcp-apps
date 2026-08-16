@@ -5,11 +5,16 @@
 // package's `bin`: from a clone, `npm install -g .` (or `npm link`) puts an `open-mcp-apps`
 // command on PATH, so a host entry can name a command instead of an absolute path into a checkout.
 //
-// ⚠️ That is the WHOLE of what `bin` buys here. `npx open-mcp-apps` does NOT run this project —
-// the name on the npm registry belongs to somebody else (an unrelated "Node.js SDK skeleton"), so
-// that command downloads and executes a stranger's package. README says so where users read it;
-// this note exists so the two never drift apart again. Until the name is ours, nothing in this
-// repository may advertise the npx form — test/invariants.mjs holds us to it.
+// ⚠️ The npx form is `npx -y @2nd1st/open-mcp-apps` — SCOPED, and only scoped. Bare
+// `npx open-mcp-apps` does NOT run this project: that unscoped name on the npm registry belongs to
+// somebody else (an unrelated "Node.js SDK skeleton"), so the bare command downloads and executes
+// a stranger's package. The scoped package has been ours since 0.5.4 (2026-08-15) and is the
+// README's first install path; the bare name is still not ours and never will be. README carries
+// that disclosure where users read it ("A note on npm"), and test/invariants.mjs pins the coupling:
+// as long as `bin` names a command we do not own on npm, that note has to exist. This comment used
+// to say "nothing in this repository may advertise the npx form" — true before the scoped name
+// existed, and still here after the README had started advertising it (repriced 2026-08-16);
+// the rule now is scoped-only, stated here so the source and the README say one thing.
 // The engine itself lives in engine.mjs; http.mjs serves the same store over HTTP.
 import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { openStore } from "./store.mjs";
@@ -40,6 +45,20 @@ const viewer = process.env.OMA_VIEWER === "0" ? null : await startViewer({ store
 // terminal this line is the whole point, and a host that shows its server's stderr gives the user
 // the URL without anyone having to know the default port.
 if (viewer) console.error(`[oma] browser viewer: ${viewer.url}${viewer.adopted ? " (shared with another open-mcp-apps process)" : ""}`);
+
+// One more line, ONLY when a person typed this command into a terminal. A stdio MCP server has no
+// screen of its own: it prints nothing and waits for a host to speak on stdin, and from a terminal
+// that reads as a hang. Measured 2026-08-16 in a clean environment: `npx -y @2nd1st/open-mcp-apps`
+// pasted from README → ~60 s of install, stdout 0 bytes, stderr the viewer line above, cursor
+// stopped — and none of the three guesses a person makes next (Ctrl-C / open the URL and see an
+// empty "Apps · 0" / assume it installed and go looking in Claude Desktop) reaches a widget. The
+// engine was healthy; the failure was that nothing SAID what this process is. The test is
+// `process.stdin.isTTY`: a real terminal hands the child a tty.ReadStream (isTTY === true), a host
+// spawning us over stdio pipes hands it a Socket (isTTY === undefined), `< /dev/null` an
+// fs.ReadStream (undefined) — so a host never sees this line, and no host transcript changes.
+// stderr, one line, no exit: the protocol still owns stdout, and the process still does its job
+// if a host is what actually started it.
+if (process.stdin.isTTY) console.error("[oma] this is a stdio MCP server: it waits for an MCP host to connect on stdin and prints nothing more. Run by hand it will just sit here — put this command in your host's MCP server config instead (README → Install) and let the host start it.");
 
 // serveStdio owns the era decision (SEP-2575): a 2025-era `initialize` opening pins a legacy
 // instance, a 2026-07-28 envelope opening (or a `server/discover` probe) gets a modern one — the

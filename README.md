@@ -36,10 +36,10 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.5.8 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.5.9 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
-| **Run it** | `npx -y @2nd1st/open-mcp-apps` (stdio MCP server) |
+| **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
 | **Requires** | Node 22 or newer. `git` too, on the installer path |
 | **Surface** | 33 tools · a built-in App Store · 3 system apps seeded |
 | **Platforms** | macOS · Windows · Linux |
@@ -421,7 +421,7 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 428 assertions over real stdio — incl. runtime app creation
+node test/server-smoke.mjs   # 429 assertions over real stdio — incl. runtime app creation
 node test/http-smoke.mjs     #  79 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline

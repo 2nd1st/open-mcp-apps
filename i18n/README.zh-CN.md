@@ -34,10 +34,10 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.5.8([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.5.9([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
-| **怎么跑** | `npx -y @2nd1st/open-mcp-apps`(stdio MCP server) |
+| **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
 | **前置** | Node 22 或更新。走安装器还需要 `git` |
 | **规模** | 33 个 tool · 一个内置 App Store · 三个随 seed 装好的系统 app |
 | **平台** | macOS · Windows · Linux |
@@ -381,7 +381,7 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 428 条断言,走真实 stdio——含运行时 app 创建
+node test/server-smoke.mjs   # 429 条断言,走真实 stdio——含运行时 app 创建
 node test/http-smoke.mjs     #  79 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
