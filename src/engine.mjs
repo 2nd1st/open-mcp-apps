@@ -105,8 +105,13 @@ const INVENTORY = `THE USER ALREADY HAS APPS HERE — they built them in earlier
 // at createEngine time is enough; a change takes effect on the next host restart.
 /** INSTRUCTIONS are two-layered. The MANUAL (what this surface is, how to behave) is replaceable —
  *  a hosted deployment carries its own. The DYNAMIC segments are the engine's to keep true: which
- *  half of onboarding-vs-inventory this user actually is, their stored proactivity stance — and,
- *  when the function pillar lands, the roster. An override can POSITION them (carry the
+ *  half of onboarding-vs-inventory this user actually is, and their stored proactivity stance.
+ *  There are exactly two, and the function roster is NOT a third: the pillar shipped, and the
+ *  roster deliberately stayed out of here. INSTRUCTIONS are a cache PREFIX — a segment that moves
+ *  whenever any app declares or drops a function would invalidate it for every conversation. The
+ *  discovery it was meant to provide lives on the list_apps row instead (a `functions` count, and
+ *  only when there is one); the names are one get_app {slot:"manifest"} away, paid for by whoever
+ *  needs them. An override can POSITION the two (carry the
  *  placeholders) but can never remove them: a manual that omits a placeholder gets that segment
  *  appended. Structural on purpose — a hosted copy that pinned the onboarding text for a user with
  *  ten apps was handing out advice that is simply wrong for its reader. */
@@ -142,7 +147,8 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  *                        `_meta` from 2026-07-28 on, where `initialize` no longer exists.
  * @param opts.instructions  replace the MANUAL layer of the instructions (hosted deployments
  *                        carry their own behaviour text). The engine-composed DYNAMIC segments
- *                        (onboarding vs inventory, proactivity stance — and, later, the roster)
+ *                        (onboarding vs inventory, proactivity stance — and nothing else; see
+ *                        composeInstructions for why the function roster is not one of them)
  *                        cannot be removed by an override: a manual that carries the placeholders
  *                        positions them; one that omits them gets them appended. See
  *                        composeInstructions for why that is structural, not advisory.
@@ -373,6 +379,8 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     if (r.error === "no_slots_provided") return "no_slots_provided — pass `ui`, `manifest`, or both; a save that touches neither slot changes nothing.";
     if (r.error === "bad_name") return "bad_name — app names are lowercase letters, digits and dashes, starting with a letter (max 32 chars).";
     if (r.error === "provenance_locked") return `provenance_locked — "${r.name}" was authored outside this conversation (by ${r.author}, trust tier ${r.tier}) and runs under that provenance. Saving over it here would re-stamp it as yours and change what it is allowed to do, so nothing was written. Build your own under a different name, or delete this one first if it should go.`;
+    if (r.error === "built_outside") return `built_outside — "${r.name}" was built outside this store: its ui is a template that loads bundled assets (oma-asset:…), and the code those assets came from is not here. Source lives outside this store; rebuild and re-install with install-app.mjs. Nothing was written.`;
+    if (r.error === "bad_asset_ref") return `bad_asset_ref — ${r.detail}. An oma-asset: reference names a file in THIS app's file plane (file_list shows them).`;
     if (r.error === "group_too_long") return `group_too_long — a group is a lane name (max ${r.limit} chars), not a data field.`;
     if (r.error === "confirmation_expired") return "confirmation_expired — the confirmation window closed. Re-send WITHOUT request_state to get a fresh one.";
     if (r.error === "confirmation_invalid") return "confirmation_invalid — the request_state does not match this exact delete (row, version, caller). Re-send WITHOUT request_state to get a fresh one.";

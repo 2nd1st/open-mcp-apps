@@ -19,7 +19,11 @@ import { join, dirname } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
 import { readDeclaration, stripDeclarationBlock, mentionsDeclarationTag } from "./manifest-block.mjs";
-import { functionsJoinError, FN_NAME_RE, MAX_FUNCTIONS } from "./functions.mjs";
+import { functionsJoinError, FN_NAME_RE, MAX_FUNCTIONS, FN_TIME_TIMER_MAX_MS, SECRETS_RESERVED_NOTE } from "./functions.mjs";
+// The other half of a two-way import (assets.mjs reads FILE_PATH_RE from here). Both directions
+// are used only inside function bodies, so neither module reads a binding that is still being
+// initialised — see the note at the top of assets.mjs for why one scanner, not two.
+import { hasAssetReferences, assetSyntaxError } from "./assets.mjs";
 // tierOf only, and deliberately from the module that owns the security model rather than a second
 // copy of the author→tier partition living here: the disease this codebase watches for is DIALECTS,
 // and two places deciding what "local" means is exactly one. contracts.mjs imports nothing but zod,
@@ -158,7 +162,13 @@ export const APP_KINDS = new Set(["app", "visual", "primitive"]);
 export const VISIBILITIES = new Set(["featured", "listed", "unlisted", "archived"]);
 
 export const APP_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
-export const MAX_APP_HTML = 200_000;
+// There is no `MAX_APP_HTML` any more. A document had a 200,000-unit write-side ceiling until
+// v0.6.0; it was removed because the READ side already carries the only cap that was ever load-
+// bearing — `get_app` windows the source (RESULT_BUDGET), so a big app costs windows, not a
+// refusal. A write-side ceiling only decided who was allowed to exist, and the engine has no
+// business deciding that: an app built by a bundler outside the chat is a first-class app.
+// What stays is `empty_ui` below — a VALIDITY rule (an app is something a person opens), never a
+// size floor. The advice about staying lean now lives where advice belongs, in the guide.
 
 // Security v0.1 content-rules (docs/security-model.md §4–§5), enforced in the store so they
 // bind EVERY caller and transport (the AI, the browser /rpc, a widget) — the engine cannot
@@ -167,7 +177,19 @@ export const SETTINGS_COLLECTION = "settings";
 // Reserved policy namespaces: writable ONLY via executePrivileged (the security_set tool).
 // The colon prefix is outside the settings-design declared-key charset, so it never collides
 // with an app's own preference keys.
-export const RESERVED_KEY_RE = /^(?:security|policy):/;
+// `secret:` joined them 2026-08-16 and is the odd one out: it is reserved against EVERYONE,
+// including the privileged writer (see tools/settings.mjs). Functions gained the network that
+// day, so the next question an app asks is "where do I put the API key" — and the answer has to
+// exist as a refusal before it exists as a feature, or the namespace gets squatted by a
+// well-meaning app storing a token in plaintext under whatever key it invented.
+export const RESERVED_KEY_RE = /^(?:security|policy|secret):/;
+export const SECRET_KEY_RE = /^secret:/;
+// …and it carries its own sentence, because a bare "reserved_key" would send a model to
+// security_set, which refuses it too. Note this refusal ignores `privileged`: security:* and
+// policy:* have a legitimate writer, secret:* has none yet, and a namespace nobody may write is
+// the only kind that is still empty when its release arrives.
+const secretKeyRefusal = (key) =>
+  ({ ok: false, error: "reserved_key", detail: `"${key}" is in the secret: namespace — ${SECRETS_RESERVED_NOTE}` });
 // Per-item DoS floor: no single item's fields JSON may exceed this, for anyone.
 export const MAX_ITEM_FIELDS_BYTES = 32_768;
 // A group is a LANE NAME, not a data field: it rides every event, every cursor and every receipt
@@ -243,6 +265,13 @@ export const MAX_APP_FILE_COUNT   = 10_000;                   // per-app file co
 export const MAX_TOTAL_FILE_BYTES = 50 * 1024 * 1024 * 1024;  // global
 export const MAX_TOTAL_FILE_COUNT = 200_000;                 // global file-count floor — bounds zero-byte/deduped rows + inodes the byte caps can't (every regex-valid app name is otherwise a fresh per-app budget)
 
+// How long a HUMAN-authored app's superseded revisions are kept (Leo 2026-08-16, §7-4). An app
+// pushed from a build pipeline has its history in that pipeline's VCS; keeping every push here
+// stores a full bundle per push in `app_history` forever, for a rollback the author would do in
+// their own repo. Seven days is a window for "I pushed the wrong build", not an archive — and the
+// CURRENT revision is never swept, at any age, because it is the app.
+export const HUMAN_HISTORY_KEEP_DAYS = 7;
+
 // App schema manifests: an app declares WHICH collections it stewards and, optionally,
 // field contracts for them. Validation lives HERE (not the engine) so it binds EVERY caller — AI
 // tool, widget mutation, /rpc. Manifest-less collections behave exactly as before.
@@ -261,6 +290,117 @@ function fieldSpecError(f, where) {
   if (f.required != null && typeof f.required !== "boolean") return `${where}.required must be a boolean`;
   if (f.enum != null && (!Array.isArray(f.enum) || f.enum.length === 0)) return `${where}.enum must be a non-empty array`;
   return null;
+}
+// ────────────────────────────────────────────────────── the network declaration (MCP Apps spec)
+// The four keys of `McpUiResourceCsp` (@modelcontextprotocol/ext-apps spec.types.d.ts), spelled
+// EXACTLY as the spec spells them — the engine relays this declaration to the host verbatim, so a
+// private synonym here would be a dialect only we can read. Order is the order the spec lists them.
+export const CSP_DOMAIN_KEYS = ["connectDomains", "resourceDomains", "frameDomains", "baseUriDomains"];
+// An origin, or a wildcard-subdomain origin: scheme://host[:port] / scheme://*.host[:port].
+// SHAPE only, never policy — the engine does not judge WHERE an app wants to connect (that is the
+// host's call, and the user's). What it does judge is whether the string is an origin at all, and
+// that check is load-bearing twice over:
+//   · a value that is not an origin cannot mean anything to a host, so it would fail silently there
+//     rather than at the door where the author can still read the message;
+//   · these strings are CONCATENATED into a CSP header/meta by runnerCspFor/viewCspFor, so a value
+//     carrying `;` or whitespace — "https://x.example; script-src *" — is DIRECTIVE INJECTION into
+//     our own two policies. Refusing anything but an origin is what keeps that impossible, which is
+//     why the regex forbids those characters rather than stripping them.
+// `wss://` and `ws://` are deliberately allowed: the spec's own connectDomains example is a
+// WebSocket origin. A trailing path is not — CSP source expressions match by origin.
+const CSP_ORIGIN_RE = /^[a-z][a-z0-9+.-]*:\/\/(?:\*\.)?[a-z0-9-]+(?:\.[a-z0-9-]+)*(?::[0-9]{1,5})?$/i;
+/** Shape of a `csp` declaration, in one sentence — for whoever refuses it. ONE definition, three
+ *  callers: the save door (manifestShapeError), the user's own additions (security_set), and the
+ *  merge that assembles them (contracts.mjs cspFor, which re-filters because a settings row may
+ *  predate this gate — the gate belongs on the road the value leaves by, not only on the way in).
+ *  `where` names the seat in the refusal. Returns null when the shape is good. */
+export function cspShapeError(c, where = "manifest.csp") {
+  if (!c || typeof c !== "object" || Array.isArray(c)) return `${where} must be an object`;
+  for (const k of CSP_DOMAIN_KEYS) {
+    if (c[k] == null) continue;   // an omitted key is the secure default (no origins), never an error
+    if (!Array.isArray(c[k])) return `${where}.${k} must be an array of origins (e.g. ["https://api.example.com"])`;
+    for (const v of c[k]) {
+      if (typeof v !== "string" || !CSP_ORIGIN_RE.test(v))
+        return `${where}.${k}: ${JSON.stringify(v)} is not an origin — write scheme://host[:port] ` +
+          `(e.g. "https://api.example.com", "wss://live.example.com:8443", or "https://*.example.com" for subdomains). No path, no trailing slash.`;
+    }
+  }
+  // Unknown keys are IGNORED, not refused — same rule the rest of this function follows: a document
+  // written for a newer engine (a fifth spec key) must still save on this one.
+  return null;
+}
+
+/** One source's contribution to the merge, or null when it cannot be read. A settings row is a
+ *  STRING (security_set stores strings), and a row that predates this gate — or one written by an
+ *  older engine sharing the same SQLite file — can hold anything. Fail CLOSED and whole: a source
+ *  that does not parse, or whose shape is bad, contributes NOTHING rather than its good half. A
+ *  half-applied network policy is the failure mode that looks like it worked. */
+function cspSource(v) {
+  if (v == null) return null;
+  let o = v;
+  if (typeof o === "string") { try { o = JSON.parse(o); } catch { return null; } }
+  return cspShapeError(o) ? null : o;
+}
+
+/** WHERE THIS APP MAY REACH, as one merged declaration: what the app declared ∪ what the user
+ *  added for it (`policy:csp:<app>`) ∪ what the user added for everything (`policy:csp:*`).
+ *
+ *  THE ENGINE DOES NOT ADJUDICATE — it merges and relays (Leo, 2026-08-16). This is not an
+ *  allowlist the engine enforces against the app; it is the app's own statement of need plus the
+ *  user's own additions, handed to the host, which is the party the MCP Apps spec puts in charge of
+ *  enforcement. The OSS engine sets no egress ceiling of its own.
+ *
+ *  It lives HERE, not in contracts.mjs, for one hard reason: store.mjs imports `tierOf` from
+ *  contracts.mjs, so contracts.mjs may never import store.mjs (the cycle that file's header exists
+ *  to prevent) — and both of this function's inputs are store-shaped, the app row's manifest and
+ *  the settings collection.
+ *
+ *  Order is fixed so the output is too: declaration, then per-app, then global; first occurrence
+ *  wins a duplicate. Empty keys are OMITTED — an omitted key IS the spec's secure default, and a
+ *  caller that needs the empty array on the wire (the resource `_meta`, whose two legacy keys have
+ *  always been present) shapes that itself rather than making every caller carry it. */
+export function cspFor(comp, store) {
+  let declared = null;
+  try { declared = comp?.manifest ? JSON.parse(comp.manifest).csp : null; } catch { declared = null; }
+  const sources = [cspSource(declared)];
+  if (store && comp?.name) {
+    // Last row wins per key — the same scan computeCaps and the pref merge use. Duplicate settings
+    // rows are ordinary (nothing forbids a second data_add_item under a key), and a reader that
+    // took the FIRST would answer with the row the settings UI does not update.
+    const byKey = new Map();
+    for (const it of store.snapshot(SETTINGS_COLLECTION).items) {
+      const k = String(it.fields?.key ?? "");
+      if (k) byKey.set(k, it.fields.value);
+    }
+    sources.push(cspSource(byKey.get(`policy:csp:${comp.name}`)), cspSource(byKey.get("policy:csp:*")));
+  }
+  const out = {};
+  for (const key of CSP_DOMAIN_KEYS) {
+    const seen = [];
+    for (const s of sources) for (const v of (s?.[key] || [])) if (!seen.includes(v)) seen.push(v);
+    if (seen.length) out[key] = seen;
+  }
+  return out;
+}
+/** THE LOADER'S DECLARATION: every app's merged declaration (cspFor) folded into one, plus the
+ *  user's global additions. Exists for the one resource that serves EVERY app — the universal
+ *  loader `open_app` points hosts at — which structurally cannot carry any single app's `csp`, and
+ *  before this carried nobody's (Leo 2026-08-16, plan §7-8, option A): the host is asked to allow
+ *  the UNION, and the runner child inside the loader is narrowed back to its own app by
+ *  composeChildDoc — a srcdoc frame runs under parent ∩ own, so the outer wall has to be at least
+ *  as wide as the widest app or the inner declaration means nothing. Same merge rule as cspFor,
+ *  same omitted-empty-key shape; a store with no declarations anywhere yields `{}`, and the loader
+ *  then serves the exact bytes it served in 0.5.9. */
+export function cspUnion(store) {
+  const sources = [];
+  for (const row of store.listApps({})) sources.push(cspFor(store.getApp(row.name), store));
+  const out = {};
+  for (const key of CSP_DOMAIN_KEYS) {
+    const seen = [];
+    for (const src of sources) for (const v of (src?.[key] || [])) if (!seen.includes(v)) seen.push(v);
+    if (seen.length) out[key] = seen;
+  }
+  return out;
 }
 export function manifestShapeError(m) {
   if (!m || typeof m !== "object" || Array.isArray(m)) return "manifest must be an object";
@@ -308,6 +448,13 @@ export function manifestShapeError(m) {
       if (!spec || typeof spec !== "object" || Array.isArray(spec)) return `functions.${fname} must be an object`;
       if (spec.description != null && typeof spec.description !== "string") return `functions.${fname}.description must be a string`;
       if (spec.public != null && typeof spec.public !== "boolean") return `functions.${fname}.public must be a boolean`;
+      // A per-function wall clock, declared where the signature is. The engine sets NO policy
+      // ceiling — the real limit is the host's own tool-call timeout (see functions.mjs). What is
+      // checked here is only sanity: a positive whole number of milliseconds the timer can actually
+      // hold. FN_TIME_TIMER_MAX_MS is setTimeout's 32-bit bound, not a policy cap — past it the timer
+      // would silently re-arm at 1 ms and break the deadline. A foot-gun floor, learned once at save.
+      if (spec.timeout_ms != null && (!Number.isInteger(spec.timeout_ms) || spec.timeout_ms < 1 || spec.timeout_ms > FN_TIME_TIMER_MAX_MS))
+        return `functions.${fname}.timeout_ms must be a whole number of milliseconds ≥ 1 (upper bound is the JS timer's, not a policy cap)`;
       if (spec.params != null) {
         if (typeof spec.params !== "object" || Array.isArray(spec.params)) return `functions.${fname}.params must be an object`;
         for (const [pname, p] of Object.entries(spec.params)) {
@@ -337,6 +484,14 @@ export function manifestShapeError(m) {
   // vocabulary to grow, so the type IS the whole check, and the reader still demands `true`
   // rather than truthiness.
   if (m.stage?.display != null && typeof m.stage.display !== "boolean") return "manifest.stage.display must be a boolean";
+  // `csp` — WHERE THIS APP REACHES. Declared by the app, relayed by the engine, enforced by the
+  // host (MCP Apps spec). Validated by shape only, and by the one function that owns that question:
+  // the user may add origins of their own through `policy:csp:*`, and two graders would eventually
+  // disagree about what an origin is.
+  if (m.csp != null) {
+    const err = cspShapeError(m.csp);
+    if (err) return err;
+  }
   return null;
 }
 
@@ -522,7 +677,11 @@ function migrateV5toV6(db) {
   db.exec(SCHEMA);
   // Oversize guard in SQL before anything is pulled into JS — a hand-edited row cannot force the
   // migration to hold an unbounded string just to refuse it.
-  const big = db.prepare(`SELECT name, version FROM app_history WHERE length(CAST(ui AS BLOB)) > ${MAX_APP_HTML * 4}`).all();
+  // 800,000 bytes is a FROZEN HISTORICAL number: 4x the 200,000-unit document cap this engine
+  // enforced while any v5 store could have been written. It guards hand-edited history rows in a
+  // store from that era, so it must not track today's policy — there is no document cap now, and
+  // relaxing this one would only let a corrupt v5 row pull an unbounded string into JS to refuse it.
+  const big = db.prepare("SELECT name, version FROM app_history WHERE length(CAST(ui AS BLOB)) > 800000").all();
   if (big.length) throw new Error(`v5→v6 migration refused — oversized history revision(s): ${big.map((b) => `${b.name}@${b.version}`).join(", ")}`);
 
   const failures = [];
@@ -890,7 +1049,11 @@ export function openStore(path, { readOnly = false } = {}) {
     hasCompOutside: db.prepare(
       "SELECT EXISTS(SELECT 1 FROM app WHERE name NOT IN (SELECT value FROM json_each(?))) AS v"
     ),
-    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, kind, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
+    // `fn_count` is COUNTED IN SQL on purpose: the row set feeds list_apps, and pulling every
+    // manifest document into JS to count one key would make the cheapest read in the registry
+    // scale with the size of every declaration in it. json_type guards the NULL/absent cases so
+    // json_each is only reached for a real object.
+    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, CASE WHEN json_type(manifest, '$.functions') = 'object' THEN (SELECT COUNT(*) FROM json_each(app.manifest, '$.functions')) ELSE 0 END AS fn_count, kind, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
     // v6: the slots resolve BEFORE this statement runs (save_app's tri-state manifest and slot
     // inheritance live in the command handler), so every column here is written outright — the
     // old scene_set/manifest_set three-state and the kind COALESCE retired with the block:
@@ -905,6 +1068,9 @@ export function openStore(path, { readOnly = false } = {}) {
          visibility = COALESCE(@visibility, app.visibility),
          updated_at = @ts`),
     insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, ui, manifest, ts) VALUES (@name, @version, @ui, @manifest, @ts)"),
+    // Human-push retention (HUMAN_HISTORY_KEEP_DAYS). Scoped to ONE app and to revisions strictly
+    // BELOW the row just written, so the head survives however old the app is.
+    pruneAppHist: db.prepare("DELETE FROM app_history WHERE name = @name AND version < @head AND ts < @cutoff"),
     compHist: db.prepare("SELECT version, ts, length(ui) AS ui_size FROM app_history WHERE name = ? ORDER BY version DESC"),
     compVersion: db.prepare("SELECT name, version, ui, manifest, ts FROM app_history WHERE name = ? AND version = ?"),
     // Head revision — what an omitted slot inherits (W-N). From the REVISION table, never the
@@ -1177,8 +1343,11 @@ export function openStore(path, { readOnly = false } = {}) {
       const grp = String(command.group ?? "");
       if (grp.length > MAX_GROUP_CHARS) return { ok: false, error: "group_too_long", limit: MAX_GROUP_CHARS };
       const fields = command.fields && typeof command.fields === "object" ? command.fields : {};
-      if (coll === SETTINGS_COLLECTION && !privileged && RESERVED_KEY_RE.test(String(fields.key ?? "")))
-        return { ok: false, error: "reserved_key" };
+      if (coll === SETTINGS_COLLECTION) {
+        const k = String(fields.key ?? "");
+        if (SECRET_KEY_RE.test(k)) return secretKeyRefusal(k);
+        if (!privileged && RESERVED_KEY_RE.test(k)) return { ok: false, error: "reserved_key" };
+      }
       const fieldsJson = JSON.stringify(fields);
       if (fieldsJson.length > MAX_ITEM_FIELDS_BYTES) return { ok: false, error: "fields_too_large" };
       const man = manifestFor(coll);
@@ -1205,10 +1374,12 @@ export function openStore(path, { readOnly = false } = {}) {
       // the collection holds three items or thirty thousand.
       if (command.expected_version != null && command.expected_version !== row.version)
         return { ok: false, conflict: true, expected: row.version, id: row.id, collection: row.collection, item: rowToItem(row) };
-      if (row.collection === SETTINGS_COLLECTION && !privileged) {
+      if (row.collection === SETTINGS_COLLECTION) {
         const existingKey = String(JSON.parse(row.fields).key ?? "");
         const newKey = command.fields && "key" in command.fields ? String(command.fields.key ?? "") : "";
-        if (RESERVED_KEY_RE.test(existingKey) || RESERVED_KEY_RE.test(newKey))
+        if (SECRET_KEY_RE.test(existingKey)) return secretKeyRefusal(existingKey);
+        if (SECRET_KEY_RE.test(newKey)) return secretKeyRefusal(newKey);
+        if (!privileged && (RESERVED_KEY_RE.test(existingKey) || RESERVED_KEY_RE.test(newKey)))
           return { ok: false, error: "reserved_key" };
       }
       const merged = { ...JSON.parse(row.fields), ...(command.fields || {}) };
@@ -1261,8 +1432,11 @@ export function openStore(path, { readOnly = false } = {}) {
       // the collection holds three items or thirty thousand.
       if (command.expected_version != null && command.expected_version !== row.version)
         return { ok: false, conflict: true, expected: row.version, id: row.id, collection: row.collection, item: rowToItem(row) };
-      if (row.collection === SETTINGS_COLLECTION && !privileged && RESERVED_KEY_RE.test(String(JSON.parse(row.fields).key ?? "")))
-        return { ok: false, error: "reserved_key" };
+      if (row.collection === SETTINGS_COLLECTION) {
+        const k = String(JSON.parse(row.fields).key ?? "");
+        if (SECRET_KEY_RE.test(k)) return secretKeyRefusal(k);
+        if (!privileged && RESERVED_KEY_RE.test(k)) return { ok: false, error: "reserved_key" };
+      }
       // Last check before execution, first-refusal order preserved: a stale caller learns about
       // the conflict, a forbidden caller about the policy, and only a permitted, current delete
       // is asked to confirm. The gate binds row.version, so verifying IS re-authorizing.
@@ -1310,6 +1484,28 @@ export function openStore(path, { readOnly = false } = {}) {
       // it stays available, and a same-tier ingress can overwrite it normally.
       if (existing && tierOf(existing.author) !== tierOf(actor))
         return { ok: false, error: "provenance_locked", name, author: existing.author, tier: tierOf(existing.author) };
+      // BUILT OUTSIDE ⇒ READ-ONLY TO THE MODEL. An app whose ui references its own bundle
+      // (`oma-asset:`) is a TEMPLATE, not a source: the thing an edit would have to change lives in
+      // a project on someone's disk. Rewriting the template from here does not change the app, it
+      // desynchronises it from the build that produced it — and the model has no way to notice,
+      // because the template renders fine either way.
+      //
+      // Structural, not a name: the test is what the stored document IS, never an `author` string
+      // (which is why `human` could be reused for this door at all — provenance answers "how much
+      // trust", this answers "where is the source"). Keyed on the ACTOR because the human running
+      // the CLI is the one holding that project: re-pushing is the supported edit.
+      //
+      // It sits HERE for the same reason provenance_locked does — six paths write app html, and a
+      // rule that lives in one tool is a rule five other doors do not have. Two of those doors are
+      // refused as a deliberate consequence rather than an accident:
+      //   · restore_app — rolling the template back pairs an old mount point with the CURRENT
+      //     bundle in the file plane, a state no build ever produced;
+      //   · promote_app — it touches only the manifest, but the manifest of a built app is a FILE
+      //     in that build (install-app.mjs --manifest), so flipping `kind` here is the same
+      //     desynchronisation one slot over. Change it in the project and push again.
+      // (install_from_app_store needs no branch here: it already refuses any app it did not author.)
+      if (existing && actor === "agent" && hasAssetReferences(existing.ui))
+        return { ok: false, error: "built_outside", name };
       // ── the two slots (W-N) ────────────────────────────────────────────────────────────────────
       // A save addresses the app's slots — `ui` (the document) and `manifest` (the declaration,
       // now a structured value and the AUTHORITY, not a projection of anything). Slot semantics,
@@ -1338,11 +1534,16 @@ export function openStore(path, { readOnly = false } = {}) {
         // overwriting a live app is that every save is recoverable (history + undo) and the
         // ack reports its size delta out loud.
         if (!ui.trim()) return { ok: false, error: "empty_ui" };
-        if (ui.length > MAX_APP_HTML) return { ok: false, error: "ui_too_large" };
         // A document still carrying the legacy #oma-manifest block is a caller transcribing pre-v6
         // examples. Refused LOUDLY: accepted as inert bytes it would be "I declared something and
         // nothing happened" — the worst outcome the old reader was built to prevent.
         if (mentionsDeclarationTag(ui)) return { ok: false, error: "embedded_manifest_block" };
+        // Asset references are checked for SYNTAX only, and deliberately not for existence: a push
+        // is two writes (template + bundle) and neither order may be the wrong one. What is refused
+        // is a reference the file plane could never satisfy — a path with "..", or one outside
+        // FILE_PATH_RE — because that one is unresolvable no matter what is uploaded afterwards.
+        const assetErr = assetSyntaxError(ui);
+        if (assetErr) return { ok: false, error: "bad_asset_ref", detail: assetErr };
       } else {
         if (!head) return { ok: false, error: "no_revision" };   // existing without history — impossible by construction, refuse over guessing
         ui = head.ui;
@@ -1388,6 +1589,25 @@ export function openStore(path, { readOnly = false } = {}) {
       q.insComp.run({ name, version, ui, description: String(command.description || ""), author: actor, scene, manifest: manifestJson, kind, visibility, ts });
       const comp = q.compByName.get(name);
       q.insCompHist.run({ name, version: comp.version, ui, manifest: manifestJson, ts });
+      // …and then sweep this app's stale revisions — but only when a human push lands on a HUMAN
+      // APP (HUMAN_HISTORY_KEEP_DAYS). Both halves are load-bearing, and keying on the actor alone
+      // was WRONG: `undoLast` re-saves an app's previous revision with actor "human" (this file,
+      // the component_saved branch), and agent↔human are the same tier so provenance_locked does
+      // not separate them. One click of Undo in the Data pane, on an AI-authored app with weeks of
+      // checkpoints, would have permanently deleted every checkpoint older than the window — a
+      // recovery action destroying the recovery points, irreversibly. The rule Leo stated is about
+      // the APP ("a pushed app keeps no version stock"), so the app is what it asks about.
+      // The comparison is against a cutoff computed in JS, NOT SQLite's datetime('now'): `ts` is an
+      // ISO-8601 string with a T and a Z, datetime() renders a space-separated one, and the two sort
+      // against each other silently and wrongly. Same-format strings compare exactly like the
+      // instants they name, which is the whole reason this column is ISO.
+      // `version < head` is what makes the current revision unsweepable at any age — the head row
+      // IS the app (headRev reads it for slot inheritance), so an empty-handed sweep must be
+      // impossible rather than merely unlikely.
+      if (actor === "human" && existing && existing.author === "human") {
+        const cutoff = new Date(Date.now() - HUMAN_HISTORY_KEEP_DAYS * 86_400_000).toISOString();
+        q.pruneAppHist.run({ name, head: comp.version, cutoff });
+      }
       const notes = [];
       // Declaration-quality notes ride the ack and are computed AFTER the row is written, because
       // both need the saved state: the union a shared collection now resolves to, and whether this

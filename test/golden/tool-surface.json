@@ -198,6 +198,18 @@
           "description": "the collection this app opens on",
           "type": "string"
         },
+        "csp": {
+          "additionalProperties": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array"
+          },
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
         "declaration": {
           "anyOf": [
             {
@@ -2829,7 +2841,7 @@
           "type": "string"
         },
         "value": {
-          "description": "the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list. An unknown value is REFUSED, never stored",
+          "description": "the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list; policy:csp:<app> (or policy:csp:*) takes a JSON object of origin arrays, e.g. {\"connectDomains\":[\"https://api.example.com\"]}. An unknown value is REFUSED, never stored",
           "type": "string"
         }
       },

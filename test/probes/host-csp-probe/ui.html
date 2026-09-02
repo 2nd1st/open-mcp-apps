@@ -1,0 +1,708 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Host CSP probe</title>
+  <meta name="description" content="Nine readings of what THIS host does with an app's csp declaration. Every reading is written to a collection, so it outlives the widget.">
+  <meta name="oma-category" content="Developer">
+  <style>
+  :root {
+    --accent: var(--color-text-info, var(--color-ring-primary, #3b6cf6));
+    --wash: color-mix(in oklab, var(--accent) 9%, transparent);
+    --rule: var(--color-border-secondary, var(--color-border-primary));
+  }
+  .mark { color: var(--accent); }
+  .tail { margin-left: auto; display: flex; gap: var(--k-s2, 8px); align-items: center; }
+
+  /* The context strip: what this copy believes about itself, all of it editable, because a
+     reading labelled with the wrong host is worse than no reading. */
+  .ctx {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+    gap: var(--k-s2, 8px);
+    margin: var(--k-s3, 12px) 0;
+  }
+  .ctx label { display: block; font-size: 11px; letter-spacing: .06em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 3px; }
+  .ctx .k-field { width: 100%; }
+
+  .policy { margin: var(--k-s2, 8px) 0 var(--k-s4, 16px); display: grid; gap: var(--k-s2, 8px); }
+  .policy .k-card { padding: var(--k-s3, 12px); }
+  .policy h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: .04em; text-transform: uppercase; color: var(--color-text-tertiary); font-weight: 700; }
+  .policy pre {
+    margin: 0; white-space: pre-wrap; word-break: break-word;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  .probes { display: grid; gap: var(--k-s2, 8px); }
+  .probe { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--k-s2, 8px); align-items: start; padding: var(--k-s3, 12px); }
+  .probe .name { font-family: var(--font-mono); font-weight: 700; font-size: 13px; color: var(--color-text-primary); }
+  .probe .asks { font-size: 12px; color: var(--color-text-secondary); margin-top: 2px; }
+  .probe .target { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 3px; word-break: break-all; }
+  .probe .detail { font-family: var(--font-mono); font-size: 11px; margin-top: 6px; color: var(--color-text-secondary); white-space: pre-wrap; word-break: break-word; }
+  .probe .side { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .expect { font-size: 11px; color: var(--color-text-tertiary); }
+
+  /* The two probes that need a live element. Off-screen rather than display:none — a display:none
+     iframe still loads, but a zero-box one cannot answer the "did it get a box" half. */
+  .stage-offscreen { position: absolute; left: -10000px; top: 0; width: 320px; height: 180px; opacity: .01; pointer-events: none; }
+  .stage-offscreen iframe, .stage-offscreen img { width: 320px; height: 180px; border: 0; }
+
+  .log { display: grid; gap: 4px; margin-top: var(--k-s2, 8px); }
+  .log .k-li { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto; gap: var(--k-s2, 8px); align-items: baseline; font-size: 12px; }
+  .log .who { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); }
+  .log .what { font-family: var(--font-mono); font-weight: 700; font-size: 12px; }
+  .log .why { color: var(--color-text-secondary); font-family: var(--font-mono); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  </style>
+</head>
+<body>
+<main class="k-stage">
+  <header class="k-appbar">
+    <span class="k-appmark mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" width="22" height="22">
+        <path d="M12 3 4 6v6c0 4.5 3.2 7.9 8 9 4.8-1.1 8-4.5 8-9V6l-8-3Z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/>
+        <path d="M9 12.2l2.1 2.1L15.4 10" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </span>
+    <div class="k-appcopy">
+      <p class="k-eyebrow">HOST MATRIX</p>
+      <h1 class="k-h1">Host CSP probe</h1>
+    </div>
+    <div class="tail">
+      <button class="k-btn sec" id="runAll" type="button">Run all</button>
+    </div>
+  </header>
+
+  <p class="k-sub">Nine readings of what <em>this</em> host does with an app's <code class="k-code">csp</code>
+  declaration. Every reading is written to this app's own collection, so it survives the widget, the
+  conversation, and the host.</p>
+
+  <div class="ctx">
+    <div>
+      <label for="hostKey">Host (host-matrix key)</label>
+      <select class="k-field" id="hostKey"></select>
+    </div>
+    <div>
+      <label for="doorKey">Door</label>
+      <select class="k-field" id="doorKey"></select>
+    </div>
+    <div>
+      <label for="loopback">Loopback origin</label>
+      <input class="k-field" id="loopback" type="text" spellcheck="false" placeholder="http://127.0.0.1:8787">
+    </div>
+  </div>
+
+  <div class="policy">
+    <div class="k-card">
+      <h3>What the engine relayed <span class="k-mut">(merged declaration ∪ user policy)</span></h3>
+      <pre id="engineCsp">reading…</pre>
+    </div>
+    <div class="k-card">
+      <h3>What the host enforced <span class="k-mut">(seen only once something is blocked)</span></h3>
+      <pre id="hostCsp">nothing blocked yet — run a probe</pre>
+    </div>
+  </div>
+
+  <div class="probes" id="probes"></div>
+
+  <h2 class="k-h1" style="font-size:15px;margin:20px 0 0">Rows written</h2>
+  <div class="k-mut" style="font-size:12px">This app's collection. Read it back with <code class="k-code">data_list host-csp-probe</code>.</div>
+  <div class="log" id="log"></div>
+  <div class="k-empty" id="empty" hidden>No rows yet. Run a probe — or ask your assistant: “open host-csp-probe and run every probe”.</div>
+</main>
+
+<div class="stage-offscreen" id="offscreen" aria-hidden="true"></div>
+
+<script type="text/oma-function" data-fn="net_probe">
+  // THE FIRST PIPE. This body runs in the ENGINE process, not in the widget: an MCP tool call
+  // carries the request out and the answer back, so no CSP declaration is involved and no host has
+  // to honour anything. It is the control for every browser-side probe in this app — if this one
+  // fails too, the machine has no network, and the browser readings mean nothing.
+  const url = (args && typeof args.url === "string" && args.url) || "https://api.github.com/zen";
+  const started = Date.now();
+  const res = await fetch(url, { headers: { accept: "text/plain, application/json;q=0.9, */*;q=0.8" } });
+  const body = await res.text();
+  return { url: url, status: res.status, ok: res.ok, ms: Date.now() - started, text: body.slice(0, 40) };
+</script>
+
+<script type="module">
+  // ── what this app is measuring ────────────────────────────────────────────────────────────────
+  // An app declares where it reaches (manifest.csp); the engine merges that with the user's own
+  // additions and relays the result in `_meta.ui.csp`. Whether a HOST turns that into a real
+  // Content-Security-Policy is the host's business — and until somebody measures it, every
+  // sentence about it is a guess. This app is the measurement. It runs in whatever host it was
+  // opened in, asks nine questions, and writes each answer as a row.
+
+  // host-matrix.json's own platform_keys — all 23 of them, in that file's order, so a reading
+  // transcribes into a matrix row with no translation step. Three at the end have no key there
+  // yet: this engine's own viewer (the control reading), the dsh plugin, and the host we have
+  // never met, which is exactly the case a probe is for.
+  const HOST_KEYS = [
+    "claude-web", "claude-app", "chatgpt-web", "chatgpt-work", "chatgpt-app",
+    "codex-local", "codex-remote",
+    "claude-web-chat-plugin", "claude-web-cowork-plugin",
+    "claude-desktop-chat-mcp", "claude-desktop-chat-plugin",
+    "claude-desktop-cowork-mcp", "claude-desktop-cowork-plugin",
+    "claude-desktop-code-mcp", "claude-code-cli-mcp",
+    "chatgpt-web-chat-plugin", "chatgpt-web-work-plugin",
+    "chatgpt-desktop-classic-mcp", "chatgpt-desktop-classic-plugin",
+    "chatgpt-desktop-work-mcp", "chatgpt-desktop-work-plugin",
+    "chatgpt-desktop-codex-mcp", "codex-cli-mcp",
+    "dsh-plugin", "browser-viewer", "other",
+  ];
+
+  const DOOR_KEYS = ["open_app", "open_host_csp_probe", "browser-viewer", "unknown"];
+
+  // ── the violation tap ─────────────────────────────────────────────────────────────────────────
+  // A CSP refusal is not an exception you can catch: `fetch` rejects with a bare
+  // "TypeError: Failed to fetch" that a DNS failure produces just as readily. The ONE signal that
+  // separates them is this event, which also carries `originalPolicy` — the host's actual policy,
+  // which nothing else in a widget can read. It is the single most valuable thing this app
+  // collects, so the listener goes up before anything else runs.
+  const violations = [];
+  let hostPolicy = null;
+  window.addEventListener("securitypolicyviolation", (e) => {
+    violations.push({
+      at: Date.now(),
+      directive: e.violatedDirective || e.effectiveDirective || "?",
+      blocked: e.blockedURI || "",
+      disposition: e.disposition || "enforce",
+    });
+    if (!hostPolicy && e.originalPolicy) {
+      hostPolicy = e.originalPolicy;
+      const el = document.getElementById("hostCsp");
+      if (el) el.textContent = hostPolicy;
+    }
+  });
+  const sinceMark = () => violations.length;
+  const newViolations = (mark, needle) => violations.slice(mark).filter((v) => !needle || (v.blocked || "").indexOf(needle) === 0 || needle.indexOf(v.blocked) === 0);
+  const tick = (ms) => new Promise((r) => setTimeout(r, ms));
+
+  // ── which door did the host open us through ───────────────────────────────────────────────────
+  // `window.oma` says nothing about this, so the answer is read off the DOCUMENT the engine
+  // served. `open_app` points every host at ONE loader resource that mounts any app into itself;
+  // that document — and only that document — carries the loader module. A per-app `ui://` resource
+  // (OMA_DYNAMIC_TOOLS=1, tool `open_<name>`) and the browser viewer both serve the app's own
+  // document, which has no loader in it; `oma.standalone` then separates those two.
+  //
+  // This reads engine internals (`script[data-oma]`), not the runtime contract. If the markers ever
+  // move, the dropdown is still here and a human still knows which door they opened.
+  function detectDoor() {
+    const evidence = [];
+    let value = "unknown";
+    try {
+      const isLoader = !!document.querySelector('script[data-oma="loader"]');
+      evidence.push('script[data-oma="loader"]=' + isLoader);
+      if (oma.standalone) { value = "browser-viewer"; evidence.push("oma.standalone=true"); }
+      else if (isLoader) value = "open_app";
+      else value = "open_host_csp_probe";
+    } catch (e) { evidence.push("detect threw: " + e.message); }
+    try {
+      const t = (window.__OMA_HOST_CONTEXT__ || {}).toolInfo;
+      const n = t && t.tool && t.tool.name;
+      if (n) evidence.push("hostContext.toolInfo.tool.name=" + n);
+      else evidence.push("hostContext.toolInfo=absent");
+    } catch (e) { /* a host that hands us nothing is a reading too */ }
+    return { value, evidence: evidence.join("; ") };
+  }
+
+  const detected = detectDoor();
+
+  // ── one classifier, five network probes ───────────────────────────────────────────────────────
+  // Three outcomes have to stay distinguishable, and a naive `fetch().catch()` collapses all of
+  // them into "Failed to fetch":
+  //
+  //   allowed        the request left the page and we could read the answer.
+  //   allowed-opaque the request left the page; only the CORS read was refused. The host's CSP
+  //                  said yes — which is the question this app asks. Reached by retrying with
+  //                  mode:"no-cors", the one call shape that survives a missing
+  //                  Access-Control-Allow-Origin.
+  //   csp-blocked    a securitypolicyviolation naming this URL. The only positive evidence.
+  //   error          neither: DNS, offline, a proxy, or Private Network Access refusing a
+  //                  public page's request to a loopback address. NOT a CSP reading.
+  async function reach(url) {
+    const mark = sinceMark();
+    let res = null, corsErr = null;
+    try { res = await fetch(url, { cache: "no-store" }); } catch (e) { corsErr = e; }
+    if (res) {
+      let sample = "";
+      try { sample = (await res.text()).slice(0, 60).replace(/\s+/g, " ").trim(); } catch (e) { /* body is optional */ }
+      return { verdict: "allowed", detail: `HTTP ${res.status}; CORS read allowed${sample ? '; "' + sample + '"' : ""}` };
+    }
+    let opaque = null, opaqueErr = null;
+    try { opaque = await fetch(url, { mode: "no-cors", cache: "no-store" }); } catch (e) { opaqueErr = e; }
+    await tick(80);   // the violation event is dispatched on a task of its own
+    const origin = (() => { try { return new URL(url).origin; } catch (e) { return url; } })();
+    const v = newViolations(mark, origin);
+    if (opaque) return { verdict: "allowed-opaque", detail: `opaque response (the request left the page); the CORS read was refused: ${corsErr && corsErr.message}` };
+    if (v.length) return { verdict: "csp-blocked", detail: `${v[0].directive} blocked ${v[0].blocked || origin} (${v[0].disposition})` };
+    return { verdict: "error", detail: `no CSP violation was reported, so this is NOT a CSP reading: ${(opaqueErr || corsErr || {}).message}` };
+  }
+  const reached = (r) => r.verdict === "allowed" || r.verdict === "allowed-opaque";
+
+  /** What the ENGINE says it relayed for this app, read live (declaration ∪ the user's policy rows;
+   *  on the open_app door the host additionally sees the union across the whole store). Two probes
+   *  need it to avoid stating a confident wrong answer, so it is asked once per run and cached. */
+  let relayedCache;
+  // What the engine was relaying when THIS document was created. A document's CSP is fixed at
+  // creation, so any later change to the policy is invisible to it — and `which-meta` compares the
+  // two to refuse a verdict rather than mistake "you did not re-open the widget" for "this host
+  // uses a registration snapshot", which looks identical from inside.
+  let mountRelayed;
+  async function relayedCsp() {
+    if (relayedCache !== undefined) return relayedCache;
+    try {
+      const r = await oma.callTool("app_html", { name: "host-csp-probe" });
+      relayedCache = ((r && r.structuredContent) || {}).csp || {};
+    } catch (e) { relayedCache = null; }
+    return relayedCache;
+  }
+
+  // WHICH loopback origin. `oma.viewBase` is absolute only when the engine handed a widget its
+  // viewer's URL; in the browser viewer itself it is the relative "/view/", so the page's OWN
+  // origin is the right answer there — and getting that wrong is not cosmetic, it silently measures
+  // a port nothing is listening on (or, worse, somebody else's engine on the default one).
+  // location.origin is only trusted when it IS loopback: in a chat host it is the host's own
+  // origin, which is the very thing this probe is trying to reach ACROSS.
+  const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "[::1]"];
+  function loopbackOrigin() {
+    const typed = (document.getElementById("loopback").value || "").trim().replace(/\/+$/, "");
+    if (typed) return typed;
+    try {
+      const base = oma.viewBase || "";
+      if (/^https?:\/\//.test(base)) return new URL(base).origin;
+    } catch (e) { /* fall through */ }
+    try {
+      if (location.protocol === "http:" && LOOPBACK_HOSTS.includes(location.hostname)) return location.origin;
+    } catch (e) { /* fall through */ }
+    return "http://127.0.0.1:8787";
+  }
+
+  // ── the nine ──────────────────────────────────────────────────────────────────────────────────
+  // Every URL below was reachable when this file was written; the point of a probe is that the
+  // reading, not the author, decides what a host does.
+  const IMG_URL = "https://raw.githubusercontent.com/github/explore/main/topics/javascript/javascript.png";
+  const FRAME_URL = "https://www.youtube-nocookie.com/embed/aqz-KE-bpKQ";
+  const A_URL = "https://api.github.com/zen";              // declared in manifest.csp
+  const B_URL = "https://api.ipify.org/?format=json";      // NOT declared — added by security_set, step 2
+  const UNDECLARED_URL = "https://example.com/";           // declared nowhere, ever
+
+  const PROBES = [
+    {
+      id: "connect",
+      asks: "Does a declared connectDomains origin actually reach the network from this widget?",
+      target: () => "https://api.github.com/zen",
+      expect: "reachable",
+      async run() {
+        const r = await reach("https://api.github.com/zen");
+        return { ok: reached(r), detail: `${r.verdict} — ${r.detail}` };
+      },
+    },
+    {
+      id: "connect-loopback",
+      asks: "Will an https widget reach this engine's own http loopback viewer? The cell that decides whether a local OSS install can talk to itself.",
+      target: () => loopbackOrigin() + "/healthz",
+      expect: "reachable (opaque is a pass — /healthz refuses foreign origins server-side)",
+      async run() {
+        const url = loopbackOrigin() + "/healthz";
+        const r = await reach(url);
+        const extra = r.verdict === "error"
+          ? " · a loopback target that fails with NO violation is most often Private Network Access or mixed content, not CSP — check the console"
+          : "";
+        return { ok: reached(r), detail: `${r.verdict} — ${r.detail}${extra} [${url}]` };
+      },
+    },
+    {
+      id: "resource",
+      asks: "Is a declared resourceDomains origin honoured for an <img>?",
+      target: () => IMG_URL,
+      expect: "loads",
+      async run() {
+        const mark = sinceMark();
+        const img = document.createElement("img");
+        const done = new Promise((resolve) => {
+          img.onload = () => resolve({ loaded: true, w: img.naturalWidth, h: img.naturalHeight });
+          img.onerror = () => resolve({ loaded: false });
+          setTimeout(() => resolve({ loaded: false, timeout: true }), 12000);
+        });
+        img.src = IMG_URL + "?probe=" + Date.now();
+        mountOffscreen(img);
+        const out = await done;
+        await tick(80);
+        const v = newViolations(mark, "https://raw.githubusercontent.com");
+        img.remove();
+        if (out.loaded) return { ok: true, detail: `loaded, ${out.w}×${out.h}px` };
+        if (v.length) return { ok: false, detail: `csp-blocked — ${v[0].directive} blocked ${v[0].blocked}` };
+        return { ok: false, detail: out.timeout ? "no load and no error within 12s" : "error event, no CSP violation reported — NOT a CSP reading (network, 404, or a proxy)" };
+      },
+    },
+    {
+      id: "frame",
+      asks: "Is a declared frameDomains origin honoured for a nested <iframe>?",
+      target: () => FRAME_URL,
+      expect: "frames (a cross-origin document, not about:blank)",
+      async run() {
+        const mark = sinceMark();
+        const fr = document.createElement("iframe");
+        fr.setAttribute("referrerpolicy", "no-referrer");
+        const done = new Promise((resolve) => {
+          fr.onload = () => resolve("load");
+          fr.onerror = () => resolve("error");
+          setTimeout(() => resolve("timeout"), 12000);
+        });
+        fr.src = FRAME_URL;
+        mountOffscreen(fr);
+        const ev = await done;
+        await tick(120);
+        const v = newViolations(mark, "https://www.youtube-nocookie.com");
+        const box = fr.getBoundingClientRect();
+        // A BLOCKED frame still fires `load` — it loads about:blank, which is same-origin and
+        // therefore readable. A frame that really navigated cross-origin throws on the same read.
+        // So the exception IS the pass, and `load` alone proves nothing.
+        let crossOrigin = false, seen = "";
+        try { seen = String(fr.contentWindow.location.href); } catch (e) { crossOrigin = true; seen = "(cross-origin: " + e.name + ")"; }
+        fr.remove();
+        if (v.length) return { ok: false, detail: `csp-blocked — ${v[0].directive} blocked ${v[0].blocked}` };
+        if (crossOrigin && box.width > 0 && box.height > 0) return { ok: true, detail: `${ev}; cross-origin document; box ${Math.round(box.width)}×${Math.round(box.height)}` };
+        return { ok: false, detail: `${ev}; contentWindow.location=${seen}; box ${Math.round(box.width)}×${Math.round(box.height)} — no violation was reported, so the host may have dropped the frame silently` };
+      },
+    },
+    {
+      id: "function-fetch",
+      asks: "Does the app's own engine-side function reach the network? The first pipe: an MCP call, no declaration, no host involvement.",
+      target: () => "oma.callFunction(net_probe) → https://api.github.com/zen",
+      expect: "reachable on EVERY host",
+      async run() {
+        let ack;
+        try { ack = await oma.callFunction("net_probe", {}); } catch (e) { return { ok: false, detail: "threw: " + e.message }; }
+        if (!ack || ack.ok !== true) return { ok: false, detail: "refused: " + JSON.stringify(ack).slice(0, 220) };
+        const r = ack.result || {};
+        return { ok: r.ok === true, detail: `HTTP ${r.status} in ${r.ms}ms — "${String(r.text || "").replace(/\s+/g, " ").trim()}"` };
+      },
+    },
+    {
+      id: "which-meta",
+      asks: "Does the host read the csp on resources/LIST (a registration snapshot) or on resources/READ (live)? Two-step — see the README.",
+      target: () => `A ${A_URL}  ·  B ${B_URL}`,
+      expect: "A reachable; B reachable ⇒ read-time. A reachable, B not ⇒ list-time snapshot.",
+      async run() {
+        // Step 2 of the two-step is done OUTSIDE this app (`security_set`), so the probe cannot
+        // assume it happened — and a verdict that assumes it turns "you have not run step 2 yet"
+        // into "this host uses a registration snapshot", which is a wrong answer stated
+        // confidently. The engine will say: if B is not in what it relays, there is nothing for a
+        // host to have honoured and the only honest reading is "baseline".
+        const relayed = await relayedCsp();
+        const bOrigin = (() => { try { return new URL(B_URL).origin; } catch (e) { return B_URL; } })();
+        const bIsRelayed = relayed ? (relayed.connectDomains || []).includes(bOrigin) : null;
+        // The other half of the same refusal, and the one a reader is likeliest to walk into: doing
+        // step 2 and pressing Run without re-opening. The engine then says B is relayed while this
+        // document's policy still predates it, so B is refused — which is EXACTLY what a
+        // registration snapshot looks like. Two readings of the same question, taken at document
+        // creation and now; if they disagree, this document cannot answer it.
+        const fresh = relayed === null ? null : JSON.stringify(relayed);
+        if (mountRelayed != null && fresh != null && fresh !== mountRelayed) {
+          return { ok: false, detail: "POLICY CHANGED AFTER THIS DOCUMENT WAS CREATED — a document's CSP is fixed when it is created, so this one predates the change and cannot see it. "
+            + `Nothing about list-vs-read can be concluded. Re-open the app and run this again. At mount: ${mountRelayed} · now: ${fresh}` };
+        }
+        const a = await reach(A_URL);
+        const b = await reach(B_URL);
+        if (bIsRelayed === false) {
+          return { ok: false, detail: `STEP 1 BASELINE ONLY — the engine is not relaying ${bOrigin} yet, so step 2 (security_set) has not been done or has not reached it. `
+            + `Nothing about list-vs-read can be concluded from this row. A(declared)=${a.verdict}: ${a.detail} · B(not yet relayed)=${b.verdict}` };
+        }
+        const unknown = bIsRelayed === null ? " (app_html was unavailable, so whether B is relayed is unverified)" : "";
+        const verdict = reached(a) && reached(b) ? "both reachable ⇒ the host resolved csp at READ time — a user addition lands on the next open"
+          : reached(a) && !reached(b) ? "A only, and B IS being relayed ⇒ the host is using a snapshot taken when the resource was REGISTERED"
+          : !reached(a) && !reached(b) ? "neither ⇒ this host did not honour the declaration at all"
+          : "B only ⇒ unexpected; record it verbatim";
+        return { ok: reached(a) && reached(b), detail: `${verdict}${unknown} · A(declared)=${a.verdict}: ${a.detail} · B(added later)=${b.verdict}: ${b.detail}` };
+      },
+    },
+    {
+      id: "undeclared",
+      asks: "Is an origin nobody declared refused? The control group — if this one gets through, the host is not enforcing declarations at all.",
+      target: () => UNDECLARED_URL,
+      expect: "BLOCKED. ok:true here means the fetch FAILED, which is the correct behaviour.",
+      async run() {
+        const r = await reach(UNDECLARED_URL);
+        const ok = r.verdict === "csp-blocked";
+        // The control group has exactly one way to lie, and it is worth ruling out here rather than
+        // trusting a reader to remember: on the open_app door the host is handed the union of every
+        // app in the store plus the user's global rows, so "undeclared" may not be undeclared at
+        // all in this particular store. Ask the engine instead of asking the reader.
+        const relayed = await relayedCsp();
+        const origin = (() => { try { return new URL(UNDECLARED_URL).origin; } catch (e) { return UNDECLARED_URL; } })();
+        const inUnion = relayed ? (relayed.connectDomains || []).includes(origin) : null;
+        const gloss = ok ? "correctly refused"
+          : r.verdict === "error" ? "failed WITHOUT a CSP violation — inconclusive, not evidence of enforcement"
+          : inUnion === true ? `REACHED, but ${origin} IS in what the engine relayed for this app — this row measures nothing; clear that policy row and take it again`
+          : inUnion === false ? "REACHED an origin the engine did not relay — this host is not enforcing the declaration"
+          : "REACHED, and app_html was unavailable so the relayed set is unverified — treat as inconclusive";
+        return { ok, detail: `${r.verdict} — ${gloss}; ${r.detail}` };
+      },
+    },
+    // The last two ask a different question from the seven above. Those seven ask whether a host
+    // honours a declaration. These ask about capabilities NOTHING CAN DECLARE: `McpUiResourceCsp`
+    // has four keys and all four are lists of domains, so there is no spelling — in the spec or in
+    // this engine — for "this app needs a Worker" or "this app needs WebAssembly". Whatever the
+    // policy on the document happens to say about them, an app gets, and nobody asked.
+    //
+    // Which makes the LAYER the interesting part: run these in this engine's own viewer first
+    // (that policy is ours — see runnerCspFor/viewCspFor, whose floor today has no `worker-src` and
+    // no `'wasm-unsafe-eval'`), then in the host (that policy is the host's). Same probe, two
+    // answers, and the difference is the finding.
+    {
+      id: "worker",
+      asks: "Can this app start a Web Worker from a blob: URL? PDF.js, Perspective and every other off-main-thread library needs exactly this.",
+      target: () => "new Worker(URL.createObjectURL(new Blob([…])))",
+      expect: "in our own viewer: BLOCKED (no worker-src; script-src 'unsafe-inline' does not cover blob:)",
+      async run() {
+        const mark = sinceMark();
+        let url = null, w = null;
+        try {
+          url = URL.createObjectURL(new Blob(["self.postMessage('worker-alive')"], { type: "text/javascript" }));
+          w = new Worker(url);
+        } catch (e) {
+          await tick(80);
+          const v = newViolations(mark, null);
+          if (url) URL.revokeObjectURL(url);
+          return { ok: false, detail: v.length
+            ? `csp-blocked at construction — ${v[0].directive} blocked ${v[0].blocked || "blob:"}`
+            : `the constructor threw with NO CSP violation reported, so this is not a CSP reading: ${e.name}: ${e.message}` };
+        }
+        const out = await new Promise((resolve) => {
+          w.onmessage = (e) => resolve({ alive: true, msg: String(e.data) });
+          w.onerror = (e) => resolve({ alive: false, msg: (e && e.message) || "error event" });
+          setTimeout(() => resolve({ alive: false, msg: "no message and no error within 6s" }), 6000);
+        });
+        await tick(80);
+        const v = newViolations(mark, null);
+        try { w.terminate(); } catch (e) { /* already dead */ }
+        URL.revokeObjectURL(url);
+        if (out.alive) return { ok: true, detail: `the worker started and answered: "${out.msg}"` };
+        return { ok: false, detail: v.length
+          ? `csp-blocked — ${v[0].directive} blocked ${v[0].blocked || "blob:"}`
+          : `${out.msg} — no CSP violation reported` };
+      },
+    },
+    {
+      id: "wasm",
+      asks: "Can this app compile WebAssembly? Nothing in manifest.csp can ask for it — the spec's four keys are all domain lists.",
+      target: () => "WebAssembly.instantiate(<the 8-byte empty module>)",
+      expect: "in our own viewer: BLOCKED (script-src carries no 'wasm-unsafe-eval')",
+      async run() {
+        if (typeof WebAssembly === "undefined") return { ok: false, detail: "WebAssembly is not defined in this document at all" };
+        const mark = sinceMark();
+        try {
+          const mod = await WebAssembly.instantiate(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0]));
+          return { ok: !!(mod && mod.instance), detail: "the empty module compiled and instantiated" };
+        } catch (e) {
+          await tick(80);
+          const v = newViolations(mark, null);
+          return { ok: false, detail: v.length
+            ? `csp-blocked — ${v[0].directive} refused the compile (blocked: ${v[0].blocked || "wasm-eval"})`
+            : `${e.name}: ${e.message} — no CSP violation reported, so this is not a CSP reading` };
+        }
+      },
+    },
+  ];
+
+  function mountOffscreen(el) { document.getElementById("offscreen").appendChild(el); }
+
+  // ── writing a reading down ────────────────────────────────────────────────────────────────────
+  // The row IS the deliverable: a widget is gone the moment the conversation scrolls, and a
+  // screenshot cannot be diffed. Rows are append-only on purpose — a second run in the same host
+  // is a second reading, not a correction of the first.
+  async function record(probe, ok, detail) {
+    const host = document.getElementById("hostKey").value || "other";
+    const door = document.getElementById("doorKey").value || "unknown";
+    try {
+      await oma.addItem({
+        group: host,
+        fields: { probe, ok: !!ok, detail: String(detail).slice(0, 900), at: new Date().toISOString(), host, door },
+      });
+    } catch (e) {
+      console.error("[host-csp-probe] could not write the reading", e);
+      note(probe, { state: "done", ok: false, detail: "COULD NOT WRITE THE ROW (the reading is lost when this widget goes): " + e.message });
+    }
+  }
+
+  // The environment row. Not a probe — the context every probe reading has to be read against, and
+  // the only place the host's own policy string is ever captured.
+  async function recordEnv() {
+    const csp = await relayedCsp();
+    const merged = csp === null ? "(app_html unavailable — this app may not be installed as local)" : JSON.stringify(csp);
+    document.getElementById("engineCsp").textContent = merged;
+    const bits = [
+      "door-evidence=" + detected.evidence,
+      "engine-host-label=" + (oma.state && oma.state.host),
+      "hostContext.platform=" + ((window.__OMA_HOST_CONTEXT__ || {}).platform || "?"),
+      "hostContext.displayMode=" + ((window.__OMA_HOST_CONTEXT__ || {}).displayMode || "?"),
+      "page-origin=" + location.origin,
+      "viewBase=" + (oma.viewBase || "?"),
+      "engine-relayed-csp=" + merged,
+      "host-enforced-csp=" + (hostPolicy || "(nothing blocked yet)"),
+      "ua=" + navigator.userAgent.slice(0, 140),
+    ];
+    await record("env", true, bits.join(" | "));
+    return merged;
+  }
+
+  // ── ui ────────────────────────────────────────────────────────────────────────────────────────
+  const results = new Map();   // id → {state:"running"|"done", ok, detail}
+
+  function note(id, entry) {
+    results.set(id, entry);
+    paintProbes();
+  }
+
+  function paintProbes() {
+    const host = document.getElementById("probes");
+    host.innerHTML = "";
+    for (const p of PROBES) {
+      const card = document.createElement("div");
+      card.className = "k-card probe";
+      const left = document.createElement("div");
+      const name = document.createElement("div");
+      name.className = "name";
+      name.textContent = p.id;
+      const asks = document.createElement("div");
+      asks.className = "asks";
+      asks.textContent = p.asks;
+      const target = document.createElement("div");
+      target.className = "target";
+      target.textContent = p.target();
+      left.append(name, asks, target);
+      const r = results.get(p.id);
+      if (r) {
+        const d = document.createElement("div");
+        d.className = "detail";
+        d.textContent = r.detail;
+        left.appendChild(d);
+      }
+      const side = document.createElement("div");
+      side.className = "side";
+      const badge = document.createElement("span");
+      const phase = !r ? "idle" : r.state;
+      badge.className = "k-badge " + (phase === "idle" ? "" : phase === "running" ? "info" : r.ok ? "ok" : "bad");
+      badge.textContent = phase === "idle" ? "not run" : phase === "running" ? "running…" : r.ok ? "pass" : "fail";
+      const btn = document.createElement("button");
+      btn.className = "k-btn sec";
+      btn.type = "button";
+      btn.disabled = phase === "running";
+      btn.textContent = "Run";
+      btn.addEventListener("click", () => runOne(p));
+      const exp = document.createElement("span");
+      exp.className = "expect";
+      exp.textContent = p.expect;
+      side.append(badge, btn, exp);
+      card.append(left, side);
+      host.appendChild(card);
+    }
+  }
+
+  async function runOne(p) {
+    // EVERY run re-asks the engine. The cache exists so one press does not ask four times, not so
+    // that a reading can be taken against a stale answer — and the reading that suffers is the one
+    // that matters: a policy row added between two presses would otherwise be invisible, and
+    // which-meta would report "step 2 not done" to somebody who had just done it.
+    relayedCache = undefined;
+    note(p.id, { state: "running", detail: "…" });
+    let out;
+    try { out = await p.run(); } catch (e) { out = { ok: false, detail: "probe threw: " + (e && e.message) }; }
+    note(p.id, { state: "done", ok: out.ok, detail: out.detail });
+    await record(p.id, out.ok, out.detail);
+  }
+
+  async function runAll() {
+    const btn = document.getElementById("runAll");
+    btn.disabled = true;
+    btn.textContent = "Running…";
+    relayedCache = undefined;   // a run always re-asks the engine; a policy row may have been added since the last one
+    try {
+      await recordEnv();
+      for (const p of PROBES) await runOne(p);
+      // The policy the host enforced is usually only learnable AFTER something was refused, so the
+      // environment row gets a second pass once every probe has had its chance to trip one.
+      if (hostPolicy) await record("env", true, "host-enforced-csp=" + hostPolicy);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = "Run all";
+    }
+  }
+
+  function paintLog(state) {
+    const log = document.getElementById("log");
+    const empty = document.getElementById("empty");
+    const items = (state.items || []).slice().sort((a, b) => String((b.fields || {}).at || "").localeCompare(String((a.fields || {}).at || "")));
+    log.innerHTML = "";
+    empty.hidden = items.length > 0;
+    for (const it of items.slice(0, 60)) {
+      const f = it.fields || {};
+      const row = document.createElement("div");
+      row.className = "k-li";
+      const who = document.createElement("span");
+      who.className = "who";
+      who.textContent = (f.host || "?") + " · " + (f.door || "?");
+      const what = document.createElement("span");
+      what.className = "what";
+      what.textContent = f.probe || "?";
+      const why = document.createElement("span");
+      why.className = "why";
+      why.title = String(f.detail || "");
+      why.textContent = String(f.detail || "");
+      const badge = document.createElement("span");
+      badge.className = "k-badge " + (f.probe === "env" ? "info" : f.ok ? "ok" : "bad");
+      badge.textContent = f.probe === "env" ? "context" : f.ok ? "pass" : "fail";
+      row.append(who, what, why, badge);
+      log.appendChild(row);
+    }
+  }
+
+  function fillSelect(el, values, current) {
+    el.innerHTML = "";
+    for (const v of values) {
+      const o = document.createElement("option");
+      o.value = v;
+      o.textContent = v;
+      if (v === current) o.selected = true;
+      el.appendChild(o);
+    }
+  }
+
+  const hostSel = document.getElementById("hostKey");
+  const doorSel = document.getElementById("doorKey");
+  const loopEl = document.getElementById("loopback");
+
+  // A remembered pick, because the host does not change between runs and re-choosing it every time
+  // is how a row ends up labelled with the last host you tested.
+  const remember = (key, value) => { try { oma.setPref(key, value); } catch (e) { /* a host that refuses prefs still gets readings */ } };
+  hostSel.addEventListener("change", () => remember("host_key", hostSel.value));
+  loopEl.addEventListener("change", () => remember("loopback_origin", loopEl.value.trim()));
+  document.getElementById("runAll").addEventListener("click", runAll);
+
+  oma.ready((state) => {
+    if (oma.standalone) document.body.classList.add("standalone");
+    const savedHost = String(oma.pref("host_key", "") || "");
+    fillSelect(hostSel, HOST_KEYS, savedHost || (detected.value === "browser-viewer" ? "browser-viewer" : "other"));
+    fillSelect(doorSel, DOOR_KEYS, detected.value);
+    loopEl.value = String(oma.pref("loopback_origin", "") || "");
+    loopEl.placeholder = loopbackOrigin();
+    paintProbes();
+    paintLog(state);
+    showRelayed();
+  });
+  oma.onChange((state) => paintLog(state));
+
+  // At mount we only READ the merged policy (no row) — a row per mount would bury the readings.
+  async function showRelayed() {
+    const csp = await relayedCsp();
+    if (mountRelayed === undefined) mountRelayed = csp === null ? null : JSON.stringify(csp);
+    document.getElementById("engineCsp").textContent = csp === null
+      ? "app_html refused or is unavailable here — install this app as local (install-app.mjs without --sandboxed) if you want this panel"
+      : JSON.stringify(csp);
+  }
+</script>
+</body>
+</html>

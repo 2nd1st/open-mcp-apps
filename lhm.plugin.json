@@ -2,7 +2,7 @@
   "identifier": "2nd1st-open-mcp-apps",
   "name": "open-mcp-apps",
   "description": "Give your AI a persistent, reusable UI — it builds the app once, you keep it forever. An open MCP App engine.",
-  "version": "0.5.9",
+  "version": "0.6.0",
   "homepage": "https://github.com/2nd1st/open-mcp-apps#readme",
   "author": "2nd1st",
   "tags": [

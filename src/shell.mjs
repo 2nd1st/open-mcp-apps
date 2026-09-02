@@ -275,6 +275,13 @@ oma.ready(async (state) => {
     if (sc.tier == null || sc.tier === "local") {
       // Identity for the runtime's broken-mount notice: on this loader path the runtime module
       // has already evaluated, so the global is simply read later at error time.
+      //
+      // NOTE, for anyone chasing "my app declared connectDomains and still cannot fetch": a local
+      // app mounts HERE, in this document, and this document's network policy is whatever the host
+      // set from the LOADER resource's _meta — which serves every app and therefore carries the
+      // UNION of every app's declaration (src/tools/apps.mjs, the loader registration; Leo
+      // 2026-08-16). So a declared origin is reachable here on hosts that honour that _meta — and
+      // a host that cached the loader picks a new declaration up on its next read, not mid-session.
       window.__OMA_APP__ = name;
       return mount(sc.html);
     }
@@ -284,6 +291,10 @@ oma.ready(async (state) => {
       html: sc.html,
       caps: sc.caps || {},
       tier: sc.tier,
+      // Handed down with the rest of what this fetch already answered (embed would otherwise
+      // re-ask). It sets the CHILD's ceiling; the host's policy on this document is still the
+      // outer wall, and a srcdoc frame inherits it.
+      csp: sc.csp || null,
       collection: sc.collection || state.collection || name,
     });
   } catch (e) { show("Failed to load app: " + (e && e.message ? e.message : e)); }
@@ -303,19 +314,71 @@ oma.ready(async (state) => {
  *  declares no stage keeps a byte-identical document.
  *
  *  Three body shapes exist in the wild and all three are handled: `<body>`, `<body class="x">`
- *  (quoted or not) and `<body data-…>`. Only the FIRST match is rewritten, the same naive-but-
- *  consistent assumption wrapApp already makes about `<head>` below: a document whose first
- *  `<body` is inside a script string is a document whose first `<head` is too. */
+ *  (quoted or not) and `<body data-…>`. Only the first is rewritten — but "first" means the first
+ *  ELEMENT, not the first occurrence of the characters.
+ *
+ *  THAT DISTINCTION IS A REAL BUG, MEASURED 2026-08-16. An app built outside the chat has its
+ *  bundle inlined into this document before it is stamped, and a bundler puts its script in
+ *  <head> — so the first `<body` in the served bytes was a STRING INSIDE THE BUNDLE, and stamping
+ *  rewrote it. React's development build contains the words `<body>` in an error message; the
+ *  served app died with `missing ) after argument list` and rendered a blank card. The scan that
+ *  fixes it is firstTag below — shared with wrapApp, which had the identical bug on `<head>`.
+ *
+ *  IDEMPOTENT, because the seams stamp the TEMPLATE and wrapApp stamps again on its way out: an
+ *  app whose body already carries this exact class comes back byte-identical rather than wearing
+ *  it twice. Two calls, one class — which is what makes the correct order safe to adopt without
+ *  making the wrapApp option a trap for anyone who does it the other way. */
 const STAGE_WIDTHS = new Set(["column", "wide", "fluid"]);
+
+// ─────────────────────────────────────────────────────────── one scanner, three consumers
+/** The first `<name …>` START TAG in a document — the ELEMENT, not the characters.
+ *
+ *  Whole `<script>` and `<style>` elements are alternatives ahead of the tag itself, so a match
+ *  inside script or style TEXT is consumed as part of that element and never returned. That is the
+ *  same idiom assets.mjs's TAG_RE already uses, and it is here because this repo has now been bitten
+ *  by the naive version twice, in two different consumers, by the same bundle:
+ *
+ *    · stampStage rewrote a `<body>` that lived inside React's development build (its error text
+ *      says "<body>"), which terminated a string literal — `missing ) after argument list`, dead app.
+ *    · wrapApp injected the ENTIRE shell at the first `<head>`, which for a FRAGMENT template — the
+ *      shape RUNTIME.md §6.1 prints — is also inside that bundle: measured, the shell landed at byte
+ *      846,769 of a 1.5 MB document, `Invalid or unexpected token`, blank card.
+ *
+ *  An app's own markup and a bundle's string literals are not the same kind of thing, and one
+ *  scanner that knows the difference is cheaper than remembering to at every call site.
+ *
+ *  Not for finding a `<script>` (the alternation would eat it) — for the structural tags only,
+ *  which is every use there is: body, head, html. */
+const TAG_SCANNERS = new Map();
+export function firstTag(html, name) {
+  let re = TAG_SCANNERS.get(name);
+  if (!re) {
+    re = new RegExp(`<script\\b[^>]*>[\\s\\S]*?<\\/script\\s*>|<style\\b[^>]*>[\\s\\S]*?<\\/style\\s*>|<${name}\\b([^>]*)>`, "gi");
+    TAG_SCANNERS.set(name, re);
+  }
+  const src = String(html ?? "");
+  re.lastIndex = 0;
+  let m;
+  while ((m = re.exec(src)) !== null) {
+    if (m[1] === undefined) continue;            // a script/style element — stepped over
+    return { start: m.index, end: m.index + m[0].length, attrs: m[1], tag: m[0] };
+  }
+  return null;
+}
+
 export function stampStage(html, width) {
   if (!width || !STAGE_WIDTHS.has(width)) return html;
   const cls = `stage-${width}`;
-  return html.replace(/<body\b([^>]*)>/i, (m, attrs) => {
-    const q = attrs.match(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
-    if (!q) return `<body class="${cls}"${attrs}>`;
-    const cur = q[1] ?? q[2] ?? q[3] ?? "";
-    return `<body${attrs.replace(q[0], ` class="${(cur + " " + cls).trim()}"`)}>`;
-  });
+  const src = String(html ?? "");
+  const at = firstTag(src, "body");
+  if (!at) return src;
+  const q = at.attrs.match(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
+  const cur = q ? (q[1] ?? q[2] ?? q[3] ?? "") : "";
+  if (new RegExp(`(?:^|\\s)${cls}(?:\\s|$)`).test(cur)) return src;   // already stamped
+  const tag = q
+    ? `<body${at.attrs.replace(q[0], ` class="${(cur + " " + cls).trim()}"`)}>`
+    : `<body class="${cls}"${at.attrs}>`;
+  return src.slice(0, at.start) + tag + src.slice(at.end);
 }
 
 // JSON destined for an inline <script> block: escape "<" so a string that came from a URL
@@ -434,12 +497,15 @@ export function wrapApp(appHtml, opts = {}) {
 
   // Put the shell BEFORE the app's own markup/scripts so window.oma exists first
   // (module scripts execute in document order).
-  if (/<head[^>]*>/i.test(staged)) {
-    return staged.replace(/<head[^>]*>/i, (m) => m + "\n" + inject);
-  }
-  if (/<html[^>]*>/i.test(staged)) {
-    return staged.replace(/<html[^>]*>/i, (m) => m + "\n<head>" + inject + "</head>");
-  }
+  //
+  // firstTag, not a bare regex, and for the reason written above it: by here the app's assets are
+  // already INLINED, so "the first <head>" over raw characters can be a string inside a bundle.
+  // Measured on the §6.1 fragment shape + React's dev build — the whole shell went into the middle
+  // of a JS string literal and the app never parsed.
+  const head = firstTag(staged, "head");
+  if (head) return staged.slice(0, head.end) + "\n" + inject + staged.slice(head.end);
+  const htmlTag = firstTag(staged, "html");
+  if (htmlTag) return staged.slice(0, htmlTag.end) + "\n<head>" + inject + "</head>" + staged.slice(htmlTag.end);
   // Fragment: build a full document around it — the body tag is ours, so it is stamped here.
   const cls = opts.stage && STAGE_WIDTHS.has(opts.stage) ? ` class="stage-${opts.stage}"` : "";
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body${cls}>${staged}</body></html>`;

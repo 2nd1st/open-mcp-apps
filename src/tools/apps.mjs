@@ -8,9 +8,9 @@
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "../mcp-apps.mjs";
-import { LOADER } from "../cache-hints.mjs";
-import { APP_NAME_RE } from "../store.mjs";
+import { APP_NAME_RE, cspFor, cspUnion } from "../store.mjs";
 import { wrapApp, wrapLoader, stampStage } from "../shell.mjs";
+import { resolveAssets, appAssetReader, hasAssetReferences } from "../assets.mjs";
 import { GUIDE, guideChapter } from "../guide.mjs";
 import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor, answer, toMcp, textWindow } from "../contracts.mjs";
 import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
@@ -61,7 +61,21 @@ const saveAckSchema = {
 };
 
 export function register(ctx) {
-  const { server, store, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
+  const { server, store, fileChannel, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
+
+  // ONE of the three serve-time seams' shared step: a stored `ui` becomes a DOCUMENT here, and a
+  // document may carry no external subresource (the widget CSP forbids it, and a host iframe cannot
+  // reach this machine anyway), so an app built outside the chat has its bundle inlined on the way
+  // out. An app with no `oma-asset:` reference passes through byte-identical.
+  //
+  // THE STAGE CLASS IS WRITTEN FIRST, on the TEMPLATE, and that order is the whole point of doing
+  // it here rather than at each seam: the class belongs on the app's OWN <body>, which is a tag
+  // the template has and the bundle merely mentions. Stamping afterwards meant scanning bytes the
+  // app never wrote (measured: React's dev build says "<body>" in an error string and got it
+  // rewritten, killing the app). stampStage is idempotent, so wrapApp's own stamp downstream is a
+  // no-op rather than a second class.
+  const serveUi = (comp) =>
+    resolveAssets(stampStage(comp.ui, stageWidthFor(comp)), appAssetReader(fileChannel, comp.name));
 
   // A real, clickable URL for the HUMAN, produced only when this engine actually has a viewer to
   // link to. Bare stdio has none and prints none — the same rule list_apps already follows, and for
@@ -80,29 +94,56 @@ export function register(ctx) {
 
 
   // ---------------------------------------------------------------- widget security declaration
-  // What a host should let this widget reach. Ours reaches NOTHING: every shipped app is a
-  // self-contained document (verified 2026-07-28 — zero absolute URLs across all 19 apps and
-  // the runtime), so the honest declaration is also the strictest one there is, and it turns "we
-  // are self-contained" from a claim in a README into a machine-readable one on the wire.
+  // What a host should let this widget reach. The engine does not decide that — the APP declares
+  // where it needs to reach (manifest.csp) and the user may add origins of their own
+  // (settings `policy:csp:<app>` / `policy:csp:*`); store.cspFor merges the two and this shapes the
+  // merge for the wire. Enforcement belongs to the host, per the MCP Apps spec; the OSS engine sets
+  // no egress ceiling of its own (Leo, 2026-08-16).
   //
-  //   · frameDomains is DELIBERATELY not declared. Omitted means frame-src 'none', and declaring it
-  //     invites a stricter review for a capability we do not want. Our nested previews are `srcdoc`
-  //     iframes, which are unaffected — measured, not assumed: a srcdoc child with
-  //     sandbox="allow-scripts" loads normally under frame-src 'none' in Chrome.
+  // An app that declares nothing reaches NOTHING, and that is still every app we ship: all of them
+  // are self-contained documents (verified 2026-07-28 — zero absolute URLs across the whole store
+  // and the runtime), so the honest declaration is also the strictest one there is, and it turns
+  // "we are self-contained" from a claim in a README into a machine-readable one on the wire.
+  //
+  //   · connectDomains / resourceDomains are ALWAYS present, empty array and all. They have been on
+  //     the wire since this declaration existed, an empty allowlist is a positive statement ("this
+  //     app reaches nothing") rather than an absent one, and a ChatGPT reviewer reads the listing at
+  //     connection time. frameDomains / baseUriDomains appear only when declared: omitted means
+  //     `frame-src 'none'` / `base-uri 'self'`, which is what we want by default, and declaring an
+  //     empty frameDomains invites a stricter review for a capability the app did not ask for.
+  //     Our own nested previews are `srcdoc` iframes, which are unaffected — measured, not assumed:
+  //     a srcdoc child with sandbox="allow-scripts" loads normally under frame-src 'none' in Chrome.
   //   · redirect_domains carries the viewer origin when there IS one, because oma.openLink sends
   //     the user there (the Browse button). It is per-deployment, so it is derived, never a literal.
   //   · The snake_case `openai/widgetCSP` twin is ChatGPT's documented compatibility key; its own
   //     reference says the standard fields are superseded by _meta.ui.csp but redirect_domains is
-  //     still read from the legacy key, so both are sent and they agree.
+  //     still read from the legacy key, so both are sent and they agree. It has only the two fields
+  //     ChatGPT documents — frameDomains/baseUriDomains get no snake_case twin invented for them.
   const viewerOrigin = (() => {
     try { return viewBase && /^https?:\/\//.test(viewBase) ? new URL(viewBase).origin : null; } catch { return null; }
   })();
   const redirects = viewerOrigin ? [viewerOrigin] : [];
-  const UI_SECURITY = {
-    ui: { csp: { connectDomains: [], resourceDomains: [] }, ...(widgetDomain ? { domain: widgetDomain } : {}) },
-    "openai/widgetCSP": { connect_domains: [], resource_domains: [], ...(redirects.length ? { redirect_domains: redirects } : {}) },
+  /** The `_meta` a host reads, for one app's merged declaration ({} = declares nothing). */
+  const uiSecurityFor = (csp = {}) => ({
+    ui: {
+      csp: {
+        connectDomains: csp.connectDomains || [],
+        resourceDomains: csp.resourceDomains || [],
+        ...(csp.frameDomains?.length ? { frameDomains: csp.frameDomains } : {}),
+        ...(csp.baseUriDomains?.length ? { baseUriDomains: csp.baseUriDomains } : {}),
+      },
+      ...(widgetDomain ? { domain: widgetDomain } : {}),
+    },
+    "openai/widgetCSP": {
+      connect_domains: csp.connectDomains || [],
+      resource_domains: csp.resourceDomains || [],
+      ...(redirects.length ? { redirect_domains: redirects } : {}),
+    },
     ...(widgetDomain ? { "openai/widgetDomain": widgetDomain } : {}),
-  };
+  });
+  // The app-agnostic one: the universal loader serves every app from a single URI, so there is no
+  // app whose declaration it could carry (see the loader's registration below).
+  const UI_SECURITY = uiSecurityFor();
   // ---------------------------------------------------------- dynamic app wiring
   // ⚠️ E12 — do not turn this on without re-reading this paragraph. Beyond the per-tool budget,
   // registering a tool per app means the tool list CHANGES whenever save_app runs, and
@@ -140,15 +181,26 @@ export function register(ctx) {
 
     // No cacheHint: the SDK default ({ttlMs: 0, cacheScope: "private"}) IS the store-derived
     // answer — stated once in cache-hints.mjs, inherited here rather than restated (elegance A18).
-    registerAppResource(server, `app-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: UI_SECURITY }, async () => {
+    //
+    // Two copies of this app's declaration, and they answer different questions. The one in the
+    // REGISTRATION is what resources/list shows — a boot-time snapshot, because registration happens
+    // once (`registered.has` returns early forever after) while save_app and security_set keep
+    // writing. The one inside the callback is computed per READ, so the answer a host acts on is
+    // never stale. Listing-then-reading can therefore show two values for an app whose declaration
+    // changed mid-session; the read is the authority, and re-registering the resource to keep the
+    // listing fresh would mean a resources/list_changed storm on every save.
+    registerAppResource(server, `app-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspFor(store.getApp(name), store)) }, async () => {
       const comp = store.getApp(name);
       if (!comp) throw new Error(`app ${name} not found`);
+      const security = uiSecurityFor(cspFor(comp, store));
       // Tier gate (docs/security-model.md §2.3): this per-app resource serves DIRECT mode
       // (wrapApp = the real window.oma, full trust) and has no runner branch — the loader's
       // tier branch (shell.mjs, via oma.embed) covers only the open_app path. Non-local tiers
       // fail closed to the placeholder; every app today is local, so nothing changes until one isn't.
+      // The placeholder carries the SAME declaration the real document would: what an app may reach
+      // is a property of the app, not of which of its two bodies got served.
       if (tierOf(comp.author) !== "local")
-        return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: RUNNER_REQUIRED_HTML, _meta: UI_SECURITY }] };
+        return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: RUNNER_REQUIRED_HTML, _meta: security }] };
       // The binding rides IN the document: Claude Desktop's dynamic-tools mode delivers neither
       // toolinput nor a collection through its pushes (live-test 2026-07-28, writes bounced as
       // collection:null), and this resource knows its app at serve time — the one place
@@ -157,7 +209,7 @@ export function register(ctx) {
       // opaque origin and cannot derive it. It is what makes the system badge's "Open in browser"
       // exist (and oma.viewBase absolute) inside a host; an engine without a viewer stamps
       // nothing, and the item is not drawn (D-13 ②).
-      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(comp.ui, { app: name, collection: defaultCollectionFor(comp), stage: stageWidthFor(comp), viewBase: viewRoot }), _meta: UI_SECURITY }] };
+      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(await serveUi(comp), { app: name, collection: defaultCollectionFor(comp), stage: stageWidthFor(comp), viewBase: viewRoot }), _meta: security }] };
     });
 
     if (!DYNAMIC_TOOLS) return;
@@ -207,18 +259,25 @@ export function register(ctx) {
   }
 
   // ------------------------------------------------- the universal opener (static tool)
-  // Loader cache scope, decided here because both inputs are knobs of THIS engine: public only
-  // while the document really is the same answer for everybody, and widgetDomain / the viewer
-  // redirect origin make it deployment-specific. Doctrine + the measured stg incident behind
-  // ttlMs: 0 live in cache-hints.mjs (LOADER).
-  // Deployment-derived security fields present ⇒ the answer is tenant-specific ⇒ OMIT the hint
-  // and inherit the SDK's private/zero default; only the truly-universal loader declares public.
-  // The two conditions still cover it now that the document itself may carry the viewer URL:
-  // `redirects` is non-empty on exactly the engines that stamp one, so a loader carrying a
-  // deployment's viewer base can never be the one declaring itself publicly cacheable.
-  const loaderHint = (widgetDomain || redirects.length) ? {} : { cacheHint: LOADER };
-  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, ...loaderHint, _meta: UI_SECURITY },
-    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader({ viewBase: viewRoot }), _meta: UI_SECURITY }] }));
+  // THE LOADER CARRIES THE UNION OF EVERY APP'S DECLARATION (Leo 2026-08-16, plan §7-8 option A).
+  // One resource serves every app, and `open_app`'s `_meta.ui.resourceUri` points HERE — the path
+  // every host takes by default — so no single app's manifest.csp could ride this `_meta`. It used
+  // to carry nobody's, which meant a declaration reached a host only through the opt-in
+  // `open_<name>` tools. Now the host is asked to allow the union (declared by any app ∪ the user's
+  // additions), computed PER READ from the store, and the runner child mounted inside the loader is
+  // narrowed to its own app by composeChildDoc — a srcdoc frame runs under parent ∩ own, so this
+  // outer wall has to be at least as wide as the widest app or the inner one means nothing. Two
+  // costs, both accepted: a local-tier app mounted same-document in the loader sees the union (it is
+  // trusted first-party code either way), and a host that caches the loader resource picks up a new
+  // declaration on its next read, not mid-session. A store with no declarations serves the 0.5.9
+  // bytes exactly. Making the loader per-app instead would mean a resource per app — the very thing
+  // E12 above measures as a prompt-cache wipe on every save.
+  //
+  // The registration-time `_meta` (what resources/list shows) is a snapshot; the read is live.
+  // And the LOADER cache hint is gone: its `public` scope held only while the answer was the same
+  // for everybody, and an answer derived from a store is by construction not.
+  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspUnion(store)) },
+    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader({ viewBase: viewRoot }), _meta: uiSecurityFor(cspUnion(store)) }] }));
 
   registerAppTool(
     server,
@@ -302,6 +361,12 @@ export function register(ctx) {
         // in the browser to find it, which meant two parsers over the same untrusted document and
         // two chances to disagree about what an app declared. One source, read once, at save.
         declaration: z.record(z.string(), z.any()).nullable().optional(),
+        // Where this app may reach, MERGED (its own manifest.csp ∪ the user's policy:csp rows).
+        // Declared here rather than smuggled through `declaration`, which carries what the app
+        // said and not what the user added: the loader builds the runner child's CSP meta from
+        // this, and a document composed from a key the schema does not list is a document nobody
+        // can audit. The merge lives in the engine because only the engine can see the settings.
+        csp: z.record(z.string(), z.array(z.string())).optional(),
       },
     },
     async (a) => {
@@ -316,8 +381,8 @@ export function register(ctx) {
       // (shell-runtime reads r.html), not the registry slot. The value is the ui slot.
       //
       // …carrying the stage class, because this is the loader's mount source and the loader is
-      // the third door onto the same document (the other two — /view and the per-app ui://
-      // resource — get it from wrapApp). Stamped in the BYTES rather than announced in a new
+      // the third door onto the same document (serveUi stamps it for all three, before the assets
+      // go in — see its comment for why that order matters). Stamped in the BYTES rather than in a
       // structuredContent key: the tool surface is resident context for every host on every
       // connection, and this is a rendering detail the model has no use for. `declaration` right
       // above already carries the manifest verbatim for anyone who wants to read the field
@@ -327,7 +392,11 @@ export function register(ctx) {
         structuredContent: { name: comp.name, version: comp.version, author: comp.author, tier,
           locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp),
           caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
-          html: stampStage(comp.ui, stageWidthFor(comp)) },
+          csp: cspFor(comp, store),
+          // …and its assets inlined, because this payload IS the document the loader mounts —
+          // the third serve-time seam, and the one every non-local tier also travels (the runner's
+          // child document is composed in the browser from exactly these bytes).
+          html: await serveUi(comp) },
       };
     },
   );
@@ -384,9 +453,14 @@ export function register(ctx) {
       // has been since the manifest split. The old name survived here alone, and JS answers a
       // missing property with `undefined` rather than an error — so every row printed
       // "(undefined chars, by …)" to the model, in every host, for every app.
+      // The function roster, at the ONLY altitude a registry listing can afford (R5, 2026-08-16):
+      // a COUNT, and only when there is one. Names and signatures are a per-app read
+      // (get_app {slot:"manifest"}) — putting them here would make the cheapest discovery call
+      // grow with every function anyone ever declares, and most apps declare none.
       const line = (c) => `- ${c.name} v${c.version} (${c.ui_size} chars, by ${c.author})` +
         (SEEDED_APPS.has(c.name) ? " [ships with the engine — not one of the user's apps]" : "") +
         ` — ${c.description || "no description"}` +
+        (c.fn_count > 0 ? ` · ${c.fn_count} function${c.fn_count === 1 ? "" : "s"}` : "") +
         // A REAL link, only when this engine actually has a viewer to link to (local http server /
         // hosted viewBase). Bare stdio has none, so it prints none — a URL that 404s teaches the
         // user this thing is broken, which is worse than no URL.
@@ -414,8 +488,14 @@ export function register(ctx) {
         : empty;
       // `locked` rides each row so the settings pane can tell fixed system UI apart without a
       // second tool (app_permissions retired 2026-08-04 — app_html carries the per-app caps).
+      // `functions` is ABSENT, not 0, on an app that declares none — absence is the honest shape
+      // for "this app has no function face", and it keeps the rows of a registry that uses no
+      // functions byte-identical to what they were before the field existed. (There is no
+      // outputSchema on this tool, deliberately: an optional field costs nothing resident, while
+      // declaring the row shape would put it in tools/list for every conversation forever.)
       return { content: [{ type: "text", text }], structuredContent: { total: all.length, shown: comps.length,
-        apps: comps.map((c) => ({ ...c, locked: LOCKED_APPS.has(c.name) })) } };
+        apps: comps.map(({ fn_count, ...c }) => ({ ...c, locked: LOCKED_APPS.has(c.name),
+          ...(fn_count > 0 ? { functions: fn_count } : {}) })) } };
     },
   );
 
@@ -543,6 +623,14 @@ export function register(ctx) {
           warnings.push("The ui never references the oma API — it will render but won't load or save any data.");
         if (/src\s*=\s*["']https?:|href\s*=\s*["']https?:|@import|fetch\s*\(/i.test(a.ui)) warnings.push("External URLs detected — the sandbox CSP blocks all external resources; the app may break. Inline everything.");
         if (/React\.createElement|ReactDOM|from\s+["']react["']|import\s+React|@babel\/standalone|text\/babel/.test(a.ui)) warnings.push("React/JSX/Babel detected — widgets have no React runtime or JSX compiler (this is not claude.ai Artifacts). Rewrite with vanilla DOM per get_app_guide.");
+        // A one-way door, said out loud at the moment it is walked through. An `oma-asset:`
+        // reference means "the source is elsewhere", and the engine takes that literally: from the
+        // next save on, edit_app and save_app both refuse this app. Writing one from here is legal
+        // (an app may genuinely want its data or a large script in a file) and is exactly the case
+        // where the author has no elsewhere to rebuild from — so it is worth a sentence, not a
+        // refusal. Free of resident bytes: a warning is result text, not tool surface.
+        if (hasAssetReferences(a.ui))
+          warnings.push("This ui references bundled assets (oma-asset:…), which marks the app as BUILT OUTSIDE this store — from now on edit_app and save_app both refuse it, and the only way to change it is install-app.mjs (--asset for the files). Inline the code instead if you meant to keep editing it here.");
       }
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
@@ -674,6 +762,16 @@ export function register(ctx) {
       }
       const comp = store.getApp(a.app);
       if (!comp) return fail(`No app "${a.app}". list_apps shows what exists.`);
+      // Built outside ⇒ no edits, from anyone, through this door. The store refuses an AGENT save
+      // over such an app (store.mjs save_app, `built_outside`) — but this tool's inputSchema carries
+      // cmdArgs, whose `actor` is caller-chosen, and it passes that value straight through. A gate
+      // that reads a forgeable field is not a gate, so the refusal here is UNCONDITIONAL, which is
+      // also what Leo's shape asks for: editing a template is never the way to change a built app,
+      // whoever is asking. Re-pushing is (install-app.mjs --update), and it is one command.
+      if (hasAssetReferences(comp.ui))
+        return fail(`"${a.app}" was built outside this store: its ui is a template that loads bundled assets ` +
+          `(oma-asset:…), so editing it here would desynchronise the template from the build that made it. ` +
+          `Source lives outside this store; rebuild and re-install with install-app.mjs. NOTHING was applied.`);
       // Telemetry wrapper: every exit path of the apply below records ONE line (the R1 tripwire
       // counts failures as first-class data — a structural-ambiguity error unrecorded is a
       // tripwire that can never fire). `tel` closes over the request's fixed facts.
@@ -867,7 +965,9 @@ export function register(ctx) {
         },
       },
       async (a) => {
-        const r = fnHost.call({
+        // await: the body runs on a worker thread (functions.mjs), so the executor answers on a
+        // promise even for a body that never awaits anything of its own.
+        const r = await fnHost.call({
           app: a.app, function: a.function, args: a.args,
           actor: a.actor || "agent", host: hostName(),
           command_id: a.command_id || randomUUID(),
@@ -876,9 +976,13 @@ export function register(ctx) {
           const wrote = r.writes.length
             ? ` — ${r.writes.length} write${r.writes.length === 1 ? "" : "s"} (${r.writes.map((w) => `${w.op} ${w.id}`).join(", ")})`
             : " — no writes";
+          // The return value rides the TEXT channel too (same-body doctrine, contracts.mjs): measured
+          // 2026-09-02 on claude.ai — the model is handed content[].text only, and a receipt that
+          // said "Ran fnprobe.egress — 2 writes" left it unable to see what the function returned.
+          const returned = r.result === null ? "" : ` → ${JSON.stringify(r.result)}`;
           return toMcp(answer.ack(
             { ok: true, ...(r.result === null ? {} : { result: r.result }), writes: r.writes },
-            `Ran ${a.app}.${a.function}${wrote}.`));
+            `Ran ${a.app}.${a.function}${returned}${wrote}.`));
         }
         const teach =
           r.error === "no_such_function"

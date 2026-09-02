@@ -432,5 +432,46 @@ console.log("3. one answer to \"what does this app open on\"");
     stale.map(([f, snip]) => `${f}: "${snip}" no longer matches an ungated call — gated now, or gone`).join("\n      "));
 }
 
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// 4. THE WIDGET BUNDLE ASKS ZOD NOT TO PROBE FOR eval — AND ASKS FIRST.
+//
+// zod v4 probes `new Function("")` in a try/catch before compiling an optimised validator. Under
+// the widget CSP (script-src 'unsafe-inline', deliberately no 'unsafe-eval') the probe throws,
+// zod swallows it, everything works — and the browser reports a securitypolicyviolation anyway,
+// in every app author's console, on every mount, before their code runs. `jitless` skips the
+// probe; nothing is lost, because the answer under this policy was always no.
+//
+// ORDER IS THE INVARIANT, not the presence of the file. `jit` is read when a schema is BUILT, and
+// @modelcontextprotocol/ext-apps builds its schemas while its module evaluates. Move the import
+// below that one and the setting arrives too late — with no error, no test failure anywhere else,
+// and the violation quietly back. That is exactly the kind of rule that only holds if a machine
+// enforces it, which is what this file is for.
+console.log("\n4. the widget bundle configures zod before ext-apps evaluates");
+{
+  const rt = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
+  const imports = [...rt.matchAll(/^import\s[^\n]*?["']([^"']+)["'];?\s*$/gm)].map((m) => m[1]);
+  const iJitless = imports.indexOf("./zod-jitless.js");
+  const iExtApps = imports.indexOf("@modelcontextprotocol/ext-apps");
+  ok("the scan found both imports (guard is not vacuous)", iJitless !== -1 && iExtApps !== -1,
+    `zod-jitless at ${iJitless}, ext-apps at ${iExtApps} — of ${imports.length} import(s)`);
+  ok("./zod-jitless.js is imported BEFORE @modelcontextprotocol/ext-apps",
+    iJitless !== -1 && iExtApps !== -1 && iJitless < iExtApps,
+    "modules evaluate in import order; after ext-apps the setting is read too late to matter");
+
+  const jl = readFileSync(join(ROOT, "src", "zod-jitless.js"), "utf-8");
+  ok("…and it actually sets jitless", /jitless:\s*true/.test(jl));
+
+  // The built artefact, when there is one: `npm run build` is what the served document carries,
+  // and a stale dist/ would serve the old behaviour no matter what the source says.
+  const dist = join(ROOT, "dist", "shell.js");
+  if (existsSync(dist)) {
+    const built = readFileSync(dist, "utf-8");
+    ok("the built dist/shell.js carries the setting", /jitless/.test(built),
+      "run `npm run build` — dist/ predates this source");
+  } else {
+    console.log("  – dist/shell.js absent (not built here) — source-order check stands alone");
+  }
+}
+
 console.log(`\ninvariants: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

@@ -18,8 +18,11 @@
 //
 // Bundled by build.mjs into dist/shell.js and inlined by shell.mjs when serving ui://.
 
+// FIRST, and the position is load-bearing — it silences the engine's own CSP eval violation by
+// configuring zod before ext-apps constructs the schemas that read the setting. See the file.
+import "./zod-jitless.js";
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
-import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, sansRequestState, withConfirmation, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, sansRequestState, withConfirmation, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
 import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
 
@@ -989,6 +992,11 @@ function embedLive(opts) {
         html: sc.html,
         caps: sc.caps || {},
         tier: sc.tier == null ? "local" : sc.tier,
+        // Same reason as caps: this brick already fetched app_html, so handing the merged network
+        // declaration down saves embed a second identical call. It is the FRAMED app's, not this
+        // wall's — a display shows whatever the AI opened last, and each of those apps reaches
+        // wherever it declared.
+        csp: sc.csp || null,
         // The binding the ENGINE computed, passed explicitly: embed's own default is the app
         // NAME, and an app whose rows live in a differently named collection would mount blank.
         collection: sc.collection || name,
@@ -1088,7 +1096,7 @@ window.oma = {
       omaNotify("⚠ No collection bound yet — try again in a moment.");
       return Promise.reject(new Error("no collection bound yet"));
     }
-    return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human", via: viaOf(compName()) });
+    return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   // Widget mutations are LAST-WRITE-WINS (no expected_version) — the same choice setPref makes and
   // for the same reason. A live widget is the user rapidly clicking their OWN UI; sending
@@ -1099,15 +1107,15 @@ window.oma = {
   // AI can still request OCC explicitly through the data_* tools when it genuinely needs it.
   /** Shallow-merge fields into an item (set a key to null to delete it). */
   updateItem(id, fields) {
-    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human", via: viaOf(compName()) });
+    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Move an item to another group (and/or position). */
   moveItem(id, group, position) {
-    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human", via: viaOf(compName()) });
+    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Delete an item. */
   deleteItem(id) {
-    return confirmable("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) });
+    return confirmable("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Re-read the bound collection (a full paged walk; adopted through the gate). */
   refresh() { return walk(); },
@@ -1173,7 +1181,10 @@ window.oma = {
         }
       }
       return r;
-    });
+    // The pref write bypasses call() (its ack handling is scoped to the BOUND collection), so it
+    // also bypassed the unwrap that lives there — and setPref is declared Promise<OmaAck> like
+    // every other write verb. One `.then` at the end of the chain covers both exits.
+    }).then(ackOf);
   },
   /**
    * Escape hatch: call any tool on the server. SECURITY (security-model §5 v0.3): a full,
@@ -1266,7 +1277,7 @@ window.oma = {
     // (store.mjs APP_NAME_RE), so this branch can never shadow a real app.
     if (n === LIVE_NAME) return embedLive(opts);
     const preset = opts.preset || "live";
-    let html = opts.html, caps = opts.caps, tier = opts.tier;
+    let html = opts.html, caps = opts.caps, tier = opts.tier, csp = opts.csp;
     // Inert children never call anything, so provided html is all they need; every other
     // preset resolves the engine truth (source + tier + caps) unless the caller provided it.
     if ((html == null || caps == null) && !(preset === "inert" && html != null)) {
@@ -1276,6 +1287,11 @@ window.oma = {
       if (html == null) html = sc.html;
       if (caps == null) caps = sc.caps || {};
       if (tier == null) tier = sc.tier == null ? "local" : sc.tier;
+      // THE MOUNTED APP's network declaration, merged by the engine (manifest.csp ∪ the user's
+      // policy:csp rows) — never this document's. A caller that already fetched app_html hands it
+      // down instead, the same way it hands down html/caps; an older engine sends none and the
+      // child gets the floor, which is what it got before this key existed.
+      if (csp == null) csp = sc.csp || null;
     }
     if (caps == null) caps = {};
     if (tier == null) tier = "local";
@@ -1547,7 +1563,7 @@ window.oma = {
     // `inert` is the exception because it is not a mount at all: it is a PICTURE of an app, and
     // what the store's grid depicts is the widget as a chat would show it. Its thumbnails are that
     // card on purpose, and they keep it whichever page the store itself is open on.
-    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE, standalone: !!SA && preset !== "inert" });
+    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE, standalone: !!SA && preset !== "inert", csp });
     opts.into.appendChild(frame);
     return handle;
   },

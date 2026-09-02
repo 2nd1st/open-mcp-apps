@@ -256,7 +256,12 @@ const FOREIGN_SEEN = new Set();
   const byBasename = new Map();
   const index = (dir) => {
     for (const e of readdirSync(join(ROOT, dir), { withFileTypes: true })) {
-      if (["node_modules", ".git", "dist"].includes(e.name)) continue;
+      // `.claude` joins them because the harness checks parallel agents out into
+      // `.claude/worktrees/<id>/` — a FULL copy of the repo, so every basename in it becomes a
+      // second (and third) candidate and the shorthand `known-defects.md` stops resolving. Nothing
+      // under `.claude` is tracked, and nothing under it is a doc this project publishes; indexing
+      // it made the check measure the harness instead of the repo.
+      if (["node_modules", ".git", "dist", ".claude"].includes(e.name)) continue;
       const p = dir === "." ? e.name : dir + "/" + e.name;
       if (e.isDirectory()) index(p);
       else { if (!byBasename.has(e.name)) byBasename.set(e.name, []); byBasename.get(e.name).push(p); }

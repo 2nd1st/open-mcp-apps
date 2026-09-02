@@ -7,7 +7,8 @@
 
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { SETTINGS_COLLECTION, RESERVED_KEY_RE } from "../store.mjs";
+import { SETTINGS_COLLECTION, RESERVED_KEY_RE, SECRET_KEY_RE, cspShapeError, CSP_DOMAIN_KEYS } from "../store.mjs";
+import { SECRETS_RESERVED_NOTE } from "../functions.mjs";
 import { RO, WRITE, ackSchema, SHARED_PREFS, CAP_NAMES, coerceCap, capValueHelp } from "../contracts.mjs";
 import { latestPref } from "../runtime-core.mjs";
 
@@ -57,13 +58,20 @@ export function register(ctx) {
       description: "Privileged writer for reserved settings keys (security:* / policy:*) — the ONLY tool that can write them; the generic data_* tools refuse reserved keys. Upserts one key/value in the settings collection.",
       inputSchema: {
         key: z.string().describe("a reserved key, e.g. security:kanban:send_message (cap suffixes are snake_case — the caps field names)"),
-        value: z.string().describe("the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list. An unknown value is REFUSED, never stored"),
+        value: z.string().describe("the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list; policy:csp:<app> (or policy:csp:*) takes a JSON object of origin arrays, e.g. {\"connectDomains\":[\"https://api.example.com\"]}. An unknown value is REFUSED, never stored"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
       outputSchema: ackSchema,
     },
     async (a) => {
       const key = String(a.key || "");
+      // BEFORE the reserved-key gate, and that order is the whole point: `secret:` is inside
+      // RESERVED_KEY_RE, so without this line the privileged writer would be the one door the
+      // reservation left open. The namespace is reserved against everyone, this tool included —
+      // functions can reach the network now, and the place a key gets typed is going to be the
+      // viewer, not a tool the model can call. (store.mjs refuses it a second time, on the write
+      // itself, so the reservation does not depend on this tool being the only caller.)
+      if (SECRET_KEY_RE.test(key)) return fail(`"${key}" is in the secret: namespace — ${SECRETS_RESERVED_NOTE}.`);
       if (!RESERVED_KEY_RE.test(key)) return fail(`security_set only writes reserved keys (security:* / policy:*). Use data_* for "${key}".`);
       // Cap-segment validation (naming contract): computeCaps only ever reads the snake_case
       // CAP_NAMES suffixes. An unknown suffix — e.g. dotted "sendMessage" — is still stored
@@ -79,6 +87,22 @@ export function register(ctx) {
       // receipt read "Set …". Refuse, and say what the vocabulary is (coerceCap owns the ruling).
       if (capSeg && CAP_NAMES.includes(capSeg) && coerceCap(capSeg, a.value) === undefined)
         return fail(`"${a.value}" is not a value the engine reads for "${capSeg}" — NOTHING was written (an unreadable value would have left the app at its tier default, which for a local app is fully allowed). Valid: ${capValueHelp(capSeg)}.`);
+      // `policy:csp:<app>` / `policy:csp:*` — the USER's additions to where an app may reach
+      // (its own manifest.csp is the other half; store.cspFor unions them). Validated by the SAME
+      // function the save door uses, because two graders of "is this an origin" would eventually
+      // disagree and this one is load-bearing: these strings get concatenated into our own two CSP
+      // policies, so a value carrying `;` is directive injection.
+      //
+      // Refused, not warned. cspFor drops an unreadable source WHOLE, so a typo here would leave
+      // the app reaching nothing while the receipt read "Set …" — the same failure the cap-value
+      // check above exists to prevent, on a key where the user is trying to OPEN something.
+      if (/^policy:csp:/.test(key)) {
+        let parsed;
+        try { parsed = JSON.parse(String(a.value ?? "")); }
+        catch { return fail(`"${key}" takes a JSON object of origin arrays — NOTHING was written. Example: {"connectDomains":["https://api.example.com"]}. Keys: ${CSP_DOMAIN_KEYS.join(", ")}.`); }
+        const err = cspShapeError(parsed, key);
+        if (err) return fail(`${err} NOTHING was written.`);
+      }
       const cid = a.command_id || randomUUID();
       // The row the READERS will read (computeCaps takes the last one) — updating any other
       // makes a policy that reports itself set and never takes effect.

@@ -5,7 +5,6 @@
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
 import { RO, WRITE, DESTRUCTIVE, snapshotSchema, ackSchema, cmdArgs, answer, toMcp, sizeOf, RESULT_BUDGET } from "../contracts.mjs";
 
 export function register(ctx) {
@@ -112,7 +111,14 @@ export function register(ctx) {
       // N events in the ledger, so replaying the batch has to be a no-op the same way replaying a
       // single write is. Deriving the per-command ids from the batch's own id keeps that true without
       // asking the caller to generate 200 uuids.
-      const base = a.command_id || randomUUID();
+      //
+      // No `|| randomUUID()` here, and that absence is the honest one: `cmdArgs` declares
+      // command_id as a required string, so a call without one never reaches this line — it comes
+      // back "Input validation error: … expected string, received undefined" with nothing applied
+      // (measured 2026-08-22). A fallback would be dead code that reads as a promise: anyone
+      // writing a client from this source would conclude the key is optional, ship without it, and
+      // meet the validator instead. What the tool actually asks for is what the schema says.
+      const base = a.command_id;
       const commands = (a.commands || []).map((c, i) => ({
         ...c, command_id: `${base}:${i}`, actor: c.actor || a.actor || "agent", host,
       }));

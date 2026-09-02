@@ -1,0 +1,50 @@
+<!doctype html>
+<html>
+<head>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Function timeout probe</title>
+<meta charset="utf-8">
+<style>
+  body { font: 14px system-ui, sans-serif; margin: 16px; color: #222; }
+  li { margin: 4px 0; }
+  code { background: #eee; padding: 1px 4px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<h3>fn-timeout-probe</h3>
+<p>Function probe: <code>egress</code> fetches the outside world, <code>slow</code> sleeps N seconds. Each call writes phase rows here.</p>
+<ul id="rows"></ul>
+<script type="module">
+  const ul = document.getElementById("rows");
+  function render(items) {
+    ul.innerHTML = "";
+    for (const it of items.slice(-30)) {
+      const li = document.createElement("li");
+      li.textContent = `${it.fields.fn} · ${it.fields.phase} · ${it.fields.note ?? ""} · ${it.fields.at ?? ""}`;
+      ul.appendChild(li);
+    }
+  }
+  render(window.oma.items ?? []);
+  window.oma.onChange?.(() => render(window.oma.items ?? []));
+</script>
+
+<script type="text/oma-function" data-fn="egress">
+const url = args.url || "https://api.github.com/zen";
+const t0 = Date.now();
+api.add({ fields: { fn: "egress", phase: "start", note: url, at: new Date().toISOString() } });
+const res = await fetch(url);
+const text = await res.text();
+const ms = Date.now() - t0;
+api.add({ fields: { fn: "egress", phase: "end", note: `status ${res.status} · ${text.length}B · ${ms}ms`, at: new Date().toISOString() } });
+return { url, status: res.status, bytes: text.length, ms, sample: text.slice(0, 120) };
+</script>
+
+<script type="text/oma-function" data-fn="slow">
+const seconds = args.seconds;
+api.add({ fields: { fn: "slow", phase: "start", note: `${seconds}s requested`, at: new Date().toISOString() } });
+await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+api.add({ fields: { fn: "slow", phase: "end", note: `${seconds}s slept`, at: new Date().toISOString() } });
+return { slept_seconds: seconds, finished_at: new Date().toISOString() };
+</script>
+</body>
+</html>

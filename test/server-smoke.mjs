@@ -242,8 +242,12 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
       // only the truly-universal answer declares itself public.
       return hint ? { scope: hint.cacheScope, ttl: hint.ttlMs } : { scope: "default-private", ttl: 0 };
     };
+    // 2026-08-16 (plan §7-8, option A): the loader's `_meta` now carries the UNION of the store's
+    // declarations, so its answer is store-derived by construction and `public` is never true —
+    // not even for the engine with no deployment-derived metadata. The hint is OMITTED on every
+    // branch; what used to be the public baseline is now the same private/zero default as the rest.
     const plain = scopeOf({});
-    ok("baseline: with no deployment-derived metadata the loader stays public", plain.scope === "public", JSON.stringify(plain));
+    ok("the loader is never public any more — its _meta is derived from the store's declarations", plain.scope === "default-private", JSON.stringify(plain));
     const domained = scopeOf({ widgetDomain: "https://widgets.example.test" });
     ok("🔴 a deployment that sets widgetDomain OMITS the hint → private/zero default",
       domained.scope === "default-private", JSON.stringify(domained));
@@ -1353,7 +1357,18 @@ ok("default chapter carries the API contract AND a working template", /window\.o
 // the author's attention. The correction was still squeezed to ~115 B over by collapsing the
 // duplicate "only on an explicit click" rule, and the tool-surface cap it sits next to was NOT
 // raised in the same batch — that one was avoidable and got shrunk instead.
-ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < 25400,
+// 25,800 (was 25,400): SAME species as the 25,400 raise directly above, and for a worse defect.
+// The guide said a write "returns Promise" and stopped there, while types/window-oma.d.ts declared
+// Promise<OmaAck> and all three runtimes delivered something else again — the raw MCP envelope, or
+// a bare {ok:true}. So `ack.ok` read undefined after a write that had SUCCEEDED, and every app in
+// components/ had grown its own adapter for the difference (four of them, most subtly wrong).
+// The runtimes were brought to the declaration (src/runtime-core.mjs ackOf, test/write-ack.mjs);
+// this is the guide finally stating the return shape of a shipped API, which the note above
+// already rules OUT of what this cap rations. Squeezed to 347 B over first, by folding the
+// "acknowledgement, not a snapshot" line the Pattern paragraph was already carrying, and the
+// tool-surface cap next door was NOT touched — the guide body is a tool RESULT, not tools/list,
+// and that surface measured 45,165 B before and after, byte for byte.
+ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < 25800,
   `basics is ${gBasics.length} chars`);
 ok("…and it carries the three slimming rules, since basics is the chapter authors actually pull",
   /\.k-btn/.test(gBasics) && /data_batch/.test(gBasics) && /skeleton/i.test(gBasics),
@@ -1379,9 +1394,14 @@ ok("…and it carries the three slimming rules, since basics is the chapter auth
 }
 ok("style stands alone: it repeats the hard rules rather than assuming basics was read",
   /NO external resources/.test(gStyle) && /design tokens/.test(gStyle));
-ok("the functions chapter teaches the SHIPPED thing — declaration, body grammar, sync axiom — and points back",
+// The "sync axiom" pin here died with the worker executor (2026-08-16): a body may await now, and
+// a guide still saying SYNCHRONOUS would be the one lie an author cannot check. What replaced it is
+// the pair of facts that are true and that an author gets wrong without being told — the body may
+// await (fetch included) and the deadline is declarable.
+ok("the functions chapter teaches the SHIPPED thing — declaration, body grammar, await + deadline — and points back",
   /manifest\.functions/.test(gFns) && /text\/oma-function/.test(gFns)
-  && /SYNCHRONOUS/.test(gFns) && /topic: "basics"/.test(gFns));
+  && /await/.test(gFns) && /fetch/.test(gFns) && /timeout_ms/.test(gFns)
+  && /topic: "basics"/.test(gFns));
 
 console.log("27f. open_app binding — the declaration finally participates");
 {
@@ -1479,6 +1499,20 @@ ok("save ack reports the size unconditionally", /9 chars/.test(tinySave.content[
 const grown = await client.callTool({ name: "save_app", arguments: { name: "tiny-but-real", ui: noteHtml, expected_version: await verOf("tiny-but-real") } });
 ok("an overwrite reports the size PAIR, so a suspicious shrink announces itself",
   new RegExp(`9 → ${noteHtml.length}`).test(grown.content[0].text));
+// v0.6.0 removed the 200,000-unit write-side ceiling. The read side is where size still costs
+// something, and it costs WINDOWS, not a refusal — which is the whole argument for dropping the
+// cap, so both halves are asserted together: a document far past the old limit saves, and get_app
+// reports its FULL length while handing back only what fits one result.
+const bigUi = `<!DOCTYPE html><html><body><p>${"x".repeat(300_000)}</p></body></html>`;
+const bigSave = await client.callTool({ name: "save_app", arguments: { name: "no-ceiling", ui: bigUi } });
+ok(`a ${bigUi.length.toLocaleString()}-char app saves — there is no document size cap`, !bigSave.isError);
+const bigRead = await client.callTool({ name: "get_app", arguments: { name: "no-ceiling" } });
+ok("get_app reports the FULL length as total and windows the rest",
+  bigRead.structuredContent.total === bigUi.length
+  && bigRead.structuredContent.returned < bigUi.length
+  && bigRead.structuredContent.next_offset === bigRead.structuredContent.returned,
+  JSON.stringify({ total: bigRead.structuredContent?.total, returned: bigRead.structuredContent?.returned,
+    next_offset: bigRead.structuredContent?.next_offset, want: bigUi.length }));
 
 console.log("28. App Store — refusal over a local app; real install → first-party content runs LOCAL/direct");
 const gl0 = (await client.callTool({ name: "app_store_list", arguments: {} })).structuredContent.entries;

@@ -827,8 +827,14 @@ STRUCTURE RULES
         const results = await Promise.all(ids
           ? ids.map((id) => oma.deleteItem(id)) // every stamped duplicate — one unpin collapses them all
           : [oma.addItem({ group: "pin", fields: { name, kind: PIN_KIND } })]);
-        if (results.some((result) => result?.isError)) throw new Error("pin write rejected");
-        setSync("", "Live · updated just now");
+        // A write answers with an ACK now, so `ok` is the verdict — `isError` lives on the raw MCP
+        // envelope the verbs stopped handing back (2026-08-23). Reading it here had gone from
+        // half-working to never: it caught a tool error but never a REFUSAL, and a refusal is what
+        // an unpin actually meets — confirm_delete is on by default, so a user who answers No gets
+        // `{ok:false, reason:"confirmation_declined"}` and used to be told the pin was saved.
+        const declined = results.some((result) => result?.reason === "confirmation_declined");
+        if (results.some((result) => !result?.ok) && !declined) throw new Error("pin write rejected");
+        setSync("", declined ? "Live · nothing changed" : "Live · updated just now");
       } catch {
         if (button.isConnected) { button.disabled = false; button.focus(); } // no echo landed — same node
         setSync("error", "Couldn’t save that pin");

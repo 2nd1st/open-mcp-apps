@@ -36,7 +36,7 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.5.9 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.6.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
@@ -353,13 +353,31 @@ on what an app can be. Build one in your own editor, with your own bundler, and 
 node install-app.mjs ./my-app.html              # yours, full trust — same as an AI-authored app
 node install-app.mjs ./my-app.html --sandboxed  # untrusted: runs behind the runner, no capabilities
 node install-app.mjs --list                     # what's installed, and under whose provenance
+
+# a build pipeline's output: a readable template + its bundle, plus the declaration as its own file
+node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
+  --asset ./dist/app.js --asset ./dist/app.css --update
 ```
 
-One self-contained HTML document, ≤200 KB, no network requests — the engine injects the kit CSS,
-the host's design tokens and `window.oma`. The trade: the AI can no longer iterate on it (your file
-is the source of truth, you rebuild and re-install), though it can still read the source, and the
-app shares your data like any other. Provenance is not overwritable in either direction, so an app
-installed `--sandboxed` stays sandboxed until you delete it.
+Two shapes are accepted. **One self-contained HTML document** — no size cap (keep it lean: data
+lives in the collection, source is read in windows) — the engine injects the kit CSS, the host's
+design tokens and `window.oma`. Or **a template plus a bundle**: the HTML is a readable mount
+point that references its own build output (`<script type="module" src="oma-asset:app.js">`,
+`<link rel="stylesheet" href="oma-asset:app.css">`), `--asset` pushes those files into the app's
+file plane, and the engine inlines them the moment the document leaves the store — a widget's CSP
+allows no external subresource, and a host iframe could not reach this machine anyway.
+
+The trade: the AI can no longer iterate on it — your files are the source of truth, you rebuild
+and re-install. It can still read a single-document app's source; for a template + bundle app it
+reads the template and the bundle stays yours (`edit_app` and the AI's `save_app` refuse with
+`built_outside`; re-running the command above is the edit). Either way the app shares your data
+like any other. Provenance is not overwritable in either direction, so an app installed
+`--sandboxed` stays sandboxed until you delete it. What a widget may connect to is the app's own
+declaration (`manifest.csp`, relayed to the host per the MCP Apps spec — nothing by default), and
+an app's *functions* run engine-side and may `fetch` — see RUNTIME.md §5.1 and §6.1, and
+the two type files for what an app sees — `@2nd1st/open-mcp-apps/types/window-oma` (the
+`window.oma` API) and `@2nd1st/open-mcp-apps/types/oma-function` (the `args`/`api` a function body
+gets) — both resolve through the package `exports`.
 
 **[`RUNTIME.md`](RUNTIME.md) is the contract** — the `window.oma` API in both modes, what a
 sandboxed app can still do, and the traps that only bite authors who aren't the AI. It carries a
@@ -421,8 +439,8 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 429 assertions over real stdio — incl. runtime app creation
-node test/http-smoke.mjs     #  79 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/server-smoke.mjs   # 431 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  80 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline
 node test/files-smoke.mjs    #  41 assertions on the per-app file store (chunked uploads, GC races)

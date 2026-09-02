@@ -27,7 +27,7 @@
  *  shape changed, a documented behaviour altered. Adding a name does not bump — an app built
  *  against 1 keeps working on an engine that added something, and feature-detects what it wants.
  *  test/runtime-contract.mjs pins the surfaces this number describes. */
-export const RUNTIME_CONTRACT = 2;
+export const RUNTIME_CONTRACT = 3;
 
 /** Pages a mount walk will fetch before declaring the projection truncated (honestly). */
 export const MAX_PAGES = 10;
@@ -81,6 +81,58 @@ export function decideAck(state, ack) {
   const prev = Number(ack.prev_collection_seq);
   if (Number.isFinite(prev) && prev <= held) return { kind: "apply" };
   return { kind: "apply-refresh" };
+}
+
+/** THE ACK AN APP GETS BACK, whatever the layer underneath handed us.
+ *
+ *  `types/window-oma.d.ts` promises every write verb resolves an `OmaAck` — `{ok, id, item, …}`,
+ *  where a refusal is an ANSWER and not an exception. Three layers answered three different
+ *  things instead: the direct runtime resolved the raw MCP envelope (`{content,
+ *  structuredContent}`), the sandboxed bridge relayed that same envelope, and the inert previews
+ *  resolved a bare `{ok:true}`. None of the three is wrong on its own; the trouble is that the
+ *  ONE shape the contract names was not among them.
+ *
+ *  What that cost, measured 2026-08-23 in Chrome against /view: `ack.ok` read `undefined` on a
+ *  write that had just succeeded, so `if (!ack.ok)` reported every success as a failure and
+ *  `if (ack.ok === false)` reported every refusal as a success. `ack.item.version` — the token a
+ *  bridge needs to recognise its own echo — was invisible, so an editor-style app wrote the stale
+ *  server copy back over what the user was typing, two seconds later, with nothing logged.
+ *
+ *  Every consumer in `components/` had therefore grown its OWN adapter for this (knowledge-cards
+ *  `requireSuccess`, project-pulse `writeFailed`, wonder-atlas `writeResultFailed`, an inline test
+ *  in meeting-actions) and most of them are subtly wrong, because a shim written against two of
+ *  the three shapes reads the third as success. A contract every reader must adapt to is not a
+ *  contract. So the normalisation happens ONCE, here, and the verbs resolve what they declare.
+ *
+ *  Deliberately NOT applied to `oma.callTool`: that door is typed `Promise<unknown>` and
+ *  documented as the escape hatch to the raw tool surface — eight apps read `.structuredContent`
+ *  off it, and the parent's own continuity machinery reads the envelope the guard returns
+ *  (shell-runtime.js, the `omaRun` reply path). The envelope stays the envelope everywhere it is
+ *  the declared answer; it is unwrapped only where `OmaAck` is.
+ *
+ *  Self-contained on purpose (no imports, no closure): runner.mjs injects it into the sandboxed
+ *  child by `ackOf.toString()`, the way the height helpers travel. */
+export function ackOf(result) {
+  if (!result || typeof result !== "object") return { ok: false, reason: "no_result", note: "The write produced no answer." };
+  const sc = result.structuredContent;
+  // The ordinary path: the engine's own ack body, verbatim. `answer.fail` puts `ok:false` in here
+  // too, so a refusal — conflict, policy, a declined confirmation — arrives as the typed answer
+  // the .d.ts describes rather than as a shape the caller has to go looking for.
+  if (sc && typeof sc === "object" && "ok" in sc) return sc;
+  // Already an ack: the inert presets answer without an envelope at all. Idempotent by design —
+  // a layer that unwrapped upstream must not be unwrapped twice.
+  if (!("structuredContent" in result) && !("content" in result) && "ok" in result) return result;
+  // An envelope with no ack body. Only the text channel can say anything, so say that.
+  let text = "";
+  const c = result.content;
+  if (Array.isArray(c)) {
+    for (let i = 0; i < c.length; i++) if (c[i] && c[i].type === "text" && c[i].text) { text = String(c[i].text); break; }
+  }
+  if (result.isError) return { ok: false, reason: "tool_error", note: text || "The write failed." };
+  const out = { ok: true };
+  if (sc && typeof sc === "object") Object.assign(out, sc);
+  else if (text) out.note = text;
+  return out;
 }
 
 /** Stable server order (store pages emit group, position, id) — a local apply must land the

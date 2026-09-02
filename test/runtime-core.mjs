@@ -9,7 +9,7 @@
 // browser bundle where no test could reach them — runtime-core.mjs exists so this file can.
 //
 // Run: node test/runtime-core.mjs
-import { decideAck, applyAck, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, childPreviewSnapshot, THEME_KEY_PREFIX, MAX_PAGES } from "../src/runtime-core.mjs";
+import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, childPreviewSnapshot, THEME_KEY_PREFIX, MAX_PAGES } from "../src/runtime-core.mjs";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note) => (cond
@@ -288,6 +288,44 @@ console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app"
     childPreviewSnapshot(rows, { app: "free-app", declaration: hostile }).items.length === 0);
   ok("…while the SAME manifest on a local app is honoured, so the gate is the tier and not the shape",
     childPreviewSnapshot(rows, { app: "free-app", declaration: hostile, tier: "local" }).items.length === 2);
+}
+
+console.log("\n1d. ackOf — the ONE shape a write resolves to, whatever the layer handed back");
+{
+  const ACK = { ok: true, id: "i1", collection: "c", seq: 7, prev_collection_seq: 6,
+                item: { id: "i1", group: "", position: 1, fields: { t: 1 }, version: 7 } };
+  ok("an MCP envelope yields its ack body, identically",
+    ackOf({ content: [{ type: "text", text: "ok" }], structuredContent: ACK }) === ACK);
+  ok("…so ack.ok is a boolean and not undefined — `if (!ack.ok)` was reporting every success as a failure",
+    ackOf({ content: [], structuredContent: ACK }).ok === true);
+  ok("…and ack.item.version is visible — the token an echo-suppressing bridge keys on",
+    ackOf({ content: [], structuredContent: ACK }).item.version === 7);
+
+  const REFUSAL = { ok: false, reason: "version_conflict", note: "…", item: { id: "i1", version: 9 } };
+  ok("a refusal is an ANSWER, not an exception, and keeps its reason",
+    ackOf({ content: [], structuredContent: REFUSAL, isError: true }).reason === "version_conflict");
+
+  // IDEMPOTENT: the inert previews answer without an envelope at all, and the bridge hands the
+  // child something the parent may already have unwrapped. Applying this twice must be safe.
+  const bare = { ok: true, id: "fx-0", item: { id: "fx-0", version: 2 } };
+  ok("a bare ack passes through untouched (the inert presets)", ackOf(bare) === bare);
+  ok("…and unwrapping twice changes nothing", ackOf(ackOf(bare)) === bare);
+
+  // An envelope with no ack body at all: the only thing that can speak is the text channel.
+  ok("an isError envelope with no ack body still answers ok:false",
+    ackOf({ isError: true, content: [{ type: "text", text: "denied" }] }).ok === false);
+  ok("…and quotes what the tool actually said",
+    ackOf({ isError: true, content: [{ type: "text", text: "denied" }] }).note === "denied");
+  ok("a bodyless success is ok:true rather than a shape with no verdict in it",
+    ackOf({ content: [{ type: "text", text: "done" }], structuredContent: {} }).ok === true);
+  ok("nothing at all is a refusal, never a crash and never a silent success",
+    ackOf(undefined).ok === false && ackOf(null).ok === false && ackOf("x").ok === false);
+
+  // The function is INJECTED into the sandboxed child by toString(), the way the height helpers
+  // travel — so it may not close over anything this module holds.
+  const standalone = new Function("return (" + ackOf.toString() + ")")();
+  ok("it survives toString() transport into the bridge (no closure, no imports)",
+    standalone({ content: [], structuredContent: ACK }).seq === 7);
 }
 
 console.log(`\nruntime-core: ${pass} passed, ${fail} failed`);

@@ -1,0 +1,15 @@
+{
+  "manifest_version": 2,
+  "kind": "app",
+  "functions": {
+    "egress": {
+      "description": "fetch a URL from inside the function sandbox and report status/bytes/ms (default: https://api.github.com/zen)",
+      "params": { "url": { "type": "string" } }
+    },
+    "slow": {
+      "description": "sleep N seconds then return — measures how long the host waits on a tool call",
+      "params": { "seconds": { "type": "number", "required": true } },
+      "timeout_ms": 3600000
+    }
+  }
+}

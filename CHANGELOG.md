@@ -7,6 +7,228 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.6.0 — 2026-09-02
+
+**The engine becomes a runtime, not just a container.** One release, built over two weeks
+(plan: engine repo `docs/runtime-plan-2026-08-16.md`, internal): apps written outside a chat
+and installed from a file, functions that run on their own thread and reach the network, widgets
+that declare what they connect to, and the author-side kit those three make possible.
+`oma.contract` is 3 — see **Fixed** for the one change an existing app can notice.
+
+### Changed
+
+- **An app document has no size cap.** The 200,000-unit write-side ceiling (`MAX_APP_HTML` and
+  the `ui_too_large` refusal behind it) is gone — from the store, from `install-app.mjs`, and
+  from the package barrel. The only size that ever did load-bearing work is on the READ side,
+  where `get_app` returns the source in windows, so a large app now costs windows rather than a
+  refusal. `empty_ui` stays: it is a validity rule (an app is something a person opens), never a
+  size floor. The `/rpc` and `/mcp` request-body limit moves 2 MB → 64 MB and is named
+  `MAX_BODY_BYTES`, because it is transport self-defence and was never a statement about how big
+  an app may be.
+- **App functions run on a worker thread, not a synchronous `vm` closure.** A body may
+  `await`; the store stays synchronous to it (`api.list(...)` returns rows) over a blocking
+  cross-thread call. The time budget is enforced by `worker.terminate()`, which ends running code,
+  pending timers and in-flight sockets — a harder cancel than `vm`'s timeout, which could only
+  interrupt code it was running. Every function written for the old executor runs unchanged; the
+  `async_not_supported` error is gone (a returned promise is awaited). Default per-call wall clock
+  2 s → 10 s, sized for one HTTPS round trip; the other budgets (100 writes, 200 reads, 32 KB
+  result) are unchanged. Up to 8 calls run concurrently; further calls queue without burning their
+  own deadline. `src/functions.mjs`'s header now says why the old "synchronous is the contract" argument
+  was right then and what replaces it — including the one property that was given up (no work
+  after the window) and why the receipts already covered it.
+- **A per-app `ui://` resource's `_meta.ui.csp`** (and the `openai/widgetCSP` twin) is computed
+  per read from the app's declaration ∪ the user's additions, instead of a constant empty
+  allowlist. The engine adjudicates nothing: it merges and relays; hosts enforce. An app that
+  declares nothing produces byte-identical metadata to 0.5.9. The engine's own two policies — the
+  runner child's CSP meta and the `/view` response header — are built from that same merged
+  declaration, so an app that works in a host works in the browser viewer; both floors are
+  unchanged byte for byte. `app_html` returns the merged `csp`, which is how the loader gives a
+  sandboxed child its policy.
+- **An app whose `ui` carries asset references is read-only to the model**: `get_app` returns
+  the template, while `edit_app`, the model's `save_app`, `restore_app` and `promote_app` refuse
+  with `built_outside` ("source lives outside this store; rebuild and re-install with
+  install-app.mjs"). Rebuilding and re-pushing is the edit. Detection is structural — what the
+  stored document is, never an `author` string. Human-pushed apps keep no version stock: after a
+  human push onto a human-authored app, revisions older than 7 days (`HUMAN_HISTORY_KEEP_DAYS`)
+  are dropped; the current revision is never swept, and AI-authored apps keep everything.
+  `save_app` refuses `bad_asset_ref` for a reference the file plane could never store; existence
+  is deliberately not checked at save (a push is two writes and either order must work) — a
+  missing asset is reported loudly, in the widget, at serve time.
+- **The authoring guide's "keep it under ~100KB" is advice again**, and now says what it was
+  actually about: do not write a complex app in one shot — save a skeleton, then grow it with
+  `edit_app`; data belongs in the collection; source is read in windows.
+
+### Added
+
+- **`fetch` in function bodies**, with `AbortController`/`AbortSignal`, `URL`,
+  `URLSearchParams`, `setTimeout`/`clearTimeout`, `TextEncoder`/`TextDecoder`, `atob`/`btoa`.
+  Egress is not filtered: the engine runs on the user's own machine over the user's own network.
+  The worker has an empty `env` and its own 256 MB heap, and its stdout never reaches the parent's
+  (which, on the stdio transport, is the protocol channel).
+- **`manifest.functions[name].timeout_ms`** — a per-function deadline, declared where the signature
+  is. The engine sets **no policy ceiling** on it: the real limit is the host's own tool-call
+  timeout, since `call_function` is an MCP tool call the host waits on — past it the body only spins
+  against a result nobody reads. The default, when nothing is declared, is 10 s. The save door keeps
+  only a sanity floor (a positive integer the timer can hold), not a cap on how long a function may
+  run. The deadline covers the whole call — thread start, body, and every await inside it — and is
+  enforced by `worker.terminate()`, the cancel that keeps a runaway loop or a hung fetch from pinning
+  a worker slot. (A SaaS sandbox that wants a cap sets its own; the OSS engine does not.)
+- **Secrets are reserved, not delivered**: `api.secret` exists and refuses, and settings keys under
+  `secret:` are refused by the generic `data_*` writers and by `security_set` alike — the namespace
+  is held empty for the release that fills it (entry will be the viewer's settings UI, never a
+  model-facing tool).
+- **Apps can declare where they reach.** A manifest may carry `csp` with the four keys from the
+  MCP Apps spec — `connectDomains`, `resourceDomains`, `frameDomains`, `baseUriDomains` —
+  validated for shape at the save door (RUNTIME.md §5.1). Users can add origins of their own, per
+  app or globally, through the reserved settings keys `policy:csp:<app>` and `policy:csp:*`
+  (written with `security_set`, which now refuses a value that is not a well-shaped JSON object of
+  origins). `open_app` renders through the universal loader — one resource serving every app — so
+  that resource's `_meta.ui.csp` now carries the **union** of everything declared in the store
+  (every app's `manifest.csp` ∪ the user's additions), computed per read: hosts are asked to allow
+  the union, and the runner child inside the loader is narrowed back to its own app. A store with
+  no declarations serves the 0.5.9 bytes exactly. The per-app resource (`OMA_DYNAMIC_TOOLS=1`)
+  still carries only its own app's declaration, and the engine's own viewer and runner always
+  build from the same merge. The loader's public cache hint is gone with this: its answer is
+  store-derived, so it is not the same for everybody. Whether a host reads the list-time or the
+  read-time `_meta` is a host-matrix question, not settled here.
+- **Apps built outside the chat.** An app produced by a build pipeline now installs as a readable
+  **template** plus its **bundle**: the template references its own build output
+  (`<script src="oma-asset:app.js">`, `<link rel="stylesheet" href="oma-asset:app.css">`) and the
+  files live in that app's file plane. The engine inlines every reference at serve time — the
+  widget CSP allows no external subresource, and a host iframe could not reach this machine
+  anyway. Documents with no references are served byte-identically to before.
+  `install-app.mjs --manifest <manifest.json>` (the declaration as its own file, the shape a build
+  emits) and repeatable `--asset <path>` (build output into the app's file plane, keyed by the
+  file's basename); `--update` is unchanged. `types/window-oma.d.ts` types the API an **app** sees
+  (`index.d.ts` types the engine's Node API, which an app never touches), pinned against the same
+  name list `RUNTIME.md` and `test/runtime-contract.mjs` share. RUNTIME.md §6.1 is the target a
+  build step has to hit — including the one thing bundlers get wrong: `<script
+  type="text/oma-function">` blocks must be emitted into the template, never bundled.
+- **A host-CSP probe app under `test/probes/host-csp-probe/`**: install it, open it in a host, and
+  it writes what that host does with an app's `csp` declaration into its own collection — nine
+  cells (declared connect, loopback connect, resource, frame, function fetch, a two-step
+  list-vs-read `_meta` test, an undeclared-origin control, blob Worker, WebAssembly), each with
+  the policy the browser actually applied, captured from `securitypolicyviolation`. Two of the
+  cells measure something no app can declare — `McpUiResourceCsp` is four lists of domains, so
+  there is no way to ask for a Worker or for WebAssembly, and this engine's own floor grants
+  neither (open-decisions D-20). The README is the run-book, one row per host and per door
+  (`open_app` vs `open_<name>`).
+- **`types/oma-function.d.ts`** — the `args`/`api` a function body sees; and both type files now
+  actually ship: they are in the published snapshot and declared in the package `exports`, so
+  `/// <reference types="@2nd1st/open-mcp-apps/types/window-oma" />` resolves under `bundler`
+  and `node16` (it was `TS2688` under both — the file existed in the repo and never reached
+  npm). `oma.callFunction<T>()` is generic over what the body returns.
+- **`install-app.mjs --prune-assets`** — opt-in removal of files this push neither carried nor
+  referenced, for builds with content-hashed output names (without it every rebuild leaves the
+  previous bundle behind in the app's file plane).
+- **`list_apps` rows carry a `functions` count** when an app's manifest declares any:
+  `· N function(s)` in the text line, `functions: n` in the structured row, and absent — not
+  `0` — when there are none. Names and signatures stay one `get_app {slot:"manifest"}` away.
+  No `outputSchema` was added, so `tools/list` is byte-identical.
+
+### Fixed
+
+- **`call_function` now says what the function returned on the text channel too.** The reply
+  carried the return value in `structuredContent` only, and the text was a bare receipt
+  (`Ran app.fn — 2 writes`). On claude.ai the model is handed `content[].text` alone
+  (`docs/spec-conformance.md`, measured again 2026-09-02 through a live connector), so a
+  function that fetched a URL and returned `{status, bytes, ms}` looked, from the chat, like it
+  had returned nothing. The text now reads `Ran app.fn → {…} — 2 writes (…)`; the same-body rule
+  in `test/two-channel.mjs` gains its assertion in `test/functions.mjs`.
+- **A write now resolves the ack `types/window-oma.d.ts` promises, on every runtime.** The five
+  write verbs (`addItem`, `updateItem`, `moveItem`, `deleteItem`, `setPref`) are declared
+  `Promise<OmaAck>` and delivered three different things instead: the direct runtime and the
+  sandboxed bridge both resolved the raw MCP envelope (`{content, structuredContent}`) and the two
+  inert previews a bare `{ok:true}`. Measured in Chrome against `/view`: `ack.ok` read `undefined`
+  after a write that had SUCCEEDED, so `if (!ack.ok)` reported every success as a failure and
+  `if (ack.ok === false)` reported every refusal as a success; `ack.id` and `ack.item` were
+  invisible, so an app could not recognise the echo of its own write and a two-way bridge wrote
+  the stale server copy back over what the user was typing — silently, since nothing had failed.
+  One normaliser (`ackOf`, in `src/runtime-core.mjs`, injected into the sandboxed child the way
+  the height helpers travel) now sits on each of the four `window.oma` surfaces; the inert
+  previews answer a complete synthetic ack instead of a shared frozen `{ok:true}` that handed
+  every writer in a document the same object. `oma.callTool` is deliberately unchanged — it is
+  the raw escape hatch, typed `Promise<unknown>`, and the embedder's own continuity rule reads
+  the envelope the runner's chokepoint returns. `OmaAck` now NAMES the fields it always carried
+  (`id`, `seq`, `item`, `deleted`, `note`, mirroring `ackSchema`), so `ack.item.version` type-checks
+  for the apps that need it. No contract bump: the published declaration is what apps were written
+  against, and every consumer surveyed either ignored the return value or was carrying a
+  hand-rolled adapter this makes unnecessary. Pinned by `test/write-ack.mjs` (real engine, the
+  shipped bridge source, both previews, and a loop-guard scenario).
+- **Assets referenced with `oma-asset:` keep the tag the author wrote when they are inlined**;
+  only `src`/`href`/`crossorigin`/`integrity` are dropped. A bundler's `<script type="module">`
+  arrived as a classic script, so default ESM output was a SyntaxError and anything that did
+  parse ran before the runtime and before its mount point — the reason every framework sample
+  needed an iife build and a boot shim. Measured after the fix: default vite ESM output from
+  Preact 10, Svelte 5 and React 19 (production and the 1 MB development bundle) renders, adds
+  rows and calls its function with no shim at all.
+- **The stage class and the shell injection find the document's own `<body>`/`<head>` element**
+  rather than the first matching characters — which could be a string inside an inlined bundle
+  (React's development build carries `<head` ten times). One element-aware scan serves
+  `stampStage` and both `wrapApp` branches.
+- **A function body's implicit collection is the one its app is bound to** — the same one its
+  widget opens on. An app declaring a single collection had `api.count()` silently read an empty
+  one while the widget showed rows.
+- **A parse-time error in an app's script produces the visible notice in the browser viewer**;
+  `/view` now stamps the app name that notice was gated on, so a blank card is no longer the
+  only symptom.
+- **The widget runtime no longer trips a CSP `eval` violation on every mount.** The MCP Apps SDK
+  builds zod schemas at module-eval time and zod probes `new Function` for its fast path; under
+  the widget policy that path was never reachable, so the violation was pure noise. zod's
+  `jitless` mode is set before the SDK loads.
+- `install-app.mjs --help` printed every top-level comment in the file — 25 lines of internal
+  commentary alongside the usage; it now prints the header block only. And it located the html
+  file by `argv.indexOf`, which answers for a string's *first* occurrence, so two identical
+  arguments could make it treat an option's value as the document.
+- `src/engine.mjs` no longer promises an INSTRUCTIONS "roster" for when the function pillar
+  lands. The pillar shipped in 0.4.x, and the roster deliberately stays out of INSTRUCTIONS —
+  they are a prompt-cache prefix, and a segment that moved whenever any app declared a function
+  would invalidate it for every conversation. Discovery lives on the `list_apps` row instead.
+
+- **`install-app.mjs` is reachable through the exports map** (`"./install-app.mjs"`), not only
+  through `files`. A strict consumer resolving the subpath got `ERR_PACKAGE_PATH_NOT_EXPORTED`
+  while the file itself shipped — two of three gates were standing, and the toolkit's push CLI
+  had to locate the script by walking from `package.json` instead of asking the resolver.
+- **`install-app.mjs` prints sizes in bytes, not UTF-16 code units.** Three sites printed
+  `html.length` as `… B`; multibyte content under-reported (a 2,025-byte document said 1,581).
+  One `Buffer.byteLength` helper serves all three.
+- **The guide's environment section teaches `oma.standalone`, not `oma.host`.** The `host`
+  getter left the runtime surface on 2026-08-04 with zero consumers; the guide kept teaching a
+  name that reads `undefined` for twelve days because nothing watched it. Now something does: a
+  contract gate scans every `oma.<name>` the guide mentions against the runtime's real surface.
+- **`OmaState` declares `app` and `host`.** The runtime's state object always carried both —
+  `state.app` decides what the loader mounts — but the type contract omitted them, so a strict
+  TypeScript consumer got TS2339 on fields that answer at runtime. The type now pins the
+- **A standalone server that adopts an already-running sibling says so** instead of printing
+  `http listening` plus a viewer URL and an MCP endpoint that all point at the *other* process's
+  store. The adopted branch now names the `OMA_DB` that is not being served and how to serve it.
+- **`data_batch` no longer carries a dead `randomUUID()` fallback for `command_id`** — the schema
+  has always required the field, so the fallback could never run but read as "optional" to anyone
+  writing a client from the source. Replay of the same `command_id` still returns the same ids.
+- **`position` is documented as scoped to (collection, group)** — sorting by it across groups
+  yields an interleaving that looks like an order and isn't. RUNTIME and the `OmaItem` type now
+  say so; `version` — globally monotonic, jumping, sortable across collections — is documented
+  as the cross-group ordering key it always was.
+- **The guide tells the truth about data freshness**: adaptive polling plus tab-refocus in a chat
+  host, near-instant push (SSE) in the standalone viewer — measured at 7 ms, where the old text
+  taught "~20s".
+- **The guide warns that an inlined dependency may write generic names onto `window`** — shared
+  with the shell in a local install, own realm under the sandboxed runner.
+
+- **The five write verbs resolve to the `OmaAck` the type contract always promised** — on every
+  `window.oma` surface. Before, direct/standalone and the sandboxed runner handed back the raw
+  MCP envelope and the inert previews a bare (and shared, frozen) `{ok:true}`, so `ack.ok` read
+  `undefined` on success, `ack.item.version` was invisible, and a loop guard keyed on it failed
+  silently — the human's own edit came back and overwrote itself two seconds later. One `ackOf()`
+  now serves all four surfaces; a cancelled delete confirmation resolves
+  `{ok:false, reason:"confirmation_declined"}` as RUNTIME always claimed. A 25-assertion gate
+  (`test/write-ack.mjs`) holds the shape on every surface. `oma.callTool` and the runner-guard
+  envelope are deliberately unchanged — eight apps read `.structuredContent` off the former, the
+  embedder's continuity redraw off the latter. **`oma.contract` bumps 2 → 3** for this: an app
+  that read `.ok`/`.id`/`.item` off a write call got `undefined` on 2 and a real answer on 3, which
+  is exactly the "a return shape an existing app could notice" that the number exists to signal.
+
+  runtime's own initialiser, key for key, and a gate keeps the two from drifting again.
 ## 0.5.9 — 2026-08-16
 
 **What `initialize` declares, the engine now does.** The handshake every MCP host reads first is a

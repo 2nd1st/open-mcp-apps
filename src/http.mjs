@@ -25,10 +25,12 @@ import { toNodeHandler } from "@modelcontextprotocol/node";
 import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as resolvePath } from "node:path";
-import { openStore, APP_NAME_RE } from "./store.mjs";
+import { openStore, APP_NAME_RE, cspFor } from "./store.mjs";
 import { createEngine, hostContext, tierOf, defaultCollectionFor, stageWidthFor, stageDisplayFor } from "./engine.mjs";
-import { wrapApp, wrapLoader } from "./shell.mjs";
-import { RUNNER_CSP_POLICY } from "./runner.mjs";
+import { wrapApp, wrapLoader, stampStage } from "./shell.mjs";
+import { openFileChannel } from "./files.mjs";
+import { resolveAssets, appAssetReader } from "./assets.mjs";
+import { runnerCspFor } from "./runner.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 
@@ -63,13 +65,24 @@ const html = (res, code, body, headers) => { res.writeHead(code, { "content-type
 // frame-src 'none' is safe for the settings app's thumbnail grid: about:srcdoc frames are exempt
 // from frame-src and inherit this policy instead (verified in Chrome — the srcdoc child renders,
 // its inline scripts/styles ride on 'unsafe-inline', and external egress stays blocked).
-const VIEW_CSP = RUNNER_CSP_POLICY.replace("connect-src 'none'", "connect-src 'self'");
+// …and it is now BUILT from the same declaration the host gets (runner.mjs runnerCspFor): an app
+// that declares `connectDomains` reaches those origins here too, so "works in our viewer" and
+// "works in a host" stop being two different questions. The delta is still the one delta —
+// connect-src stands on 'self' instead of 'none', and a declared origin JOINS it rather than
+// replacing it, because losing 'self' would cut /rpc and with it the viewer's entire data path.
+// Exported for the tests that pin the floor byte-for-byte; the route below is its only caller.
+export const viewCspFor = (csp) => runnerCspFor(csp, { connect: "'self'" });
 // The index page carries no scripts and no frames — it gets the same wall minus nothing it
 // needs: inline styles and data: glyphs only.
 const INDEX_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; form-action 'none'";
+// App documents have no size cap; this number is TRANSPORT SELF-DEFENCE, not policy. It exists so
+// an unauthenticated POST cannot make this process hold an unbounded string in memory — it is not
+// a statement about how big an app is allowed to be, and it must stay comfortably above anything a
+// real save_app or file chunk sends.
+const MAX_BODY_BYTES = 64 * 1024 * 1024;
 const readBody = (req) => new Promise((resolve, reject) => {
   let data = "";
-  req.on("data", (c) => { data += c; if (data.length > 2_000_000) { reject(new Error("body too large")); req.destroy(); } });
+  req.on("data", (c) => { data += c; if (data.length > MAX_BODY_BYTES) { reject(new Error("body too large")); req.destroy(); } });
   req.on("end", () => resolve(data));
   req.on("error", reject);
 });
@@ -280,23 +293,48 @@ const server = http.createServer(async (req, res) => {
       // No CSP change: about:srcdoc frames are exempt from frame-src and inherit this policy, so
       // the runner's child renders under the same wall the direct path uses (see VIEW_CSP above —
       // settings' App Store preview has relied on exactly this since it shipped).
+      //
+      // THE HEADER IS PER-APP, and it is the OUTER of two walls on the runner branch: the child
+      // srcdoc carries its own meta policy (composeChildDoc, built from the same declaration) and a
+      // srcdoc frame INHERITS its parent's — the two intersect, so this one has to be widened too
+      // or the child's widening means nothing. Both come from cspFor(comp), so they cannot disagree.
+      const policy = viewCspFor(cspFor(comp, store));
       if (tierOf(comp.author) !== "local")
         return html(res, 200, wrapLoader({
           standalone: { endpoint: "/rpc", collection, app: view[1], ...chrome, ...nav,
             ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
-        }), { "content-security-policy": VIEW_CSP });
-      return html(res, 200, wrapApp(comp.ui, {
+        }), { "content-security-policy": policy });
+      // The second of the three serve-time seams (the other two are the per-app ui:// resource and
+      // app_html, both in tools/apps.mjs): an app built outside the chat stores a template and its
+      // bundle separately, and a document leaving the store is where they become one. The channel
+      // is memoised per store, so this is the SAME upload/ref table the engine's file_* tools use —
+      // not a second view of the file plane.
+      // The stage class goes on the TEMPLATE, before the bundle is inlined into it — the class
+      // belongs on the app's own <body>, and a bundle's bytes only ever MENTION one (measured:
+      // React's dev build says "<body>" inside an error string and had it rewritten). Same order
+      // tools/apps.mjs serveUi keeps for the other two seams.
+      return html(res, 200, wrapApp(
+        await resolveAssets(stampStage(comp.ui, stageWidthFor(comp)),
+          appAssetReader(openFileChannel(store), view[1])), {
         // The width track the app declared, written onto its body for the kit (contracts.mjs
         // stageWidthFor / shell.mjs stampStage). Same rule the ui:// resource applies, from the
-        // same function — a second copy would be a second answer waiting to disagree.
+        // same function — a second copy would be a second answer waiting to disagree. Passed to
+        // wrapApp as well because a FRAGMENT template has no body of its own to stamp: the one
+        // wrapApp builds around it is where the class lands. stampStage is idempotent, so a
+        // full-document template is stamped once, not twice.
         stage: stageWidthFor(comp),
+        // WHO WE ARE, as a document fact (shell-runtime compName()). Without it the runtime learns
+        // this app's name only once the standalone block below has been read and `state.app`
+        // assigned — which happens AFTER the early-error buffer is drained, so a bundle that
+        // failed to parse produced a blank card and not one word on screen (measured 2026-08-16).
+        app: view[1],
         // viewBase reaches the RUNTIME only when the operator set one. App→app links
         // default to a relative "/view/", which is correct for a plain local server and wrong behind
         // a path-prefixed proxy — where OMA_VIEW_BASE is exactly the operator saying what the prefix
         // is. Passing it unconditionally would turn every in-app link absolute (127.0.0.1), which
         // silently breaks the ordinary `localhost:PORT` visit: different origin, same server.
         standalone: { endpoint: "/rpc", collection, app: view[1], ...chrome, ...nav, ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
-      }), { "content-security-policy": VIEW_CSP });
+      }), { "content-security-policy": policy });
     }
 
     // A constant answer, no store access: this exists so a SECOND instance of us can ask
@@ -449,10 +487,21 @@ function note(line) { try { console.error(`[oma] ${line}`); } catch {} }
 // it means "do not start a viewer I did not ask for", and running this file IS asking.
 if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
   const v = await startViewer();
-  if (v) {
+  // ADOPTED is not LISTENING, and the difference is the whole point of these lines. When another
+  // open-mcp-apps process already holds the port, startViewer hands back ITS url so a host with no
+  // link to give still has one — correct for the embedded case, and a lie here: this process bound
+  // nothing, and the store it just opened is not what that url serves. Printing "http listening on
+  // <url>" plus a viewer link plus an endpoint to tunnel is three invitations to point a fixture, a
+  // browser or a tunnel at SOMEONE ELSE'S data while the log reads healthy — which is exactly what
+  // happened twice in the 2026-08-22 demo wave, both e2e runs silently spent on the wrong store.
+  if (v && v.adopted) {
+    note(`adopted an existing open-mcp-apps server at ${v.url} — this process is serving NOTHING`);
+    note(`  ${v.url} serves the OTHER process's store${process.env.OMA_DB ? `, NOT the OMA_DB you set (${process.env.OMA_DB})` : ""}`);
+    note(`  to serve this process's store instead: free port ${v.port}, or re-run with PORT=<other>`);
+  } else if (v) {
     note(`http listening on ${v.url}`);
     note(`  browser viewer:  ${v.url}/`);
-    note(`  MCP endpoint:    ${v.url}/mcp   (tunnel this for ChatGPT/claude.ai)`);
+    note(`  MCP endpoint:    ${v.url}/mcp`);
   } else {
     process.exitCode = 1;
   }

@@ -25,7 +25,7 @@
 // out-of-repo mirror has to exist.
 
 import { isControlPlaneTool, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
-import { viaOf, sansRequestState, withConfirmation, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { viaOf, sansRequestState, withConfirmation, ackOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 
 // CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
 // script/img/font sources) — that closes fetch/XHR/img/font/frame egress on every host, incl.
@@ -62,8 +62,65 @@ import { viaOf, sansRequestState, withConfirmation, RUNTIME_CONTRACT } from "./r
 // SUBMISSION while leaving the EVENT alone: this directive, the embedder's `frame-src 'none'`,
 // and the bridge's unconditional cancel (BRIDGE below). Both new walls were measured on the same
 // day against a form posting to an off-site action: each one blocked it on its own.
+//
+// ─────────────────────────────────────────────── the policy is now BUILT, from the app's own words
+// The floor below is unchanged and is still what every app we ship gets. What changed (2026-08-16)
+// is that an app may DECLARE where it reaches (manifest.csp, four keys straight out of the MCP Apps
+// spec) and the user may add origins of their own — and our two in-house policies are assembled
+// from that same merged declaration, so "it works in our viewer" and "it works in a host" cannot
+// mean different things. The engine still adjudicates nothing: it relays the declaration to the
+// host and widens its OWN walls by exactly what was declared, no more.
+//
+// An app that declares nothing gets a byte-for-byte identical policy to the one this file has
+// always emitted — pinned by a hard-coded literal in test/csp-passthrough.mjs, deliberately not by
+// comparing against this function, which would only prove it agrees with itself.
+//
+// The spec's directive mapping, followed literally (spec.types.d.ts McpUiResourceCsp):
+//   connectDomains  → connect-src            resourceDomains → img-src font-src script-src style-src media-src
+//   frameDomains    → frame-src              baseUriDomains  → base-uri
+// `media-src` and `base-uri` are absent from the floor and appear only when declared: adding them
+// unconditionally would change today's bytes, and their absence already means the strict thing
+// (media-src falls back to `default-src 'none'`). One honest gap: the spec says an omitted
+// baseUriDomains means `base-uri 'self'`, and we emit NOTHING rather than 'self', which leaves
+// `<base>` unrestricted in our own two documents. That is today's behaviour preserved, not a
+// ruling — tightening it is a separate change with its own measurement.
+//
+// `'none'` is not a source that combines — CSP requires it be the only entry in its list — so a
+// declared origin REPLACES it. `'self'` and `data:` DO combine and must survive being widened.
+const widen = (floor, add) => (add.length ? (floor === "'none'" ? add.join(" ") : [floor, ...add].join(" ")) : floor);
+/** The child document's policy for one app's merged declaration ({} = declares nothing).
+ *  `connect` is the floor the caller stands on: the runner child has no same-origin server, the
+ *  browser viewer's whole data path IS one (see http.mjs viewCspFor). */
+export function runnerCspFor(csp = {}, { connect = "'none'" } = {}) {
+  const res = csp.resourceDomains || [], frame = csp.frameDomains || [], base = csp.baseUriDomains || [];
+  return [
+    "default-src 'none'",
+    "style-src " + widen("'unsafe-inline'", res),
+    "img-src " + widen("data:", res),
+    "font-src " + widen("data:", res),
+    "script-src " + widen("'unsafe-inline'", res),
+    ...(res.length ? ["media-src " + res.join(" ")] : []),
+    "connect-src " + widen(connect, csp.connectDomains || []),
+    "frame-src " + widen("'none'", frame),
+    "form-action 'none'",
+    ...(base.length ? ["base-uri " + base.join(" ")] : []),
+  ].join("; ");
+}
+/** The floor: what an app that declares nothing gets — still every app we ship.
+ *
+ *  DELIBERATELY A LITERAL, not `runnerCspFor()`, and the duplication is the point. This string
+ *  ships inside the bundled runtime, and being able to grep the SERVED bytes for the exact wall is
+ *  a property auditors have (docs/security-model.md quotes it; test/server-smoke.mjs §18 reads it
+ *  off the served loader document). Computing it deleted that — the bundle then carries the
+ *  builder, and the wall itself appears nowhere.
+ *
+ *  Drift is closed the way the tool surface closes it: a golden literal, a generated value, and one
+ *  assertion that they are byte-identical (`runnerCspFor() === RUNNER_CSP_POLICY`, in
+ *  test/csp-passthrough.mjs). Two copies guarded by an equality check are safe; two copies nobody
+ *  compares are not. */
 export const RUNNER_CSP_POLICY = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'";
-export const RUNNER_CSP = '<meta http-equiv="Content-Security-Policy" content="' + RUNNER_CSP_POLICY + '">';
+export const cspMeta = (policy) => '<meta http-equiv="Content-Security-Policy" content="' + policy + '">';
+export const RUNNER_CSP = cspMeta(RUNNER_CSP_POLICY);
 
 /** Measure natural app content instead of the iframe viewport. Chromium keeps
  * documentElement.scrollHeight at least as tall as the viewport, so feeding that value back
@@ -359,6 +416,10 @@ export const BRIDGE = [
   "<script>(function(){",
   'var S={collection:null,items:[],version:0,app:null,host:null},TI={};',
   'var readyCbs=[],changeCbs=[],prefCbs=[],isReady=false,seq=0,pending={},P=null,urlCache={},TA=[];',
+  // ackOf is the REAL function, injected by toString() the way the height helpers travel — the
+  // shape a write resolves to must not be a second opinion, and the child sits behind a
+  // postMessage hop that hands it the parent's raw envelope.
+  "var ackOf=" + ackOf.toString() + ";",
   // coercePref mirrors runtime-core semantics: the FALLBACK's type drives coercion.
   'function coercePref(v,f){var t=typeof f;',
   'if(t==="boolean"){if(v===true||v==="true"||v===1)return true;if(v===false||v==="false"||v===0)return false;return f;}',
@@ -408,8 +469,8 @@ export const BRIDGE = [
   'document.addEventListener("submit",function(e){e.preventDefault();});',
   'function b64bytes(b){var s=atob(b),u=new Uint8Array(s.length);for(var i=0;i<s.length;i++)u[i]=s.charCodeAt(i);return u;}',
   'window.oma={ get state(){return S}, ready:function(cb){isReady?cb(S):readyCbs.push(cb)}, onChange:function(cb){changeCbs.push(cb)},',
-  'addItem:function(o){return req("addItem",o||{})}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f})},',
-  'moveItem:function(id,g,p){return req("moveItem",{id:id,group:g,position:p})}, deleteItem:function(id){return req("deleteItem",{id:id})},',
+  'addItem:function(o){return req("addItem",o||{}).then(ackOf)}, updateItem:function(id,f){return req("updateItem",{id:id,fields:f}).then(ackOf)},',
+  'moveItem:function(id,g,p){return req("moveItem",{id:id,group:g,position:p}).then(ackOf)}, deleteItem:function(id){return req("deleteItem",{id:id}).then(ackOf)},',
   'refresh:function(){return req("refresh",{})}, callTool:function(n,a){return req("callTool",{name:n,args:a})},',
   'readCollection:function(c){return req("readCollection",{collection:c})},',
   'files:{ list:function(){return req("filesList",{})},',
@@ -417,7 +478,7 @@ export const BRIDGE = [
   'url:function(p){if(urlCache[p])return Promise.resolve(urlCache[p]);return req("filesRead",{path:p}).then(function(r){var u=URL.createObjectURL(new Blob([b64bytes(r.base64)],{type:r.mime||"application/octet-stream"}));urlCache[p]=u;return u;})} },',
   'pref:function(k,f){return (P&&k in P)?coercePref(P[k],f):f},',
   'onPrefChange:function(cb){prefCbs.push(cb)},',
-  'setPref:function(k,v){return req("setPref",{key:k,value:v})},',
+  'setPref:function(k,v){return req("setPref",{key:k,value:v}).then(ackOf)},',
   'sendMessage:function(t){return req("sendMessage",{text:t})},',
   // Rides the generic callTool door so the guard's shaping (callee/via/actor forced to SELF)
   // fires exactly as it does for a hand-rolled call — the typed verb adds no second policy path.
@@ -450,12 +511,22 @@ export const BRIDGE = [
  *
  *  `standalone` is the EMBEDDER's own context, handed down (the bridge's `oma.standalone`). It is
  *  written only when true, so a chat-side child stays byte-identical to the document this composed
- *  before the option existed. */
-export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE, standalone = false } = {}) {
+ *  before the option existed.
+ *
+ *  `csp` is the MOUNTED APP's merged declaration, not the embedder's — an `@live` brick frames a
+ *  DIFFERENT app than the page around it, and what that app may reach is its own property. It
+ *  arrives from app_html (which is where this child's source comes from too, so one fetch answers
+ *  both). Omitted ⇒ the floor, byte-identical to what this composed before the option existed.
+ *
+ *  ⚠️ A widened child policy is a CEILING, never a grant: a srcdoc frame also inherits its parent
+ *  document's CSP, and the two intersect. So this only reaches the network where the parent is
+ *  permissive too — our /view page (whose header is built from the same declaration) — and never
+ *  inside a host, where the host's own iframe CSP is the outer wall. */
+export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE, standalone = false, csp } = {}) {
   // Layer order is the cascade: neutral fallbacks, then the embedder's (substituted) tokens, then
   // the kit, then the app's own markup and <style>. The child's THEME arrives at runtime as
   // inline custom properties on its <html>, which outrank all of these — same as in the parent.
-  return "<!doctype html><html><head>" + RUNNER_CSP + '<meta charset="utf-8">' +
+  return "<!doctype html><html><head>" + (csp ? cspMeta(runnerCspFor(csp)) : RUNNER_CSP) + '<meta charset="utf-8">' +
     (fallbackCss ? '<style data-oma="token-fallback">' + fallbackCss + "</style>" : "") +
     tokenCss + kitStyle(kitCss) +
     (standalone ? '<scr' + 'ipt data-oma="child-context">window.__OMA_CHILD_SA__=1;</scr' + "ipt>" : "") +
@@ -734,10 +805,36 @@ export function makeGuard(cfg) {
       fields: (it && it.fields) || {}, version: 1 }));
     return { collection: want, items, version: s.version || 1, returned: items.length, total: items.length };
   };
+  // A pretend write still owes a REAL ANSWER. `{ok:true}` was the whole of it, so an app whose
+  // loop guard keys on `ack.item.version` read `undefined` inside a preview and misbehaved there
+  // exactly as it would in production — which is the one thing a preview exists to rule out.
+  // Minimal and coherent rather than a simulation: the row the caller named, merged with the
+  // fields it sent, stamped with a seq that sits ABOVE the snapshot's version (so an
+  // `ack.seq > state.version` test reads as it would against a real ledger) and climbs per call.
+  let fxWrites = 0;
+  const fxAck = (method, a) => {
+    const args = a || {};
+    const seq = (Number(snap().version) || 1) + ++fxWrites;
+    const bound = method === "setPref" ? "settings" : coll;
+    const id = method === "addItem" ? "fx-new-" + fxWrites : String(args.id == null ? "fx-0" : args.id);
+    const ack = { ok: true, id, collection: bound, seq, prev_collection_seq: seq - 1 };
+    if (method === "deleteItem") { ack.deleted = true; return ack; }
+    const prior = method === "addItem" ? null : (fxRows(bound).items || []).find((r) => r.id === id);
+    ack.item = {
+      id,
+      group: method === "setPref" ? name : String(args.group != null ? args.group : (prior ? prior.group : "")),
+      position: Number(args.position != null ? args.position : (prior ? prior.position : 1)),
+      fields: method === "setPref"
+        ? { key: args.key, value: args.value }
+        : Object.assign({}, prior && prior.fields, args.fields),
+      version: seq,
+    };
+    return ack;
+  };
   async function inert(method, a) {
     switch (method) {
       case "addItem": case "updateItem": case "moveItem": case "deleteItem": case "setPref":
-        return { ok: true };
+        return fxAck(method, a);
       case "refresh": case "readCollection":
         return fxRows(a && a.collection);
       case "callTool": {
@@ -790,7 +887,22 @@ export function stubOmaScript(name, items, apps, prefs) {
   return "<script>window.oma=(function(){var S=" +
     JSON.stringify(snap).replace(/<\//g, "<\\/") +
     ";var P=" + JSON.stringify(prefs && typeof prefs === "object" ? prefs : {}).replace(/<\//g, "<\\/") +
-    ";var ok=Promise.resolve({ok:true});" +
+    ";var ok=Promise.resolve({ok:true});var W=0;" +
+    // The parentless twin of the guard's fxAck, and it must agree with it key for key: a write
+    // resolves the ack `types/window-oma.d.ts` declares, not a bare {ok:true}. Minted PER CALL —
+    // one shared frozen object handed every writer the same seq and let any app that touched
+    // its own ack mutate what the next writer would read.
+    "function A(m,a){a=a||{};var q=(S.version||1)+(++W);" +
+    "var b=(m==='setPref')?'settings':S.collection;" +
+    "var id=(m==='addItem')?('fx-new-'+W):String(a.id==null?'fx-0':a.id);" +
+    "var k={ok:true,id:id,collection:b,seq:q,prev_collection_seq:q-1};" +
+    "if(m==='deleteItem'){k.deleted=true;return Promise.resolve(k);}" +
+    "var pr=null,rs=R(b).items,i;for(i=0;i<rs.length;i++)if(rs[i].id===id){pr=rs[i];break;}" +
+    "var f={};if(m==='setPref'){f={key:a.key,value:a.value};}" +
+    "else{if(pr)for(i in pr.fields)f[i]=pr.fields[i];for(i in (a.fields||{}))f[i]=a.fields[i];}" +
+    "k.item={id:id,group:(m==='setPref')?S.app:String(a.group!=null?a.group:(pr?pr.group:'')),"+
+    "position:Number(a.position!=null?a.position:(pr?pr.position:1)),fields:f,version:q};" +
+    "return Promise.resolve(k);}" +
     // Public previews need one deterministic "today" so a story dated 2026-08-06 does not
     // render as the visitor's next day. This shim is opt-in through preview_date and only lives
     // in the inert preview document; the live app runtime never receives this preference.
@@ -824,8 +936,10 @@ export function stubOmaScript(name, items, apps, prefs) {
     "for(var i=0;i<S.items.length;i++){var c=(S.items[i]&&S.items[i].collection)||b;m[c]=(m[c]||0)+1;}" +
     "for(var k in m)o.push({collection:k,items:m[k]});return o;}" +
     "return {get state(){return S},ready:function(cb){try{cb(S)}catch(e){}},onChange:function(){},onPrefChange:function(){}," +
-    "pref:function(k,f){return Object.prototype.hasOwnProperty.call(P,k)?P[k]:f},setPref:function(){return ok},addItem:function(){return ok},updateItem:function(){return ok},moveItem:function(){return ok}," +
-    "deleteItem:function(){return ok},refresh:function(){return Promise.resolve(R())}," +
+    "pref:function(k,f){return Object.prototype.hasOwnProperty.call(P,k)?P[k]:f}," +
+    "setPref:function(k,v){return A('setPref',{key:k,value:v})},addItem:function(o){return A('addItem',o)}," +
+    "updateItem:function(id,f){return A('updateItem',{id:id,fields:f})},moveItem:function(id,g,p){return A('moveItem',{id:id,group:g,position:p})}," +
+    "deleteItem:function(id){return A('deleteItem',{id:id})},refresh:function(){return Promise.resolve(R())}," +
     // The same two answers the parented inert guard gives. This is the machine that composes
     // PUBLIC preview pages (hosted /library today, share pages next), and a meta app asks
     // "which collections exist" before it asks for rows — answering that with an empty envelope

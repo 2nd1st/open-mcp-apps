@@ -1,7 +1,10 @@
 # The runtime contract — `window.oma`
 
-**Contract version: 2** (read it at runtime as `oma.contract`; 2 = the 2026-08-04 name
-removals below — an app built against 1 that used none of the removed names runs unchanged)
+**Contract version: 3** (read it at runtime as `oma.contract`; 3 = the write verbs
+`addItem`/`updateItem`/`moveItem`/`deleteItem`/`setPref` now resolve to an `OmaAck` object
+instead of the raw MCP envelope — an app that read `.ok`/`.id`/`.item` off those calls gets a
+real answer now where it saw `undefined` before. 2 was the 2026-08-04 name removals; an app
+built against an earlier number that used none of the changed surfaces runs unchanged.)
 
 This is the contract for writing an app **outside** this repo — in your own editor, with your own
 bundler — and installing it with `install-app.mjs`. If an AI is writing your app it doesn't need
@@ -14,7 +17,7 @@ Everything below was measured against a real engine in a real browser, not read 
 > ### 🔴 This file is the API surface. It is not the whole contract.
 >
 > The complete authoring contract — the API **plus** the visual kit, the house style, the app-shell
-> bones and the worked examples — is the `GUIDE` the engine hands its AI, **29,022 bytes** of it.
+> bones and the worked examples — is the `GUIDE` the engine hands its AI, **29,702 bytes** of it.
 > This file used to be a third of that, and the argument for reading the GUIDE was simply that it
 > was the bigger document. It isn't much bigger any more — but the gap closed from **this** side,
 > when §8 and §9 were added, and neither of them is the house style or the examples. Size was never
@@ -40,14 +43,16 @@ On disk (an App Store entry, or an app you build yourself) that is a directory:
 
 | | |
 |---|---|
-| Size | ui ≤ 200,000 bytes (`ui_too_large` above it) |
+| Size | no cap. The engine refuses an empty document (`empty_ui`) and nothing else about size |
 | Network | no requests — the runtime iframe's CSP is `default-src 'none'`, so `fetch`/XHR fail and remote images, fonts and scripts do not load. Inline every asset (`data:` URIs are allowed for images and fonts). **This is not a data-egress guarantee**: CSP does not govern a page navigating itself, so treat anything your app can read as something it could also send somewhere. Don't put secrets in an app you wouldn't publish |
 | Provided for you | the kit CSS, the host's design-token layer, and `window.oma` — all injected at serve time, so don't ship your own copy |
 | Declaration | the manifest slot, naming your collection and its fields (§5). NOT inside the html — a document carrying a legacy `#oma-manifest` block is refused on save |
 
-Bundle whatever you like into those bytes. 200 KB is a real constraint but not a small one — it
-holds a compiled framework and a substantial app, as long as you are not shipping a design system
-the engine already gave you.
+Bundle whatever you like into it. The cap that used to live here is gone: the only size that still
+costs you anything is on the READ side, where `get_app` returns the source in windows — so a large
+app is not refused, it is merely read in more trips. Data still belongs in the collection rather
+than in the document, and the kit CSS and design tokens are already provided, so most documents
+that grew large did so for a reason worth fixing anyway.
 
 ## 2. Your script must be a module
 
@@ -63,6 +68,10 @@ So `const oma = window.oma` at the top of a classic script reads `undefined` and
 The trap is that this is **mode-dependent**: behind the sandboxed runner the bridge is a classic
 inline script that runs first, so the exact same file works there and fails in direct mode. Use a
 module and the question never arises.
+
+Same rule for a **bundle** you reference with `oma-asset:` (§6.1) — write `type="module"` on the
+tag and the engine keeps it when it inlines the bytes. That is what puts your code after the
+runtime module and after your mount point, both for free.
 
 ## 3. Two runtimes, one vocabulary
 
@@ -89,13 +98,14 @@ writes to any other collection, `sendMessage`, `setPref`, deleting items.
 ### Available in BOTH modes — the portable surface (19)
 
 ```js
-oma.contract                        // number — this contract's version (1)
-oma.state                           // {collection, items:[{id, group, position, fields, version}], version, total, truncated}
+oma.contract                        // number — this contract's version (3)
+oma.state                           // {collection, items:[{id, group, position, fields, version}], version, total, truncated,
+                                    //  app, host} — app is which app this is; host is a LABEL (usually empty), never a branch
 oma.ready(cb)                       // cb(state) once connected AND the first data has arrived — START HERE
 oma.onChange(cb)                    // cb(state) after every change, including your own writes
 oma.refresh()                       // re-read the bound collection
 
-oma.addItem({group, fields, position})   // → Promise
+oma.addItem({group, fields, position})   // → Promise<ack>  — see "what a write resolves to" below
 oma.updateItem(id, fields)               // shallow merge; null deletes a key
 oma.moveItem(id, group, position)
 oma.deleteItem(id)                       // confirm_delete is ENFORCED BY THE ENGINE: when on, the shell
@@ -112,7 +122,7 @@ oma.callFunction(fn, args)               // run a function THIS app declares (ma
 
 oma.pref(key, fallback)             // merged: your override ▸ global ▸ fallback. The fallback's TYPE coerces
 oma.onPrefChange(cb)                // cb({key, value, oldValue, scope})
-oma.setPref(key, value)             // your own settings only; scalars only
+oma.setPref(key, value)             // your own settings only; scalars only — resolves the same ack
 
 oma.files.list()                    // → [{path, size, mime, …}]
 oma.files.read(path)                // → Uint8Array
@@ -138,6 +148,50 @@ Retired from this surface 2026-08-04 (each returns WITH its real consumer, never
 `updateContext` (ships with the view-context bridge), `host` and `isControlPlaneTool` (zero
 consumers), `bind` (was loader-only — now the internal `__OMA_BIND__` hook, not author API).
 `callFunction` returned 2026-08-05 exactly on that condition — W3 shipped the server seat.
+
+### What a write resolves to
+
+Every write verb — `addItem`, `updateItem`, `moveItem`, `deleteItem`, `setPref` — resolves the
+same **ack**, in both runtimes and in a preview:
+
+```js
+{ ok: true, id, collection, seq, prev_collection_seq,
+  item: {id, group, position, fields, version} }   // `deleted: true` and no item, on a delete
+```
+
+A REFUSAL is an ANSWER, not an exception: `{ok:false, reason, note}` — a version conflict, a
+policy denial, or the user answering No to the engine's delete confirmation
+(`reason: "confirmation_declined"`). So the one test to write is `if (!ack.ok)`. What still
+THROWS is the other two kinds of trouble: an argument the runtime rejects before it sends
+anything (`setPref` with a reserved key or a non-scalar value, `addItem` before a collection is
+bound), and a transport failure — the host declining the call, the bridge dropping it.
+
+`ack.item.version` is the version the row now has, and it is what lets an app recognise the echo
+of its own write: remember it, and skip every change event at or below it. An app with an outside
+source of truth (an editor, a two-way bridge) needs exactly that, or it writes the stale copy back
+over what the user is typing.
+
+Do NOT expect `{content, structuredContent}` here. That is the raw MCP envelope, and it is what
+`oma.callTool` — the escape hatch to the raw tool surface — still resolves, deliberately. The
+typed verbs hand you the ack out of it. (Before 2026-08-23 they did not, and every app in
+`components/` carried its own adapter for the difference; most of those adapters were wrong.)
+
+### The two numbers on an item
+
+`position` is scoped to **(collection, group)** — not to the collection. Appending takes that
+GROUP's highest position + 1, so every group owns its own `1`, `2`, `3`, and the same number
+appears once per group. Sorting a cross-group list by `position` therefore interleaves the groups
+while looking like a real order: four rows written `a1, b1, a2, b2` into two groups come back
+`b1, a1, b2, a2` by position alone (measured 2026-08-22). Compare positions only WITHIN one group
+— which is also why `oma.moveItem(id, group, position)` takes the group and the position together.
+
+`version` is the ledger seq of the write that produced the row, and there is ONE ledger for the
+whole store. So it is globally monotonic and comparable across groups and collections — the key to
+sort by when you want "which happened first" and the rows do not share a group — and it **jumps**:
+consecutive rows of your own collection read `version` 1 and 4 when other writes landed in between
+(measured 2026-08-22). Never read it as a per-item revision count, never expect +1, and never
+subtract two of them. It is the same number a conditional update compares against; one number, two
+uses, not two numbers.
 
 ### Direct mode only (2)
 
@@ -189,6 +243,29 @@ pair — a document is never paired with a declaration from a different save.
 with `field trips.place must be an object`. Declaring `fields` makes the engine validate **every**
 write to that collection, from your app, from the AI, from anywhere.
 
+### 5.1 Network: declare what you connect to
+
+An app reaches nothing by default. Say where you need to go, and the engine relays it:
+
+```json
+{ "csp": { "connectDomains":  ["https://api.example.com", "wss://live.example.com"],
+           "resourceDomains": ["https://cdn.example.com", "https://*.example.com"],
+           "frameDomains":    ["https://www.youtube.com"],
+           "baseUriDomains":  ["https://cdn.example.com"] } }
+```
+
+- **`connectDomains`** — `fetch` / `XHR` / WebSocket targets.
+- **`resourceDomains`** — where images, scripts, stylesheets, fonts and media are loaded from.
+- **`frameDomains`** — origins you may put in a nested `<iframe>`.
+- **`baseUriDomains`** — origins allowed in a `<base>` tag.
+
+Each is an array of origins (`scheme://host[:port]`, or `https://*.example.com` for subdomains) —
+no paths, no trailing slash. The user can add origins of their own on top of yours, per app or
+globally, through the settings keys `policy:csp:<app>` and `policy:csp:*`.
+
+**Hosts enforce this, per the MCP Apps spec; the engine only relays the union of the two.** Whether
+a given host honours a declaration is that host's business — test where you ship.
+
 ## 6. Installing, and what provenance means
 
 ```bash
@@ -212,6 +289,51 @@ its version history.
 The trade you are accepting: **the AI can no longer iterate on this app.** Your file is the source
 of truth; you rebuild and re-install. It can still read the source, and the app shares the user's
 data like any other.
+
+### 6.1 Building an app outside the chat
+
+A bundler's output is not source, so the registry does not store it as source. Emit a readable
+**template** — a mount point plus references to your build output — and push the output as files:
+
+```html
+<link rel="stylesheet" href="oma-asset:app.css">
+<div id="root"></div>
+<script type="module" src="oma-asset:app.js"></script>
+```
+
+```bash
+node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
+     --asset ./dist/app.js --asset ./dist/app.css --update
+```
+
+The engine replaces each reference with its bytes and **keeps the tag you wrote** — only the fetch
+attributes (`src`/`href`/`crossorigin`/`integrity`) go. So `type="module"` is the one attribute that
+matters: it makes your bundle deferred, which puts it after the runtime module (`window.oma` is
+already there) and after your mount point is parsed. Vite emits exactly this tag; leave it alone. A
+whole document and a fragment are both fine — the shell wraps whichever it is handed.
+
+Target notes for whoever writes the build step, each one a constraint the door actually has:
+
+- **One chunk.** Code splitting cannot work here: a dynamic import resolves against the *document*
+  URL, which is not the file plane, and the widget CSP blocks the fetch either way (measured —
+  `script-src-elem` refusal, blank app). Rollup: `inlineDynamicImports: true`.
+- **No external URLs.** The engine inlines at serve time because the CSP forbids a subresource and
+  a host iframe could not reach your machine anyway.
+- **Stable output names**, or pass `--prune-assets`. The file plane is keyed (app, path), so a
+  content-hashed name leaves the previous build stored forever with nothing referencing it. Pin the
+  names (`entryFileNames: "app.js"`) or let the flag sweep what this push neither carried nor
+  referenced.
+- **The manifest is its own JSON file**, never an in-document block. A reference names the file's
+  **basename** in this app's file plane.
+- **Function bodies must survive the bundler**: `<script type="text/oma-function" data-fn="…">`
+  blocks are declarations the engine reads, and a bundler that treats them as code will inline or
+  drop them — emit them into the template instead. Inside one, `api.count()` with no collection
+  named reads the same collection your widget opens on.
+
+Types for both halves ship with the package: `types/window-oma` for `window.oma`,
+`types/oma-function` for the `args`/`api` a function body sees. An app with asset references is
+**read-only to the AI**: `get_app` returns the template, `edit_app` and the AI's `save_app` refuse
+it, and re-running the command above is the edit.
 
 ## 7. Versioning
 

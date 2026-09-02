@@ -10,10 +10,11 @@ provides \`window.oma\` (data + persistence + host theming). Your app only rende
 UI and calls \`window.oma\`. Rules:
 
 - NO external resources (no CDN scripts, no remote CSS/images/fonts, no fetch). The sandbox
-  CSP blocks them. Inline everything. This is NOT claude.ai Artifacts: there is no React
-  runtime, no JSX compiler, and no CDN allowlist here — <div className=...> and
-  <script src="https://cdnjs..."> will NOT work. Write plain HTML + vanilla DOM against
-  window.oma (the pattern below is all you need).
+  CSP blocks them. Inline everything — and an inlined UMD/IIFE bundle writes generic globals
+  onto \`window\`, shared with the shell in a local install, so wrap it in your module. This
+  is NOT claude.ai Artifacts: no React runtime, no JSX compiler, no CDN allowlist —
+  <div className=...> and <script src="https://cdnjs..."> will NOT work. Write plain HTML +
+  vanilla DOM against window.oma (the pattern below is all you need).
 - Do NOT import any SDK and do NOT touch postMessage — the shell owns the MCP bridge.
 - Put your logic in <script type="module"> (the shell's module runs first, so window.oma exists).
 - **Your app is CODE, not a database.** Anything that is DATA — rows, entries, a question
@@ -23,10 +24,12 @@ UI and calls \`window.oma\`. Rules:
   spacing. Never minify or pack lines. Every later change goes through \`edit_app\`, which
   matches EXACT strings — a 300-character line has no small edit inside it, so a compressed
   app can only ever be rewritten whole, at full price, for the rest of its life.
-- Keep it under ~100KB — and if you are near that, the reason is almost always data in the source.
-  (Reads are WINDOWED for a reason: some hosts silently drop the middle of a tool result past
-  roughly 45KB, so source travels in windows and edits go through edit_app — a lean
-  app is one you can still read in a couple of windows.)
+- **Size is a cost, not a limit.** There is no cap on how big an app may be — so this one is
+  advice, and here is what it is actually about: do not try to write a complex app in ONE shot.
+  Save a working skeleton first, then grow it section by section with \`edit_app\`. And your
+  source is READ IN
+  WINDOWS — some hosts silently drop the middle of a tool result past roughly 45KB, so \`get_app\`
+  hands it back one window at a time. A lean app is one you can still read in a couple of windows.
 
 ## Data model
 
@@ -87,20 +90,28 @@ their content in the app's job, not the chat's:
   oma.state                          // {collection, items, version} — current snapshot
   oma.ready(cb)                      // cb(state) once connected + initial data loaded. START HERE.
   oma.onChange(cb)                   // cb(state) after EVERY data change (incl. your own writes)
-  oma.addItem({group, fields})       // returns Promise; state auto-refreshes via onChange
+  oma.addItem({group, fields})       // → ack (below); state auto-refreshes via onChange
   oma.updateItem(id, fields)         // shallow-merge; set a key to null to delete it
   oma.moveItem(id, group, position?) // position defaults to end of target group
   oma.deleteItem(id)
   oma.refresh()
 
+Every write resolves the same ack — an acknowledgement, never a snapshot and never the raw
+{content, structuredContent} envelope (only oma.callTool still gives you that):
+
+  {ok:true, id, seq, item:{id, group, position, fields, version}}   // delete: {deleted:true}
+  {ok:false, reason, note}    // conflict, policy, or the user cancelling a delete
+
+A refusal is an ANSWER, not an exception: test \`if (!ack.ok)\`. Only a rejected argument or a
+transport failure throws.
+
 Pattern: render everything from state inside ONE render(state) function; register it with
 both ready() and onChange(); mutations just call oma.* and DON'T touch local state
-(the runtime applies the write and re-triggers render with fresh state — a write's reply is
-an acknowledgement, not a snapshot).
+(the runtime applies the write and re-triggers render with fresh state).
 
-The shell auto-refreshes while visible (~20s poll + on tab refocus) and only fires onChange
-when data actually changed — so external edits (the AI, another host) appear on their own;
-you never need your own polling. Because a re-render CAN arrive at any time, keep transient
+The shell auto-refreshes while visible — adaptive poll + tab refocus in a chat host,
+near-instant push in the standalone viewer — and only fires onChange when data actually
+changed, so external edits (the AI, another host) appear on their own; you never poll yourself. Because a re-render CAN arrive at any time, keep transient
 UI state (an open input, a drag) in variables outside render().
 
 ## Refresh semantics (one ledger, one \`seq\`)
@@ -115,14 +126,14 @@ appends to a single ledger and bumps one global \`seq\`. Three consequences:
   never arrive through it, and it does not even FIRE for a change that touched only other
   collections (the poll advances its bookmark silently).
 - An unmoved seq means nothing changed anywhere — that one cheap check (the \`data_version\`
-  tool) is how the shell's poll decides to refetch, and why you never poll yourself.
+  tool) is what the shell asks before refetching.
 
 ## Multi-collection apps (fetch what you render)
 
 Several declared collections ⇒ the widget binds to the app's NAME (usually an empty
 collection): \`oma.state.items\` is NOT your data, and \`onChange\` stays SILENT about the
-collections you render — the staleness poll checks the BOUND one only. "Never poll yourself"
-is its privilege alone. So fetch what you render, and own the staleness:
+collections you render — the staleness check covers the BOUND one only, so "never poll
+yourself" is that one's privilege. Fetch what you render, and own the staleness:
 
   const DATA = { "trip-days": [], "trip-costs": [] };
   async function pull() {
@@ -278,12 +289,11 @@ Short notes — this guide is your contract, not a sandbox:
 
 ## Environment awareness (optional)
 
-  oma.host        // who is rendering: "claude-ai", a ChatGPT client name, "browser-viewer", …
   oma.standalone  // true in a plain browser tab (no chat attached): sendMessage will
-                    // show a notice instead of sending — data operations all still work.
+                  // show a notice instead of sending — data operations all still work.
 
-Apps run unchanged across hosts; use these only to fine-tune (e.g. hide a
-"Send to AI" button when oma.standalone).
+Apps run unchanged across hosts, and there is no "which host am I in" — most never say.
+Use this only to fine-tune (e.g. hide a "Send to AI" button when oma.standalone).
 
 ## Sandbox limits (these fail SILENTLY — never use them)
 
@@ -597,10 +607,10 @@ get_app_guide {topic: "basics"} for the API contract.
   functions: () => PREAMBLE + `## Exposing callable functions
 
 A function is your app acting WITHOUT its UI on screen: data in, data out, running engine-side —
-so it works from a bare chat ("RSVP yes for Sam") with no widget mounted. Two rules are absolute:
-a function never touches UI (widgets react to its writes through the normal data loop), and its
-body is SYNCHRONOUS — no await, no timers, no network. The store is synchronous, so nothing a
-function is for needs async; a returned Promise is an error.
+so it works from a bare chat ("RSVP yes for Sam") with no widget mounted. One rule is absolute: a
+function never touches UI (widgets react to its writes through the normal data loop). The body runs
+on its own thread, so it MAY \`await\` — \`await fetch(...)\` included; this is where your app talks to
+the outside world. \`api\` stays synchronous (the store is), so most bodies still have no await in them.
 
 Declare the signature in \`manifest.functions\`, carry the body in your document, and the two must match —
 a save with a declared function and no body block (or a body block you forgot to declare) is
@@ -619,13 +629,20 @@ return { total: api.count() };
 </script>
 \`\`\`
 
-The body sees exactly two names: \`args\` (validated against your params) and \`api\`:
+The two names your data goes through are \`args\` (validated against your params) and \`api\`:
 \`api.list({collection?, group?, match?, limit?})\` · \`api.count(collection?)\` ·
 \`api.add({collection?, group?, fields, position?})\` → \`{id, seq}\` ·
-\`api.update({collection?, id, fields})\`. Collections reachable: the app's own binding plus what
-its manifest declares — nothing else, never settings. There is deliberately NO api.delete
-(destructive verbs keep the engine's confirmation door). Budgets per call: 2s wall time,
-100 writes, 200 reads, 32KB returned. Whatever you \`return\` (JSON-serializable) is the reply.
+\`api.update({collection?, id, fields})\`. Omit \`collection\` and you get the SAME one your widget
+opens on — your single declared collection, else the app's name. Reachable: that binding plus every
+collection your manifest declares — nothing else, never settings. There is deliberately NO api.delete
+(destructive verbs keep the engine's confirmation door). Also in scope: \`fetch\`, \`AbortController\`,
+\`URL\`, \`URLSearchParams\`, \`setTimeout\`/\`clearTimeout\`, \`TextEncoder\`/\`TextDecoder\`, \`atob\`/\`btoa\`.
+\`api.secret\` exists but refuses — credentials are not available to functions yet.
+
+Budgets per call: 10s wall time (declare \`"timeout_ms"\` for more — no engine ceiling; the host's tool-call timeout is the real one),
+100 writes, 200 reads, 32KB returned. Whatever you \`return\` (JSON-serializable) is the reply — so
+a function fetches and DISTILLS: parse the response, write or return the part that matters. Streams
+and large binaries do not fit through this pipe.
 
 Calling: the AI calls \`call_function {app, function, args, command_id}\`; your own widget calls
 \`oma.callFunction("rsvp", {...})\` — same dispatcher, and a widget can only reach its OWN app's

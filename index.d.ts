@@ -75,7 +75,6 @@ export function seedSystemApps(store: Store, opts?: { log?: (line: string) => vo
 
 export const SCHEMA_VERSION: number;
 export const APP_NAME_RE: RegExp;
-export const MAX_APP_HTML: number;
 export const SETTINGS_COLLECTION: string;
 export const RESERVED_KEY_RE: RegExp;
 export const MAX_ITEM_FIELDS_BYTES: number;

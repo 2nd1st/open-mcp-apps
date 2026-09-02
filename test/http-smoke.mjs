@@ -40,6 +40,12 @@ for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f)
   store.execute({ type: "save_app", command_id: "seed-display", name: "display-fixture",
     ui: "<!DOCTYPE html><html><body><div id='wall'>wall</div></body></html>",
     manifest: { stage: { width: "fluid", display: true } }, actor: "seed" });
+  // a fixture that DECLARES where it reaches. The viewer's header is built per app now
+  // (http.mjs viewCspFor ∘ cspFor), and test/csp-passthrough.mjs proves the builder in isolation —
+  // this fixture is what proves the ROUTE actually hands it the app's declaration.
+  store.execute({ type: "save_app", command_id: "seed-csp", name: "csp-fixture",
+    ui: "<!DOCTYPE html><html><body><div id='net'>net</div></body></html>",
+    manifest: { csp: { connectDomains: ["https://api.github.com"], frameDomains: ["https://www.youtube.com"] } }, actor: "seed" });
   store.close();
 }
 
@@ -213,6 +219,15 @@ try {
   const viewCsp = viewResp.headers.get("content-security-policy") || "";
   ok("/view carries the CSP header (default/frame 'none', connect-src 'self')",
     viewCsp.includes("default-src 'none'") && viewCsp.includes("connect-src 'self'") && viewCsp.includes("frame-src 'none'"));
+  // …and the header is PER APP: an app that declared origins gets them here too, so "it works in
+  // our viewer" and "it works in a host" are one question. The floor above is the same route on an
+  // app that declared nothing — the pair is the assertion, since either alone would pass on a
+  // constant. `'self'` survives the widening because losing it would cut this page's own /rpc.
+  const cspFixtureCsp = (await fetch(`${BASE}/view/csp-fixture`)).headers.get("content-security-policy") || "";
+  ok("/view builds the header from the app's own declaration",
+    cspFixtureCsp.includes("connect-src 'self' https://api.github.com")
+    && cspFixtureCsp.includes("frame-src https://www.youtube.com")
+    && cspFixtureCsp.includes("form-action 'none'"), cspFixtureCsp);
   ok("standalone config injected before runtime", page.indexOf('data-oma="standalone"') < page.indexOf('data-oma="runtime"') && page.includes("__OMA_STANDALONE__"));
   ok("app + shell both present", page.includes('id="grid"') && page.includes("window.oma"));
   const idx = await (await fetch(`${BASE}/`)).text();

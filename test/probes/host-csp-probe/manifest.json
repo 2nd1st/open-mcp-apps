@@ -1,0 +1,42 @@
+{
+  "manifest_version": 2,
+  "kind": "app",
+  "collections": {
+    "host-csp-probe": { "label_field": "probe" }
+  },
+  "stage": { "width": "wide" },
+  "csp": {
+    "connectDomains": [
+      "https://api.github.com",
+      "http://127.0.0.1:8787",
+      "http://localhost:8787"
+    ],
+    "resourceDomains": ["https://raw.githubusercontent.com"],
+    "frameDomains": ["https://www.youtube-nocookie.com"]
+  },
+  "functions": {
+    "net_probe": {
+      "description": "Fetch a URL from the ENGINE process and return the first 40 characters. The first pipe: an MCP tool call, no CSP declaration involved, so it is the control for every browser-side probe beside it.",
+      "timeout_ms": 15000,
+      "params": {
+        "url": { "type": "string" }
+      }
+    }
+  },
+  "settings": [
+    {
+      "key": "host_key",
+      "type": "string",
+      "label": "Host key",
+      "description": "Which host this copy is running in, spelled as one of host-matrix.json's platform_keys. The probe remembers your pick so every row it writes is already labelled.",
+      "default": ""
+    },
+    {
+      "key": "loopback_origin",
+      "type": "string",
+      "label": "Loopback origin",
+      "description": "Origin of this engine's own browser viewer, e.g. http://127.0.0.1:8787. Empty means derive it from oma.viewBase.",
+      "default": ""
+    }
+  ]
+}

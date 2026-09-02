@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.5.9([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.6.0([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -321,12 +321,25 @@ AI 是通常的作者,但不是唯一的作者——它的 context window 不应
 node install-app.mjs ./my-app.html              # 你写的,完全信任——与 AI 写的同权
 node install-app.mjs ./my-app.html --sandboxed  # 不受信:跑在 runner 后面,零 capability
 node install-app.mjs --list                     # 装了什么、各自的 provenance
+
+# 构建管线的产物:一份可读的模板 + 它的 bundle,声明作为独立文件
+node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
+  --asset ./dist/app.js --asset ./dist/app.css --update
 ```
 
-一个自包含的 HTML 文档,≤200 KB,不发网络请求——引擎会注入 kit CSS、宿主 design token 和
-`window.oma`。交换条件:AI 不再能迭代它(你的文件是唯一真相,改了重装),但仍能读它的源码,
-app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`--sandboxed` 装进来的 app
-在删除之前永远在沙盒里。
+接受两种形状。**一个自包含的 HTML 文档**,不设大小上限(但别写胖:数据进 collection,源码是
+分窗读的)——引擎会注入 kit CSS、宿主 design token 和 `window.oma`。或者**模板 + bundle**:
+HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="module" src="oma-asset:app.js">`、
+`<link rel="stylesheet" href="oma-asset:app.css">`),`--asset` 把这些文件推进该 app 的 file plane,
+引擎在文档离开 store 的那一刻内联它们——widget 的 CSP 不许外链子资源,宿主的 iframe 也够不着这台机器。
+
+交换条件:AI 不再能迭代它——你的文件是唯一真相,改了重装。单文档 app 它仍能读源码;模板 + bundle
+的 app 它只读模板,bundle 是你的(`edit_app` 与 AI 的 `save_app` 都拒,错误码 `built_outside`;
+重跑上面那条命令就是编辑)。两种形状都像其它 app 一样共享你的数据。provenance 双向不可覆写:
+`--sandboxed` 装进来的 app 在删除之前永远在沙盒里。widget 能连哪里由 app 自己的声明决定
+(`manifest.csp`,按 MCP Apps 规范透传给宿主——缺省什么都不连);app 的 *function* 在引擎侧运行、
+可以 `fetch`——见 RUNTIME.md §5.1 与 §6.1,以及两份类型文件——`@2nd1st/open-mcp-apps/types/window-oma`(`window.oma` API)与
+`@2nd1st/open-mcp-apps/types/oma-function`(函数体拿到的 `args`/`api`),都经包的 `exports` 解析。
 
 **[`RUNTIME.md`](../RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
 以及只咬非 AI 作者的那些坑。它带一个版本号(`oma.contract`),`test/runtime-contract.mjs` 把它钉在
@@ -381,8 +394,8 @@ app 也像其它 app 一样共享你的数据。provenance 双向不可覆写:`-
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 429 条断言,走真实 stdio——含运行时 app 创建
-node test/http-smoke.mjs     #  79 条断言,走 HTTP transport(含 SSE /events、viewer)
+node test/server-smoke.mjs   # 431 条断言,走真实 stdio——含运行时 app 创建
+node test/http-smoke.mjs     #  80 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
