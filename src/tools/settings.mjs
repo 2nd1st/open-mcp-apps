@@ -17,7 +17,7 @@ export function register(ctx) {
 
   // ------------------------------------------------------ prefs schema (settings pane, P4)
   server.registerTool(
-    "ui_prefs_schema",
+    "get_ui_preference_schema",
     {
       title: "Shared preference catalog",
       annotations: RO,
@@ -40,9 +40,9 @@ export function register(ctx) {
   );
 
   // app_permissions retired 2026-08-04 (elegance review A13): its per-app rows were a projection
-  // of what app_html already returns (author, tier, caps — and now locked), to a single caller
-  // that fetches app_html for every app anyway. The settings pane assembles the same view from
-  // list_apps (locked rides each row) + its app_html cache.
+  // of what get_app_html already returns (author, tier, caps — and now locked), to a single caller
+  // that fetches get_app_html for every app anyway. The settings pane assembles the same view from
+  // list_apps (locked rides each row) + its get_app_html cache.
 
   // -------------------------------------------------------------- privileged policy writer
   // The ONLY path that can write reserved security:*/policy:* keys. Privilege travels

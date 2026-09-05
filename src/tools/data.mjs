@@ -46,20 +46,25 @@ export function register(ctx) {
       // so the page also shrinks to the result budget, and the cursor follows the rows that
       // actually shipped — a shrunk page continues exactly where it ended.
       // The version trio comes FROM queryItems' own transaction (a second call could postdate the
-      // rows and stamp a torn page); `host` is the runtime's documented oma.host source.
+      // rows and stamp a torn page). `host` used to ride here too — the CALLER's own client name,
+      // handed back to the model that sent it. It is a provenance annotation for the ledger and
+      // never a fact the model needed; the widget channel (get_app_html) carries it now.
       let items = r.items;
       let next = r.next_cursor;
       let note;
       // A zero-row collection is the cold-start moment, and THIS reply is what the model is looking
-      // at when it decides what an empty lookup means. Same rule data_collections' empty state
-      // carries; total is pre-filter, so this fires only when truly nothing is stored here.
-      // Not for the settings collection: that one is engine-owned — "build the app for it" is
-      // wrong advice there, and every widget boot reads it (first seen as noise in a live tap).
+      // at when it decides what an empty lookup means — so it says, plainly, that the collection is
+      // empty rather than leaving "no rows" to be read as "the read failed". It used to carry a
+      // procedure for what to do about it; that came out for the directory listing, which reads a
+      // response body telling the model how to behave as a server steering its host.
+      // Total is pre-filter, so this fires only when truly nothing is stored here. Not for the
+      // settings collection: that one is engine-owned and every widget boot reads it (first seen
+      // as noise in a live tap).
       if (r.total === 0 && !a.cursor && a.collection !== "settings")
-        note = `Empty is the normal start, not a blocker. If the user is asking about content nothing holds yet, say so in one line, then build or open the app for it in the SAME reply and get rows in: seed what you genuinely know with data_batch, ask them to paste what they have — never invent rows. Sensitive data still needs their one-line yes first.`;
+        note = `This collection currently holds no items.`;
       const bodyOf = (rows) => ({ collection: a.collection, ...(a.group != null ? { group: String(a.group) } : {}),
         items: rows, version: r.version, settings_version: r.settings_version, files_version: r.files_version,
-        host: hostName(), ...(note ? { note } : {}) });
+        ...(note ? { note } : {}) });
       if (sizeOf(bodyOf(items)) > RESULT_BUDGET) {
         let keep = items.length;
         while (keep > 1 && sizeOf(bodyOf(items.slice(0, keep))) > RESULT_BUDGET) keep = Math.ceil(keep / 2);
@@ -76,20 +81,26 @@ export function register(ctx) {
   );
 
   server.registerTool(
-    "data_batch",
+    "apply_data_writes",
     {
       title: "Many writes, one transaction",
       // Idempotent for the same reason the single-write tools are: the batch's command_id gives each
       // command inside it a derived, stable id, so replaying the batch replays nothing. Measured.
       annotations: WRITE,
-      description: "Apply up to 200 writes in ONE transaction — for seeding an app from what you already know, or filling a board in one go, instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item / data_delete_item, as {type, ...args}: type is add_item | update_item | move_item | delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
+      description: "Apply up to 200 writes in ONE transaction — for applying many known rows in one go instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item, as {type, ...args}: type is add_item | update_item | move_item. Deletion is not one of them: a delete needs its own confirmation, which an all-or-nothing batch cannot give per row, so it goes through data_delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
       inputSchema: {
         ...cmdArgs,
-        // The commands are NOT re-declared here, on purpose. They are the same four typed commands the
-        // single-write tools already publish, the store validates each one exactly as it would alone,
-        // and copying their schemas into this one would mean two places to change and two chances to
-        // disagree. The shape is taught once, in get_app_guide.
-        commands: z.array(z.record(z.string(), z.any())).describe("[{type: \"add_item\", collection, fields, group?}, {type: \"update_item\", id, fields}, …] — same arguments as the single-write tools"),
+        // ONE key is declared here and everything else stays passthrough, and the asymmetry is the
+        // point. The ARGUMENTS are the same typed commands the single-write tools already publish,
+        // the store validates each one exactly as it would alone, and copying their schemas into
+        // this one would mean two places to change and two chances to disagree — the shape is
+        // taught once, in get_app_guide. But `type` is not an argument, it is WHICH VERBS this
+        // tool carries, and that is this tool's own claim about itself: the annotation says
+        // destructiveHint:false, so the wire has to make it impossible for a delete to arrive
+        // here. Declared as an enum rather than checked in the handler because a reader of
+        // tools/list has to be able to see the same three verbs the annotation is promising.
+        commands: z.array(z.object({ type: z.enum(["add_item", "update_item", "move_item"]) }).passthrough())
+          .describe("[{type: \"add_item\", collection, fields, group?}, {type: \"update_item\", id, fields}, …] — same arguments as the single-write tools"),
       },
       outputSchema: {
         ok: z.boolean(),
@@ -98,9 +109,10 @@ export function register(ctx) {
         results: z.array(z.object({ id: z.string().optional(), seq: z.number().optional() })).optional(),
         failed_index: z.number().optional(),
         reason: z.string().optional(),
-        request_state: z.string().optional(),
-        expires_at: z.string().optional(),
-        preview: z.string().optional(),
+        // request_state / expires_at / preview left with the batch-delete path they belonged to.
+        // They were the two-phase confirmation's channel, and this tool no longer has a verb that
+        // can demand one — a key declared here that nothing can ever fill is a key every
+        // conversation pays for and no caller can act on.
         note: z.string().optional(),
         eot: z.string().optional(),
       },
@@ -123,18 +135,14 @@ export function register(ctx) {
         ...c, command_id: `${base}:${i}`, actor: c.actor || a.actor || "agent", host,
       }));
       const r = store.executeBatch(commands);
-      // A confirmation demand inside a batch is not a batch failure — it is the same two-phase
-      // flow, reported with the index so the caller knows WHICH command to confirm. Handing it
-      // back as a plain isError while dropping the state told the caller to "resend with a
-      // request_state" it had never been given (codex review): an instruction that cannot be
-      // followed is worse than a refusal. Nothing was applied — the batch is all-or-nothing —
-      // so re-sending the whole batch with the state attached to that one command is the retry.
-      if (!r.ok && r.failure && r.failure.confirmation_required) {
-        const f = r.failure;
-        const note = `Command ${r.index} needs the user's confirmation — deleting "${f.preview}". NOTHING was applied. Confirm with the user, then re-send the WHOLE batch with request_state on that command (expires ${f.expires_at}).`;
-        return toMcp(answer.ack({ ok: false, reason: "confirmation_required", failed_index: r.index,
-          request_state: f.request_state, expires_at: f.expires_at, preview: f.preview, note }, note));
-      }
+      // The confirmation branch that used to sit here went with the verb that needed it. It
+      // existed for `delete_item` inside a batch: a two-phase demand reported by index, so the
+      // caller could re-send the whole batch with a request_state pinned to one command. The
+      // schema no longer admits that verb (see `commands` above), so what reaches this line is
+      // either a clean batch or a command the store rejects outright — the ordinary failure path
+      // right below, which already names the index. The STORE keeps batch delete and its
+      // confirmation semantics intact and tested; what changed is that this tool stopped
+      // offering them.
       if (!r.ok) {
         const why = r.error === "batch_failed"
           ? `Command ${r.index} failed (${failNote(r.failure)}) — NOTHING was applied. Fix that one and resend the whole batch.`
@@ -245,11 +253,11 @@ export function register(ctx) {
   );
 
   server.registerTool(
-    "data_version",
+    "get_data_version",
     {
       title: "Data change probe",
       annotations: RO,
-      description: "The cheapest possible change check: returns the global change counter (seq) plus settings/files sub-counters. If seq hasn't moved since you last looked, NOTHING changed anywhere — skip re-reading. Widgets use this for adaptive polling; you can too before re-listing a collection.",
+      description: "The cheapest possible change check: returns the store's global change counter (seq) plus settings/files sub-counters. An unchanged counter means nothing in the store changed. Widgets read it for adaptive polling.",
       inputSchema: {},
       outputSchema: { seq: z.number(), settings_version: z.number(), files_version: z.number(), schema_version: z.number() },
     },
@@ -265,7 +273,7 @@ export function register(ctx) {
   );
 
   server.registerTool(
-    "data_collections",
+    "list_data_collections",
     {
       title: "List collections",
       annotations: RO,
@@ -280,13 +288,13 @@ export function register(ctx) {
     },
     async () => {
       const collections = store.listCollections();
-      // The empty answer CARRIES the rule for the empty state. This fact used to live only in the
-      // resident INSTRUCTIONS — the channel that measurably loses (prose lost the birthday fight in
-      // apps.mjs, and one measured host truncates the tail of INSTRUCTIONS entirely). "No
-      // collections yet." was exactly the reply the model was reading when it gave up on "what's in
-      // our freezer?". The note rides BOTH channels because hosts forward either one alone.
+      // The empty answer says the store is empty rather than returning a bare `[]`, because "no
+      // rows" and "the read did not work" are the same shape otherwise. It used to carry a
+      // procedure for what to do about an empty store as well; that came out for the directory
+      // listing, which reads instructions to the model inside a response body as a server steering
+      // its host. The note rides BOTH channels because hosts forward either one alone.
       const note = collections.length ? undefined
-        : 'No collections yet — an empty store is the NORMAL start, not a blocker. If the user asked about something no app holds yet ("what\'s in the freezer?", "who has my books?"), say in one line that nothing is stored, then BUILD the app that would hold it and open it in the SAME reply — a lookup that comes back empty is a request you have not met yet, not an answer. Missing data is never a reason to wait; missing CONSENT still is: health, financial, or other personal data needs their one-line yes first. Then get rows in — seed what you genuinely know from this chat and your memory with data_batch, and ask them to paste what they have; never invent rows.';
+        : "No collections exist in this server yet.";
       const text = collections.length
         ? collections.map((c) => `- ${c.collection}: ${c.items} item(s), last activity ${c.last_activity || "never"}`).join("\n")
         : note;

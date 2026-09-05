@@ -15,7 +15,7 @@
 //     template from the build that made it, and render perfectly while doing so).
 //
 // §2 walks all three serve-time seams by NAME, because "we wired the one we were looking at" is
-// exactly how the second and third get missed: the per-app ui:// resource, app_html (what the
+// exactly how the second and third get missed: the per-app ui:// resource, get_app_html (what the
 // universal loader mounts, and what every sandboxed tier reaches through the runner), and
 // GET /view (the browser viewer).
 //
@@ -150,10 +150,10 @@ const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
   ok("...with the bundle's own bytes untouched by the stage stamp", bundleIntact(doc));
   ok("...and the class on the app's real body", stagedBody(doc));
 }
-{ // SEAM 2 — app_html, what the universal loader mounts (and what oma.embed hands the runner).
-  const r = await client.callTool({ name: "app_html", arguments: { name: "outside-app" } });
+{ // SEAM 2 — get_app_html, what the universal loader mounts (and what oma.embed hands the runner).
+  const r = await client.callTool({ name: "get_app_html", arguments: { name: "outside-app" } });
   const doc = r.structuredContent.html;
-  ok("SEAM app_html — bundle inlined, no oma-asset: left", inlined(doc), doc.slice(0, 400));
+  ok("SEAM get_app_html — bundle inlined, no oma-asset: left", inlined(doc), doc.slice(0, 400));
   ok("...keeping type=module and media, dropping the fetch attributes", keptModule(doc), doc.slice(0, 500));
   ok("...with the bundle's own bytes untouched by the stage stamp", bundleIntact(doc));
   ok("...and the class on the app's real body", stagedBody(doc));

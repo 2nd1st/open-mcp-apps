@@ -18,7 +18,7 @@ UI and calls \`window.oma\`. Rules:
 - Do NOT import any SDK and do NOT touch postMessage — the shell owns the MCP bridge.
 - Put your logic in <script type="module"> (the shell's module runs first, so window.oma exists).
 - **Your app is CODE, not a database.** Anything that is DATA — rows, entries, a question
-  bank, a catalogue, a month of expenses — goes into the collection with \`data_batch\`, never into
+  bank, a catalogue, a month of expenses — goes into the collection with \`apply_data_writes\`, never into
   a literal in your source. See "Seeding data" below. This one is a rule, not a preference.
 - **Write it like source, not like a bundle**: one statement per line, real indentation, normal
   spacing. Never minify or pack lines. Every later change goes through \`edit_app\`, which
@@ -28,8 +28,8 @@ UI and calls \`window.oma\`. Rules:
   advice, and here is what it is actually about: do not try to write a complex app in ONE shot.
   Save a working skeleton first, then grow it section by section with \`edit_app\`. And your
   source is READ IN
-  WINDOWS — some hosts silently drop the middle of a tool result past roughly 45KB, so \`get_app\`
-  hands it back one window at a time. A lean app is one you can still read in a couple of windows.
+  WINDOWS — a tool result past roughly 45KB may not arrive whole, so \`get_app\` hands the source
+  back one bounded window at a time. A lean app is one you can still read in a couple of windows.
 
 ## Data model
 
@@ -47,10 +47,10 @@ A collection is a flat list of items:
 ### Seeding data (what keeps an app cheap to own)
 
 Building an app that starts with content — 30 practice questions, a reading list, last month's
-expenses? The content goes into the COLLECTION first, with \`data_batch\` (up to 200 commands in
+expenses? The content goes into the COLLECTION first, with \`apply_data_writes\` (up to 200 commands in
 one transaction), and the app renders whatever it finds there:
 
-  data_batch { command_id: "<one fresh uuid>", commands: [
+  apply_data_writes { command_id: "<one fresh uuid>", commands: [
     { type: "add_item", collection: "quiz", fields: { q: "…", options: ["…","…"], answer: 0 } },
     { type: "add_item", collection: "quiz", fields: { q: "…", options: ["…","…"], answer: 2 } }
   ]}
@@ -61,7 +61,7 @@ batch-level one, and a command missing it fails, which rolls the whole batch bac
 
 Do NOT put those rows in your HTML as a JS array, however convenient it looks. If you do:
 - the app grows with the data, and every later edit re-sends all of it;
-- "add ten more" becomes a full rewrite instead of one \`data_batch\` call;
+- "add ten more" becomes a full rewrite instead of one \`apply_data_writes\` call;
 - nothing can search, filter, export or share the data, and no other app can read it;
 - the user cannot add a row themselves without you editing code;
 - the data dies with the app, which defeats the entire point of this engine.
@@ -125,7 +125,7 @@ appends to a single ledger and bumps one global \`seq\`. Three consequences:
 - onChange only ever carries YOUR bound collection's snapshot — other collections' contents
   never arrive through it, and it does not even FIRE for a change that touched only other
   collections (the poll advances its bookmark silently).
-- An unmoved seq means nothing changed anywhere — that one cheap check (the \`data_version\`
+- An unmoved seq means nothing changed anywhere — that one cheap check (the \`get_data_version\`
   tool) is what the shell asks before refetching.
 
 ## Multi-collection apps (fetch what you render)
@@ -448,7 +448,7 @@ the skeleton, each addition is an \`edit_app\` of a few lines that the user can 
 
 1. **list_apps** — does something suitable already exist? Reuse it. \`open_app
    {app, collection}\` re-points an existing app at different data, which costs almost nothing.
-2. **Seed the data** if the app starts with content: \`data_batch\` first (see "Seeding data").
+2. **Seed the data** if the app starts with content: \`apply_data_writes\` first (see "Seeding data").
    The app is then written against real rows instead of guessing at a shape.
 3. **Write the skeleton** — the app bar, one \`render(state)\` that draws the collection, and the
    single most important interaction. Save it with \`save_app {name, ui, manifest, description}\`
@@ -475,7 +475,7 @@ the skeleton, each addition is an \`edit_app\` of a few lines that the user can 
    save_app WITH expected_version (an overwrite without it is refused: a save that never read
    the current source is how a live app gets eaten). Every save keeps history.
 
-\`data_batch\` details: up to 200 write commands in ONE transaction; each is
+\`apply_data_writes\` details: up to 200 write commands in ONE transaction; each is
 {type: "add_item" | "update_item" | "move_item" | "delete_item", …} with exactly the arguments of
 the matching single tool — no other command types exist in a batch. All or nothing; one {id, seq}
 receipt per command.
@@ -522,12 +522,18 @@ const STYLE_TITLES = ["Styling — host design tokens", "The system kit — alre
   "House style (make it feel built-in, but alive)",
   "App shell (the frame every app shares)", "Layout — fit the first screen"];
 
+// Every chapter is a function OF THE SEAT (`false | {egress?, executor?}` — createEngine's
+// normalised `functions` option). Only the functions pillar varies with it, and it has to: on a
+// host that does not register `call_function` the old chapter taught, in detail, an API that was
+// not there — measured on the hosted plane at 0.6.0, where the chapter and the tool list
+// disagreed and the chapter is the one an author reads. A guide is a description of THIS
+// deployment, not of the project.
 const CHAPTERS = {
   // Everything needed to write a working app, minus the purely visual chapters. The kit table is
   // the one style section that also rides here: `basics` is the default pull, the minimal template
   // below now uses kit classes, and an author who never sees the table writes all of it again —
   // which is precisely the 32-47%-CSS measurement this whole change exists to fix.
-  basics: () => PREAMBLE + pick("Data model", "window.oma API", "Refresh semantics (one ledger, one `seq`)",
+  basics: (seat) => PREAMBLE + pick("Data model", "window.oma API", "Refresh semantics (one ledger, one `seq`)",
     "Multi-collection apps (fetch what you render)",
     "Time — compute it at render, never store the answer",
     "Replying to the AI from the UI",
@@ -539,7 +545,11 @@ const CHAPTERS = {
     // meets it exactly where it applies — after the workflow, before the save.
     "Before you save: read their sentence back") +
     `\n## More chapters\n\nget_app_guide {topic: "style"} — design tokens, house style, app shell, first-screen layout.\n` +
-    `{topic: "embed"} — putting one app inside another, and the \`@live\` region for an always-on screen.\n{topic: "functions"} — exposing callable functions (data-in/data-out, no UI).\n`,
+    `{topic: "embed"} — putting one app inside another, and the \`@live\` region for an always-on screen.\n` +
+    // The line is DIRECTORY, so it tells the truth about this deployment: pointing an author at a
+    // chapter for a pillar this host does not carry is how a wasted save gets written.
+    (seat ? `{topic: "functions"} — exposing callable functions (data-in/data-out, no UI).\n`
+          : `(no functions on this host — {topic: "functions"} says what that means.)\n`),
   style: () => PREAMBLE + pick(...STYLE_TITLES) +
     `\n## Related\n\nget_app_guide {topic: "basics"} for the API contract and a working template.\n`,
   embed: () => PREAMBLE + `## Embedding one app inside another
@@ -604,7 +614,31 @@ naming what is on screen, and nothing else. Copy it and make it yours.
 
 get_app_guide {topic: "basics"} for the API contract.
 `,
-  functions: () => PREAMBLE + `## Exposing callable functions
+  // Seat OFF: the whole chapter is the refusal, and it is precise about what the save door still
+  // does — the store validates and STORES `manifest.functions` either way (store.mjs
+  // manifestShapeError + functionsJoinError run on every save, and neither knows about the seat),
+  // so "declare it anyway and hope" is exactly the wasted work this paragraph prevents: the
+  // declaration is accepted, the pairing is still enforced, and nothing will ever call it.
+  functions: (seat) => seat ? functionsChapter(seat) : PREAMBLE + `## Functions are not available on this host
+
+This deployment does not run app functions: no tool on this server's list calls one — check the
+list rather than this sentence if you doubt it — and \`oma.callFunction\` inside a widget has
+nothing to reach. Do not plan an app around one.
+
+\`manifest.functions\` is NOT rejected — the save door validates it and stores it, and it still
+enforces the pairing (a declared name with no \`<script type="text/oma-function">\` body block, or a
+body block nothing declares, refuses the save in both directions). So a declaration here is dead
+weight, not an error: it will be saved, listed in the app's function count, and never run.
+
+What to do instead: do the work in the widget (it has the full \`window.oma\` data API), or hand it
+to the AI, which can read and write the same collections through the data tools.
+
+get_app_guide {topic: "basics"} for the API contract.
+`,
+};
+
+function functionsChapter(seat) {
+  return PREAMBLE + `## Exposing callable functions
 
 A function is your app acting WITHOUT its UI on screen: data in, data out, running engine-side —
 so it works from a bare chat ("RSVP yes for Sam") with no widget mounted. One rule is absolute: a
@@ -638,7 +672,11 @@ collection your manifest declares — nothing else, never settings. There is del
 (destructive verbs keep the engine's confirmation door). Also in scope: \`fetch\`, \`AbortController\`,
 \`URL\`, \`URLSearchParams\`, \`setTimeout\`/\`clearTimeout\`, \`TextEncoder\`/\`TextDecoder\`, \`atob\`/\`btoa\`.
 \`api.secret\` exists but refuses — credentials are not available to functions yet.
-
+${seat.egress ? `
+Outbound requests on this host go through its allowlist gateway: a \`fetch\` to a domain the host
+has not allowed for this workspace REJECTS with \`egress_denied: <reason>\`. Treat a refusal as an
+answer — catch it and return something the caller can read.
+` : ""}
 Budgets per call: 10s wall time (declare \`"timeout_ms"\` for more — no engine ceiling; the host's tool-call timeout is the real one),
 100 writes, 200 reads, 32KB returned. Whatever you \`return\` (JSON-serializable) is the reply — so
 a function fetches and DISTILLS: parse the response, write or return the part that matters. Streams
@@ -649,10 +687,13 @@ Calling: the AI calls \`call_function {app, function, args, command_id}\`; your 
 functions. Every write a function makes is stamped \`via: {app, function}\` in the ledger.
 
 get_app_guide {topic: "basics"} for the API contract.
-`,
-};
+`;
+}
 
-export function guideChapter(topic) {
+/** One chapter, for THIS deployment. `seat` is createEngine's normalised `functions` option
+ *  (`false` when the host registers no `call_function`) — the guide describes what is actually
+ *  reachable here, which is the whole reason it takes an argument. */
+export function guideChapter(topic, seat = false) {
   const c = CHAPTERS[topic || "basics"];
-  return c ? c() : GUIDE;
+  return c ? c(seat) : GUIDE;
 }

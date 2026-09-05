@@ -30,7 +30,7 @@ node install-app.mjs test/probes/host-csp-probe/ui.html \
 
 Add `--update` to re-install over an earlier copy, and `--db <path>` (or `OMA_DB`) to target a
 store other than the default one. Installing this way makes it a **local** app: it runs in direct
-mode, which is what lets it call `app_html` to show you the merged policy the engine computed.
+mode, which is what lets it call `get_app_html` to show you the merged policy the engine computed.
 
 Then restart the host so it re-reads the server's tools and resources.
 
@@ -119,7 +119,7 @@ row's evidence — it is the only place a widget can ever see what the host actu
 it settles arguments that no amount of probing otherwise can.
 
 The panel above it, **What the engine relayed**, is the merged declaration read back live through
-`app_html`. Compare the two: that comparison *is* the measurement.
+`get_app_html`. Compare the two: that comparison *is* the measurement.
 
 ### `which-meta`, the two-step
 
@@ -169,7 +169,7 @@ On the `open_app` door the loader carries the **union of every app in the store*
 `policy:csp:*`. If some other app in that store declared `https://example.com`, or the user did
 globally, then reaching it proves nothing about the host. The probe rules that out itself — when
 the fetch gets through it asks the engine whether the origin was in the relayed set and says which
-of the two happened — but the check depends on `app_html`, so an installation that cannot call it
+of the two happened — but the check depends on `get_app_html`, so an installation that cannot call it
 (a sandboxed install) reports the row as inconclusive rather than guessing.
 
 ## The reference reading — run this first, every time

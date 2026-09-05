@@ -1728,7 +1728,7 @@
       generalDeck: "General",
       intervalLabel: "{count}-day interval",
       noCards: "No cards",
-      aiMakePrompt: "Help me create a source-grounded spaced-repetition deck. Ask me to paste study material or name a topic if I have not provided one. Then make 8–15 atomic cards in a sensible deck, using only the supplied material for factual claims and flagging any necessary inference. Prefer prompts that require recall, not recognition; keep each back concise but sufficient; split multi-part ideas. When the batch is ready, use data_batch to add every item to collection study-cards. Every command must include collection: study-cards, group set to the deck name, and fields {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}. Finish with a compact list of the decks and cards added.",
+      aiMakePrompt: "Help me create a source-grounded spaced-repetition deck. Ask me to paste study material or name a topic if I have not provided one. Then make 8–15 atomic cards in a sensible deck, using only the supplied material for factual claims and flagging any necessary inference. Prefer prompts that require recall, not recognition; keep each back concise but sufficient; split multi-part ideas. When the batch is ready, use apply_data_writes to add every item to collection study-cards. Every command must include collection: study-cards, group set to the deck name, and fields {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}. Finish with a compact list of the decks and cards added.",
       aiExplainPrompt: "Explain this study card in a way that makes it easier to remember. Deck: {deck}. Prompt: {front}. Stored answer: {back}. Give one compact explanation, one memory hook, and one quick check question. Do not change the card unless I ask.",
       askFailed: "Couldn't reach the assistant — try again."
     },
@@ -1836,7 +1836,7 @@
       generalDeck: "通用",
       intervalLabel: "{count} 天间隔",
       noCards: "没有卡片",
-      aiMakePrompt: "请帮我制作一套有材料依据的间隔复习卡组。如果我还没有提供材料，请先让我粘贴学习材料或给出主题。然后基于材料制作 8–15 张原子化卡片，事实只使用我提供的内容，必要推断要明确标注。题面优先要求主动回想而不是识别；背面简洁但足够；多部分知识点拆开。批次准备好后，使用 data_batch 把每一项写入 study-cards 集合。每条命令都必须包含 collection: study-cards，group 设为卡组名，fields 为 {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}。完成后用精炼清单告诉我新增了哪些卡组和卡片。",
+      aiMakePrompt: "请帮我制作一套有材料依据的间隔复习卡组。如果我还没有提供材料，请先让我粘贴学习材料或给出主题。然后基于材料制作 8–15 张原子化卡片，事实只使用我提供的内容，必要推断要明确标注。题面优先要求主动回想而不是识别；背面简洁但足够；多部分知识点拆开。批次准备好后，使用 apply_data_writes 把每一项写入 study-cards 集合。每条命令都必须包含 collection: study-cards，group 设为卡组名，fields 为 {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}。完成后用精炼清单告诉我新增了哪些卡组和卡片。",
       aiExplainPrompt: "请用更容易记住的方式讲解这张学习卡。卡组：{deck}。题面：{front}。已存答案：{back}。给出一段精炼解释、一个记忆钩子和一道快速自测题；除非我要求，否则不要修改卡片。",
       askFailed: "没能联系上助手，请重试。"
     }

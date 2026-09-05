@@ -7,6 +7,216 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.7.0 — 2026-09-05
+
+**Getting the contract straight before a directory carries it.** Submitting to a host's app
+directory turns tool metadata into a published, versioned contract, so this release spends the
+last cheap window on the things that stop being cheap afterwards: seven tools renamed to lead
+with a verb, with the old names still answering as unlisted aliases; annotations that say what
+each tool actually does; and `open_app` back to the pure read its `readOnlyHint` claims. Beside
+that, the `functions` seat grew the two seams a host needs to run bodies somewhere other than
+in-process — an egress gateway the body's `fetch` speaks to, and a replaceable executor — and a
+hosted deployment can now settle its own public face (which tools are listed, whether telemetry
+is recorded, which widget domain each host is told) through `createEngine` rather than through
+environment variables. `oma.contract` stays 3: the runtime an app talks to is unchanged, and
+every change here is on the tool wire or on the host's side of it.
+
+### Breaking
+
+- **Seven tools were renamed to lead with a verb.** The old names still work — they are registered
+  as aliases onto the same handlers, with the same schemas and annotations — but they are no
+  longer listed, so nothing written against today's `tools/list` learns them. An app saved before
+  this release keeps calling the name it was written with.
+
+  | was | is |
+  |---|---|
+  | `app_html` | `get_app_html` |
+  | `app_history` | `list_app_checkpoints` |
+  | `data_batch` | `apply_data_writes` |
+  | `data_version` | `get_data_version` |
+  | `data_collections` | `list_data_collections` |
+  | `ui_prefs_schema` | `get_ui_preference_schema` |
+  | `app_store_preview` | `preview_app_store_entry` |
+
+  The timing is the whole reason it is happening now: a directory listing turns tool metadata into
+  a versioned contract, and after the first submission a rename stops being a rename and becomes a
+  breaking change to a published integration. This is the last window in which it is cheap. Both
+  runtime guards canonicalise a name before deciding what it may do, so a retired spelling meets
+  exactly the same wall as the current one.
+
+### Added
+
+- **`createEngine(store, { telemetry })` and `{ dynamicTools }`.** Two things a local install and a
+  hosted deployment should be able to answer differently, and until now only an environment
+  variable could answer either. `telemetry` defaults to `true` — the edit tripwire's JSONL sidecar,
+  beside the database, on the user's own machine — and `false` makes the recorder a no-op so the
+  file is never created (declining a collection has to mean no bytes, not bytes nobody reads).
+  `dynamicTools` decides the per-app `open_<name>` openers when it is passed and leaves
+  `OMA_DYNAMIC_TOOLS` in charge when it is not: an env flag is the right control for a person
+  running this locally and the wrong one for a deployment that has to be able to state what its
+  tool list is, since a per-app opener makes `tools/list` move whenever a user saves an app.
+
+- **`createEngine(store, { unlisted })` registers a tool without listing it.** The names it is
+  given stay reachable through `tools/call` and disappear from `tools/list` — which is what a
+  deployment needs for the four seats whose only real callers are widgets (`get_app_html`,
+  `preview_app_store_entry`, `get_ui_preference_schema`, `security_set`), whose descriptions say
+  "internal" and which a person reading a public tool list should not have to discount. The engine
+  puts every retired tool name in the same set unconditionally. Default `[]`, and with an empty set
+  the filter is not installed at all: the wire is byte-identical to a build that never had the
+  option, which is what the tool-surface golden checks.
+
+- **The `functions` seat grew two seams for hosts that do not want same-process execution.**
+  `createEngine(store, { functions })` still takes `false` (the default — no `call_function`) and
+  `true` (the local product's shape: bodies on a worker thread, the machine's own network). It now
+  also takes an object with either or both of:
+  - `egress: { gateway, token }` — the body's `fetch` is rewritten, inside the worker, to speak to
+    that gateway (`POST <gateway>/egress`, the target in `X-Egress-Url`, the tenant's token in
+    `X-Egress-Token`, the body's own headers and method passed through, redirects left for the
+    gateway to follow). A response carrying `X-Egress-Error` rejects with `egress_denied: <code>`,
+    so a refusal reaches the body as a failed fetch rather than a silent hole. The wrapper is
+    installed on the sandbox's `fetch` **and** the worker realm's `globalThis.fetch`, because
+    `vm` is an isolation seam and not a hardened boundary — it is depth, not the boundary. The
+    engine ships **no allowlist and no policy**: what a gateway permits is the host's to decide,
+    on a network the host owns.
+  - `executor` — where a body runs. Anything honouring the call/outcome shape of the newly
+    exported `runFunctionBody` (`src/functions.mjs`, also reachable as the package subpath
+    `@2nd1st/open-mcp-apps/functions`) can replace the local worker: a container, a socket,
+    another machine. Everything belonging to the store stays on the engine's side of it — budgets,
+    receipts, derived command ids, the `via` stamp, the abort vocabulary — so a remote executor
+    reports the *fact* of a store refusal and the engine reads back the receipt it minted itself.
+    The parent's message pump now tolerates an async `dispatch`; the synchronous local path is
+    unchanged, byte for byte. A refusal is recognised by **shape** — anything thrown with a
+    `receipt` whose `error` is a string — so a host that moves `dispatch` across a wire too can
+    rebuild one on the far side without this module's class; that class (`FnAbort`) is exported as
+    well, for the callers that can hold it, and identity is still tried first.
+
+  The subpath ships **types** of its own (`functions.d.ts`): `runFunctionBody`'s signature, the
+  `FunctionOutcome` union an executor must resolve with, `FunctionCall`, `FunctionEgress`,
+  `FunctionsSeat` and `FnAbort`. A separate file from `index.d.ts` because it is a separate entry
+  point with a separate audience — pointing the subpath's `types` at `index.d.ts` would have
+  declared `runFunctionBody` a root export, which it is not. A `.d.ts` has three homes (the exports
+  map, `files`, and the publish allowlist npm packs from) and an invariant now derives all three
+  from the exports map rather than trusting a list.
+
+  A malformed seat throws a `TypeError` from `createEngine` instead of degrading, because the
+  failure it would otherwise produce is silent: a host that meant to hand over a gateway and
+  mistyped a key would get same-process execution with the machine's own network. Neither seam
+  moves `oma.contract`, adds an environment flag, or changes anything an app or a host can see —
+  the local entrypoints keep passing `true` and behave exactly as before.
+
+- **`install_from_app_store` says which of the three things happened.** Its reply carries
+  `outcome: "installed" | "updated" | "current"`. The `updated` boolean it already had could name
+  only two of the three — it is `!!cur`, so a first install and an already-current one both report
+  `false` — and the difference lived nowhere but the human sentence, which itself said "Installed"
+  for an app the user already had. Now the sentence follows the outcome and the structured field
+  says the same thing, so a model reading the text and a caller reading the field are not told
+  different things. `updated` is unchanged and still there; nothing has to be migrated.
+
+### Changed
+
+- **`createEngine(store, { widgetDomain })` takes the two wire keys apart.** It fed
+  `_meta.ui.domain` and `_meta["openai/widgetDomain"]` the same string, which is only harmless
+  while a deployment faces one host: Claude wants the bare host
+  `{sha256(connector URL).hex[0:32]}.claudemcpcontent.com` and validates it — a wrong value is
+  `Invalid ui.domain format` and the app does not render — while ChatGPT wants a scheme-bearing
+  origin the deployment owns (`https://example.com`), required to submit a plugin with UI and
+  unique per plugin. No one string is both. The option now also accepts
+  `{ ui?, openai? }`, each half feeding only its own key and an omitted half declaring nothing;
+  a plain string still writes both, byte for byte as before, and a malformed shape throws a
+  `TypeError` at construction rather than silently declaring neither. A local stdio install has no
+  URL to hash and should keep setting neither. Evidence and the host quotes:
+  `docs/host-policies-2026-09-03.md`.
+- **Instructions, tool descriptions and empty-state notes are now statements of what this server
+  does, not directions to the model.** Three shapes came out of every model-visible string, because
+  the app-directory rules of both hosts name all three: text asking the model to draw on its memory
+  or on past conversations (the onboarding hook, `data_list` and `data_collections` empty-state
+  notes, `install_from_app_store`'s and `data_batch`'s descriptions); text placing this server
+  ahead of other tools or connectors (INSTRUCTIONS' opening line, the "get_app_guide FIRST" and
+  "prefer opening it" lines); and descriptions telling the model how to behave rather than what a
+  tool does (`get_app_guide`, `list_apps`, `open_app`, `data_version`, `file_write`), including
+  `get_app`'s account of why reads are windowed, which described the failure as a host defect.
+  Nothing about the wire shape changed — same 33 tools, same names, same schemas, same response
+  fields — and the retrieval vocabulary the returning-user segment exists for (trackers, boards,
+  logs, budgets, reading lists…) is kept word for word.
+- **A hosted `instructions` override that omits a placeholder now omits that segment.** It used
+  to be appended instead, which meant a deployment carrying its own manual had no configuration by
+  which to drop the engine's onboarding or proactivity prose. Positioning still works the same way
+  — a manual carrying `__ONBOARDING_OR_INVENTORY__` / `__PROACTIVITY_STANCE__` gets them filled in
+  place — and the engine's own default manual, which carries both, is unaffected.
+- **Annotations say what the tools actually do.** The read preset now declares
+  `destructiveHint: false` and `idempotentHint: true` — the MCP spec gives those meaning only when
+  `readOnlyHint` is false, but a form that asks for three values per tool reads an absent field as
+  "not assessed" rather than "not applicable". `call_function` moves off the ordinary write preset
+  onto `destructiveHint: true` + `openWorldHint: true`: the body is the app author's code and it
+  holds `fetch`, so it is the one seat whose effects can land outside this store, and its
+  description now says so.
+
+- **`security_set` is no longer advertised as widget-callable, and the two gates are now stated as
+  two gates.** `openai/widgetAccessible: true` is the HOST gate — "the top-level widget you
+  rendered may call this back" — and the control-plane list is the NESTING gate — "an app embedded
+  inside another app may never reach this". They answer different questions, so a name on both is
+  the ordinary shape of a first-party system app: the App Store app may install at the top level,
+  and no nested child may install anything. Three App Store seats sit on both lists on purpose
+  (`app_store_list`, `preview_app_store_entry`, `install_from_app_store`) and a test pins the
+  overlap to exactly those three. `security_set` is the one name that came off the host gate, and
+  the reason is in kind rather than in degree: it rewrites the policy the other walls are made of,
+  and it has no widget caller at all — the settings pane drives it through the direct runtime's
+  passthrough. The policy file's own claim was corrected in the same pass: the control-plane list
+  is enforced at ONE chokepoint (the runner guard), not two — the direct runtime never consulted
+  it, which is deliberate (it mounts local-authored documents only) and was simply described
+  wrongly.
+
+- **The live pointer moved from "the model opened it" to "a host rendered it".** `open_app` and the
+  per-app `open_<name>` tools declare `readOnlyHint: true` and now deserve it: neither writes any
+  more. The record of which app is on screen — the row the `@live` wall display follows — is
+  written on the two paths that witness a render, and nowhere else:
+
+  - a host READING an app's per-app `ui://` resource, which is the fetch it makes to put that
+    widget in front of somebody;
+  - the universal loader calling `get_app_html {name, mount: true}`. The loader resource is one
+    document for every app, so it cannot witness anything by being read — which app it is about to
+    mount is known only to the loader itself, on the one call that carries the name. `mount` is a
+    claim the caller opts into: an ordinary refetch and the `@live` brick reading the app it FRAMES
+    both leave it unset, so a wall cannot re-elect whatever it is already showing.
+
+  Together they close the hole the first path left: with the per-app openers off — the hosted
+  shape — a chat host used to move nothing at all, and an `@live` wall stayed dark. A host that
+  caches the per-app resource still records the first render and not the repeats. The price of the
+  second path is one honest annotation: `get_app_html` no longer claims `readOnlyHint: true`, since
+  a tool that writes a row naming an app is not that. It is an internal, widget-only seat that
+  hosted deployments leave unlisted, so no model-facing behaviour changes. A display app records
+  nothing on either path — a frame must not aim the wall at itself, whichever door it was mounted
+  through.
+
+- **Tool results stopped carrying the engine's own bookkeeping.** Three fields, three reasons:
+  `edit_app`'s success message no longer splices in a telemetry milestone (an internal edit
+  counter, a local script path and a maintainer's name, in the model's context, on somebody
+  else's machine — the tripwire's data still lands in the sidecar beside the database, which is
+  where an instrument belongs); `open_app`'s sentence no longer recites the store's global ledger
+  `seq`, the number that makes a user who edited an app twice wonder why it jumped from 5 to 43;
+  and `host` — the caller's own client name, a provenance annotation for the ledger — left
+  `open_app`, the per-app openers, `data_list` and the shared snapshot schema. Its only real
+  reader is `oma.state.host` inside a widget, so it now rides `get_app_html`, the widget-only
+  channel the loader already fetches on mount. Nothing an app can see changed.
+
+- **`apply_data_writes` (was `data_batch`) no longer carries deletion.** Its `type` is a declared
+  enum of `add_item | update_item | move_item`, so a delete cannot be expressed on the seat at all
+  and `destructiveHint: false` is a claim the wire enforces. Row deletion goes through
+  `data_delete_item`, where the confirmation gate can pin one row — which is why a batch could
+  never confirm properly in the first place. The batch's two-phase confirmation fields
+  (`request_state`, `expires_at`, `preview`) left the output schema with the verb that needed
+  them. The store's own batch-delete path and its confirmation semantics are unchanged.
+
+### Fixed
+
+- **The authoring guide follows the seat.** `get_app_guide {topic: "functions"}` on a deployment
+  that registers no `call_function` used to teach the whole pillar in detail — a chapter and a
+  tool list that disagreed, with the chapter being the one an author reads. It now says plainly
+  that this host runs no functions, and what the save door still does with a declaration
+  (`manifest.functions` is validated and stored, and the declaration↔body pairing is still
+  enforced — it simply never runs). The `basics` chapter's directory line follows. With `egress`
+  configured, the functions chapter also states that a fetch outside the host's allowlist rejects.
+
 ## 0.6.0 — 2026-09-02
 
 **The engine becomes a runtime, not just a container.** One release, built over two weeks

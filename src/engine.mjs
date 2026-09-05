@@ -18,7 +18,7 @@ import { EXTENSION_ID } from "./mcp-apps.mjs";
 import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE } from "./store.mjs";
 import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_APPS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
-import { isControlPlaneTool } from "./tool-policy.mjs";
+import { isControlPlaneTool, TOOL_ALIASES } from "./tool-policy.mjs";
 import { latestPref } from "./runtime-core.mjs";
 import { bridgeInvalidations } from "./notify.mjs";
 import { ENGINE_VERSION } from "./version.mjs";
@@ -49,24 +49,24 @@ export const hostContext = new AsyncLocalStorage();
 // AI WHEN to reach for it, not just what the tools do. Keep it tight; it is always in context.
 const INSTRUCTIONS = `open-mcp-apps gives the user persistent, interactive UI apps (widgets) backed by data collections shared between you and the user. Data outlives the conversation.
 
-FIRST STOP: when the user asks about THEIR data, boards, lists, trackers, or "what do I have" — in any language — call data_collections BEFORE files, cloud connectors, or other sources. Their todos, kanbans, habits, notes, queues, budgets, logs live HERE.
+Collections in this server hold the user's structured app data — todos, kanbans, habits, notes, queues, budgets, logs — and list_data_collections lists them by name, item count and last activity.
 
 __ONBOARDING_OR_INVENTORY__
 
 ROUTING:
-- A topic maps to an existing app → open_app it as part of answering (nearly free); don't recite its data as text. Real names come from list_apps, never from your memory of the chat.
-- Need a fact, no UI → data_list / data_collections. Acting for the user ("mark X done") → data_* writes; visible widgets refresh themselves.
-- What did the user do while you were away? Their widget edits never pass through this conversation — data_changes is the only tool that attributes them.
-- Building or CHANGING an app → get_app_guide FIRST; the craft lives there, not here. Prefer reusing an app on a new collection over creating near-duplicates.
-- "app-store" is the built-in store of ready-made apps — browse it, or install_from_app_store directly. dashboard and settings are the other system apps.
+- open_app renders an app from the registry as a widget, and the widget shows its own data, so the reply does not have to repeat it as text. list_apps returns the registry's real names.
+- data_list and list_data_collections read facts without a UI. data_add_item / data_update_item / data_move_item / data_delete_item / apply_data_writes write; visible widgets refresh themselves.
+- data_changes attributes the edits a user made inside a widget, which never pass through this conversation.
+- get_app_guide holds the authoring contract for building or changing an app. An existing app can be bound to a different collection instead of being rewritten.
+- "app-store" is the built-in store of ready-made apps: app_store_list browses it, install_from_app_store installs one. dashboard and settings are the other system apps.
 - An app can keep FILES too (file_write / file_list / file_read): images, PDFs, exports — per app, across chats.
 
 __PROACTIVITY_STANCE__
 
-WHEN NOT: one-shot visuals or pure discussion — answer in text/charts. Personal or sensitive data (health, money, private notes) needs the user's one-line yes before you store it; missing data is never a reason to wait, missing consent is.`;
+WHEN NOT: one-shot visuals and pure discussion are answered in text or charts, with no app involved. Personal or sensitive data (health, money, private notes) is stored only after the user has said yes; missing data is never a reason to wait, missing consent is.`;
 // The other empty-state shape ("what's actually in our freezer?" — a question about something no
 // app holds yet) is deliberately NOT here: its trigger point is a data read coming back empty, so
-// the guidance rides in data_collections'/data_list's empty replies — the data the model is looking
+// the guidance rides in list_data_collections'/data_list's empty replies — the data the model is looking
 // at when it decides (the apps.mjs birthday lesson: prose in the resident channel LOST to a
 // fact in the decision channel; and on at least one measured host the tail of this string never
 // reaches the model at all).
@@ -80,10 +80,14 @@ function readPref(store, key) {
 }
 
 // The onboarding procedure, held apart from INSTRUCTIONS because it is only TRUE for a user who
-// has nothing yet: it says build one app immediately, do not brief, and explicitly do not list
-// what already exists. For someone with ten apps that is not merely expensive, it is WRONG ADVICE.
-// So it is SWAPPED, not trimmed — each half is paid only by the reader it is correct for.
-const ONBOARDING = `GETTING STARTED — your job is to BUILD, not to brief: when the user asks how to use open-mcp-apps, for an intro, or to get set up (however they phrase it), your FIRST move is to build and open ONE app made for THEM. Do NOT open with an explanation or feature tour, do NOT list the apps that exist, do NOT ask which app they'd like. Steps: (1) Read them silently — from your memory and past conversations, what do they actually do, track, or keep re-explaining? Ask ONE quick question only if you truly have nothing. (2) Build it now — get_app_guide, seed their REAL current content into the collection with data_batch (from memory and past chats; never placeholder or invented rows — the wow is that it opens already about THEM), save_app, open_app immediately. The guide's craft rules are the bar: this first app is their first impression, make it your best work. (3) Only after it is on screen: one sentence on what it is, then offer a couple more you could build, one line each. (4) Then, conversationally, two things: a NEW app costs tokens once and pays off for anything recurring; and ask — or infer — whether they want you PROACTIVE about future apps or ON-REQUEST, record it with data_add into settings (group "", key "proactivity", value "proactive" | "on-request"), and honor it. Never end your first reply without a rendered app; never pitch settings or dashboard as example apps; skip anything sensitive unless they agree.`;
+// has nothing yet: it describes building one app straight away rather than touring the surface.
+// For someone with ten apps that is not merely expensive, it is WRONG ADVICE. So it is SWAPPED,
+// not trimmed — each half is paid only by the reader it is correct for.
+//
+// It states what the engine can do and what the first move looks like; it does not order the model
+// around, and it asks for nothing out of the conversation's history or the model's memory. Those
+// two shapes are what a directory review reads as a server steering its host, so they stay out.
+const ONBOARDING = `GETTING STARTED — this user has no apps of their own yet, so the useful opening move is one app built for them and opened, rather than a feature tour. The shape of it: (1) the subject comes from what the user has already said they do, track, or keep re-explaining — one short question if there is nothing to go on; (2) get_app_guide carries the craft rules that make an app come out right, then save_app and open_app; apply_data_writes fills the collection with the user's own real content, since an app that opens already about them is the point and invented rows are not; (3) once it is on screen, one sentence on what it is, then a couple more you could build, one line each; (4) two things are worth saying at that point — a NEW app costs tokens ONCE and pays off for anything recurring, and the user's proactivity preference (PROACTIVE or ON-REQUEST for future apps) is recorded with data_add into settings (group "", key "proactivity", value "proactive" | "on-request") and honored from then on. Sensitive subjects stay out unless the user agrees to them.`;
 
 // What replaces it once the user has apps of their own.
 //
@@ -98,30 +102,35 @@ const ONBOARDING = `GETTING STARTED — your job is to BUILD, not to brief: when
 // What survives is the part list_apps cannot do. This string is the RETRIEVAL INDEX on both
 // hosts (codex: tool_search's description; claude.ai: the connector's), so the model finds us only
 // if the words a person would actually say appear here. Instances change; VOCABULARY does not.
-const INVENTORY = `THE USER ALREADY HAS APPS HERE — they built them in earlier chats and they are still live: trackers, lists, boards, logs, journals, queues, inventories, habits, budgets, reading lists, collections, plans. When anything they say could plausibly BE one of those ("my expenses", "the reading list", "that board", "what am I tracking"), call list_apps or data_collections and look — do not assume it does not exist, and do not recreate something under a new name. Use the exact names the registry returns; never invent one. Then open_app it rather than reciting its data as text.`;
+const INVENTORY = `THE USER ALREADY HAS APPS HERE — built in earlier chats and still live: trackers, lists, boards, logs, journals, queues, inventories, habits, budgets, reading lists, collections, plans. When something the user says could be one of those ("my expenses", "the reading list", "that board", "what am I tracking"), list_apps and list_data_collections show what exists, under the exact names the registry returns. open_app puts one on screen, and the widget shows its own data.`;
 
 // INSTRUCTIONS carry a __PROACTIVITY_STANCE__ placeholder resolved per server start from the user's
 // stored `proactivity` pref (set during onboarding, step 4). Low-frequency setting → reading it once
 // at createEngine time is enough; a change takes effect on the next host restart.
-/** INSTRUCTIONS are two-layered. The MANUAL (what this surface is, how to behave) is replaceable —
- *  a hosted deployment carries its own. The DYNAMIC segments are the engine's to keep true: which
- *  half of onboarding-vs-inventory this user actually is, and their stored proactivity stance.
- *  There are exactly two, and the function roster is NOT a third: the pillar shipped, and the
- *  roster deliberately stayed out of here. INSTRUCTIONS are a cache PREFIX — a segment that moves
- *  whenever any app declares or drops a function would invalidate it for every conversation. The
- *  discovery it was meant to provide lives on the list_apps row instead (a `functions` count, and
- *  only when there is one); the names are one get_app {slot:"manifest"} away, paid for by whoever
- *  needs them. An override can POSITION the two (carry the
- *  placeholders) but can never remove them: a manual that omits a placeholder gets that segment
- *  appended. Structural on purpose — a hosted copy that pinned the onboarding text for a user with
- *  ten apps was handing out advice that is simply wrong for its reader. */
+/** INSTRUCTIONS are two-layered. The MANUAL (what this surface is, what its tools do) is
+ *  replaceable — a hosted deployment carries its own. The DYNAMIC segments are the engine's to keep
+ *  true: which half of onboarding-vs-inventory this user actually is, and their stored proactivity
+ *  stance. There are exactly two, and the function roster is NOT a third: the pillar shipped, and
+ *  the roster deliberately stayed out of here. INSTRUCTIONS are a cache PREFIX — a segment that
+ *  moves whenever any app declares or drops a function would invalidate it for every conversation.
+ *  The discovery it was meant to provide lives on the list_apps row instead (a `functions` count,
+ *  and only when there is one); the names are one get_app {slot:"manifest"} away, paid for by
+ *  whoever needs them.
+ *
+ *  An override POSITIONS the two by carrying their placeholders — and OMITS them by leaving the
+ *  placeholders out. That is the reversal of the older rule ("a manual that omits a placeholder
+ *  gets that segment appended"), and it is deliberate: the appending version meant a hosted
+ *  deployment had no configuration by which to ship instructions of its own, which the directory
+ *  listing work needs. What that rule was protecting still holds for the DEFAULT manual, which
+ *  carries both placeholders and always will; a deployment that writes its own manual is stating
+ *  that it knows what its readers need, and owns the consequence. */
 function composeInstructions(manual, store) {
   const pref = readPref(store, "proactivity");
   const stance = pref === "proactive"
-    ? "PROACTIVITY — the user chose PROACTIVE: when a topic maps to an existing app, open it unprompted; when a recurring need has no app yet, offer or just build one (a NEW build costs tokens once — a quick heads-up before a big one is courteous, not a blocker)."
+    ? "PROACTIVITY — the user's stored preference is PROACTIVE: they have asked for an existing app to be opened when a topic maps to one, and for a new app to be offered or built when a recurring need has none yet. Opening an existing app is nearly free; a new build costs tokens once, so a heads-up before a large one is courteous."
     : pref === "on-request"
-    ? "PROACTIVITY — the user chose ON-REQUEST: build or create apps only when asked. Exception: when they clearly want to SEE something that ALREADY has an app, open it anyway — showing an existing app is nearly free."
-    : "PROACTIVITY — no preference set yet: open an EXISTING matching app proactively (nearly free), but PROPOSE building a NEW one (which costs tokens once) rather than building unprompted. Settle this with the user during onboarding.";
+    ? "PROACTIVITY — the user's stored preference is ON-REQUEST: they have asked that new apps be built only when they ask for one. Opening an app that already exists is nearly free, so showing one they want to see sits inside that preference."
+    : "PROACTIVITY — no preference is stored yet. Opening an EXISTING matching app is nearly free; building a NEW one costs tokens once. The preference is settled with the user during onboarding and recorded in settings.";
   // Which half this reader gets. One EXISTS query — on the hosted plane this runs per request.
   const settled = store.hasAppOutside(SEEDED_APPS);
   const dynamic = [
@@ -132,11 +141,81 @@ function composeInstructions(manual, store) {
   const missing = [];
   for (const [ph, text] of dynamic) {
     if (out.includes(ph)) out = out.replace(ph, text);
-    else missing.push(text);
+    // Only the engine's OWN manual gets a missing segment appended — that is a guard against
+    // editing a placeholder out of INSTRUCTIONS by accident. A caller-supplied manual that
+    // leaves one out has said so on purpose, and gets what it asked for.
+    else if (manual === undefined) missing.push(text);
   }
   return missing.length ? `${out}\n\n${missing.join("\n\n")}` : out;
 }
 function buildInstructions(store) { return composeInstructions(undefined, store); }
+
+/** The `functions` option, read once. `false | true | {egress?, executor?}` in, `false` or a
+ *  normalised seat object out — and a TypeError for anything else, because the shapes it refuses
+ *  are the ones whose failure mode is silent: an `egress` missing its token is a body that reaches
+ *  the open internet through a host that believed it had a gateway in front of it, and a
+ *  misspelled key on the option object is the same thing wearing a typo. `true` and `{}` are the
+ *  same seat (run here, no egress filtering) — that is the OSS entrypoints' shape and it stays. */
+function normalizeFunctionsSeat(functions) {
+  if (functions === false || functions === undefined || functions === null) return false;
+  if (functions === true) return {};
+  if (typeof functions !== "object" || Array.isArray(functions))
+    throw new TypeError(`createEngine: functions must be false, true, or {egress?, executor?} — got ${Array.isArray(functions) ? "an array" : typeof functions}`);
+  const { egress, executor } = functions;
+  if (executor !== undefined && typeof executor !== "function")
+    throw new TypeError("createEngine: functions.executor must be a function — it replaces where a body RUNS (runFunctionBody's call/outcome shape); see src/functions.mjs");
+  if (egress !== undefined) {
+    if (!egress || typeof egress !== "object" || Array.isArray(egress))
+      throw new TypeError("createEngine: functions.egress must be {gateway, token}");
+    if (typeof egress.gateway !== "string" || !/^https?:\/\//.test(egress.gateway))
+      throw new TypeError("createEngine: functions.egress.gateway must be an http(s) origin the worker can POST to — a body's fetch is rewritten to <gateway>/egress");
+    if (typeof egress.token !== "string" || !egress.token)
+      throw new TypeError("createEngine: functions.egress.token must be a non-empty string — the gateway needs it to know which tenant is calling");
+  }
+  return { ...(egress === undefined ? {} : { egress }), ...(executor === undefined ? {} : { executor }) };
+}
+
+/** The `widgetDomain` option, read once. `string | {ui?, openai?}` in, `undefined` or a normalised
+ *  `{ui?, openai?}` out — and a TypeError for anything else. Two hosts read two different keys off
+ *  this one option and want mutually exclusive values (Claude: a bare hash of the connector URL
+ *  under claudemcpcontent.com, which it refuses to render if wrong; ChatGPT: a scheme-bearing
+ *  origin the deployment owns), so a deployment facing both must be able to address them
+ *  separately. A string still means "both keys, this value" — the 0.5.x behaviour, byte for byte.
+ *  A malformed shape THROWS rather than degrading, for the same reason the functions seat does:
+ *  declaring nothing is this option's exact failure mode, and it is silent at construction —
+ *  ChatGPT rejects the submission and Claude renders a blank, neither naming the key. */
+function normalizeWidgetDomain(widgetDomain) {
+  if (widgetDomain === undefined || widgetDomain === null) return undefined;
+  if (typeof widgetDomain === "string") {
+    if (!widgetDomain) throw new TypeError("createEngine: widgetDomain must be a non-empty string or {ui?, openai?} — omit it entirely to declare neither key");
+    return { ui: widgetDomain, openai: widgetDomain };
+  }
+  if (typeof widgetDomain !== "object" || Array.isArray(widgetDomain))
+    throw new TypeError(`createEngine: widgetDomain must be a string or {ui?, openai?} — got ${Array.isArray(widgetDomain) ? "an array" : typeof widgetDomain}`);
+  const extra = Object.keys(widgetDomain).filter((k) => k !== "ui" && k !== "openai");
+  if (extra.length)
+    throw new TypeError(`createEngine: widgetDomain accepts only { ui, openai } — got ${extra.join(", ")}. A misspelled half declares nothing, which is the failure this option exists to prevent`);
+  const { ui, openai } = widgetDomain;
+  for (const [k, v] of [["ui", ui], ["openai", openai]])
+    if (v !== undefined && (typeof v !== "string" || !v))
+      throw new TypeError(`createEngine: widgetDomain.${k} must be a non-empty string — omit the key to leave that host's declaration out`);
+  return { ...(ui === undefined ? {} : { ui }), ...(openai === undefined ? {} : { openai }) };
+}
+
+/** Hide `hidden` from `tools/list` without touching `tools/call`. Returns whether it installed. */
+function installUnlistedFilter(server, hidden) {
+  if (!hidden || hidden.size === 0) return false;
+  const handlers = server?.server?._requestHandlers;
+  const inner = handlers?.get?.("tools/list");
+  if (typeof inner !== "function") return false; // SDK moved it — leave the server untouched
+  handlers.set("tools/list", async (request, extra) => {
+    const out = await inner(request, extra);
+    // Mutate the field, never the object: see the caller's note about the cache-hint Symbol.
+    if (out && Array.isArray(out.tools)) out.tools = out.tools.filter((t) => !hidden.has(t?.name));
+    return out;
+  });
+  return true;
+}
 
 /**
  * Build a fully-wired McpServer.
@@ -149,14 +228,34 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  *                        carry their own behaviour text). The engine-composed DYNAMIC segments
  *                        (onboarding vs inventory, proactivity stance — and nothing else; see
  *                        composeInstructions for why the function roster is not one of them)
- *                        cannot be removed by an override: a manual that carries the placeholders
- *                        positions them; one that omits them gets them appended. See
- *                        composeInstructions for why that is structural, not advisory.
- * @param opts.widgetDomain  dedicated origin a host should give this deployment's widget sandbox
- *                        (`_meta.ui.domain`). REQUIRED by ChatGPT to submit an app with UI, where
- *                        it "must be unique per plugin" — which makes it a property of a
- *                        DEPLOYMENT's registration, not of the engine, so it is a knob and never a
- *                        default. Omitted ⇒ the field is not declared and the host uses its own.
+ *                        are positioned by an override that carries the placeholders
+ *                        (__ONBOARDING_OR_INVENTORY__, __PROACTIVITY_STANCE__) and DROPPED by one
+ *                        that omits them — a hosted manual decides for itself whether to carry
+ *                        them. Only the engine's own default manual gets them appended. See
+ *                        composeInstructions.
+ * @param opts.widgetDomain  dedicated origin a host should give this deployment's widget sandbox.
+ *                        ONE option, TWO wire keys, and the two hosts want values that CANNOT be
+ *                        the same string — which is the whole reason the object form exists:
+ *                        `{ ui, openai }`, either half omittable.
+ *                          · `ui` → `_meta.ui.domain`, the MCP Apps standard key. Claude wants the
+ *                            BARE host `{sha256(full connector URL).hex[0:32]}.claudemcpcontent.com`
+ *                            and VALIDATES it against the connector URL: a wrong value is
+ *                            `Invalid ui.domain format` / `ui.domain mismatch` and the app does not
+ *                            render at all. A stdio connector has no URL to hash, so a LOCAL
+ *                            install must not set this half.
+ *                          · `openai` → `_meta["openai/widgetDomain"]`, ChatGPT's key. An origin
+ *                            WITH a scheme that the deployment owns (e.g. "https://example.com"),
+ *                            REQUIRED to submit a plugin with UI and "unique per plugin"; OpenAI
+ *                            derives `<slug>.web-sandbox.oaiusercontent.com` from it and points the
+ *                            "Open in <App>" button at it.
+ *                        A plain STRING writes both keys with that one value — right for a
+ *                        deployment facing a single host, wrong for one facing both. An omitted
+ *                        half ⇒ that key is not declared and the host uses its own; omitted
+ *                        entirely ⇒ neither key. All of it is a property of a DEPLOYMENT's
+ *                        registration, not of the engine, so it is a knob and never a default —
+ *                        the spec itself says the format is host-dependent and servers MUST consult
+ *                        each host's docs (ext-apps `UIResourceMeta.domain`), so there is nothing
+ *                        for the engine to invent. Evidence: docs/host-policies-2026-09-03.md 第三问.
  * @param opts.viewBase  base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787").
  *                        When present, list_apps prints a real /view/<name> link per app;
  *                        when absent (bare stdio — no viewer exists) it prints none.
@@ -169,10 +268,72 @@ function buildInstructions(store) { return composeInstructions(undefined, store)
  *                        http.mjs) pass true — OSS users get functions out of the box, with
  *                        OMA_FUNCTIONS=0 as the kill-switch — while an embedding consumer that
  *                        does not ask gets no seat, so a hosted deployment can only turn this on
- *                        on purpose (ruled: hosted execution waits for container isolation).
+ *                        on purpose.
+ *                        `false` (default) = no seat. `true` (or `{}`) = the seat, run HERE, on a
+ *                        worker thread, with the machine's own network. An OBJECT is the hosted
+ *                        shape, and it carries at most two things, both of them seams rather than
+ *                        policy (2026-09-05):
+ *                          · `egress: {gateway, token}` — the body's `fetch` is rewritten in the
+ *                            worker to speak to THAT gateway, which is where a host puts its
+ *                            allowlist, its private-address check and its secret injection. The
+ *                            engine ships no allowlist and never will: it cannot keep a promise
+ *                            about a network it does not own.
+ *                          · `executor` — where the body runs. Anything honouring
+ *                            `runFunctionBody`'s call/outcome shape (functions.mjs, exported for
+ *                            exactly this): a container, a socket, another machine. Everything
+ *                            belonging to the STORE stays on this side of it.
+ *                        Neither moves `oma.contract` and neither adds an env flag: they are
+ *                        options an embedder passes, invisible to every app and every host.
+ * @param opts.unlisted   tool names to REGISTER BUT NOT LIST. They are still callable through
+ *                        `tools/call` exactly as before; they simply stop appearing in
+ *                        `tools/list`. Two callers need this and they need it for opposite
+ *                        reasons: a hosted deployment hides the four seats whose only real
+ *                        callers are widgets (their own descriptions say "internal", and a
+ *                        directory reviewer reading a public tool list should not have to
+ *                        discount them), and the engine itself hides every retired tool name it
+ *                        still answers to (see TOOL_ALIASES in tool-policy.mjs — a name that must
+ *                        keep working for already-saved apps, and must not be advertised to
+ *                        anyone writing a new one). Default `[]`, and with an empty set the
+ *                        filter is not installed at all: the wire is byte-identical to a build
+ *                        that never had this option, which is the property the tool-surface
+ *                        golden checks.
+ * @param opts.telemetry  record the edit tripwire's JSONL sidecar beside the database. DEFAULT
+ *                        true — the local product measures its own editing path, on the user's own
+ *                        machine, in a file they can read and delete. `false` makes the recorder a
+ *                        no-op and the file is never created, which is what a deployment needs
+ *                        when the alternative is disclosing a collection it has no product reason
+ *                        to keep.
+ * @param opts.dynamicTools  register a per-app `open_<name>` tool for every app. When PASSED it
+ *                        decides; when omitted, `OMA_DYNAMIC_TOOLS=1` still does. An env flag is
+ *                        the right control for a person running this locally and the wrong one
+ *                        for a deployment that must be able to state what its tool list is — a
+ *                        per-app opener makes `tools/list` move whenever a user saves an app.
  */
-export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false } = {}) {
-  const dynamicTools = process.env.OMA_DYNAMIC_TOOLS === "1";
+export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false, unlisted = [], telemetry = true, dynamicTools: dynamicToolsOpt } = {}) {
+  // The seat, normalised once here into `false | {egress?, executor?}` so that every reader
+  // downstream (the tool registration, the guide) asks the same object the same way. A malformed
+  // seat THROWS rather than degrading: a hosted plane that meant to pass a gateway and passed a
+  // typo would otherwise get same-process execution with the machine's own network — the one
+  // failure mode this option exists to prevent, arriving silently.
+  const fnSeat = normalizeFunctionsSeat(functions);
+  // Same discipline for the two-host widget origin: normalised once here into
+  // `undefined | {ui?, openai?}` so the one reader downstream (uiSecurityFor) never has to ask
+  // which of the two shapes it got.
+  const widgetDomains = normalizeWidgetDomain(widgetDomain);
+  // Registered but not listed. Fixed at construction: `tools/list` is a cached prefix, so a set
+  // that could move mid-connection would be a cache break with no event to hang it on. The
+  // retired names are in it unconditionally — an embedder does not get to advertise them, and a
+  // caller that omits `unlisted` entirely still gets a list with no dead spellings in it.
+  const unlistedTools = new Set([...Object.values(TOOL_ALIASES), ...unlisted]);
+  // THE OPTION WINS WHERE IT IS GIVEN, and the environment answers where it is not. An env flag is
+  // the right control for a person running the local product and the wrong one for a deployment
+  // that has to be able to state what its tool list is: a per-app opener makes `tools/list` move
+  // whenever a user saves an app, which is exactly what a directory's versioned-metadata contract
+  // forbids. `undefined` — not `false` — is what "not given" means here, so an embedder can pass
+  // `false` and MEAN it on a machine whose environment says otherwise.
+  const dynamicTools = dynamicToolsOpt === undefined
+    ? process.env.OMA_DYNAMIC_TOOLS === "1"
+    : !!dynamicToolsOpt;
   const server = new McpServer(
     // Reported to the host at initialize (legacy era) / server-discover (2026-07-28). Real version,
     // not a literal — see version.mjs for why being unable to tell which build a deployment runs
@@ -229,19 +390,36 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // already DEFAULTS to ["model","app"], so standard hosts allow these without any flag; this is
   // the OpenAI compatibility spelling of the same fact, stamped at ONE seam so a new tool that
   // widgets call gets it by joining the list, not by remembering a field.
+  // 🔴 TWO LISTS, TWO DIFFERENT DOORS — a name on both of them is not a contradiction.
+  // This list answers ONE question: may the TOP-LEVEL widget a host rendered call this tool back
+  // through that host? `CONTROL_PLANE_TOOLS` (tool-policy.mjs) answers a different one: may an app
+  // EMBEDDED INSIDE another app reach this through the runner guard's passthrough? The second
+  // answer is always no, at every tier, because a child that could rewrite the registry or the
+  // security policy would own its parent. The first is a question about the system apps we ship,
+  // and for the App Store app's Add button the answer is yes. So three names sit on both lists ON
+  // PURPOSE — `app_store_list`, `preview_app_store_entry`, `install_from_app_store` — and the
+  // shape they describe is exactly the product's: a first-party system app drives an App Store
+  // seat at the top level; no nested child ever reaches one. (The disjointness test in
+  // test/tool-surface.mjs names those three and no others, so the overlap cannot grow quietly.)
+  // `security_set` is on the control-plane list and deliberately NOT here, and the difference is
+  // in kind rather than in degree: it rewrites the POLICY the other walls are made of, and it has
+  // no widget caller at all — the settings pane reaches it through the direct runtime's
+  // passthrough, never through this flag. Advertising a door nobody walks through would only
+  // widen the surface a default-DENY host is asked to open.
   const WIDGET_CALLABLE = new Set([
-    "data_list", "data_version", "data_changes", "app_html",
+    "data_list", "get_data_version", "data_changes", "get_app_html",
     "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
-    "app_store_list", "app_store_preview", "install_from_app_store", "list_apps", "data_collections",
-    "ui_prefs_schema", "security_set", "call_function",
+    "app_store_list", "preview_app_store_entry", "install_from_app_store",
+    "list_apps", "list_data_collections",
+    "get_ui_preference_schema", "call_function",
   ]);
   // MCP Apps `_meta.ui.visibility` (elegance C2, Leo 2026-08-04): tools whose only real callers
   // are widgets/system apps — their own descriptions say "internal" — declared app-only, which the
   // standard specifies as "do not expose to the model". On a host that honors it this moves their
   // schemas out of the model's resident context entirely; on one that does not, nothing changes.
   // The wire (tools/list) still carries them either way — the golden tracks raw-wire bytes.
-  // data_version stays model-visible on purpose: its description invites the model to poll.
-  const APP_ONLY = new Set(["app_html", "app_store_preview", "ui_prefs_schema", "security_set"]);
+  // get_data_version stays model-visible on purpose: its description invites the model to poll.
+  const APP_ONLY = new Set(["get_app_html", "preview_app_store_entry", "get_ui_preference_schema", "security_set"]);
   // ONE line per control-plane tool call that REACHES US. Deliberately not a call log: only the
   // handful of names tool-policy already treats as privileged, and only the name — never arguments,
   // never a row, never anything the user typed.
@@ -279,7 +457,16 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       if (APP_ONLY.has(name)) meta.ui = { ...(meta.ui || {}), visibility: ["app"] };
       cfg = { ...config, _meta: meta };
     }
-    return sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
+    const registered = sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
+    // THE RETIRED SPELLING, registered beside the seat it retired from (tool-policy.mjs
+    // TOOL_ALIASES). Same `cfg` object, so the alias carries the seat's own annotations, schemas
+    // and `_meta` by construction rather than by a second declaration that could drift; same
+    // handler, wrapped the same way, so a call through the old name is the same call. It is
+    // added to `unlistedTools` below the registrations, which is what keeps it a bridge for apps
+    // already in the field instead of a second name anyone can discover.
+    const alias = TOOL_ALIASES[name];
+    if (alias) sdkRegisterTool(alias, cfg, perCallHost(logged(alias, handler)));
+    return registered;
   };
 
   // The per-app file channel: opaque user-file storage (bytes in a local content-addressed
@@ -299,7 +486,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // Provenance annotation for the ledger, not a security property.
   //
   // 🔴 It used to end in the literal "unknown", and that string is a claim: it travels in the
-  // ledger's host column and — through app_html/open_app's structuredContent — into
+  // ledger's host column and — through get_app_html/open_app's structuredContent — into
   // `oma.state.host`, where the settings app prints it as this machine's identity. Measured on
   // Leo's claude.ai (2026-08-13): the capsule badge and the rail both read "unknown", because
   // every step above genuinely came up empty. That is the NORMAL case since MCP 2026-07-28
@@ -459,7 +646,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // dispatch a control-plane command through a data tool (reproduced: it overwrote a locked
   // app). The dispatch type is the ONE thing the caller never gets to choose.
   //
-  // The SAME wall data_batch has always had, applied here too (ITEM_WRITE_KEYS — one table, both
+  // The SAME wall apply_data_writes has always had, applied here too (ITEM_WRITE_KEYS — one table, both
   // write paths). Pinning `type` closed the worst instance; every other unpublished key a caller
   // invents was still forwarded, and `id` on add_item is the one that bites: the engine mints row
   // ids, but a caller that could CHOOSE one could re-create a deleted id in a different collection,
@@ -478,7 +665,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   };
 
   // The shared context every tool module gets.
-  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain, functions };
+  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, functions: fnSeat, telemetry, dynamicTools };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
   // apps goes first because it hands back registerApp, which app-store and registry
@@ -515,6 +702,18 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // Only the `$schema` trim remains here — the SEP-2549 cache fields moved into ServerOptions
   // (cacheHints above, per-resource cacheHint in tools/apps.mjs) where the SDK emits them itself.
   installSchemaTrim(server);
+
+  // …and the same seam again, for the names that must answer without being advertised. Wrapping
+  // the SDK's own finished handler rather than rebuilding the list is not a shortcut: the
+  // descriptor generation lives inside the SDK (schema conversion included), so any second copy
+  // would be a second answer waiting to disagree with the first about a byte. Filtering what that
+  // handler produced can only ever REMOVE entries, which is exactly the promise — and with an
+  // empty set the wrapper is not installed at all, so the wire is provably untouched.
+  //
+  // The result object's IDENTITY is preserved for the reason installSchemaTrim states: the SDK
+  // hangs its per-operation cache-hint fallback on a Symbol attached to that object, and a
+  // rebuilt result silently downgrades every tools/list to {ttlMs: 0, cacheScope: "private"}.
+  installUnlistedFilter(server, unlistedTools);
 
   // The invalidation bridge (W2). Wired LAST because it needs the finished app registry, and
   // released with the connection: engines are per-connection, the store's emitter is not, so a

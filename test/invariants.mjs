@@ -166,7 +166,7 @@ console.log("3. one answer to \"what does this app open on\"");
     let manifest = null;
     try { manifest = readFileSync(join(dir, name, "manifest.json"), "utf-8"); } catch { /* none declared */ }
     // Both sides get the SAME app, expressed the way each one receives it: the server reads
-    // a stored row, the preview reads the parsed declaration handed back by app_html.
+    // a stored row, the preview reads the parsed declaration handed back by get_app_html.
     let declaration = null;
     try { declaration = manifest ? JSON.parse(manifest) : null; } catch { declaration = null; }
     manifest = declaration ? JSON.stringify(declaration) : null;
@@ -430,6 +430,85 @@ console.log("3. one answer to \"what does this app open on\"");
   ok("no stale exemptions — every entry still excuses a real ungated call",
     stale.length === 0,
     stale.map(([f, snip]) => `${f}: "${snip}" no longer matches an ungated call — gated now, or gone`).join("\n      "));
+}
+
+// ── a .d.ts has THREE homes, and only the first one is where anybody looks ────────────────────
+// `exports` is what a modern resolver reads, `files` is what npm packs, and the publish ALLOWLIST
+// is what reaches the public repo that npm packs FROM. Measured once already, on the other .d.ts:
+// `files` had listed "types" all along and the directory still shipped to nobody, because nothing
+// outside the ALLOWLIST reaches the public checkout (publish.mjs's own comment carries that
+// account). A types entry pointing at a file that did not travel is the worst shape of the three —
+// it typechecks here and resolves to nothing for the consumer.
+//
+// So the rule is derived, never listed: every `types` target in the exports map must exist, be
+// packed, and be published. The ALLOWLIST half is SKIPPED when scripts/ is absent, which is how a
+// public checkout sees itself (scripts/ is not in the ALLOWLIST either) — the same shape doc-facts
+// uses for docs/.
+{
+  const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
+  const typeTargets = [];
+  const walk = (node, path) => {
+    if (typeof node === "string") return;
+    if (!node || typeof node !== "object") return;
+    for (const [k, v] of Object.entries(node)) {
+      if (k === "types" && typeof v === "string") typeTargets.push([path, v]);
+      else walk(v, path === "" ? k : `${path} → ${k}`);
+    }
+  };
+  walk(pkg.exports || {}, "");
+  if (typeof pkg.types === "string") typeTargets.push(["types (root)", pkg.types]);
+
+  ok(`the exports map declares ${typeTargets.length} \`types\` target(s) (else the three checks below pass vacuously)`,
+    typeTargets.length >= 2, JSON.stringify(pkg.exports));
+
+  const rel = (t) => t.replace(/^\.\//, "");
+  const missing = typeTargets.filter(([, t]) => !existsSync(join(ROOT, rel(t))));
+  ok("every declared `types` target is a file that exists", missing.length === 0,
+    missing.map(([k, t]) => `${k}: ${t}`).join("\n      "));
+
+  // `files` entries are npm patterns; a directory entry covers everything under it, which is how
+  // types/*.d.ts travels on one line.
+  const packed = (t) => (pkg.files || []).some((f) => {
+    const p = f.replace(/^\.?\//, "");
+    return rel(t) === p || rel(t).startsWith(p.replace(/\/$/, "") + "/");
+  });
+  const unpacked = typeTargets.filter(([, t]) => !packed(t));
+  ok("…and is covered by package.json `files` (npm packs by that list, not by the exports map)",
+    unpacked.length === 0,
+    unpacked.map(([k, t]) => `${k}: ${t} — add it (or its directory) to package.json → files`).join("\n      "));
+
+  const publishScript = join(ROOT, "scripts", "publish.mjs");
+  if (existsSync(publishScript)) {
+    const src = readFileSync(publishScript, "utf-8");
+    const list = src.slice(src.indexOf("const ALLOWLIST = ["));
+    const allow = list.slice(0, list.indexOf("];"));
+    const shipped = (t) => {
+      const p = rel(t);
+      const first = p.split("/")[0];
+      return new RegExp(`"${p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(allow)
+        || new RegExp(`"${first.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}"`).test(allow);
+    };
+    const unshipped = typeTargets.filter(([, t]) => !shipped(t));
+    ok("…and reaches the public snapshot (scripts/publish.mjs's ALLOWLIST — npm packs from there)",
+      unshipped.length === 0,
+      unshipped.map(([k, t]) => `${k}: ${t} — add it to the ALLOWLIST in scripts/publish.mjs`).join("\n      "));
+  }
+
+  // ONE union, two entry points. `FunctionOutcome` is what an `executor` must resolve with, and it
+  // is declared in both .d.ts files because each is a complete entry point — index.d.ts for the
+  // `createEngine({ functions: { executor } })` side, functions.d.ts for the `runFunctionBody`
+  // side. Two copies of a contract is two answers waiting to disagree, so the copies are compared
+  // rather than trusted.
+  const unionOf = (file) => {
+    const s = readFileSync(join(ROOT, file), "utf-8");
+    const at = s.indexOf("export type FunctionOutcome");
+    return at < 0 ? null : s.slice(at, s.indexOf(";", at)).replace(/\s+/g, " ").trim();
+  };
+  const a = unionOf("index.d.ts"), b = unionOf("functions.d.ts");
+  ok("both .d.ts files still declare FunctionOutcome (else the comparison below is vacuous)",
+    !!a && !!b, `index.d.ts: ${a === null ? "absent" : "ok"}, functions.d.ts: ${b === null ? "absent" : "ok"}`);
+  ok("…and the two copies are the same union — one outcome shape, whichever entry point declared it",
+    a === b, `index.d.ts:\n        ${a}\n      functions.d.ts:\n        ${b}`);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────

@@ -24,7 +24,7 @@ import "./zod-jitless.js";
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
 import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, sansRequestState, withConfirmation, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
-import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
+import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL, canonicalToolName } from "./tool-policy.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
@@ -201,7 +201,7 @@ function shellConfirm(demand) {
   });
 }
 
-// A bridge request the host silently DROPS must reject, never hang: an unsettled await here
+// A bridge request the host DROPS with no reply must reject, never hang: an unsettled await here
 // wedges whatever subsystem issued it for the widget's whole life — the poll chain never
 // reschedules, syncPrefs' busy latch never clears, a walk never releases its single-flight
 // slot. Observed on Claude Desktop 1.24012.9 (and Claude Code, same bridge stack): calls sent
@@ -883,7 +883,7 @@ const liveEmbeds = new Set();
 // a single slot would let the second one silently take the feed away from the first.
 //
 // SSE is the only carrier. `live_n` exists on the store's own version read for a process that
-// cannot hear the in-process emit, but it is deliberately NOT on the data_version TOOL face
+// cannot hear the in-process emit, but it is deliberately NOT on the get_data_version TOOL face
 // (opening an app is not a data change), so there is no poll to fall back to — and none is
 // wanted: EventSource reconnects by itself, and a display with no feed is a display showing the
 // last app it was given, which is the right failure.
@@ -976,7 +976,7 @@ function embedLive(opts) {
     if (mounted && mounted.name === name) return;
     const mine = ++gen;
     try {
-      const r = await rawCall("app_html", { name });
+      const r = await rawCall("get_app_html", { name });
       const sc = (r && r.structuredContent) || {};
       if (dead || mine !== gen) return;
       if (!sc.html) { drop(); wait("Nothing to show", 'The app "' + name + '" is no longer in the registry.'); announce(null); return; }
@@ -992,7 +992,7 @@ function embedLive(opts) {
         html: sc.html,
         caps: sc.caps || {},
         tier: sc.tier == null ? "local" : sc.tier,
-        // Same reason as caps: this brick already fetched app_html, so handing the merged network
+        // Same reason as caps: this brick already fetched get_app_html, so handing the merged network
         // declaration down saves embed a second identical call. It is the FRAMED app's, not this
         // wall's — a display shows whatever the AI opened last, and each of those apps reaches
         // wherever it declared.
@@ -1168,7 +1168,7 @@ window.oma = {
         const rows = applyAck(prefItems, sc);
         if (rows) {
           // Merging the row is always safe; MOVING THE WATERMARK is not. lastSettingsVersion is
-          // what data_version's settings_version is compared against, so claiming this write's seq
+          // what get_data_version's settings_version is compared against, so claiming this write's seq
           // asserts we have seen everything up to it — and a concurrent write by another actor sits
           // below it, unread. Then the probe finds settings_version equal to what we hold and never
           // syncs, so that key stays missing until some later settings event. Same inequality the
@@ -1191,7 +1191,12 @@ window.oma = {
    * unmediated passthrough to every registered MCP tool — tolerable ONLY because direct mode
    * is local-authored-only; untrusted apps run behind the runner, which filters calls.
    */
-  callTool(name, args) {
+  callTool(rawName, args) {
+    // CANONICALISE FIRST, for the reason the runner guard canonicalises first: seven seats still
+    // answer to a retired spelling so apps saved before the rename keep working, and both of the
+    // rules below match on a name. A call typed with the old spelling has to meet the same rule
+    // as one typed with the new — otherwise the rename is a way around the stamp.
+    const name = canonicalToolName(rawName);
     const a = args || {};
     // A widget's write is a widget's write, whichever door it used. This escape hatch used to
     // hand the raw tool through unstamped, so the SAME delete that goes through oma.deleteItem
@@ -1202,7 +1207,7 @@ window.oma = {
     if (STAMPED_TOOLS.has(name)) {
       return confirmable(name, { command_id: uuid(), ...a, actor: "human", via: viaOf(compName()) });
     }
-    // data_batch is the MODEL's bulk verb, and an app reaching for it was the widest door of all:
+    // apply_data_writes is the MODEL's bulk verb, and an app reaching for it was the widest door of all:
     // "Clear all" as one batch deleted every row with no confirmation and wrote `agent` beside
     // each one in an append-only ledger — the deletions are recoverable, the wrong attribution is
     // not. Stamping it human would not fix that: a batch is all-or-nothing, so one demand inside
@@ -1210,7 +1215,7 @@ window.oma = {
     // nothing teaches. So it is refused here, exactly as the runner already refuses it to
     // sandboxed children — an app loops oma.deleteItem, each row keeps its own pinned demand,
     // and shellConfirm coalesces a concurrent burst into ONE card (S4) so the user answers once.
-    if (name === "data_batch") {
+    if (name === "apply_data_writes") {
       return Promise.reject(new Error(DATA_BATCH_REFUSAL));
     }
     return rawCall(name, a);
@@ -1281,14 +1286,14 @@ window.oma = {
     // Inert children never call anything, so provided html is all they need; every other
     // preset resolves the engine truth (source + tier + caps) unless the caller provided it.
     if ((html == null || caps == null) && !(preset === "inert" && html != null)) {
-      const r = await rawCall("app_html", { name: n });
+      const r = await rawCall("get_app_html", { name: n });
       const sc = (r && r.structuredContent) || {};
       if (!sc.html) throw new Error('embed: app "' + n + '" not found');
       if (html == null) html = sc.html;
       if (caps == null) caps = sc.caps || {};
       if (tier == null) tier = sc.tier == null ? "local" : sc.tier;
       // THE MOUNTED APP's network declaration, merged by the engine (manifest.csp ∪ the user's
-      // policy:csp rows) — never this document's. A caller that already fetched app_html hands it
+      // policy:csp rows) — never this document's. A caller that already fetched get_app_html hands it
       // down instead, the same way it hands down html/caps; an older engine sends none and the
       // child gets the floor, which is what it got before this key existed.
       if (csp == null) csp = sc.csp || null;
@@ -1677,15 +1682,25 @@ window.oma = {
 // INTERNAL bind hook — not author API (elegance A10: `oma.bind` had exactly one caller, the
 // universal loader, and advertising a loader-only handoff as author surface invited misuse).
 // DIRECT MODE ONLY; first wins, like every other writer of state.collection. The loader hands
-// over the binding `app_html` computed — it never recomputes it (contracts.mjs
+// over the binding `get_app_html` computed — it never recomputes it (contracts.mjs
 // defaultCollectionFor stays the one owner of "what does this app open on").
 window.__OMA_BIND__ = (collection) => {
   if (typeof collection === "string" && collection && !state.collection) state.collection = collection;
   return state.collection;
 };
 
+// …and the same seam for the HOST LABEL, which used to arrive on a read tool's snapshot and now
+// rides the widget-only channel (get_app_html) instead — the loader already holds that answer by
+// the time it mounts, so it hands it down here. First-wins, exactly like the binding above: a
+// widget's host does not change for its whole life, and the browser viewer has already stamped
+// its own label before this can be called.
+window.__OMA_HOST__ = (host) => {
+  if (typeof host === "string" && host && !state.host) state.host = host;
+  return state.host;
+};
+
 // Staleness: the AI (or another host — CLI, another chat) can write via data_* while this
-// widget sits on screen. ADAPTIVE poll while visible: each tick asks the cheap data_version
+// widget sits on screen. ADAPTIVE poll while visible: each tick asks the cheap get_data_version
 // probe; a moved GLOBAL seq is then confirmed against OUR collection with one data_changes
 // call — a foreign collection's write costs a probe + one tiny check, never a full walk
 // (and safely advances our mark, so it doesn't re-fire). settings changes are caught from
@@ -1714,9 +1729,9 @@ async function checkOwnChanges() {
 async function pollTick() {
   if (ready && document.visibilityState === "visible" && state.collection) {
     try {
-      const r = await rawCall("data_version", {});
+      const r = await rawCall("get_data_version", {});
       const sc = r && !r.isError ? r.structuredContent : null;
-      if (!sc || typeof sc.seq !== "number") await walk();  // engine predates data_version → old behavior
+      if (!sc || typeof sc.seq !== "number") await walk();  // engine predates get_data_version → old behavior
       else {
         const p = decideProbe(state.version, lastSettingsVersion, sc);
         if (p.syncPrefs) schedulePrefSync();
@@ -1736,7 +1751,7 @@ document.addEventListener("pointerdown", markActivity, { capture: true, passive:
 document.addEventListener("keydown", markActivity, { capture: true, passive: true });
 
 // ---- broken-mount notice: an uncaught error during the initial window tells the USER what
-// happened and names the explicit recovery path (app_history → restore_app, driven through the
+// happened and names the explicit recovery path (list_app_checkpoints → restore_app, driven through the
 // AI). The auto-revert that used to ride this signal — a server-side rollback with a per-run
 // budget — was retired 2026-08-04 (elegance B3): it never fired outside tests, and an
 // app-originated report silently rewriting source was the heaviest belt on this face. Earlier
@@ -1749,7 +1764,7 @@ document.addEventListener("keydown", markActivity, { capture: true, passive: tru
   const report = (msg) => {
     if (reported || !compName()) return;
     reported = true;
-    omaNotify(`This app hit an error while loading: ${String(msg).slice(0, 160)} — if its latest change broke it, ask the AI to roll back (app_history → restore_app).`);
+    omaNotify(`This app hit an error while loading: ${String(msg).slice(0, 160)} — if its latest change broke it, ask the AI to roll back (list_app_checkpoints → restore_app).`);
   };
   for (const m of (typeof window !== "undefined" && window.__OMA_EARLY_ERRORS__) || []) report(m);
   window.addEventListener("error", (e) => { if (Date.now() - t0 < REPORT_WINDOW_MS) report((e && e.message) || "script error"); });

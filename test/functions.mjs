@@ -22,7 +22,7 @@
 // Run: node test/functions.mjs
 
 import { openStore, manifestShapeError } from "../src/store.mjs";
-import { extractFunctionBodies, functionsJoinError, makeFunctionHost,
+import { extractFunctionBodies, functionsJoinError, makeFunctionHost, runFunctionBody, FnAbort,
          FN_TIME_BUDGET_MS, FN_TIME_TIMER_MAX_MS, FN_WRITE_BUDGET, FN_READ_BUDGET,
          MAX_FUNCTION_RESULT, MAX_FUNCTIONS, MAX_CONCURRENT_FUNCTION_CALLS } from "../src/functions.mjs";
 import { createEngine } from "../src/engine.mjs";
@@ -488,6 +488,223 @@ console.log("10. discovery — list_apps carries the COUNT, and only when there 
     !("functions" in none.row) && !("fn_count" in none.row), JSON.stringify(none.row));
   ok("\u2026and its line says nothing about functions", !/function/.test(none.text), none.text);
   await client.close();
+}
+
+// ------------------------------------------------------------------ 11. the seat's two seams
+// 0.6.1 (gateway wave). The seat grew from a boolean into `false | true | {egress?, executor?}`,
+// and both new members are SEAMS rather than policy: `egress` says who the body's fetch talks to,
+// `executor` says where the body runs. The engine ships neither an allowlist nor a protocol — what
+// is pinned here is that the seam is honoured exactly, because a hosted plane's whole containment
+// story hangs off these two shapes being what it was told they are.
+console.log("11. the egress seam — the body's fetch, pointed at somebody else's gateway");
+{
+  const http = await import("node:http");
+  const seen = [];
+  let mode = "ok";
+  const gw = http.createServer((req, res) => {
+    const chunks = [];
+    req.on("data", (c) => chunks.push(c));
+    req.on("end", () => {
+      seen.push({ url: req.url, method: req.method, headers: req.headers,
+                  body: Buffer.concat(chunks).toString("utf-8") });
+      if (mode === "deny") {
+        res.writeHead(403, { "content-type": "text/plain", "X-Egress-Error": "host_not_allowed" });
+        res.end("api.example.test is not on this workspace's allowlist");
+      } else {
+        res.writeHead(200, { "content-type": "text/plain" });
+        res.end("upstream said hi");
+      }
+    });
+  });
+  await new Promise((r) => gw.listen(0, "127.0.0.1", r));
+  const gateway = `http://127.0.0.1:${gw.address().port}`;
+  const egress = { gateway, token: "tok-tenant-42" };
+  const egressHost = makeFunctionHost(store, { egress });
+  const eCall = (fn, args = {}) => egressHost.call({ app: "fnegress", function: fn, args,
+    actor: "agent", host: "test", command_id: "e" + ++cmdN });
+
+  save("fnegress", doc(
+    block("out", `const r = await fetch("https://example.test/x", { method: "POST",
+                    headers: { Authorization: "Bearer u" }, body: "hi" });
+                  return await r.text();`),
+    // The wrapper must be BOTH places: the sandbox object is what a well-behaved body sees, and
+    // the worker realm's globalThis is what an escaped one sees. `api.list.constructor` is the
+    // documented escape (functions.mjs header: a host function carries its own realm back out),
+    // so this reads the far side of the vm seam and compares it to the near side.
+    block("both", `const escaped = api.list.constructor("return globalThis.fetch")();
+                   return { inside: globalThis.fetch === fetch, realm: escaped === fetch };`),
+    block("rel", `try { await fetch("/relative"); return "no throw"; }
+                  catch (e) { return e.constructor.name + ": " + e.message.slice(0, 20); }`),
+    block("stomp", `const r = await fetch("https://example.test/y",
+                      { headers: { "X-Egress-Token": "forged", "X-Egress-Url": "https://evil.test" } });
+                    return await r.text();`)),
+    { functions: { out: {}, both: {}, rel: {}, stomp: {} } });
+
+  const out = await eCall("out");
+  ok("a body's fetch reaches the GATEWAY, not the internet", out.ok && out.result === "upstream said hi",
+    JSON.stringify(out));
+  const hit = seen[seen.length - 1];
+  ok("…on the gateway's one path", hit && hit.url === "/egress", hit && hit.url);
+  ok("…carrying the absolute target as X-Egress-Url",
+    hit.headers["x-egress-url"] === "https://example.test/x", hit.headers["x-egress-url"]);
+  ok("…and the tenant token as X-Egress-Token", hit.headers["x-egress-token"] === "tok-tenant-42");
+  ok("…while the body's OWN Authorization rides through untouched (it is the target api's, not the gateway's)",
+    hit.headers["authorization"] === "Bearer u", hit.headers["authorization"]);
+  ok("…with the method and body the body asked for", hit.method === "POST" && hit.body === "hi",
+    `${hit.method} ${JSON.stringify(hit.body)}`);
+
+  const stomp = await eCall("stomp");
+  const stompHit = seen[seen.length - 1];
+  ok("a body that writes the gateway's own headers is OVERWRITTEN, never trusted",
+    stomp.ok && stompHit.headers["x-egress-token"] === "tok-tenant-42"
+      && stompHit.headers["x-egress-url"] === "https://example.test/y",
+    JSON.stringify({ t: stompHit.headers["x-egress-token"], u: stompHit.headers["x-egress-url"] }));
+
+  mode = "deny";
+  const denied = await eCall("out");
+  ok("a refusal reaches the body as a REJECTED fetch, carrying the gateway's code",
+    denied.error === "function_threw" && denied.detail.startsWith("egress_denied: host_not_allowed"),
+    JSON.stringify(denied));
+  mode = "ok";
+
+  const both = await eCall("both");
+  ok("the wrapper is on the sandbox's fetch AND the worker realm's globalThis (a vm escape sees the same one)",
+    both.ok && both.result.inside === true && both.result.realm === true, JSON.stringify(both));
+  const rel = await eCall("rel");
+  ok("a relative url is a TypeError — a function body has no page to resolve one against",
+    rel.ok && /^TypeError: fetch/.test(rel.result), JSON.stringify(rel));
+
+  // The control: with NO egress seat the fetch is the platform's, so the gateway never hears from
+  // it. (It fails to connect — example.test does not resolve — and that failure is the point.)
+  const plainHost = makeFunctionHost(store);
+  const before = seen.length;
+  await plainHost.call({ app: "fnegress", function: "out", args: {}, actor: "agent", host: "test",
+                         command_id: "e" + ++cmdN });
+  ok("…and with no egress seat, nothing is rewritten: the gateway hears nothing", seen.length === before);
+  await new Promise((r) => gw.close(r));
+}
+
+console.log("12. the executor seam — where a body runs is the host's to choose; the ledger is not");
+{
+  save("fnexec", doc(block("noop", "return 1;")), { functions: { noop: {} } });
+  let got = null;
+  const runElsewhere = async (arg) => {
+    got = arg;
+    // A remote executor's dispatch is a network hop on the far side; here it is just async, which
+    // is the property the parent's message pump had to grow to tolerate.
+    const rows = await arg.dispatch("list", { opts: { collection: "fnexec" } });
+    return { kind: "value", json: JSON.stringify({ ran: "elsewhere", rows: rows.length, body: arg.body.trim() }) };
+  };
+  const egress = { gateway: "http://gw.invalid", token: "t" };
+  const host2 = makeFunctionHost(store, { executor: runElsewhere, egress });
+  store.execute({ type: "add_item", command_id: "x-exec-1", collection: "fnexec", fields: { a: 1 }, actor: "agent" });
+  const r = await host2.call({ app: "fnexec", function: "noop", args: {}, actor: "agent", host: "test", command_id: "x1" });
+  ok("the executor REPLACES the worker — its value is the call's value",
+    r.ok && r.result.ran === "elsewhere" && r.result.rows === 1, JSON.stringify(r));
+  ok("…and it is handed the whole call: body, app, fn, args, limitMs, dispatch, egress",
+    got && got.body.trim() === "return 1;" && got.app === "fnexec" && got.fn === "noop"
+      && typeof got.args === "object" && typeof got.limitMs === "number"
+      && typeof got.dispatch === "function" && got.egress === egress,
+    JSON.stringify({ ...got, dispatch: typeof got.dispatch }));
+
+  // The receipt is the PARENT's. An executor reports the FACT of an abort and nothing else — a
+  // shape that crossed a wire is a shape the far side could have authored, so the engine reads the
+  // refusal it minted itself on the way out of dispatch.
+  const refuser = async ({ dispatch }) => {
+    try { await dispatch("add", { row: { collection: "rsvpapp", fields: { x: 1 } } }); }
+    catch { return { kind: "abort" }; }
+    return { kind: "value", json: "null" };
+  };
+  const host3 = makeFunctionHost(store, { executor: refuser });
+  const ab = await host3.call({ app: "fnexec", function: "noop", args: {}, actor: "agent", host: "test", command_id: "x2" });
+  ok("a store refusal through the seam is still the store's own answer, with the parent's receipt",
+    ab.ok === false && ab.error === "collection_not_allowed"
+      && ab.receipt && ab.receipt.collection === "rsvpapp", JSON.stringify(ab));
+  // …and an executor that CLAIMS an abort no dispatch ever made cannot mint one.
+  const liar = makeFunctionHost(store, { executor: async () => ({ kind: "abort" }) });
+  const lie = await liar.call({ app: "fnexec", function: "noop", args: {}, actor: "agent", host: "test", command_id: "x3" });
+  ok("…and an abort nobody asked for is named as the lie it is",
+    lie.ok === false && lie.error === "function_threw" && /never happened/.test(lie.detail), JSON.stringify(lie));
+}
+
+console.log("12a. a refusal is read by SHAPE — a dispatch that crossed a wire has no class to throw");
+{
+  // The far half of the same seam. `executor` moves where a body runs; the thing it is handed —
+  // `dispatch` — can be moved just as far, and then the refusal that comes back is rebuilt from
+  // whatever crossed the socket. `instanceof FnAbort` cannot answer for that object (wrong realm,
+  // or simply a plain one), so the duck test is what decides: a `receipt` carrying the store's own
+  // word. Driven against `runFunctionBody` DIRECTLY, because that is the seam's own contract.
+  const remoteish = await runFunctionBody({
+    body: "return api.count('anything');", app: "fnexec", fn: "noop", args: {}, limitMs: 5_000,
+    // Not a FnAbort, not an Error, no prototype in common with anything in src/ — the shape only.
+    dispatch: () => { throw { receipt: { ok: false, error: "collection_not_allowed", collection: "elsewhere" } }; },
+  });
+  ok("a plain object carrying {receipt:{error}} aborts the call, class or no class",
+    remoteish.kind === "abort", JSON.stringify(remoteish));
+  // The control: without it the assertion above would pass on any throw at all, since a body that
+  // throws is also a tagged outcome. A refusal and a bug must not arrive under the same tag.
+  const plainThrow = await runFunctionBody({
+    body: "return api.count('anything');", app: "fnexec", fn: "noop", args: {}, limitMs: 5_000,
+    dispatch: () => { throw new Error("the far side fell over"); },
+  });
+  ok("…while an ordinary throw is still `threw`, not an abort (so the shape is what answered)",
+    plainThrow.kind === "threw" && /fell over/.test(plainThrow.detail), JSON.stringify(plainThrow));
+  // And the class is on the export map, for the callers that CAN hold it: a host writing its own
+  // dispatch in this process should not have to reverse-engineer the shape from this test.
+  const classy = await runFunctionBody({
+    body: "return api.count('anything');", app: "fnexec", fn: "noop", args: {}, limitMs: 5_000,
+    dispatch: () => { throw new FnAbort({ ok: false, error: "write_budget_exceeded", limit: 1 }); },
+  });
+  ok("`FnAbort` is exported and still the first arm", classy.kind === "abort", JSON.stringify(classy));
+}
+
+console.log("13. the seat's SHAPE — a malformed one throws rather than degrading to same-process");
+{
+  const bad = (opt) => { try { createEngine(store, { functions: opt }); return null; }
+                         catch (e) { return e; } };
+  ok("a string seat is refused", bad("yes") instanceof TypeError);
+  ok("an array seat is refused", bad([]) instanceof TypeError);
+  ok("egress without a gateway is refused (the failure it prevents is silent open egress)",
+    bad({ egress: { token: "t" } }) instanceof TypeError);
+  ok("egress without a token is refused", bad({ egress: { gateway: "https://gw.example" } }) instanceof TypeError);
+  ok("a gateway that is not an http(s) origin is refused",
+    bad({ egress: { gateway: "gw.example", token: "t" } }) instanceof TypeError);
+  ok("a non-function executor is refused", bad({ executor: "run it" }) instanceof TypeError);
+  ok("…while the shapes that mean something do NOT throw",
+    bad(true) === null && bad(false) === null && bad({}) === null
+      && bad({ egress: { gateway: "https://gw.example", token: "t" }, executor: async () => ({ kind: "value", json: "null" }) }) === null);
+}
+
+console.log("14. the guide follows the SEAT — no host teaches a tool it does not register");
+{
+  const { InMemoryTransport, Client } = await import("@modelcontextprotocol/client");
+  const chapter = async (functions, topic) => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await createEngine(store, { functions }).connect(st);
+    const client = new Client({ name: "t", version: "0" });
+    await client.connect(ct);
+    const r = await client.callTool({ name: "get_app_guide", arguments: topic ? { topic } : {} });
+    await client.close();
+    return r.content[0].text;
+  };
+  const off = await chapter(false, "functions");
+  ok("seat OFF: the functions chapter never names the tool that is not there",
+    !/call_function/.test(off) && /not available on this host/.test(off), off.slice(0, 200));
+  ok("…and it still says what the save door DOES with a declaration (validated and stored, never run)",
+    /NOT rejected/.test(off) && /never run/.test(off));
+  const on = await chapter(true, "functions");
+  ok("seat ON: the chapter teaches the real dispatcher", /call_function \{app, function/.test(on));
+  ok("…and says nothing about a gateway when there is none", !/egress_denied/.test(on));
+  const eg = await chapter({ egress: { gateway: "https://gw.example", token: "t" } }, "functions");
+  ok("seat ON with egress: the chapter warns that out-of-allowlist fetches reject",
+    /egress_denied/.test(eg), eg.slice(-600));
+  const basicsOff = await chapter(false);
+  ok("the basics directory line follows too — it does not point at a chapter for a missing pillar",
+    !/\{topic: "functions"\} — exposing/.test(basicsOff) && /no functions on this host/.test(basicsOff));
+  // 25,900: the same gate server-smoke states, moved by the same mechanical amount and for the
+  // same reason — the seven verb-leading renames made several names the chapter mentions longer.
+  ok("…and basics stays under its byte gate on both seats", basicsOff.length < 25_900
+    && (await chapter(true)).length < 25_900, `off is ${basicsOff.length}`);
 }
 
 rmSync(dir, { recursive: true, force: true });

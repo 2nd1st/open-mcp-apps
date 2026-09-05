@@ -95,7 +95,7 @@ const calls = {
   write_one:  await cost("data_add_item", { command_id: randomUUID(), collection: COLL, fields: { title: "one more" } }),
   list_full:  await cost("data_list", { collection: COLL }),
   list_paged: await cost("data_list", { collection: COLL, limit: 20 }),
-  version:    await cost("data_version", {}),
+  version:    await cost("get_data_version", {}),
 };
 const measured = Object.fromEntries(Object.entries(calls).map(([k, v]) => [k, v.text]));
 

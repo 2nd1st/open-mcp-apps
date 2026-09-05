@@ -198,7 +198,7 @@ export const MAX_ITEM_FIELDS_BYTES = 32_768;
 export const MAX_GROUP_CHARS = 500;
 // ─────────────────────────────────────────── one key table, two write paths (both need the wall)
 // WHICH keys a caller may set on an item write, per command. Everything else it sends is dropped
-// rather than forwarded — "unpublished keys are dropped, not honored", which data_batch has always
+// rather than forwarded — "unpublished keys are dropped, not honored", which apply_data_writes has always
 // enforced and the single-write tools did not, because their schemas are `.passthrough()` (they
 // have to be, to carry the runner's `via` stamp). Two consequences of that gap, both measured:
 //   · `type` survived and dispatched a control-plane command through a data tool (fixed separately
@@ -243,7 +243,7 @@ export const ITEM_WRITE_SHAPES = {
 };
 /** …and the SINGLE-tool envelope, which adds `via`: the widget's shadow provenance stamp is the
  *  reason those four schemas are passthrough at all, so the wall has to let it through. Kept apart
- *  from the batch's set deliberately — `data_batch` is the model's bulk verb, never a widget's
+ *  from the batch's set deliberately — `apply_data_writes` is the model's bulk verb, never a widget's
  *  (the runner refuses it by name), so nothing should start stamping provenance through it. */
 export const ITEM_WRITE_ENVELOPE = [...BATCH_ENVELOPE_KEYS, "via"];
 
@@ -2041,7 +2041,7 @@ export function openStore(path, { readOnly = false } = {}) {
     // One cheap read answering "did anything change?" — the adaptive-poll / SSE-fallback probe.
     // `live_n` rides ALONG this read rather than in one of its own: the /events probe already pays
     // for this call every 2s, and "did the display's app change?" is the same question about a
-    // different axis. It is NOT on the data_version TOOL face — see src/tools/data.mjs, which
+    // different axis. It is NOT on the get_data_version TOOL face — see src/tools/data.mjs, which
     // projects the four declared keys (opening an app is not a data change, and the model must
     // not start reading one as if it were).
     dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION, live_n: q.liveN.get().v }),

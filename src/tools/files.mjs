@@ -124,7 +124,7 @@ export function register(ctx) {
   // base64 in, bytes out — or null when the input is not base64.
   //
   // This is deliberately NOT a try/catch. `Buffer.from(x, "base64")` does not throw on illegal
-  // characters, it silently drops them, so the guard that used to be here could never fire:
+  // characters, it discards them with no error, so the guard that used to be here could never fire:
   // "!!!not-base64!!!" decoded to seven bytes of garbage, the garbage overwrote a real file, and
   // the reply said "Stored". A tool annotated DESTRUCTIVE has to be sure it was handed what it
   // thinks it was handed.
@@ -148,7 +148,7 @@ export function register(ctx) {
     {
       title: "Store an app file",
       annotations: DESTRUCTIVE,  // overwriting a path unlinks the old blob — those bytes are unrecoverable
-      description: "Store a file for an app (create or overwrite by path). `data_base64` is the file bytes, base64-encoded — pass any file the user gave you or that you generated. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
+      description: "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
       inputSchema: {
         command_id: z.string().describe("idempotency key — a fresh uuid per write"),
         app: z.string().describe("the app this file belongs to"),

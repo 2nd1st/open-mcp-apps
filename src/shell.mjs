@@ -81,7 +81,7 @@ export function KIT_CSS() {
 // just-saved app openable IMMEDIATELY via the static open_app tool, without
 // waiting for the host to refresh its tool list (Claude Desktop propagates listChanged
 // slowly). It fetches the app HTML over the bridge and, for tier "local" (or an old
-// engine whose app_html carries no tier), mounts it into this document exactly as
+// engine whose get_app_html carries no tier), mounts it into this document exactly as
 // before. Any OTHER tier is untrusted and runs behind the sandboxed runner — which since
 // write-set D is the ONE enforcement piece in src/runner.mjs, reached through oma.embed
 // (the loader document carries the bundled runtime, so the machine ships with it; nothing
@@ -96,7 +96,7 @@ export function KIT_CSS() {
 // delivers its first state, or window.oma does not exist at all (the module graph failed, the
 // runtime threw), the callback is never invoked and NOTHING speaks. The user sits on the static
 // "Loading app…" forever — measured on a page refresh in prod and stg, with no retry
-// counter, no error, and no app_html call ever reaching the server.
+// counter, no error, and no get_app_html call ever reaching the server.
 //
 // So the last line of defence cannot be built on the thing that might be broken:
 //   · a CLASSIC script, not type="module" — a module is deferred and dies with the module graph
@@ -137,7 +137,7 @@ function show(msg) { document.body.innerHTML = '<div style="padding:24px;text-al
 //
 // Measured (ChatGPT web, 2026-07-29, from this loader's own dump): a re-render replays the TURN'S
 // FIRST tool call verbatim, arguments and tool definition together. A turn that ran get_app
-// or data_collections before open_app therefore hands us an envelope addressed to that other
+// or list_data_collections before open_app therefore hands us an envelope addressed to that other
 // call — toolInput = {"name":"dev-probe"} with toolInfo.tool = get_app's definition.
 // Returns that tool's name only when it is positively NOT one of ours; anything unknown returns
 // null, because guessing wrong here would blame the host for our own failure to know.
@@ -219,7 +219,7 @@ function mount(html) {
   }
 }
 
-// First paint hangs on this ONE read, and a host can silently drop bridge calls sent in an
+// First paint hangs on this ONE read, and a host can discard, with no reply, bridge calls sent in an
 // early post-mount window (observed on Claude Desktop 1.24012.9 / Claude Code: the dropped
 // request never settles — no reply, no timeout). So each attempt is a FRESH idempotent read
 // raced against its own growing window; a dropped attempt is abandoned, never awaited forever.
@@ -240,7 +240,13 @@ function fetchAppHtml(name) {
         if (attempt < WINDOWS.length) go();
         else reject(new Error("the host did not answer " + WINDOWS.length + " attempts — close and reopen this widget"));
       }, WINDOWS[n]);
-      oma.callTool("app_html", { name }).then(function (r) {
+      // \`mount: true\` — this document is the universal loader, and the app it is about to put on
+      // screen is a thing only IT knows: the loader ui:// resource is one document for every app,
+      // so the resource read that records a per-app render cannot happen here. The claim is made
+      // on this call and nowhere else; a refetch of the same source, and the \`@live\` brick reading
+      // the app it FRAMES, both leave it unset — they are reads that follow the pointer, and a
+      // reader that elected itself would keep the wall pointed at whatever it is already showing.
+      oma.callTool("get_app_html", { name: name, mount: true }).then(function (r) {
         if (settled) return;
         settled = true; clearTimeout(timer); resolve(r);
       }, function (e) {
@@ -268,6 +274,9 @@ oma.ready(async (state) => {
     // (a second copy of "what does this app open on" is a second answer waiting to disagree). An
     // older engine sends none, and then we bind nothing rather than guess.
     if (sc.collection) window.__OMA_BIND__(sc.collection);
+    // The host label rides this payload now, not the read tools' snapshots — hand it to the
+    // runtime the same way the binding is handed over (oma.state.host, RUNTIME.md §3).
+    if (sc.host && window.__OMA_HOST__) window.__OMA_HOST__(sc.host);
     // Tier branch (security-model §2.3): "local" — or a result carrying no tier at all, from
     // an engine predating tiers — mounts same-document (direct mode) exactly as before.
     // Anything else is untrusted and runs behind the sandboxed runner with engine-computed
@@ -428,7 +437,7 @@ function hostTokenStyle(tokens) {
  *  reason. Passing it is what lets the local /view route reuse this document instead of keeping a
  *  second copy of the tier branch: a non-local app has no direct-mount path anywhere, so the
  *  route that used to fail closed now serves THIS, and the loader does what it does under a host —
- *  read app_html (over /rpc here), see a non-local tier, hand the source to oma.embed and
+ *  read get_app_html (over /rpc here), see a non-local tier, hand the source to oma.embed and
  *  let the runner enforce caps. One tier branch, two transports.
  *
  *  The loader carries `app` in `standalone` rather than as its own global: __OMA_APP__

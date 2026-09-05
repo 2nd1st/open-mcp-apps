@@ -63,10 +63,18 @@
 //                    measurably writes to neither stream — 0 bytes on stdout, 0 on stderr — so it
 //                    is neither a capability nor a leak; the worker's real stdout is kept off the
 //                    parent's, because on the stdio transport the parent's stdout IS the protocol
-//                    channel.) EGRESS IS NOT FILTERED, and this engine will not
-//                    filter it: it runs on the user's own machine over the user's own network, and
+//                    channel.) EGRESS IS NOT FILTERED BY DEFAULT, and the default will not change:
+//                    the OSS engine runs on the user's own machine over the user's own network, and
 //                    a domain allowlist compiled into an OSS module is a promise the deployment
-//                    cannot keep. The place that line belongs is a hosted plane's egress. KEYS are
+//                    cannot keep. The place that line belongs is a hosted plane's egress — so what
+//                    exists here since 2026-09-05 is the SEAM to it and not the policy: a host may
+//                    pass `egress: {gateway, token}` and the body's `fetch` is then rewritten, in
+//                    the worker, to speak to that host's own gateway (function-worker.mjs). The
+//                    wrapper is DEPTH, never the boundary — vm is a seam (see below) and a body
+//                    that escapes it reaches the thread's real fetch. What makes the line hold is
+//                    the network the host runs the body ON; the wrapper is what makes the normal
+//                    path go through the gateway, and the only channel a secret can be injected
+//                    into. KEYS are
 //                    reserved, not delivered: `api.secret` exists and refuses, and settings keys
 //                    under `secret:` are refused by the generic data_* writers AND by security_set,
 //                    so nothing can squat the namespace before the release that fills it.
@@ -121,7 +129,7 @@ export const MAX_FUNCTIONS = 32;           // per app — a roster, not a codeba
 // Execution budgets. Sized from what a function is FOR — an RSVP, a vote, a rollup over one
 // collection, and now one or two calls to somebody else's API — not from what the machine can
 // take. A body that outgrows these has become a batch job, and batch jobs are the model's verb
-// (data_batch), not a widget-reachable closure's. (The write/read/result budgets below keep that
+// (apply_data_writes), not a widget-reachable closure's. (The write/read/result budgets below keep that
 // shape; only the wall clock's story changed.)
 //
 // The wall clock is only a DEFAULT — a gentle suggestion for a body that declares nothing. It went
@@ -279,8 +287,30 @@ function argViolations(params, args) {
 
 // A store refusal inside the body aborts the call carrying the store's own answer — thrown as a
 // marked error so the boundary can tell "the store said no" from "the body threw".
-class FnAbort extends Error {
+//
+// EXPORTED alongside `runFunctionBody`, because the seam that moves WHERE a body runs also moves
+// where its store round trips are re-raised: a host that forwards `dispatch` across a wire throws
+// the far side's refusal on this side, and it can only rebuild one with the class in hand — or by
+// building something shaped like one. Both doors are open on purpose; see `isRefusal`.
+export class FnAbort extends Error {
   constructor(r) { super(r.error || "write_failed"); this.receipt = r; }
+}
+
+/** Is this thrown thing a store refusal? By SHAPE, with identity kept as the first arm.
+ *
+ *  `instanceof` answers only within one realm and one copy of this module, and neither is
+ *  guaranteed once the executor seam is real: a remote runner's dispatch wrapper re-raises a
+ *  refusal it read off a socket, and a host that imports `./functions` beside the engine's own
+ *  copy holds two classes with one name. Every such rebuild carries the one thing that decides the
+ *  question — a receipt with the store's own word in it — so that is what is read.
+ *
+ *  The `instanceof` arm stays FIRST and unconditional so the local path is answered exactly as it
+ *  was before this function existed, including for the one shape the duck test would miss: a
+ *  receipt whose `error` is absent (`FnAbort` tolerates that; its message falls back). */
+function isRefusal(e) {
+  if (e instanceof FnAbort) return true;
+  return !!(e && typeof e === "object" && e.receipt && typeof e.receipt === "object"
+            && typeof e.receipt.error === "string");
 }
 
 /** Build the executor over one store. One per engine; extracted bodies are memoized per
@@ -288,7 +318,17 @@ class FnAbort extends Error {
  *  COMPILED form is not memoized any more and cannot be: a vm.Script belongs to the isolate that
  *  made it, and the isolate that runs a body now exists only for the length of one call. What is
  *  saved here is the document scan, which is the part that grows with the app. */
-export function makeFunctionHost(store) {
+export function makeFunctionHost(store, { executor, egress } = {}) {
+  // WHERE the body runs is a seam, and only a seam: `executor` replaces `runFunctionBody` (the
+  // local worker thread) with anything that honours the same call/outcome shape — a container, a
+  // socket, another machine. Everything that belongs to the STORE stays on this side of it:
+  // budgets, receipts, derived command_ids, the `via` stamp, the abort vocabulary, the slot. The
+  // seam moves "run this one string", nothing else, which is why a remote executor cannot invent
+  // an abort receipt (see `lastAbort` below) or spend a budget the parent did not count.
+  // `egress` is passed through untouched — the engine carries no egress PROTOCOL, only the two
+  // fields a host hands its own gateway ({gateway, token}); the wrapper that speaks to it lives
+  // in function-worker.mjs, and a remote executor is free to do something else entirely.
+  const runBody = typeof executor === "function" ? executor : runFunctionBody;
   const compiled = new Map();   // "name@version" → { bodies } | { bad }
   const compiledFor = (comp) => {
     const key = comp.name + "@" + comp.version;
@@ -424,13 +464,28 @@ export function makeFunctionHost(store) {
 
     // One entry point for every synchronous round trip the worker makes. `secret` is the reserved
     // name: it resolves, so an author discovers it exists, and it refuses, so nobody builds on it.
-    const dispatch = (method, p) => {
+    const rawDispatch = (method, p) => {
       if (method === "list") return api.list(p.opts);
       if (method === "count") return api.count(p.collection);
       if (method === "add") return api.add(p.row);
       if (method === "update") return api.update(p.row);
       if (method === "secret") throw new FnAbort({ ok: false, error: "secrets_not_available", detail: SECRETS_RESERVED_NOTE });
       throw new FnAbort({ ok: false, error: "unknown_api_method", detail: `there is no api.${method}` });
+    };
+    // The abort RECEIPT is minted here and never leaves. It used to be remembered inside the
+    // worker runner's closure, which was the same place while the only executor was a thread in
+    // this process — and would stop being the same place the moment a body runs somewhere else,
+    // since a receipt that crossed a wire is a shape the far side could author. So the ledger's
+    // answer is caught on the way OUT of dispatch, on the parent's side of every seam: an executor
+    // reports `{kind:"abort"}` and the parent already holds the only receipt that ever existed.
+    let lastAbort = null;
+    const dispatch = (method, p) => {
+      try {
+        return rawDispatch(method, p);
+      } catch (e) {
+        if (isRefusal(e)) lastAbort = e.receipt;
+        throw e;
+      }
     };
 
     // The effective deadline. There is NO policy ceiling — a declared timeout_ms is used as-is.
@@ -454,7 +509,7 @@ export function makeFunctionHost(store) {
     if (wait) await wait;
     let outcome;
     try {
-      outcome = await runOnWorker({ body, app: own, fn: fnName, args: guestArgs, limitMs, dispatch });
+      outcome = await runBody({ body, app: own, fn: fnName, args: guestArgs, limitMs, dispatch, egress });
     } finally {
       releaseSlot();
     }
@@ -462,7 +517,7 @@ export function makeFunctionHost(store) {
     if (outcome.kind === "abort") {
       // The receipt is the PARENT's — the one it minted when it refused — never a shape the body
       // reported back. A body may catch an abort; it may not author one.
-      const r = outcome.receipt;
+      const r = lastAbort;
       if (!r)
         return { ok: false, error: "function_threw",
                  detail: "the body reported a store refusal that never happened", writes: receipts };
@@ -491,12 +546,32 @@ export function makeFunctionHost(store) {
  *  The channel is deliberately two channels. `parentPort` carries the one message that ENDS the
  *  call; the MessageChannel carries the store round trips, which the worker reads with
  *  receiveMessageOnPort while blocked in Atomics.wait. Mixing them would put the answer in a queue
- *  that only a blocked thread ever drains. */
-function runOnWorker({ body, app, fn, args, limitMs, dispatch }) {
+ *  that only a blocked thread ever drains.
+ *
+ *  EXPORTED because it is also the DEFAULT executor rather than the only one: a host that runs
+ *  bodies in a container of its own imports this function there and hands `makeFunctionHost` an
+ *  `executor` that forwards to it. Its contract is the seam's contract, so it is written out once
+ *  here and nowhere else:
+ *
+ *    runFunctionBody({ body, app, fn, args, limitMs, dispatch, egress }) → Promise<outcome>
+ *      dispatch(method, payload)  the store, synchronously; throws for a refusal. A refusal is
+ *                                 recognised by SHAPE — anything thrown with a `receipt` whose
+ *                                 `error` is a string — so a dispatch that crossed a wire can
+ *                                 rebuild one without this module's `FnAbort` class (which is
+ *                                 exported too, for the callers that can hold it).
+ *      egress                     undefined, or { gateway, token } handed to the body's fetch
+ *      outcome                    { kind: "value", json }   json is a JSON string, or null
+ *                                 { kind: "abort" }          the store said no — the RECEIPT is the
+ *                                                            caller's, never reported back here
+ *                                 { kind: "timeout" }
+ *                                 { kind: "threw", detail }
+ *                                 { kind: "unserializable" }
+ *                                 { kind: "too_large", size } */
+export function runFunctionBody({ body, app, fn, args, limitMs, dispatch, egress }) {
   return new Promise((resolve) => {
     const { port1, port2 } = new MessageChannel();
     const flag = new Int32Array(new SharedArrayBuffer(4));
-    let settled = false, lastAbort = null, worker = null, timer = null;
+    let settled = false, worker = null, timer = null;
     const wake = () => { Atomics.store(flag, 0, 1); Atomics.notify(flag, 0); };
     const finish = (outcome) => {
       if (settled) return;
@@ -512,24 +587,42 @@ function runOnWorker({ body, app, fn, args, limitMs, dispatch }) {
     // deadline's side of the ledger rather than free time added to every call.
     timer = setTimeout(() => finish({ kind: "timeout" }), limitMs);
 
-    port1.on("message", (req) => {
-      if (settled) { port1.postMessage({ dead: true }); wake(); return; }
-      let reply;
-      try {
-        reply = { value: dispatch(req.method, req.payload) };
-      } catch (e) {
-        if (e instanceof FnAbort) { lastAbort = e.receipt; reply = { abort: true, error: e.receipt.error }; }
-        else reply = { threw: String((e && e.message) || e).slice(0, 500) };
-      }
-      // Post FIRST, then raise the flag: the worker wakes on the flag and reads the port, so the
-      // message has to be there before the wake can be seen.
+    // Answer one round trip. Post FIRST, then raise the flag: the worker wakes on the flag and
+    // reads the port, so the message has to be there before the wake can be seen. A reply that
+    // arrives after the call settled is dropped — the thread it was for is already terminated and
+    // the port is closed behind it.
+    const answer = (reply) => {
+      if (settled) return;
       port1.postMessage(reply);
       wake();
+    };
+    const refusal = (e) => isRefusal(e)
+      // The receipt itself is NOT reported back: the caller minted it and keeps it. What crosses
+      // is the fact of the refusal and its word, which is all the worker's `aborts` set needs.
+      ? { abort: true, error: e.receipt.error }
+      : { threw: String((e && e.message) || e).slice(0, 500) };
+
+    port1.on("message", (req) => {
+      if (settled) { port1.postMessage({ dead: true }); wake(); return; }
+      // `dispatch` MAY be async — a remote executor's store round trip is a network hop, and the
+      // worker does not care: it is parked in Atomics.wait, so one extra await on this side is
+      // invisible to it. The synchronous path (the local store, which is every OSS call) is kept
+      // literally synchronous rather than thenable-wrapped, so nothing about today's behaviour
+      // moves onto the microtask queue.
+      let value;
+      try { value = dispatch(req.method, req.payload); }
+      catch (e) { answer(refusal(e)); return; }
+      if (value && typeof value.then === "function")
+        value.then((v) => answer({ value: v }), (e) => answer(refusal(e)));
+      else answer({ value });
     });
 
     try {
       worker = new Worker(WORKER_URL, {
-        workerData: { port: port2, flag, body, app, fn, args, maxResult: MAX_FUNCTION_RESULT },
+        // `egress` rides across as plain data (undefined on every local install): the worker builds
+        // its own gateway client from it — see function-worker.mjs — because this file must not
+        // reach into the sandbox's realm and that file must not import anything from src/.
+        workerData: { port: port2, flag, body, app, fn, args, maxResult: MAX_FUNCTION_RESULT, egress },
         transferList: [port2],
         // An EMPTY environment, not the engine's. A body that crosses the vm seam (see the header)
         // lands in this thread's realm, and this thread's realm knows nothing about the machine it
@@ -558,7 +651,7 @@ function runOnWorker({ body, app, fn, args, limitMs, dispatch }) {
 
     worker.on("message", (m) => {
       if (m.done === "value") finish({ kind: "value", json: m.json });
-      else if (m.done === "abort") finish({ kind: "abort", receipt: lastAbort });
+      else if (m.done === "abort") finish({ kind: "abort" });
       else if (m.done === "unserializable") finish({ kind: "unserializable" });
       else if (m.done === "too_large") finish({ kind: "too_large", size: m.size });
       else finish({ kind: "threw", detail: String(m.detail || "the function's worker sent no reason").slice(0, 500) });

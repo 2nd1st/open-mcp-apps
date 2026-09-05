@@ -36,7 +36,7 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.6.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.7.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
@@ -216,9 +216,8 @@ that render prompts as slash commands spell it `/mcp__open-mcp-apps__get_started
 the AI the whole opening move. Not every host surfaces prompts — where yours doesn't, nothing is
 lost, because the prompt is just a sentence you can say yourself: **"I just installed open-mcp-apps
 — show me how to use it with a couple of examples, and suggest a few apps that fit how I work."**
-Either way it looks at what you already have and what the App Store already offers, draws on what it
-knows about you (your memory and past chats — or it asks a couple of questions), and sets up a first
-app tailored to you. This step is separate from install and lives in the host. Or just ask directly:
+Either way it looks at what you already have and what the App Store already offers, asks you a
+couple of questions, and sets up a first app tailored to you. This step is separate from install and lives in the host. Or just ask directly:
 
 - *"make me a board for what I'm juggling right now"* → the AI writes it, seeds it, and opens it (persistent)
 - *"make me a habit tracker"* → watch it read the guide, write the app, save it, open it
@@ -439,8 +438,8 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 431 assertions over real stdio — incl. runtime app creation
-node test/http-smoke.mjs     #  80 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/server-smoke.mjs   # 453 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  81 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline
 node test/files-smoke.mjs    #  41 assertions on the per-app file store (chunked uploads, GC races)

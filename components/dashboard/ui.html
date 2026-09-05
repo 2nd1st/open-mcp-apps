@@ -502,7 +502,7 @@ STRUCTURE RULES
   };
 
   // ===== section: state and shared helpers =====
-  // Meta dashboard: the read path stays data_collections → list_apps → one data_list per
+  // Meta dashboard: the read path stays list_data_collections → list_apps → one data_list per
   // collection, now split into a shell-first phase and an in-place preview hydration phase.
   const known = {};
   let appsCache = [];   // installed apps (list_apps) — name-join + "New" cards + undo
@@ -515,11 +515,11 @@ STRUCTURE RULES
   const svgNS = "http://www.w3.org/2000/svg";
   let busy = false;
   let booted = false;
-  let loaded = false;          // first data_collections landed — gates re-renders from echoes
+  let loaded = false;          // first list_data_collections landed — gates re-renders from echoes
   let compsLoaded = false;     // list_apps healthy — gates the undo cluster
   let dashBaseVersion = 0;     // this dashboard's version when first seen…
   let dashEdited = false;      // …a later bump means an edit landed this session (undo chip)
-  let lastSeq = -1;            // data_version stamp — an unmoved seq skips the whole refetch
+  let lastSeq = -1;            // get_data_version stamp — an unmoved seq skips the whole refetch
   let pinFocusName = null;     // heart to re-focus while its pin write's echo rebuilds the grid
 
   const dashboard = document.getElementById("dashboard");
@@ -1184,8 +1184,8 @@ STRUCTURE RULES
       // Phase 1 — three parallel round trips: the seq stamp for the poll gate, the collection
       // shapes (enough for real card shells), and the app registry (name-join + undo).
       const [versionResult, collectionsResult, appsResult] = await Promise.allSettled([
-        oma.callTool("data_version", {}),
-        oma.callTool("data_collections", {}),
+        oma.callTool("get_data_version", {}),
+        oma.callTool("list_data_collections", {}),
         oma.callTool("list_apps", {}),
       ]);
       if (collectionsResult.status === "rejected") throw collectionsResult.reason;
@@ -1226,12 +1226,12 @@ STRUCTURE RULES
     }
   }
 
-  // Poll gate: one cheap data_version probe per tick — an unmoved seq means nothing changed
+  // Poll gate: one cheap get_data_version probe per tick — an unmoved seq means nothing changed
   // anywhere, so the whole N+1 refetch is skipped.
   async function poll() {
     if (busy) return;
     try {
-      const probe = await oma.callTool("data_version", {});
+      const probe = await oma.callTool("get_data_version", {});
       if (probe?.structuredContent?.seq === lastSeq) return;
     } catch { /* probe down — fall through; loadAll owns the error UI */ }
     loadAll();

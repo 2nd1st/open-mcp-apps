@@ -15,7 +15,56 @@ export interface EngineOptions {
   /** Base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787"). When present,
    *  list_apps prints a real <viewBase>/view/<name> link per app; absent = no link. */
   viewBase?: string;
+  /** Register the `call_function` seat. `false` (the default) = no seat, and the authoring guide
+   *  says so rather than teaching a tool this deployment does not have. `true` / `{}` = the seat,
+   *  with bodies on a local worker thread and the machine's own network — right for a local
+   *  install, wrong for a multi-tenant plane. The object form carries the two seams a host needs:
+   *  `egress` rewrites the body's `fetch` to speak to the host's own gateway (allowlist,
+   *  private-address check and secret injection all live THERE, never here), and `executor`
+   *  replaces where a body runs — a container, a socket, another machine — honouring
+   *  `runFunctionBody`'s call/outcome shape. */
+  functions?: boolean | {
+    egress?: { gateway: string; token: string };
+    executor?: (call: {
+      body: string; app: string; fn: string; args: unknown; limitMs: number;
+      dispatch: (method: string, payload: unknown) => unknown;
+      egress?: { gateway: string; token: string };
+    }) => Promise<FunctionOutcome>;
+  };
+  /** Dedicated origin for this deployment's widget sandbox. Feeds two wire keys whose hosts want
+   *  incompatible values, so they can be set separately: `ui` → `_meta.ui.domain` (Claude; the bare
+   *  host `{sha256(connector URL).hex[0:32]}.claudemcpcontent.com`, validated — a wrong value does
+   *  not render, and a stdio connector has no URL to hash so it must not be set), `openai` →
+   *  `_meta["openai/widgetDomain"]` (ChatGPT; a scheme-bearing origin the deployment owns, required
+   *  to submit a plugin with UI and unique per plugin). A plain string sets both to that value.
+   *  An omitted half leaves its key undeclared; a malformed shape throws. */
+  widgetDomain?: string | { ui?: string; openai?: string };
+  /** Tool names to register but NOT list. They stay callable through `tools/call`; they simply
+   *  stop appearing in `tools/list` — for seats whose only real callers are widgets, on a
+   *  deployment whose public tool list is read by people. The engine already hides every retired
+   *  tool name it still answers to; this adds to that set, it does not replace it. Default `[]`,
+   *  and an empty set leaves the wire byte-identical. */
+  unlisted?: string[];
+  /** Record the edit tripwire's JSONL sidecar beside the database. Default `true` — a local
+   *  install measuring its own editing path, in a file the user can read and delete. `false`
+   *  makes the recorder a no-op and the file is never created. */
+  telemetry?: boolean;
+  /** Register a per-app `open_<name>` tool for every app. When passed it decides; when omitted,
+   *  `OMA_DYNAMIC_TOOLS=1` still does. Pass `false` explicitly on any deployment that has to be
+   *  able to state what its tool list is — per-app openers make `tools/list` move whenever a user
+   *  saves an app. */
+  dynamicTools?: boolean;
 }
+
+/** What an `executor` resolves with — the same tagged shape `runFunctionBody` produces. An abort
+ *  carries NO receipt: the store's refusal was minted by the engine, which still holds it. */
+export type FunctionOutcome =
+  | { kind: "value"; json: string | null }
+  | { kind: "abort" }
+  | { kind: "timeout" }
+  | { kind: "threw"; detail: string }
+  | { kind: "unserializable" }
+  | { kind: "too_large"; size: number };
 
 export interface Store {
   close(): void;

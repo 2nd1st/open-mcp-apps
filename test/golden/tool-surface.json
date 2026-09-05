@@ -7,10 +7,12 @@
       "ui/resourceUri": "ui://open-mcp-apps/app.html"
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Open ANY app from the registry by name as an interactive widget — use when the user wants to SEE or OPERATE the data (to merely read facts, use data_list — no UI). Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear). Prefer reusing an app on a different collection over creating near-duplicate apps.",
+    "description": "Open ANY app from the registry by name. Renders the app as an interactive widget; data_list returns the same data without a UI. Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear).",
     "inputSchema": {
       "properties": {
         "app": {
@@ -42,9 +44,6 @@
         },
         "files_version": {
           "type": "number"
-        },
-        "host": {
-          "type": "string"
         },
         "items": {
           "items": {
@@ -120,12 +119,18 @@
       }
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": false
     },
     "description": "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
     "inputSchema": {
       "properties": {
+        "mount": {
+          "description": "the caller is mounting this app on screen now (records the live pointer); refetches and framing bricks leave it unset",
+          "type": "boolean"
+        },
         "name": {
           "type": "string"
         }
@@ -135,7 +140,7 @@
       ],
       "type": "object"
     },
-    "name": "app_html",
+    "name": "get_app_html",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -224,6 +229,10 @@
             }
           ]
         },
+        "host": {
+          "description": "label for the client this widget is running under; usually empty",
+          "type": "string"
+        },
         "html": {
           "type": "string"
         },
@@ -261,10 +270,12 @@
   },
   {
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "READ THIS FIRST before creating or editing an app. Returns the window.oma API contract, available CSS design tokens, the data model, and a minimal working app template.",
+    "description": "The authoring contract for creating or editing an app: the window.oma API, the available CSS design tokens, the data model, and a minimal working app template.",
     "inputSchema": {
       "properties": {
         "topic": {
@@ -288,10 +299,12 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "List UI apps in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
+    "description": "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
     "inputSchema": {
       "properties": {
         "kind": {
@@ -327,10 +340,12 @@
   },
   {
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
+    "description": "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Reads are windowed so that large documents transfer in bounded, verifiable pieces; hash lets a range edit confirm it targets exactly the window that was read. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
     "inputSchema": {
       "properties": {
         "length": {
@@ -721,12 +736,12 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
-      "destructiveHint": false,
+      "destructiveHint": true,
       "idempotentHint": true,
-      "openWorldHint": false,
+      "openWorldHint": true,
       "readOnlyHint": false
     },
-    "description": "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
+    "description": "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. The body is code the app's author wrote and it may make outbound network requests (a host may route them through an allowlisted gateway). Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
     "inputSchema": {
       "additionalProperties": {},
       "properties": {
@@ -836,6 +851,8 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -885,9 +902,6 @@
           "type": "number"
         },
         "group": {
-          "type": "string"
-        },
-        "host": {
           "type": "string"
         },
         "items": {
@@ -972,7 +986,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Apply up to 200 writes in ONE transaction — for seeding an app from what you already know, or filling a board in one go, instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item / data_delete_item, as {type, ...args}: type is add_item | update_item | move_item | delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
+    "description": "Apply up to 200 writes in ONE transaction — for applying many known rows in one go instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item, as {type, ...args}: type is add_item | update_item | move_item. Deletion is not one of them: a delete needs its own confirmation, which an all-or-nothing batch cannot give per row, so it goes through data_delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
     "inputSchema": {
       "properties": {
         "actor": {
@@ -990,9 +1004,19 @@
           "description": "[{type: \"add_item\", collection, fields, group?}, {type: \"update_item\", id, fields}, …] — same arguments as the single-write tools",
           "items": {
             "additionalProperties": {},
-            "propertyNames": {
-              "type": "string"
+            "properties": {
+              "type": {
+                "enum": [
+                  "add_item",
+                  "update_item",
+                  "move_item"
+                ],
+                "type": "string"
+              }
             },
+            "required": [
+              "type"
+            ],
             "type": "object"
           },
           "type": "array"
@@ -1004,7 +1028,7 @@
       ],
       "type": "object"
     },
-    "name": "data_batch",
+    "name": "apply_data_writes",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1012,9 +1036,6 @@
           "type": "number"
         },
         "eot": {
-          "type": "string"
-        },
-        "expires_at": {
           "type": "string"
         },
         "failed_index": {
@@ -1026,13 +1047,7 @@
         "ok": {
           "type": "boolean"
         },
-        "preview": {
-          "type": "string"
-        },
         "reason": {
-          "type": "string"
-        },
-        "request_state": {
           "type": "string"
         },
         "results": {
@@ -1067,6 +1082,8 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -1147,15 +1164,17 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
-    "description": "The cheapest possible change check: returns the global change counter (seq) plus settings/files sub-counters. If seq hasn't moved since you last looked, NOTHING changed anywhere — skip re-reading. Widgets use this for adaptive polling; you can too before re-listing a collection.",
+    "description": "The cheapest possible change check: returns the store's global change counter (seq) plus settings/files sub-counters. An unchanged counter means nothing in the store changed. Widgets read it for adaptive polling.",
     "inputSchema": {
       "properties": {},
       "type": "object"
     },
-    "name": "data_version",
+    "name": "get_data_version",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1187,6 +1206,8 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -1195,7 +1216,7 @@
       "properties": {},
       "type": "object"
     },
-    "name": "data_collections",
+    "name": "list_data_collections",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -1755,6 +1776,8 @@
   },
   {
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -1887,6 +1910,8 @@
   },
   {
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -1982,7 +2007,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Store a file for an app (create or overwrite by path). `data_base64` is the file bytes, base64-encoded — pass any file the user gave you or that you generated. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
+    "description": "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
     "inputSchema": {
       "properties": {
         "app": {
@@ -2313,6 +2338,8 @@
   },
   {
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -2328,7 +2355,7 @@
       ],
       "type": "object"
     },
-    "name": "app_history",
+    "name": "list_app_checkpoints",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2374,11 +2401,11 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from app_history; after restoring, open_app to view it.",
+    "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from list_app_checkpoints; after restoring, open_app to view it.",
     "inputSchema": {
       "properties": {
         "checkpoint": {
-          "description": "which checkpoint to restore, 1 = the oldest (see app_history)",
+          "description": "which checkpoint to restore, 1 = the oldest (see list_app_checkpoints)",
           "type": "number"
         },
         "command_id": {
@@ -2449,6 +2476,8 @@
       "openai/widgetAccessible": true
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -2531,6 +2560,8 @@
       }
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -2547,7 +2578,7 @@
       ],
       "type": "object"
     },
-    "name": "app_store_preview",
+    "name": "preview_app_store_entry",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2656,7 +2687,7 @@
       "openWorldHint": false,
       "readOnlyHint": false
     },
-    "description": "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available. Installing is HALF the job: before handing it over, seed the collection with the user's real rows (data_batch, from what you already know of them) — an installed app opened empty and generic is half-delivered.",
+    "description": "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available.",
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -2680,6 +2711,15 @@
         "name": {
           "type": "string"
         },
+        "outcome": {
+          "description": "installed = first install; updated = the store had a newer version; current = already installed and unchanged",
+          "enum": [
+            "installed",
+            "updated",
+            "current"
+          ],
+          "type": "string"
+        },
         "tier": {
           "type": "string"
         },
@@ -2693,7 +2733,8 @@
       "required": [
         "name",
         "version",
-        "tier"
+        "tier",
+        "outcome"
       ],
       "type": "object"
     },
@@ -2709,6 +2750,8 @@
       }
     },
     "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
       "openWorldHint": false,
       "readOnlyHint": true
     },
@@ -2717,7 +2760,7 @@
       "properties": {},
       "type": "object"
     },
-    "name": "ui_prefs_schema",
+    "name": "get_ui_preference_schema",
     "outputSchema": {
       "additionalProperties": false,
       "properties": {
@@ -2816,7 +2859,6 @@
   },
   {
     "_meta": {
-      "openai/widgetAccessible": true,
       "ui": {
         "visibility": [
           "app"

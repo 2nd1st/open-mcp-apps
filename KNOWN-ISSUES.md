@@ -260,7 +260,7 @@ first-screen rules). Otherwise: host behavior, tracked as a host limitation, not
 
 ## `readOnlyHint` tools still prompt for approval (Claude Desktop)
 
-`get_app_guide`, `list_apps`, `data_collections` carry `readOnlyHint: true`, which was
+`get_app_guide`, `list_apps`, `list_data_collections` carry `readOnlyHint: true`, which was
 expected to skip the first-run approval dialog; in the current Claude Desktop they still prompt.
 Pick **"Always allow"** once. Cosmetic; host behavior may change.
 

@@ -229,13 +229,13 @@ const metaOf = async (name) => (await client.readResource({ uri: `ui://open-mcp-
     badShape.isError === true && /must be an array of origins/.test(badShape.content[0].text));
 }
 
-console.log("\n6. app_html carries the merge (the loader's channel to the runner child)");
+console.log("\n6. get_app_html carries the merge (the loader's channel to the runner child)");
 {
-  const sc = (await client.callTool({ name: "app_html", arguments: { name: "csp-loud" } })).structuredContent;
-  ok("app_html declares csp in structuredContent", JSON.stringify(sc.csp) === '{"connectDomains":["https://api.github.com"]}', JSON.stringify(sc.csp));
+  const sc = (await client.callTool({ name: "get_app_html", arguments: { name: "csp-loud" } })).structuredContent;
+  ok("get_app_html declares csp in structuredContent", JSON.stringify(sc.csp) === '{"connectDomains":["https://api.github.com"]}', JSON.stringify(sc.csp));
   ok("…and it is the MERGE, not the raw declaration `declaration` already carries",
     sc.declaration.csp !== undefined && sc.csp !== sc.declaration.csp);
-  const quiet = (await client.callTool({ name: "app_html", arguments: { name: "csp-quiet" } })).structuredContent;
+  const quiet = (await client.callTool({ name: "get_app_html", arguments: { name: "csp-quiet" } })).structuredContent;
   ok("an app that declares nothing reports {} — the child then gets the floor", JSON.stringify(quiet.csp) === "{}");
 }
 

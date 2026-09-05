@@ -236,7 +236,7 @@ try {
   ok("unknown app 404s", missing.status === 404);
   // security-model §2.3: a non-local app must NOT render with full trust on /view. It used to
   // fail closed to a placeholder because this route had no runner; now it serves the UNIVERSAL
-  // LOADER, which reads app_html over /rpc, sees the tier, and hands the source to the runner
+  // LOADER, which reads get_app_html over /rpc, sees the tier, and hands the source to the runner
   // (verified live in Chrome: the child mounts in an about:srcdoc frame with sandbox="allow-scripts",
   // its typed writes land through the bridge, and oma.callTool comes back "not allowed").
   //
@@ -393,12 +393,14 @@ try {
       ok("every frame carries the live key, present from the very first one",
         frames.length > 0 && frames.every((f) => "live" in f));
       const beforeOpen = frames.length;
-      await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name: "open_app", arguments: { app: "dashboard" } }) });
+      // A RENDER, not a tool call: the pointer moves when a host FETCHES an app's document to put
+      // it on screen (tools/apps.mjs, the per-app ui:// registration), so that is what this drives.
+      // `open_app` is a read now and moves nothing.
+      await client.readResource({ uri: "ui://open-mcp-apps/dashboard.html" });
       const dl = Date.now() + 4000;
       while (Date.now() < dl && !frames.slice(beforeOpen).some((f) => f.live && f.live.app === "dashboard")) await new Promise((r) => setTimeout(r, 25));
       const pushed = frames.slice(beforeOpen).find((f) => f.live && f.live.app === "dashboard");
-      ok("opening an app pushes it down the SAME stream, with a timestamp",
+      ok("rendering an app pushes it down the SAME stream, with a timestamp",
         !!pushed && typeof pushed.live.ts === "string");
       // …and it did NOT pretend to be a data change: the seq on that frame is the one already
       // standing. A moved seq here would make every widget in every host refetch on a glance.
@@ -432,10 +434,17 @@ try {
     };
     const open = (app) => fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
       body: JSON.stringify({ name: "open_app", arguments: { app } }) }).then((r) => r.json());
+    // RENDER is the verb the pointer records now — reading the app's `ui://` document, which is
+    // what a host does when it is about to show a widget. The `open_app` TOOL is a pure read and
+    // deliberately moves nothing, which is the first assertion here.
+    const untouched = JSON.stringify(ptr());
     await open("counter");
+    ok("the open_app tool moves nothing — it is a read and says so", JSON.stringify(ptr()) === untouched);
+    await client.readResource({ uri: "ui://open-mcp-apps/counter.html" });
     const before = ptr();
-    ok("an ordinary open moves the pointer to that app", !!before && before.app === "counter");
+    ok("rendering an ordinary app moves the pointer to it", !!before && before.app === "counter");
     const displayOpen = await open("display-fixture");
+    await client.readResource({ uri: "ui://open-mcp-apps/display-fixture.html" });
     const after = ptr();
     ok("…and a DISPLAY app still opens perfectly normally", !displayOpen.isError);
     ok("…while leaving the pointer exactly where it was — the name AND the counter behind it",

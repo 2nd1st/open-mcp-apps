@@ -228,7 +228,7 @@ async function walkOnce(fetchPage, maxPages, tolerateTorn) {
 
 // ---------------------------------------------------------------- poll decisions
 
-/** What a data_version probe means for us. `checkChanges` says the global seq moved past what
+/** What a get_data_version probe means for us. `checkChanges` says the global seq moved past what
  *  we hold — cheap to confirm against OUR collection before paying for a walk. `syncPrefs`
  *  catches a settings change that no longer rides data snapshots (writes return acks now). */
 export function decideProbe(held, lastSettingsVersion, probe) {
@@ -436,7 +436,7 @@ export function childPreviewSnapshot(rows, { app, declaration, apps, tier } = {}
   const collection = declared.length === 1 ? declared[0] : name;
   const allowed = new Set([collection, name, ...declared]);
   // A row with NO `collection` belongs to the one this snapshot binds to. That is not a leniency,
-  // it is the fixture convention written down in app_store_preview's schema ("collection optional
+  // it is the fixture convention written down in preview_app_store_entry's schema ("collection optional
   // — the preview machines normalise it into real item shape when they answer a read"), and the
   // filter was reading the key before anything normalised it. Measured 2026-08-14 across the
   // shipped store: 13 of 21 entries carry NO collection on any fixture row, so `has(undefined)`

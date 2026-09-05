@@ -49,11 +49,42 @@ console.log("1. the walls no cap combination can open");
   ok("control-plane tools denied under FULL caps + wildcard", await throws(() => g("callTool", { name: "save_app", args: {} }), /not available/));
   ok("…case/padding variants too", await throws(() => g("callTool", { name: "  Save_App ", args: {} }), /not available/));
   ok("app_store_* reserved prefix denied", await throws(() => g("callTool", { name: "app_store_install", args: {} }), /not available/));
+  // ON THE HOST GATE, STILL OFF THIS ONE. `install_from_app_store` carries
+  // `openai/widgetAccessible: true` so the App Store app's Add button works on a default-DENY host
+  // (engine.mjs WIDGET_CALLABLE) — that is a statement about the TOP-LEVEL widget. A nested child
+  // asking for the same name is a different question and the answer does not change: an embedded
+  // app may not write the registry it lives in.
+  ok("install_from_app_store denied to a nested child even though the HOST gate advertises it",
+    await throws(() => g("callTool", { name: "install_from_app_store", args: { name: "kanban" } }), /not available/));
   ok("internal `_` RPC names denied (undo and the via ledger never reach a child)",
     await throws(() => g("callTool", { name: "_undo_last", args: {} }), /not available/));
-  ok("data_batch denied even under wildcard (the F2 seam, closed by name)",
+  ok("apply_data_writes denied even under wildcard (the F2 seam, closed by name)",
+    await throws(() => g("callTool", { name: "apply_data_writes", args: {} }), /not available to apps/));
+  // A RETIRED NAME IS THE SAME TOOL. Seven seats still answer to their pre-rename spelling so that
+  // apps saved before the rename keep working, and every wall in this file matches on a name — so
+  // a child typing the old one must land in exactly the same place. Without the canonicalisation
+  // the rename itself would have been the hole.
+  ok("…and its retired spelling lands on the same refusal",
     await throws(() => g("callTool", { name: "data_batch", args: {} }), /not available to apps/));
+  ok("a retired control-plane spelling is refused too",
+    await throws(() => g("callTool", { name: "app_store_preview", args: {} }), /not available/));
   ok("nothing above ever reached io", io.calls.length === 0);
+}
+
+console.log("1b. ONE chokepoint, and the comment says one");
+{
+  // The policy file used to claim this list was enforced at BOTH the runner guard and the direct
+  // runtime's generic door. It never was: direct mode mounts local-authored documents only and its
+  // passthrough is deliberate (security-model §5). The claim is pinned to the code here so the
+  // next reader of tool-policy.mjs is told the truth by a test rather than by a sentence.
+  const policy = readFileSync(join(ROOT, "src", "tool-policy.mjs"), "utf-8");
+  const runner = readFileSync(join(ROOT, "src", "runner.mjs"), "utf-8");
+  const direct = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
+  ok("the runner guard is the one enforcer", /isControlPlaneTool\(/.test(runner));
+  ok("…the direct runtime does not consult the list, and never claimed to import it",
+    !/isControlPlaneTool/.test(direct));
+  ok("…and tool-policy.mjs no longer says it does",
+    !/BOTH chokepoints/.test(policy) && /ONE chokepoint/.test(policy));
 }
 
 console.log("2. writes: identity is FORCED, never child-supplied");
@@ -256,8 +287,8 @@ console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's 
   // A meta app asks WHICH collections exist, and WHICH apps exist, before it asks for rows.
   // Answering either with an empty envelope renders an app whose whole job is "show me everything"
   // as though the user owned nothing — on the machine that composes PUBLIC preview pages.
-  const cols = await oma.callTool("data_collections", {});
-  ok("the stub derives data_collections from the same fixtures",
+  const cols = await oma.callTool("list_data_collections", {});
+  ok("the stub derives list_data_collections from the same fixtures",
     cols.structuredContent.collections.map((c) => c.collection).sort().join() === "a,b", JSON.stringify(cols.structuredContent));
   const bare = await oma.callTool("list_apps", {});
   ok("with no roster supplied it answers an EMPTY list — honest, and never undefined",
@@ -266,7 +297,7 @@ console.log("5c. the PARENTLESS stub answers from the same fixtures the guard's 
   // ⚠️ This pair replaces a single `Array.isArray(...)` assertion that passed on `[]` — i.e. it
   // passed whether or not the roster was ever wired, and it was covering a half-finished fix.
   // The roster is the ONLY way an installed app with an EMPTY collection stays visible in a
-  // preview: inert derives data_collections from rows, and zero rows reads as "does not exist".
+  // preview: inert derives list_data_collections from rows, and zero rows reads as "does not exist".
   const withRoster = stubOmaScript("a", items, [{ name: "a" }, { name: "empty-app" }]);
   const w2 = {};
   new Function("window", withRoster.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, ""))(w2);
@@ -294,7 +325,7 @@ console.log("5c2. …and it counts collections in a container that has no inheri
   const script = stubOmaScript("ordinary", items);
   const win = {};
   new Function("window", script.replace(/^<script>/, "").replace(/<\/scr" *\+ *"ipt>$|<\/script>$/, ""))(win);
-  const cols = (await win.oma.callTool("data_collections", {})).structuredContent.collections;
+  const cols = (await win.oma.callTool("list_data_collections", {})).structuredContent.collections;
   const names = cols.map((c) => c.collection).sort();
   ok("a collection named __proto__ still appears (a bare object swallowed it)",
     names.join() === "__proto__,constructor,ordinary", names.join());
@@ -303,7 +334,7 @@ console.log("5c2. …and it counts collections in a container that has no inheri
     JSON.stringify(cols));
   // Same question of the guard's twin, so the two machines are pinned to the same answer.
   const g = guard(FULL, makeIo({ snapshot: () => ({ collection: "ordinary", items, version: 1 }) }), "inert", "local");
-  const viaGuard = (await g("callTool", { name: "data_collections", args: {} })).structuredContent.collections;
+  const viaGuard = (await g("callTool", { name: "list_data_collections", args: {} })).structuredContent.collections;
   ok("…and the parented guard agrees, name for name and count for count",
     JSON.stringify(viaGuard.map((c) => [c.collection, c.items]).sort()) === JSON.stringify(cols.map((c) => [c.collection, c.items]).sort()),
     JSON.stringify(viaGuard));
@@ -533,8 +564,8 @@ console.log("6. presets — two real ones: live enforces, inert touches nothing 
   const bound = await gm("refresh", {});
   ok("refresh answers the BOUND collection: keyless fixture rows and nothing else",
     bound.collection === "elder-days" && bound.items.length === 1 && bound.items[0].fields.keyless === true);
-  const dv = await gm("callTool", { name: "data_version", args: {} });
-  ok("inert data_version answers the snapshot's version as seq", dv.structuredContent.seq === 3);
+  const dv = await gm("callTool", { name: "get_data_version", args: {} });
+  ok("inert get_data_version answers the snapshot's version as seq", dv.structuredContent.seq === 3);
   ok("…and the mixed-snapshot io was never touched either", mixed.calls.length === 0);
 }
 

@@ -708,7 +708,7 @@
   //   · a chat host: ZERO speculative frames. The only live preview is the one in a detail view
   //     the user opened — a single frame, asked for by a tap. Nothing on Discover carries a
   //     `data-pv` slot there, so the budget machine below finds nothing to mount and no
-  //     `app_store_preview` call is made until someone opens an app. This is not only about
+  //     `preview_app_store_entry` call is made until someone opens an app. This is not only about
   //     documents: at a 736px widget Discover was laying out 25 preview windows, six of them
   //     mounted and the rest empty grey boxes, in a card that is scrolled past in a transcript.
   //   · the browser viewer (`/view`, and an embedding shell): unchanged. Wide lazy-mounts as a
@@ -779,7 +779,7 @@
     const detail = wrap.dataset.role === "detail";
     const stale = () => !wrap.isConnected || wrap.dataset.pv !== name;
     try {
-      const r = await oma.callTool("app_store_preview", { name });
+      const r = await oma.callTool("preview_app_store_entry", { name });
       if (stale()) return;
       const sc = r && !r.isError ? r.structuredContent : null;
       if (!sc || !sc.html) throw new Error("no preview payload");
@@ -790,7 +790,7 @@
         // → companion-profile/-memories/-knows, elder-days → elder-meds/-checks/-vitals, …) were
         // handed nothing and previewed their empty state. childPreviewSnapshot grew the parameter
         // for exactly this and nothing ever passed it. The tier stays implicit: html is supplied,
-        // so embed never fetches app_html and defaults to "local" — which is the truth here, these
+        // so embed never fetches get_app_html and defaults to "local" — which is the truth here, these
         // are first-party entries read off disk, and it is what unlocks reading the manifest at all.
         declaration: sc.manifest,
         snapshot: { collection: name, items: (sc.fixtures && sc.fixtures.items) || [], version: 1 },
@@ -805,7 +805,7 @@
       if (stale()) return;
       // SAY WHY. This catch-all is the right shape — one broken entry must not take the grid down —
       // but it used to swallow the only evidence there was, so "preview unavailable" was
-      // undiagnosable from a screenshot AND from the code. (It hid a real one: app_store_preview
+      // undiagnosable from a screenshot AND from the code. (It hid a real one: preview_app_store_entry
       // failing output validation for an entry whose fixtures followed the documented convention.)
       console.warn(`[oma] App Store preview failed for "${name}":`, e);
       wrap.querySelector(".pv-skel")?.remove();
@@ -1257,7 +1257,7 @@
     }
   });
   // Debounced + change-gated: a full render() tears down and re-mounts every visible preview
-  // iframe (fresh app_store_preview fetch each), so keystrokes must not trigger it needlessly.
+  // iframe (fresh preview_app_store_entry fetch each), so keystrokes must not trigger it needlessly.
   let qTimer = null;
   for (const box of searchBoxes) box.addEventListener("input", (ev) => {
     clearTimeout(qTimer);

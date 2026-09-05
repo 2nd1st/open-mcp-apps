@@ -12,7 +12,7 @@ import { APP_NAME_RE, cspFor, cspUnion } from "../store.mjs";
 import { wrapApp, wrapLoader, stampStage } from "../shell.mjs";
 import { resolveAssets, appAssetReader, hasAssetReferences } from "../assets.mjs";
 import { GUIDE, guideChapter } from "../guide.mjs";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor, answer, toMcp, textWindow } from "../contracts.mjs";
+import { RO, WRITE, WRITE_NOT_IDEMPOTENT, OPEN_WORLD_WRITE, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor, answer, toMcp, textWindow } from "../contracts.mjs";
 import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
 import { makeFunctionHost } from "../functions.mjs";
 import { editTelemetry } from "../edit-telemetry.mjs";
@@ -62,6 +62,7 @@ const saveAckSchema = {
 
 export function register(ctx) {
   const { server, store, fileChannel, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
+  const DYNAMIC_TOOLS = !!ctx.dynamicTools;
 
   // ONE of the three serve-time seams' shared step: a stored `ui` becomes a DOCUMENT here, and a
   // document may carry no external subresource (the widget CSP forbids it, and a host iframe cannot
@@ -88,9 +89,20 @@ export function register(ctx) {
   const viewUrl = (name) => (viewRoot ? viewRoot + encodeURIComponent(name) : null);
 
   // R1 tripwire data source (W-E): one JSONL line per editing event, sidecar next to the DB.
-  // recordEdit returns a count when a REPORT_EVERY boundary is crossed — that becomes a
-  // one-line milestone note in the ack, and a human (Leo) runs the report; nothing automatic.
-  const recordEdit = editTelemetry(store.dataDir);
+  // recordEdit still returns a count when a REPORT_EVERY boundary is crossed; NOBODY READS IT
+  // any more. It used to be spliced into edit_app's success ack — an internal counter, a local
+  // script path and a maintainer's name, in the model's context, on somebody else's machine.
+  // The tripwire is our instrument and the file beside the DB is where it belongs; a tool result
+  // is the user's. (The count stays in the return value rather than being deleted because the
+  // boundary crossing is what the sidecar's own reader looks for.)
+  //
+  // …and it is now a SEAT, off by one option. The measurement exists to decide OUR question (is a
+  // source-graph rewrite worth building?), which makes it a reasonable thing to collect on a
+  // machine the user owns and an unreasonable thing to collect on somebody's behalf without
+  // saying so. A deployment that would have to write it into a privacy policy can decline
+  // instead, and declining has to mean the file is never created — not that it is written and
+  // ignored — so the no-op replaces the recorder rather than guarding each call site.
+  const recordEdit = ctx.telemetry === false ? () => null : editTelemetry(store.dataDir);
 
 
   // ---------------------------------------------------------------- widget security declaration
@@ -132,14 +144,18 @@ export function register(ctx) {
         ...(csp.frameDomains?.length ? { frameDomains: csp.frameDomains } : {}),
         ...(csp.baseUriDomains?.length ? { baseUriDomains: csp.baseUriDomains } : {}),
       },
-      ...(widgetDomain ? { domain: widgetDomain } : {}),
+      // TWO KEYS, TWO HOSTS, TWO FORMATS — see createEngine's @param. Claude reads `ui.domain`
+      // and wants a bare `{hash}.claudemcpcontent.com`; ChatGPT reads its own key below and wants
+      // a scheme-bearing origin. The engine takes them as separate halves precisely because one
+      // string cannot satisfy both, and a deployment may declare either, both, or neither.
+      ...(widgetDomain?.ui ? { domain: widgetDomain.ui } : {}),
     },
     "openai/widgetCSP": {
       connect_domains: csp.connectDomains || [],
       resource_domains: csp.resourceDomains || [],
       ...(redirects.length ? { redirect_domains: redirects } : {}),
     },
-    ...(widgetDomain ? { "openai/widgetDomain": widgetDomain } : {}),
+    ...(widgetDomain?.openai ? { "openai/widgetDomain": widgetDomain.openai } : {}),
   });
   // The app-agnostic one: the universal loader serves every app from a single URI, so there is no
   // app whose declaration it could carry (see the loader's registration below).
@@ -150,11 +166,12 @@ export function register(ctx) {
   // prompt caching is an exact-prefix match over tools+system+messages: measured, cache_read drops
   // to 0. So every app the AI creates re-bills the entire conversation from scratch. The cost
   // is not the extra tools, it is that building an app invalidates everything said before it.
-  // Per-app open_<name> tools are OPT-IN (OMA_DYNAMIC_TOOLS=1). Every tool costs a
-  // separate host permission prompt and the tool list balloons with the registry — the
-  // universal open_app covers all apps behind ONE permission grant, and never
-  // suffers the host's slow tools/list_changed propagation.
-  const DYNAMIC_TOOLS = process.env.OMA_DYNAMIC_TOOLS === "1";
+  // Per-app open_<name> tools are OPT-IN — `createEngine({dynamicTools})`, falling back to
+  // OMA_DYNAMIC_TOOLS=1 when the embedder says nothing. Every tool costs a separate host
+  // permission prompt and the tool list balloons with the registry — the universal open_app
+  // covers all apps behind ONE permission grant, and never suffers the host's slow
+  // tools/list_changed propagation. (The engine reads the resolved answer off ctx now, so there
+  // is one decision and not one per module.)
   const registered = new Set();
   function registerApp(name) {
     if (registered.has(name)) return; // callbacks read the registry live; updates need no re-register
@@ -209,6 +226,40 @@ export function register(ctx) {
       // opaque origin and cannot derive it. It is what makes the system badge's "Open in browser"
       // exist (and oma.viewBase absolute) inside a host; an engine without a viewer stamps
       // nothing, and the item is not drawn (D-13 ②).
+      //
+      // ── THE FIRST OF TWO PLACES "the app that is on screen" is recorded ──────────────────────
+      // (The other is `get_app_html {mount:true}` — the loader saying it is mounting. See there
+      // for why the two exist; the short version is at the end of this note.)
+      // A single overwritten field, no ledger event (store.touchLiveApp says why). It used to sit
+      // in the open_* TOOLS, and it does not belong there for two reasons that point the same way:
+      //   · `readOnlyHint: true` means "does not modify its environment", and a tool that writes
+      //     a row naming an app, a timestamp and a count is not that. The choice was to keep the
+      //     hint and move the write, rather than keep the write and tell every host that opening
+      //     an app is a mutation worth confirming.
+      //   · a resource read is a BETTER witness of the thing the pointer claims. "The model called
+      //     open" says an intention was formed; "the host fetched the document to render" says a
+      //     widget actually went on screen, which is what an `@live` wall is pointing at.
+      // The old worry — that the `@live` brick and the loader would keep re-electing themselves —
+      // is answered on the other path by a parameter rather than by an exception: the brick and
+      // every refetch call `get_app_html` without `mount`, and only the loader, at the moment it
+      // mounts, passes it.
+      //
+      // …and a DISPLAY app records nothing (contracts.mjs stageDisplayFor). An app carrying an
+      // `@live` brick is a frame around whatever the pointer names, so pointing at it would aim
+      // the wall at itself. This is the OUTER of the two walls: it keeps the bad value from ever
+      // being written. The inner one lives in the brick, which refuses to mount a display app no
+      // matter how the pointer came to name one — an old row, a hand-written store, a door written
+      // after this line.
+      //
+      // ⚠️ WHAT THIS COSTS, stated rather than discovered later: the pointer moves when a HOST
+      // RENDERS, so a host that caches this resource updates it on the first render and not on
+      // later ones. The second half of that cost has since been PAID rather than accepted: the
+      // universal `open_app` path points at the LOADER resource (one document for every app),
+      // which by construction cannot know which app it is about to mount — so with the per-app
+      // openers off (the hosted shape) this path recorded nothing at all in a chat host, and the
+      // `@live` wall stayed dark. The loader now says so itself, on the one call that holds the
+      // name: `get_app_html {name, mount:true}`. Two doors, one row.
+      if (!stageDisplayFor(comp)) store.touchLiveApp(name);
       return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(await serveUi(comp), { app: name, collection: defaultCollectionFor(comp), stage: stageWidthFor(comp), viewBase: viewRoot }), _meta: security }] };
     });
 
@@ -236,15 +287,14 @@ export function register(ctx) {
         // invented collection writes into it silently. Fail the way the sibling path already does.
         const comp = store.getApp(name);
         if (!comp) return fail(`App "${name}" no longer exists.`);
-        // …and the SAME live-pointer rule as open_app, display exemption included: these per-app
-        // tools are a second door onto one act, so a wall display must not depend on which door
-        // the host happened to offer.
-        if (!stageDisplayFor(comp)) store.touchLiveApp(name);
+        // No live-pointer write here any more — it moved to this app's `ui://` resource read,
+        // which is the document THIS tool's `_meta.ui.resourceUri` sends the host to fetch. Same
+        // act, one step later, and a step that only happens when something really renders.
         const collection = (a && a.collection) || defaultCollectionFor(comp);
         const v = store.dataVersion();
         return toMcp(answer.page(
           { app: name, collection, items: [], version: v.seq,
-            settings_version: v.settings_version, files_version: v.files_version, host: hostName() },
+            settings_version: v.settings_version, files_version: v.files_version },
           { returned: 0, total: store.countItems(collection),
             text: `Opened "${name}" on collection "${collection}". The widget loads its own data.` },
         ));
@@ -285,7 +335,7 @@ export function register(ctx) {
     {
       title: "Open any app",
       annotations: RO,
-      description: "Open ANY app from the registry by name as an interactive widget — use when the user wants to SEE or OPERATE the data (to merely read facts, use data_list — no UI). Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear). Prefer reusing an app on a different collection over creating near-duplicate apps.",
+      description: "Open ANY app from the registry by name. Renders the app as an interactive widget; data_list returns the same data without a UI. Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear).",
       inputSchema: {
         app: z.string().describe("app name in the registry (see list_apps)"),
         collection: z.string().optional().describe("data collection to bind (default: the one the app declares, else its own name)"),
@@ -296,19 +346,12 @@ export function register(ctx) {
     async (a) => {
       const comp = store.getApp(a.app);
       if (!comp) return fail(`No app "${a.app}" in the registry. list_apps shows what exists.`);
-      // THE ONE PLACE "the app the AI opened last" is recorded — a single overwritten field, no
-      // ledger event (store.touchLiveApp says why). It sits AFTER the existence check on purpose:
-      // a failed open puts nothing on screen, so it must not move a pointer that says what IS on
-      // screen. Only the open_* doors record; app_html does not, because every `@live` brick and
-      // every loader fetch their source through it and would otherwise keep re-electing themselves.
-      //
-      // …and a DISPLAY app records nothing (contracts.mjs stageDisplayFor). An app carrying an
-      // `@live` brick is a frame around whatever the pointer names, so pointing at it would aim
-      // the wall at itself. This is the OUTER of the two walls: it keeps the bad value from ever
-      // being written. The inner one lives in the brick, which refuses to mount a display app no
-      // matter how the pointer came to name one — an old row, a hand-written store, a door written
-      // after this line.
-      if (!stageDisplayFor(comp)) store.touchLiveApp(a.app);
+      // THIS HANDLER WRITES NOTHING, and that is what lets `readOnlyHint: true` above be true.
+      // The live pointer ("which app is on screen") used to be stamped right here, which made the
+      // most-called tool in the engine a writer while announcing itself as a read. It moved onto
+      // the two paths that witness a RENDER rather than an intention — the per-app `ui://`
+      // resource read (see the long note at that registration) and, for the shared loader document
+      // this tool points at, the loader's own `get_app_html {mount:true}` on mount.
       // ZERO rows, by ruling (redesign row #4, reaffirmed 2026-07-26): the widget always refetches
       // on mount, so rows here would travel twice on a host with a widget and once for nothing on a
       // host without one. total and version still ride — the model knows the size of what it opened
@@ -322,28 +365,48 @@ export function register(ctx) {
       const collection = a.collection || defaultCollectionFor(comp);
       const v = store.dataVersion();
       const total = store.countItems(collection);
+      // No `seq` in the SENTENCE. It is the store's global ledger position — the number that
+      // makes a user who edited an app twice ask why it jumped from 5 to 43 (nothing happened to
+      // it; those 38 were their groceries). registry.mjs settled that for app history and this
+      // line was the one that got missed. `version` still rides the structured channel, where
+      // machinery reads it and nobody recites it.
       return toMcp(answer.page(
         { app: a.app, collection, items: [], version: v.seq,
-          settings_version: v.settings_version, files_version: v.files_version, host: hostName() },
+          settings_version: v.settings_version, files_version: v.files_version },
         { returned: 0, total,
-          text: `Opened "${a.app}" on collection "${collection}" (${total} item(s), seq ${v.seq}). The widget loads its own data; if YOU need rows, read data_list.`
+          text: `Opened "${a.app}" on collection "${collection}" (${total} item(s)). The widget loads its own data; if YOU need rows, read data_list.`
             + (viewUrl(a.app) ? ` In a browser: ${viewUrl(a.app)}` : "") },
       ));
     },
   );
 
   server.registerTool(
-    "app_html",
+    "get_app_html",
     {
       title: "App HTML (internal)",
-      annotations: RO,
+      // NOT `RO`, because of `mount` below: this seat records the live pointer when a loader says
+      // it is putting the app on screen, and a tool that writes a row naming an app, a timestamp
+      // and a count is not "does not modify its environment". The honest hint costs nothing on the
+      // model face — the description says internal, hosted deployments leave it unlisted, and its
+      // only callers are widgets. `WRITE` is exactly the four values this seat deserves:
+      // idempotent (the pointer is one overwritten row) and closed-world.
+      annotations: WRITE,
       description: "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
-      inputSchema: { name: z.string() },
+      // `mount` is a CLAIM, not a request: "I am putting this document on screen now". Only the
+      // universal loader makes it, and only when it is about to mount — see the handler.
+      inputSchema: { name: z.string(), mount: z.boolean().optional().describe("the caller is mounting this app on screen now (records the live pointer); refetches and framing bricks leave it unset") },
       outputSchema: {
         name: z.string(), version: z.number(), html: z.string(),
         author: z.string(),
         tier: z.enum(["local", "unreviewed"]),
         locked: z.boolean().describe("a fixed system app (settings renders these read-only)"),
+        // THE HOST LABEL, on the one channel that has a use for it. It rode every read tool's
+        // snapshot until now, which meant a provenance annotation for the ledger travelled into
+        // the model's context on every page of every collection. Its only real consumer is
+        // `oma.state.host` inside a widget, and the loader fetches this payload on mount anyway —
+        // so it moved to where its reader already was. Usually empty (MCP 2026-07-28 dropped the
+        // handshake that carried a client name), which is the honest value and not a sentinel.
+        host: z.string().optional().describe("label for the client this widget is running under; usually empty"),
         // WHAT THIS APP OPENS ON, computed by the one function that owns that question
         // (contracts.mjs defaultCollectionFor — /view mounts by the same rule, and a second copy is
         // a second answer waiting to disagree). It is here because the generic loader document
@@ -373,6 +436,24 @@ export function register(ctx) {
       const comp = store.getApp(a.name);
       if (!comp) return fail(`No app "${a.name}".`);
       const tier = tierOf(comp.author);
+      // ── THE SECOND PLACE "the app that is on screen" is recorded ─────────────────────────────
+      // The first is the per-app `ui://` resource read (see the long note at that registration).
+      // It is the better witness and it stays — but it can only witness a document that KNOWS its
+      // app, and the universal `open_app` path points at the shared loader resource, one document
+      // for every app. With the per-app openers off (the hosted shape) nothing in a chat host ever
+      // reads a per-app resource, so the pointer never moved and an `@live` wall stayed dark.
+      //
+      // The loader closes that hole from the only position that has the answer: it is the thing
+      // holding the name, at the moment it mounts. Hence `mount`, and hence it being opt-in rather
+      // than "any fetch counts" — this seat is also how a refetch reloads its source and how the
+      // `@live` brick reads the app it is FRAMING, and either of those counting as an open would
+      // let a wall re-elect the app it is already showing, forever. The old comment here said the
+      // brick and the loader "fetch through get_app_html, which is not a resource read at all";
+      // that is still the shape of the answer, it is just now a parameter instead of a whole seat.
+      //
+      // …and a DISPLAY app records nothing, the same outer wall the resource path carries: a frame
+      // must never aim the pointer at itself, however it came to be mounted.
+      if (a.mount === true && !stageDisplayFor(comp)) store.touchLiveApp(comp.name);
       // Always the whole document. This call is the loader widget's mount source — the widget
       // cannot assemble windows, and the host↔widget bridge is the one channel measured intact
       // well past the model-facing cut (≥120K). The budget discipline therefore deliberately does
@@ -390,7 +471,7 @@ export function register(ctx) {
       return {
         content: [{ type: "text", text: `(app "${comp.name}" v${comp.version}, ${comp.ui.length} chars, tier ${tier} — consumed by the loader widget)` }],
         structuredContent: { name: comp.name, version: comp.version, author: comp.author, tier,
-          locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp),
+          locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp), host: hostName(),
           caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
           csp: cspFor(comp, store),
           // …and its assets inlined, because this payload IS the document the loader mounts —
@@ -407,7 +488,7 @@ export function register(ctx) {
     {
       title: "App authoring guide",
       annotations: RO,
-      description: "READ THIS FIRST before creating or editing an app. Returns the window.oma API contract, available CSS design tokens, the data model, and a minimal working app template.",
+      description: "The authoring contract for creating or editing an app: the window.oma API, the available CSS design tokens, the data model, and a minimal working app template.",
       // The chapter list is frozen at first publish: inputSchema bytes are resident, so a value
       // added later is a tools/list change for everyone. All four exist from day one; `functions`
       // says so plainly while the pillar is still behind a flag.
@@ -416,7 +497,10 @@ export function register(ctx) {
           .describe("which chapter (default basics: the contract + template). Each chapter stands alone"),
       },
     },
-    async (a) => ({ content: [{ type: "text", text: guideChapter(a?.topic) }] }),
+    // The seat is passed IN: a guide that teaches call_function on a host that does not register
+    // it is the 0.6.0 defect this closes — the chapter existed, the tool did not, and an author
+    // followed the chapter to a save that could never be called.
+    async (a) => ({ content: [{ type: "text", text: guideChapter(a?.topic, ctx.functions) }] }),
   );
 
   server.registerTool(
@@ -424,7 +508,7 @@ export function register(ctx) {
     {
       title: "List apps",
       annotations: RO,
-      description: "List UI apps in the registry (reusable across all chats). If the UI the user wants already exists, prefer opening it over creating a new one. Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
+      description: "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
       // Three params, frozen with this publish: name (the "open my X" lookup — exact match, so a
       // registry of any size answers in one call), kind and visibility (the two columns that decide
       // what is an app and what is retired/long-tail).
@@ -487,7 +571,7 @@ export function register(ctx) {
             .filter(Boolean).join("\n")
         : empty;
       // `locked` rides each row so the settings pane can tell fixed system UI apart without a
-      // second tool (app_permissions retired 2026-08-04 — app_html carries the per-app caps).
+      // second tool (app_permissions retired 2026-08-04 — get_app_html carries the per-app caps).
       // `functions` is ABSENT, not 0, on an app that declares none — absence is the honest shape
       // for "this app has no function face", and it keeps the rows of a registry that uses no
       // functions byte-identical to what they were before the field existed. (There is no
@@ -504,7 +588,7 @@ export function register(ctx) {
     {
       title: "Get app source",
       annotations: RO,
-      description: "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Windows exist because some hosts silently drop the MIDDLE of an oversized result: a big app read whole can arrive mutilated with no sign, and an edit saved from it destroys the source. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
+      description: "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Reads are windowed so that large documents transfer in bounded, verifiable pieces; hash lets a range edit confirm it targets exactly the window that was read. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
       inputSchema: {
         name: z.string(),
         slot: z.enum(["ui", "manifest"]).optional().describe("default ui; manifest returns {manifest: object|null} whole"),
@@ -833,7 +917,7 @@ export function register(ctx) {
       if (r.idempotent)
         return toMcp(answer.ack({ ok: true, name: a.app, version: r.version, applied: edits.length, note: "already applied (idempotent replay)" },
           `Already applied — "${a.app}" is at v${r.version} from this same command_id.`));
-      const milestone = tel("ok");
+      tel("ok");
       // Same divergence sentence save_app fires, because an edit is just as capable of adding the
       // first binding to a "visual" — and the author deserves the hint at the moment it happened.
       // The manifest is the RESOLVED (inherited) one from the receipt, not something re-parsed.
@@ -844,8 +928,7 @@ export function register(ctx) {
           applied: edits.length, manifest_action: r.manifest_action, ...(r.note ? { note: r.note } : {}) },
         `Edited "${a.app}" — ${edits.length} edit(s) applied, v${a.expected_version} → v${r.version}, ${(r.prev_size ?? 0).toLocaleString()} → ${r.size.toLocaleString()} chars.` +
           (r.note ? `\n${r.note}` : "") +
-          (sk ? `\n${sk}` : "") +
-          (milestone ? `\n[telemetry] ${milestone} qualified edits — time for the R1 tripwire report: node scripts/edit-telemetry-report.mjs (reviewer: Leo)` : ""),
+          (sk ? `\n${sk}` : ""),
       ));
     },
   );
@@ -931,15 +1014,21 @@ export function register(ctx) {
   // the local entrypoints turn it on, a hosted multi-tenant plane must never inherit same-process
   // execution by accident — functions.mjs's header carries the whole §2.5-D mapping.
   if (ctx.functions) {
-    const fnHost = makeFunctionHost(store);
+    // createEngine normalised the seat to `{egress?, executor?}` — where the body runs and what
+    // its fetch talks to are the host's to choose, and neither is visible on this tool's face.
+    const fnHost = makeFunctionHost(store, ctx.functions);
     server.registerTool(
       "call_function",
       {
         title: "Call an app function",
-        // WRITE, not NOT_IDEMPOTENT: inner command_ids are derived from this call's command_id in
-        // issue order, so a retried call replays into the ledger's dedup instead of writing twice.
-        annotations: WRITE,
-        description: "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
+        // OPEN_WORLD_WRITE, not WRITE: the body is the APP AUTHOR's code and it holds `fetch`, so
+        // this seat is the one place a call can have an effect outside this store. idempotentHint
+        // survives the switch for the reason it was true before — inner command_ids are derived
+        // from this call's command_id in issue order, so a retried call replays into the ledger's
+        // dedup instead of writing twice. That guarantee covers OUR writes and says nothing about
+        // whatever the body sent elsewhere, which is exactly what destructiveHint now admits.
+        annotations: OPEN_WORLD_WRITE,
+        description: "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. The body is code the app's author wrote and it may make outbound network requests (a host may route them through an allowlisted gateway). Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
         // Passthrough for the same reason the item writes are: the runner stamps `via` (and forces
         // `app`) on a widget's call, and a strip-mode schema would eat the stamp in transit.
         // W5 (redesign B2, VOCAB): app and function mirror into Mcp-Param-App / Mcp-Param-Function

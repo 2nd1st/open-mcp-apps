@@ -32,7 +32,7 @@ const APP_PLANE = new Set(["save_app", "delete_app", "archive_app"]);
  * trying to write to a closed transport. The disposer returned here is wired to the server's own
  * close, so the bridge lives exactly as long as the connection it speaks for.
  *
- * COALESCING. A burst (a seeded install, a data_batch, the AI saving three apps in a row) must
+ * COALESCING. A burst (a seeded install, a apply_data_writes, the AI saving three apps in a row) must
  * cost one notification per KIND, not one per command: the host's only reaction is to refetch,
  * and refetching three times for three saves is three times the work for one answer. Events are
  * folded into a pending set and flushed on the next tick — the same tick discipline the store

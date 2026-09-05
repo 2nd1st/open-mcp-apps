@@ -202,6 +202,17 @@ console.log("2b. idempotentHint is a claim about effects, and it has to be true"
 //
 // Naturally idempotent without a key — each needs a reason, so the exemption cannot grow silently.
 const NATURALLY_IDEMPOTENT = {
+  // Its only write is the live pointer, and only when the caller passes `mount: true`: ONE row,
+  // overwritten in place with the app's own name (store.touchLiveApp). Replay it and the pointer
+  // holds the same value it held after the first call — which is the property the hint promises a
+  // host that retries a timed-out call. What a replay does move is that row's render tally and its
+  // timestamp, and that is the honest answer rather than a hole in this reason: a retried mount IS
+  // a second attempt to put the app on screen, the loader itself makes up to four of them
+  // (shell.mjs races a growing window against hosts that drop early bridge calls), and nothing
+  // downstream reads the tally as a count of anything but renders. No key is possible either —
+  // this seat carries no command_id and giving it one would put an idempotency key on the widget
+  // mount path for a row the ledger does not record.
+  get_app_html: "the pointer is one overwritten row; a replay leaves the same app live",
 };
 {
   const claimed = tools.filter((t) => t.annotations?.idempotentHint === true && t.annotations?.readOnlyHint !== true);
@@ -211,6 +222,47 @@ const NATURALLY_IDEMPOTENT = {
     `      Either give it cmdArgs, use WRITE_NOT_IDEMPOTENT, or add it to NATURALLY_IDEMPOTENT with why.`);
   const stale = Object.keys(NATURALLY_IDEMPOTENT).filter((n) => !claimed.some((t) => t.name === n));
   ok("no stale exemptions", stale.length === 0, `listed but not claiming idempotency: ${stale.join(", ")}`);
+}
+
+console.log("2c. the two gates overlap by name, and only where we said they would");
+// TWO GATES, TWO QUESTIONS. `openai/widgetAccessible: true` is the HOST gate: it tells a
+// default-DENY host "the top-level widget you rendered may call this back". The control-plane list
+// (tool-policy.mjs) is the NESTING gate: "an app embedded inside another app may never reach
+// this". A name on both is a real, deliberate shape — the system app we ship may do it at the top
+// level, a nested child may not — so the check here is NOT disjointness. It is that the overlap is
+// exactly the three names below and never grows by accident.
+//
+// THE THREE, and why each is safe to hand a top-level widget:
+//   • `app_store_list` / `preview_app_store_entry` — App Store READS. They are control-plane only
+//     because the `app_store_*` PREFIX reserves that namespace for a publishing surface that does
+//     not exist yet: a forward reservation written for writes, catching two reads on its way past.
+//     (`preview_app_store_entry` is in the explicit list solely to keep the wall it had under its
+//     old name, `app_store_preview`, which the prefix used to cover.)
+//   • `install_from_app_store` — a WRITE, and the exemption that needs the most reason. It is the
+//     designed path for a user pressing Add in the App Store app (components/app-store/ui.html),
+//     which is a first-party system app rendered at the top level; on a default-DENY host that
+//     button does not work without this flag. What it cannot do bounds the risk: it refuses to
+//     overwrite an app the user or their AI wrote — an existing entry whose author is not
+//     "library" is rejected outright (src/tools/app-store.mjs:123) — the app it installs is
+//     removable with `delete_app`, and every byte it writes goes through the ledgered store
+//     command, so nothing lands anywhere a normal undo/delete cannot reach.
+// `security_set` is NOT exempt and stays off the host gate, and the difference is in kind: it
+// rewrites the POLICY the other walls are made of, and it has no widget caller at all (the
+// settings pane drives it through the direct runtime's passthrough, never through this flag).
+{
+  const { isControlPlaneTool } = await import("../src/tool-policy.mjs");
+  const SYSTEM_APP_SEATS = new Set(["app_store_list", "preview_app_store_entry", "install_from_app_store"]);
+  const advertised = tools.filter((t) => t._meta?.["openai/widgetAccessible"] === true).map((t) => t.name);
+  const both = advertised.filter((n) => isControlPlaneTool(n) && !SYSTEM_APP_SEATS.has(n));
+  ok(`${advertised.length} widget-accessible tool(s), and the only control-plane ones are the named three`,
+    both.length === 0,
+    `on the host gate AND the nesting gate without being named above: ${both.join(", ")}`);
+  const staleExemption = [...SYSTEM_APP_SEATS].filter((n) => !advertised.includes(n) || !isControlPlaneTool(n));
+  ok("…and all three named seats are still on both gates", staleExemption.length === 0,
+    `no longer both widget-accessible and control-plane: ${staleExemption.join(", ")} — drop the exemption`);
+  ok("security_set is on the nesting gate and off the host gate",
+    isControlPlaneTool("security_set") && !advertised.includes("security_set"),
+    "security_set rewrites policy and has no widget caller — it must not be advertised to a host");
 }
 
 console.log("3. golden file");
@@ -245,6 +297,100 @@ if (!BLESS && !existsSync(GOLDEN)) {
 }
 
 await client.close();
+
+console.log("4. the engine options a deployment sets — unlisted, dynamicTools, telemetry");
+// Two claims, and the second is the one that can rot silently. LISTING is easy to see; being
+// still CALLABLE is what a hosted deployment and every app saved before the rename are relying
+// on, and nothing else in the suite exercises a name that is deliberately absent from the list.
+{
+  const { Client: MemClient, InMemoryTransport } = await import("@modelcontextprotocol/client");
+  const { createEngine } = await import("../index.mjs");
+  const { openStore } = await import("../src/store.mjs");
+  const { TOOL_ALIASES } = await import("../src/tool-policy.mjs");
+  const memDb = join(ROOT, "test", "unlisted.db");
+  for (const f of [memDb, memDb + "-wal", memDb + "-shm"]) if (existsSync(f)) unlinkSync(f);
+  const memStore = openStore(memDb);
+  const open = async (opts) => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await createEngine(memStore, opts).connect(st);
+    const c = new MemClient({ name: "unlisted", version: "1.0.0" });
+    await c.connect(ct);
+    return c;
+  };
+
+  const plain = await open({});
+  const plainNames = (await plain.listTools()).tools.map((t) => t.name);
+  const retired = Object.values(TOOL_ALIASES);
+  ok(`${retired.length} retired name(s) registered and none of them listed`,
+    retired.every((n) => !plainNames.includes(n)),
+    `listed anyway: ${retired.filter((n) => plainNames.includes(n)).join(", ")}`);
+  // The bridge itself: an app saved before the rename polls this every few seconds.
+  const viaRetired = await plain.callTool({ name: "data_version", arguments: {} });
+  ok("…and a retired name still answers on tools/call (the bridge apps in the field ride on)",
+    !viaRetired.isError && typeof viaRetired.structuredContent?.seq === "number",
+    JSON.stringify(viaRetired).slice(0, 200));
+  // Something for the hidden seat to answer ABOUT — a fresh store holds no apps at all.
+  await plain.callTool({ name: "save_app", arguments: { name: "unlisted-probe", ui: "<p>probe</p>" } });
+  await plain.close();
+
+  // THE OPTION OVERRIDES THE ENVIRONMENT, in both directions. This process runs with
+  // OMA_DYNAMIC_TOOLS unset, so `true` has to be able to turn the openers ON here — an option
+  // that only ever agreed with the env would look identical to one that did nothing.
+  const dynOn = await open({ dynamicTools: true });
+  const dynOnNames = (await dynOn.listTools()).tools.map((t) => t.name);
+  ok("dynamicTools:true registers the per-app openers, whatever the environment says",
+    dynOnNames.includes("open_unlisted_probe"), dynOnNames.filter((n) => n.startsWith("open_")).join(", "));
+  await dynOn.close();
+  const dynOff = await open({ dynamicTools: false });
+  const dynOffNames = (await dynOff.listTools()).tools.map((t) => t.name);
+  ok("…and dynamicTools:false keeps them off", !dynOffNames.some((n) => /^open_.+/.test(n) && n !== "open_app"));
+  await dynOff.close();
+
+  const hidden = await open({ unlisted: ["get_app_html"] });
+  const hiddenNames = (await hidden.listTools()).tools.map((t) => t.name);
+  ok('unlisted:["get_app_html"] ⇒ it is gone from tools/list', !hiddenNames.includes("get_app_html"));
+  ok("…and nothing else moved with it", hiddenNames.length === plainNames.length - 1
+    && hiddenNames.every((n) => plainNames.includes(n)));
+  const stillWorks = await hidden.callTool({ name: "get_app_html", arguments: { name: "unlisted-probe" } });
+  ok("…and tools/call still reaches it — hidden is not disabled",
+    !stillWorks.isError && typeof stillWorks.structuredContent?.html === "string",
+    JSON.stringify(stillWorks).slice(0, 200));
+  await hidden.close();
+  memStore.close();
+  for (const f of [memDb, memDb + "-wal", memDb + "-shm"]) if (existsSync(f)) unlinkSync(f);
+
+  // TELEMETRY IS A SEAT TOO, and "off" has to mean the file is never written — not that it is
+  // written and ignored. A deployment declines this because the alternative is disclosing a
+  // collection it has no product reason to keep, and a disclosure is about the bytes on disk.
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const edit = async (dir, opts) => {
+    const s = openStore(join(dir, "t.db"));
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await createEngine(s, opts).connect(st);
+    const c = new MemClient({ name: "telemetry", version: "1.0.0" });
+    await c.connect(ct);
+    const saved = await c.callTool({ name: "save_app", arguments: { name: "tel-probe", ui: "<p>alpha</p>" } });
+    const r = await c.callTool({ name: "edit_app", arguments: { app: "tel-probe",
+      command_id: "tel-edit-1", expected_version: saved.structuredContent.version,
+      edits: [{ old_string: "alpha", new_string: "beta" }] } });
+    await c.close();
+    s.close();
+    return { r, file: join(dir, "edit-telemetry.jsonl") };
+  };
+  const onDir = mkdtempSync(join(tmpdir(), "oma-tel-on-"));
+  const offDir = mkdtempSync(join(tmpdir(), "oma-tel-off-"));
+  const on = await edit(onDir, {});
+  const off = await edit(offDir, { telemetry: false });
+  ok("the default records the edit tripwire beside the database", existsSync(on.file));
+  ok("telemetry:false writes no sidecar at all", !existsSync(off.file));
+  ok("…and the edit itself is unaffected either way",
+    !on.r.isError && !off.r.isError && off.r.structuredContent.applied === 1,
+    JSON.stringify(off.r).slice(0, 200));
+  rmSync(onDir, { recursive: true, force: true });
+  rmSync(offDir, { recursive: true, force: true });
+}
+
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
 console.log(`\ntool-surface: ${pass} passed, ${fail} failed`);

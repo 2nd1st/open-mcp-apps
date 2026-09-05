@@ -87,7 +87,7 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   // ontoolresult did not": the loader knows WHICH app to load and still cannot write, because every
   // data call goes out with collection:null and the runtime refuses it ("No collection bound yet").
   //
-  // The answer was already in hand: the loader fetches app_html before it mounts anything,
+  // The answer was already in hand: the loader fetches get_app_html before it mounts anything,
   // and the server knows what that app opens on. It sends the binding; the loader applies it. The
   // loader must NOT re-derive it from the name (contracts.mjs: a second copy of "what does this app
   // open on" is a second answer waiting to disagree).
@@ -181,7 +181,7 @@ console.log("\n2b. the SHIPPED bundle carries the envelope (dist is what browser
 
 console.log("\n2c. a failure surface that survives the runtime being broken");
 // The bug this pins: on a page refresh the widget sat on "Loading app…" forever — no retry
-// counter, no error, and not one app_html call reaching the server. Everything the loader can
+// counter, no error, and not one get_app_html call reaching the server. Everything the loader can
 // SAY lives inside oma.ready(...), so when the bridge never delivered (or window.oma never existed
 // because the module graph died), nothing spoke. Two causes, one symptom; both are asserted here
 // because the readings could not tell them apart and the fix has to cover both.
@@ -393,7 +393,7 @@ console.log("\n4. the Installed grid's preview snapshot — data that arrives LA
   // Same idea one layer up, and the same failure shape: a thumbnail mounts from an
   // IntersectionObserver as its card nears the viewport, but the pane's collection list is one
   // more host round trip AWAY at that moment (loadApps() renders the grid, and only then
-  // does boot ask data_collections). So the observer normally fires FIRST. Answering that with an
+  // does boot ask list_data_collections). So the observer normally fires FIRST. Answering that with an
   // empty snapshot is not a rare race — it is the ordinary first paint, and it is permanent: the
   // thumb is recorded in `thumbs`, its skeleton is removed, and nothing mounts it again.
   //
@@ -737,7 +737,7 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
   // tool call, the first mount is bound correctly and a later re-render replays the FIRST call of
   // that turn — verbatim, arguments and tool definition:
   //   get_app{name:"dev-probe"} → open_app{...}   ⇒ widget got toolInput {name:"dev-probe"}
-  //   data_collections{}              → open_app{...}   ⇒ widget got toolInput {}
+  //   list_data_collections{}              → open_app{...}   ⇒ widget got toolInput {}
   // So the envelope is not missing, it is someone else's, and no guard can tell those apart. What
   // CAN be done is refuse to need telling twice: write the identity down at first mount, into the
   // host's own per-instance state channel.

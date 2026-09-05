@@ -13,7 +13,7 @@ export function register(ctx) {
 
   // ---------------------------------------------------- registry lifecycle (design-system §7.5)
   server.registerTool(
-    "app_history",
+    "list_app_checkpoints",
     {
       title: "App history (checkpoints)",
       annotations: RO,
@@ -46,20 +46,20 @@ export function register(ctx) {
   // source was the one read that could never be windowed coherently (history is immutable, so a
   // model diffing it wants ranges of TWO documents — a job for a diff, not a raw dump), and its
   // whole-source reply was a mutilation hazard on the hosts that cut middles. restore_app
-  // still reads history through the store; app_history still lists it.
+  // still reads history through the store; list_app_checkpoints still lists it.
 
   server.registerTool(
     "restore_app",
     {
       title: "Restore an app version",
       annotations: WRITE,
-      description: "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from app_history; after restoring, open_app to view it.",
+      description: "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from list_app_checkpoints; after restoring, open_app to view it.",
       inputSchema: {
         name: z.string(),
         // Checkpoints, not versions, because `version` is the global ledger seq and this is the one
         // verb a PERSON drives ("go back to before you broke it"). Speaking versions here would put
         // the seq back on screen through the only door the narrative had left open.
-        checkpoint: z.number().describe("which checkpoint to restore, 1 = the oldest (see app_history)"),
+        checkpoint: z.number().describe("which checkpoint to restore, 1 = the oldest (see list_app_checkpoints)"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
     },
@@ -79,7 +79,7 @@ export function register(ctx) {
       }
       const hist = store.appHistory(a.name);
       const target = hist.find((h) => h.checkpoint === a.checkpoint);
-      if (!target) return fail(`No checkpoint ${a.checkpoint} for "${a.name}" — it has ${hist.length}. app_history lists them.`);
+      if (!target) return fail(`No checkpoint ${a.checkpoint} for "${a.name}" — it has ${hist.length}. list_app_checkpoints lists them.`);
       const old = store.getAppVersion(a.name, target.version);
       if (!old) return fail(`Checkpoint ${a.checkpoint} of "${a.name}" has no stored source.`);
       // BOTH slots travel: a checkpoint is a coherent (ui, manifest) pair, and restoring one
@@ -106,7 +106,7 @@ export function register(ctx) {
   // render_health + auto-revert retired 2026-08-04 (elegance B3, Leo: not needed). The seat's
   // only server action was the automatic rollback, which never fired outside tests; a broken
   // mount now surfaces as a user-facing notice in the runtime naming the explicit recovery path
-  // (app_history → restore_app). Deliberate rollback was always restore_app and still is.
+  // (list_app_checkpoints → restore_app). Deliberate rollback was always restore_app and still is.
 
   server.registerTool(
     "delete_app",

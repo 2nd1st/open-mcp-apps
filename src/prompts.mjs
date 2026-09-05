@@ -55,11 +55,11 @@ export function register(ctx) {
             text: [
               "I just connected open-mcp-apps and I want to see what it does for me.",
               "",
-              "Look before you build: list_apps and data_collections show what I already have here, and app_store_list shows the ready-made apps — if one of those already fits, install_from_app_store beats writing a new one.",
+              "Look before you build: list_apps and list_data_collections show what I already have here, and app_store_list shows the ready-made apps — if one of those already fits, install_from_app_store beats writing a new one.",
               "",
               "Before you write any HTML, call get_app_guide. The craft lives there, and an app written without it comes out wrong.",
               "",
-              "Ask me at most two questions, and only about what you cannot already tell from my memory, this chat, or what you just found. Then set up ONE app that fits how I actually work, give it a little real starting data, and open_app it.",
+              "Ask me at most two questions, and only about what you cannot already tell from what you just found. Then set up ONE app that fits how I actually work, give it a little real starting data, and open_app it.",
               "",
               "Show me the app, not a tour of the tools.",
             ].join("\n"),

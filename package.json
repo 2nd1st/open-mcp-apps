@@ -1,6 +1,6 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
   "description": "Persistent, interactive MCP Apps for any MCP host: the AI builds an app once, you both reuse it — data outlives the conversation.",
   "directories": {
@@ -42,6 +42,10 @@
     },
     "./package.json": "./package.json",
     "./install-app.mjs": "./install-app.mjs",
+    "./functions": {
+      "types": "./functions.d.ts",
+      "default": "./src/functions.mjs"
+    },
     "./types/window-oma": { "types": "./types/window-oma.d.ts" },
     "./types/oma-function": { "types": "./types/oma-function.d.ts" }
   },
@@ -51,6 +55,7 @@
   "files": [
     "index.mjs",
     "index.d.ts",
+    "functions.d.ts",
     "types",
     "src",
     "dist",

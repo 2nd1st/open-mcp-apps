@@ -24,7 +24,7 @@
 // and exported through index.mjs for embedding shells (the hosted /library preview) so no
 // out-of-repo mirror has to exist.
 
-import { isControlPlaneTool, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
+import { isControlPlaneTool, canonicalToolName, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
 import { viaOf, sansRequestState, withConfirmation, ackOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
 
 // CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
@@ -515,7 +515,7 @@ export const BRIDGE = [
  *
  *  `csp` is the MOUNTED APP's merged declaration, not the embedder's — an `@live` brick frames a
  *  DIFFERENT app than the page around it, and what that app may reach is its own property. It
- *  arrives from app_html (which is where this child's source comes from too, so one fetch answers
+ *  arrives from get_app_html (which is where this child's source comes from too, so one fetch answers
  *  both). Omitted ⇒ the floor, byte-identical to what this composed before the option existed.
  *
  *  ⚠️ A widened child policy is a CEILING, never a grant: a srcdoc frame also inherits its parent
@@ -666,14 +666,20 @@ export function makeGuard(cfg) {
 
   // ---- generic callTool path: control-plane wall → allowlist → per-tool gates ----
   async function guardCallTool(a) {
-    const tn = String(a.name || "").trim();
+    // CANONICALISE BEFORE DECIDING. Every gate below matches on a name, and seven seats still
+    // answer to a retired spelling (tool-policy.mjs TOOL_ALIASES) so apps saved before the rename
+    // keep working. A child reaching for the old name must meet the same wall as one reaching for
+    // the new: a rename that let a check be side-stepped would be the rename opening a hole.
+    // The forwarded call carries the canonical name too — the server answers both, and a log that
+    // says which spelling the child happened to type answers nothing anyone asks.
+    const tn = canonicalToolName(a.name);
     const ta = Object.assign({}, a.args || {});
     const tl = tn.toLowerCase();
     // Control-plane tools and internal `_` RPC names are NEVER forwarded from a child —
     // checked BEFORE the allowlist/wildcard so no cap combination can reach them.
     if (isControlPlaneTool(tl)) refuseControlPlane(tn);
     if (!wildcard && callAllow.indexOf(tn) === -1) throw new Error('tool "' + tn + '" not allowed');
-    if ((tn === "app_html" || tn === "get_app") && caps.read_source !== true) throw new Error("app source read denied");
+    if ((tn === "get_app_html" || tn === "get_app") && caps.read_source !== true) throw new Error("app source read denied");
     if (FILE_READ_TOOLS.has(tn)) {
       if (caps.file_read !== true) throw new Error("file read denied by policy");
       ta.app = name;   // a child reaches its OWN files only
@@ -688,7 +694,7 @@ export function makeGuard(cfg) {
       // reach it — the global one does.)
       if (tn === "file_delete") { ta.actor = "human"; if (!ta.command_id) ta.command_id = uuid(); return confirmable(tn, ta); }
     }
-    if (tn === "data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
+    if (tn === "list_data_collections" && caps.cross_collection_read !== true) throw new Error("cross-collection read denied");
     // Every collection-addressed READ is bound the same way. data_changes was the one left out,
     // and it is the RICHEST of the three — full events, fields and item ids for any collection
     // the child names (the "one missing line = cross-app escape" shape, again).
@@ -698,7 +704,7 @@ export function makeGuard(cfg) {
     // A batch is the model's bulk verb, not a widget's: forwarding it would need every
     // per-command rule above re-implemented inside the batch — one missed line is a
     // cross-app escape (adversarial F2). Children write one command at a time.
-    if (tn === "data_batch") { notify('App "' + name + '" tried data_batch — not available to apps.'); throw new Error(DATA_BATCH_REFUSAL); }
+    if (tn === "apply_data_writes") { notify('App "' + name + '" tried apply_data_writes — not available to apps.'); throw new Error(DATA_BATCH_REFUSAL); }
     // A child may call ONLY its own app's functions (the designed free path); the
     // callee is forced, so a second hop through another app is unreachable by shape.
     // actor is stamped like any widget write: a widget's function call is the user
@@ -841,7 +847,7 @@ export function makeGuard(cfg) {
         const tn = a && a.name;
         const ta = (a && a.args) || {};
         if (tn === "data_list") return { content: [], structuredContent: fxRows(ta.collection) };
-        if (tn === "data_version") return { content: [], structuredContent: { seq: snap().version || 1 } };
+        if (tn === "get_data_version") return { content: [], structuredContent: { seq: snap().version || 1 } };
         // Meta apps ask WHICH collections exist before they ask for rows (dashboard draws a
         // card per collection). Answering that with an empty envelope makes the preview of an app
         // whose whole job is "show me everything" render as though the user owns nothing — the same
@@ -852,7 +858,7 @@ export function makeGuard(cfg) {
         // could read the registry) to inert (which cannot). The snapshot carries the roster when the
         // embedder has one; absent, the honest answer is still an empty list.
         if (tn === "list_apps") return { content: [], structuredContent: { apps: snap().apps || [] } };
-        if (tn === "data_collections") {
+        if (tn === "list_data_collections") {
           const bound = snap().collection;
           const counts = new Map();
           for (const it of snap().items || []) {
@@ -945,7 +951,7 @@ export function stubOmaScript(name, items, apps, prefs) {
     // "which collections exist" before it asks for rows — answering that with an empty envelope
     // renders an app whose whole job is "show me everything" as though the user owned nothing.
     "callTool:function(n,a){return Promise.resolve(n==='data_list'?{content:[],structuredContent:R(a&&a.collection)}" +
-    ":n==='data_collections'?{content:[],structuredContent:{collections:C()}}" +
+    ":n==='list_data_collections'?{content:[],structuredContent:{collections:C()}}" +
     ":n==='list_apps'?{content:[],structuredContent:{apps:S.apps||[]}}" +
     ":{content:[],structuredContent:{}})}," +
     "readCollection:function(c){return Promise.resolve(R(c))}," +

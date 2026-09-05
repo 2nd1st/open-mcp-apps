@@ -253,7 +253,7 @@
   async function relayedCsp() {
     if (relayedCache !== undefined) return relayedCache;
     try {
-      const r = await oma.callTool("app_html", { name: "host-csp-probe" });
+      const r = await oma.callTool("get_app_html", { name: "host-csp-probe" });
       relayedCache = ((r && r.structuredContent) || {}).csp || {};
     } catch (e) { relayedCache = null; }
     return relayedCache;
@@ -411,7 +411,7 @@
           return { ok: false, detail: `STEP 1 BASELINE ONLY — the engine is not relaying ${bOrigin} yet, so step 2 (security_set) has not been done or has not reached it. `
             + `Nothing about list-vs-read can be concluded from this row. A(declared)=${a.verdict}: ${a.detail} · B(not yet relayed)=${b.verdict}` };
         }
-        const unknown = bIsRelayed === null ? " (app_html was unavailable, so whether B is relayed is unverified)" : "";
+        const unknown = bIsRelayed === null ? " (get_app_html was unavailable, so whether B is relayed is unverified)" : "";
         const verdict = reached(a) && reached(b) ? "both reachable ⇒ the host resolved csp at READ time — a user addition lands on the next open"
           : reached(a) && !reached(b) ? "A only, and B IS being relayed ⇒ the host is using a snapshot taken when the resource was REGISTERED"
           : !reached(a) && !reached(b) ? "neither ⇒ this host did not honour the declaration at all"
@@ -438,7 +438,7 @@
           : r.verdict === "error" ? "failed WITHOUT a CSP violation — inconclusive, not evidence of enforcement"
           : inUnion === true ? `REACHED, but ${origin} IS in what the engine relayed for this app — this row measures nothing; clear that policy row and take it again`
           : inUnion === false ? "REACHED an origin the engine did not relay — this host is not enforcing the declaration"
-          : "REACHED, and app_html was unavailable so the relayed set is unverified — treat as inconclusive";
+          : "REACHED, and get_app_html was unavailable so the relayed set is unverified — treat as inconclusive";
         return { ok, detail: `${r.verdict} — ${gloss}; ${r.detail}` };
       },
     },
@@ -532,7 +532,7 @@
   // the only place the host's own policy string is ever captured.
   async function recordEnv() {
     const csp = await relayedCsp();
-    const merged = csp === null ? "(app_html unavailable — this app may not be installed as local)" : JSON.stringify(csp);
+    const merged = csp === null ? "(get_app_html unavailable — this app may not be installed as local)" : JSON.stringify(csp);
     document.getElementById("engineCsp").textContent = merged;
     const bits = [
       "door-evidence=" + detected.evidence,
@@ -700,7 +700,7 @@
     const csp = await relayedCsp();
     if (mountRelayed === undefined) mountRelayed = csp === null ? null : JSON.stringify(csp);
     document.getElementById("engineCsp").textContent = csp === null
-      ? "app_html refused or is unavailable here — install this app as local (install-app.mjs without --sandboxed) if you want this panel"
+      ? "get_app_html refused or is unavailable here — install this app as local (install-app.mjs without --sandboxed) if you want this panel"
       : JSON.stringify(csp);
   }
 </script>

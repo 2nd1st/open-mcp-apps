@@ -260,7 +260,7 @@ console.log("\n11. childPreviewSnapshot — one shared snapshot, sliced per app"
   ok("junk rows are dropped, not carried into a sandbox",
     childPreviewSnapshot([null, { collection: "notes" }, "x"], { app: "notes", declaration: null, tier: "local" }).items.length === 1);
 
-  // A FIXTURE row is allowed to omit `collection` — app_store_preview's schema says so in as many
+  // A FIXTURE row is allowed to omit `collection` — preview_app_store_entry's schema says so in as many
   // words, and 13 of the 21 shipped store entries take it up. Reading the key raw made
   // `has(undefined)` false for every one of them, so those previews rendered their empty state on
   // every host (measured 2026-08-14 on /view/app-store: study-cards, whose rows happen to name the

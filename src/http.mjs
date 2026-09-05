@@ -284,7 +284,7 @@ const server = http.createServer(async (req, res) => {
       const nav = url.searchParams.get("nav") === "intent" ? { navIntent: true } : {};
       // Tier branch (docs/security-model.md §2.3). DIRECT mode — the real window.oma, and this
       // route's connect-src 'self' reaches /rpc — is for local apps only. A non-local one
-      // gets the universal loader instead, which reads app_html over /rpc, sees the tier and
+      // gets the universal loader instead, which reads get_app_html over /rpc, sees the tier and
       // hands the source to oma.embed → the runner, with engine-computed caps. Before this branch
       // the route fail-closed to a placeholder, which was correct while non-local apps could
       // not exist; the local install door (install-app.mjs --sandboxed) is what made them exist,
@@ -305,7 +305,7 @@ const server = http.createServer(async (req, res) => {
             ...(process.env.OMA_VIEW_BASE ? { viewBase: VIEW_BASE.replace(/\/+$/, "") + "/view/" } : {}) },
         }), { "content-security-policy": policy });
       // The second of the three serve-time seams (the other two are the per-app ui:// resource and
-      // app_html, both in tools/apps.mjs): an app built outside the chat stores a template and its
+      // get_app_html, both in tools/apps.mjs): an app built outside the chat stores a template and its
       // bundle separately, and a document leaving the store is where they become one. The channel
       // is memoised per store, so this is the SAME upload/ref table the engine's file_* tools use —
       // not a second view of the file plane.

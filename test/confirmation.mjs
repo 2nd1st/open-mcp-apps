@@ -319,7 +319,7 @@ console.log("6. the batch cannot route around the gate");
   const r = st.executeBatch([{ type: "delete_item", id: a.id, command_id: "g2", actor: "human" }]);
   ok("a human batch delete fails CLOSED (all-or-nothing, demand as the failure)",
     r.ok === false && r.error === "batch_failed" && r.failure && r.failure.confirmation_required === true);
-  ok("…and the failure carries the preview, so data_batch's message can say WHICH row",
+  ok("…and the failure carries the preview, so apply_data_writes's message can say WHICH row",
     r.failure.preview === "batched");
   ok("row survived the failed batch", st.snapshot("probe").items.some((i) => i.id === a.id));
   const r2 = st.executeBatch([{ type: "delete_item", id: a.id, command_id: "g3", actor: "human", request_state: r.failure.request_state }]);

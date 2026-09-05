@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.6.0([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.7.0([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -198,7 +198,7 @@ tool 一般免批准,而默认情况下单个 `open_app` tool 就覆盖打开*�
 `/mcp__open-mcp-apps__get_started`。点一下,开场那整套动作就交给 AI 了。不是每个 host 都露 prompts ——
 你那个不露也不少什么,因为这个 prompt 本来就是一句你自己也能说的话:**"我刚装了 open-mcp-apps,
 给我介绍下怎么用、给几个例子,并建议几个适合我的 app。"** 两条路一样:它会看你已经有什么、店里现成的
-有什么,翻它对你的了解(记忆 + 历史对话,不够就问你几句),然后为你建一个贴合的 app。这一步与安装分开、
+有什么,再问你几句,然后为你建一个贴合的 app。这一步与安装分开、
 在 host 里。或者直接问:
 
 - *"给我做个板子管我现在手头的事"* → AI 现写、填初始数据、打开(持久)
@@ -394,8 +394,8 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 431 条断言,走真实 stdio——含运行时 app 创建
-node test/http-smoke.mjs     #  80 条断言,走 HTTP transport(含 SSE /events、viewer)
+node test/server-smoke.mjs   # 453 条断言,走真实 stdio——含运行时 app 创建
+node test/http-smoke.mjs     #  81 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
@@ -429,7 +429,7 @@ node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上�
 - [x] 引擎:registry + shell + 通用 data command + ledger
 - [x] 只装 system app(settings、dashboard、app-store);22 个 App Store app 可在 app-store 里浏览预览、一键安装
 - [x] AI 建 app 的循环(guide → save → 打开)
-- [x] in-context onboarding(问怎么用 → AI 翻你的历史/记忆,建一组贴合你的起手 app)
+- [x] in-context onboarding(问怎么用 → AI 看你已经有什么、问你几句,建一组贴合的起手 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key
 - [x] 多 host 发现式安装器(Claude Desktop · Claude Code · Codex)+ 共享的用户级 store
 - [x] `npx` 一条命令安装(npm 上的 `@2nd1st/open-mcp-apps`)

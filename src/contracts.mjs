@@ -8,8 +8,17 @@
 
 import { z } from "zod";
 
-// This engine is a closed local system — nothing here reaches the open world.
-const RO = { readOnlyHint: true, openWorldHint: false };
+// Everything the engine itself does stays inside this store: reads, writes, files, the registry.
+// The ONE exception is a function body (call_function) — author-supplied code that runs with
+// `fetch`, so its effects can land outside anything here can see or undo. That is why it carries
+// its own annotation preset (OPEN_WORLD_WRITE) instead of WRITE, and why this note is a fact about
+// two categories rather than the old blanket claim that nothing here reaches the open world.
+//
+// destructiveHint and idempotentHint are DECLARED on the read preset even though the MCP spec
+// gives them meaning only when readOnlyHint is false. A host form that asks for all three values
+// per tool reads an absent field as "not assessed" rather than "not applicable", and a read that
+// cannot destroy and can be repeated is exactly what these two values say.
+const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 // destructiveHint is documented as false = "performs only additive updates", which read literally
 // would make every edit destructive and have hosts confirm each one. The criterion that is actually
@@ -36,6 +45,13 @@ const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint
 // appends its bytes again when replayed — a host trusting the old annotation would silently corrupt
 // the uploaded file. Found by a spec-conformance audit, 2026-07-26.
 const WRITE_NOT_IDEMPOTENT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
+// The one seat whose effects can leave this machine: call_function runs a body the APP AUTHOR
+// wrote, and that body is handed `fetch` (function-worker.mjs). openWorldHint therefore has to be
+// true — the interacting entities are not a closed set the engine knows. destructiveHint is true
+// for the same reason and only that reason: every write the body makes to the STORE is replayable
+// from the ledger like any other, but a request it sends to somebody else's server is not
+// something this engine can take back, so a host should be able to ask first.
+const OPEN_WORLD_WRITE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: true };
 
 const itemShape = z.object({
   id: z.string(), group: z.string(), position: z.number(),
@@ -76,7 +92,12 @@ const snapshotSchema = {
   items: z.array(itemShape), version: z.number(),
   settings_version: z.number().optional(), // rides on every toResult — the shell's pref-refetch gate
   files_version: z.number().optional(),    // same idea for the file plane — the shell's file-refetch gate
-  host: z.string().optional(),
+  // `host` USED TO BE HERE, and it was the caller's own client name handed back to the caller.
+  // It is a provenance annotation for the ledger (engine.mjs hostName says so in as many words),
+  // not a fact a model reads a collection to learn — and every read tool carrying it meant the
+  // model's context accumulated an internal label on every page. The widget still gets it, on the
+  // channel that was always the right one: get_app_html, which no model calls and which the
+  // loader already fetches on mount. `oma.state.host` is unchanged for apps.
   // 🔴 ok/note exist because the two hosts we ship to feed the MODEL different, disjoint channels:
   // claude.ai feeds it `content` and routes structuredContent to the widget; codex feeds it
   // structuredContent and does not pass `content` to the model at all when structuredContent is
@@ -97,7 +118,7 @@ const fileMetaShape = z.object({
   mime: z.string(), version: z.number(),
   created_at: z.string(), updated_at: z.string(),
 });
-// The pinned caps shape (see CAP_NAMES/TIER_CAPS below) — served by app_html to the
+// The pinned caps shape (see CAP_NAMES/TIER_CAPS below) — served by get_app_html to the
 // loader/runner (and, through it, to the settings Permissions pane).
 const capsShape = z.object({
   call_tools: z.array(z.string()), send_message: z.boolean(),
@@ -132,7 +153,7 @@ const RESERVED_APP_NAMES = new Set([
 const SEEDED_APPS = new Set(["settings", "dashboard", "app-store"]);
 
 // The SHARED preference catalog (P4 code/UI split): the ENGINE owns what shared prefs exist,
-// their types/defaults/labels; the settings app only RENDERS what ui_prefs_schema
+// their types/defaults/labels; the settings app only RENDERS what get_ui_preference_schema
 // returns. One source of truth — a regenerated/broken settings UI can't redefine the catalog.
 const SHARED_PREFS = [
   { key: "locale", type: "string", label: "Locale", default: "auto", maxlength: 35,
@@ -260,7 +281,7 @@ const stageDisplayFor = (comp) => {
 };
 
 // ------------------------------------------------------------------ trust tiers & caps
-// docs/security-model.md §2.3 step 1 + §3: app_html returns {html, author, tier, caps}.
+// docs/security-model.md §2.3 step 1 + §3: get_app_html returns {html, author, tier, caps}.
 // The ENGINE is the single reader of security:*/policy:* when building caps; the RUNNER
 // (src/runner.mjs makeGuard, reached through oma.embed) enforces them. No install-tier column
 // exists yet, so every
@@ -373,7 +394,7 @@ const EOT = "·eot";
 /** Serialized size of what we are about to hand over. The only honest way to ask "does this fit". */
 const sizeOf = (body) => JSON.stringify(body).length;
 
-/** A WINDOW into one large text — the chunk primitive shared by get_app / app_html /
+/** A WINDOW into one large text — the chunk primitive shared by get_app / get_app_html /
  *  file_read, so "read something big" has ONE grammar (offset/length in, next_offset out) instead
  *  of a dialect per tool. Derived from RESULT_BUDGET, never a second constant: the caller hands in
  *  `wrap` (slice → the body that will actually ship) and the slice shrinks until the WRAPPED body
@@ -469,7 +490,7 @@ const cmdArgs = {
 
 // The module's surface in one place — everything engine.mjs and the tool modules import.
 export {
-  RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE,
+  RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, OPEN_WORLD_WRITE,
   itemShape, snapshotSchema, ackSchema, fileMetaShape, capsShape,
   RESERVED_APP_NAMES, SEEDED_APPS, SHARED_PREFS, LOCKED_APPS, SCENE_CATEGORIES,
   tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor,

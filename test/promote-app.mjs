@@ -91,7 +91,7 @@ console.log("\n3. the tool face — the transaction, its refusals, and where the
   const row = shownList.s.apps.find((c) => c.name === "wp-sketch");
   ok("promoted app enters the default enumeration with its description intact",
     row && row.kind === "app" && row.description === "one-shot chart", JSON.stringify(row));
-  const hist = await call("app_history", { name: "wp-sketch" });
+  const hist = await call("list_app_checkpoints", { name: "wp-sketch" });
   ok("history holds exactly the save and the promote — one event each",
     hist.s.history.length === 2, JSON.stringify(hist.s.history));
 

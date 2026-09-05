@@ -155,7 +155,7 @@ const TASKS = [
     prompt: "What am I tracking?",
     check: (s, { calls }) => {
       ok("looked in the engine rather than answering from nothing",
-        calls.some((c) => ["data_collections", "list_apps"].includes(c.name)),
+        calls.some((c) => ["list_data_collections", "list_apps"].includes(c.name)),
         `called: ${calls.map((c) => c.name).join(", ") || "(nothing)"}`);
       ok("no failed tool calls", !calls.some((c) => c.isError));
     },

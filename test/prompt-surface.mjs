@@ -127,7 +127,7 @@ console.log("4. the get_started body actually says the things it exists to say")
   // Each of these is a routing instruction the prompt exists to deliver. They are asserted by
   // the behaviour they name, not by a phrase, so the sentence around them can be reworded.
   ok("it says to look at what the user already has before building",
-    /list_apps/.test(text) && /data_collections/.test(text));
+    /list_apps/.test(text) && /list_data_collections/.test(text));
   ok("it points at the built-in App Store rather than defaulting to writing something new",
     /app_store_list/.test(text) && /install_from_app_store/.test(text));
   ok("it puts get_app_guide BEFORE writing anything — the one ordering that makes apps come out right",

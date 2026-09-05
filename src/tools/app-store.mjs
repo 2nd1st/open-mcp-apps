@@ -55,7 +55,7 @@ export function register(ctx) {
   );
 
   server.registerTool(
-    "app_store_preview",
+    "preview_app_store_entry",
     {
       title: "App Store live-preview payload (internal)",
       annotations: RO,
@@ -94,12 +94,22 @@ export function register(ctx) {
     {
       title: "Install an App Store app",
       annotations: WRITE,
-      description: "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available. Installing is HALF the job: before handing it over, seed the collection with the user's real rows (data_batch, from what you already know of them) — an installed app opened empty and generic is half-delivered.",
+      description: "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available.",
       inputSchema: {
         name: z.string().describe("App Store entry name (see app_store_list)"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
-      outputSchema: { name: z.string(), version: z.number(), tier: z.string(), updated: z.boolean().optional() },
+      outputSchema: { name: z.string(), version: z.number(), tier: z.string(),
+        // WHICH OF THE THREE THINGS HAPPENED. `updated` alone could not say: it is `!!cur`, so a
+        // FIRST install and an already-current one both report `false`, and the only place the
+        // difference lived was the human sentence. A model deciding what to say next ("it's ready"
+        // vs "you already had it") was reading one channel while acting on the other.
+        // `updated` stays exactly as it was — a shape nobody has to migrate — and this says the
+        // whole thing. The text below agrees with it word for word (docs/spec-conformance.md: a
+        // fact the model acts on travels on BOTH channels or it is not a fact of this reply).
+        outcome: z.enum(["installed", "updated", "current"])
+          .describe("installed = first install; updated = the store had a newer version; current = already installed and unchanged"),
+        updated: z.boolean().optional() },
     },
     async (a) => {
       // Same name guards as save_app — this is a registry WRITE path and must refuse what
@@ -116,7 +126,7 @@ export function register(ctx) {
       // travel on the write — an install is a whole-entry act, never a document-only one.
       const libManifest = entry.manifest ? JSON.stringify(entry.manifest) : null;
       if (cur && cur.ui === entry.ui && (cur.manifest ?? null) === libManifest)
-        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}). Open it with open_app.` }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), updated: false } };
+        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}) — nothing was written. Open it with open_app.` }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), outcome: "current", updated: false } };
       // expected_version on updates: a concurrent write between the read above and this install
       // becomes a clean conflict instead of a silent clobber (the OCC bypass the W-N review flagged).
       const r = store.execute({
@@ -127,9 +137,14 @@ export function register(ctx) {
       });
       if (!r.ok) return fail(failNote(r));
       registerApp(a.name);
+      // Two acts, one write. The sentence follows `outcome` rather than repeating the word
+      // "Installed" over an app the user already had — which is what it used to say for both.
+      const outcome = cur ? "updated" : "installed";
       return {
-        content: [{ type: "text", text: `Installed "${a.name}" v${r.version} from the App Store. Open it now with open_app {app: "${a.name}"}.` }],
-        structuredContent: { name: a.name, version: r.version, tier: tierOf("library"), updated: !!cur },
+        content: [{ type: "text", text: cur
+          ? `Updated "${a.name}" to v${r.version} — the App Store had a newer version than the installed copy. Open it with open_app {app: "${a.name}"}.`
+          : `Installed "${a.name}" v${r.version} from the App Store. Open it now with open_app {app: "${a.name}"}.` }],
+        structuredContent: { name: a.name, version: r.version, tier: tierOf("library"), outcome, updated: !!cur },
       };
     },
   );
