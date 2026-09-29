@@ -451,11 +451,19 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   };
   server.registerTool = (name, config, handler) => {
     let cfg = config;
+    // annotations.title mirrors the tool's own `title`. The MCP spec puts a display name in both
+    // places (Tool.title since 2025-06-18, ToolAnnotations.title since 2025-03-26) and hosts read
+    // either; the Claude directory's policy names annotations.title explicitly alongside
+    // readOnlyHint/destructiveHint, and its submission scan flags every tool that lacks it. One
+    // declaration per tool (the top-level `title`), mirrored here, so the two can never disagree.
+    if (typeof config.title === "string" && config.annotations && config.annotations.title === undefined) {
+      cfg = { ...cfg, annotations: { ...config.annotations, title: config.title } };
+    }
     if (WIDGET_CALLABLE.has(name) || APP_ONLY.has(name)) {
       const meta = { ...(config._meta || {}) };
       if (WIDGET_CALLABLE.has(name)) meta["openai/widgetAccessible"] = true;
       if (APP_ONLY.has(name)) meta.ui = { ...(meta.ui || {}), visibility: ["app"] };
-      cfg = { ...config, _meta: meta };
+      cfg = { ...cfg, _meta: meta };
     }
     const registered = sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
     // THE RETIRED SPELLING, registered beside the seat it retired from (tool-policy.mjs

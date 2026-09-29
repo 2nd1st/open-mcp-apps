@@ -193,6 +193,20 @@ console.log("2. dialect + caching hints (src/cache-hints.mjs) — on the 2026-07
   await modern.close();
 }
 
+console.log("2a. every tool carries annotations.title, and it is the tool's own title");
+// The Claude directory's policy requires annotations.title (with readOnlyHint/destructiveHint) and
+// its submission scan flagged all 28 hosted tools without it (2026-09-29). engine.mjs mirrors the
+// top-level `title` into annotations at the one registration seam — so the check is equality, not
+// mere presence: a second, hand-written annotations.title that drifted from the title would fail here.
+{
+  const missing = tools.filter((t) => typeof t.annotations?.title !== "string");
+  ok(`all ${tools.length} tools carry annotations.title`, missing.length === 0,
+    `missing: ${missing.map((t) => t.name).join(", ")}`);
+  const drift = tools.filter((t) => typeof t.title === "string" && t.annotations?.title !== t.title);
+  ok("annotations.title === title for every tool", drift.length === 0,
+    `differs: ${drift.map((t) => `${t.name} (${JSON.stringify(t.title)} vs ${JSON.stringify(t.annotations?.title)})`).join(", ")}`);
+}
+
 console.log("2b. idempotentHint is a claim about effects, and it has to be true");
 // How file_write_begin/chunk got it wrong: they took the default WRITE preset, which declares
 // idempotentHint: true. That claim is only guaranteed by an idempotency key — cmdArgs' command_id,

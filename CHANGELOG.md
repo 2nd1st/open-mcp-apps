@@ -7,6 +7,15 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.7.1 — 2026-09-29
+
+**Every tool now carries `annotations.title`.** Each tool already had a human-readable `title`;
+it is now mirrored into `annotations.title` as well, at the one place every tool is registered,
+so the two can never say different things. The MCP spec defines a display name in both places
+and hosts read either — and the Claude directory's policy asks for `annotations.title` by name,
+next to `readOnlyHint` and `destructiveHint`. No tool was renamed, retitled or re-annotated
+otherwise; `tools/list` grows by about 1 KB. `oma.contract` stays 3.
+
 ## 0.7.0 — 2026-09-05
 
 **Getting the contract straight before a directory carries it.** Submitting to a host's app

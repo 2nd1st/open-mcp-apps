@@ -10,7 +10,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "Open any app"
     },
     "description": "Open ANY app from the registry by name. Renders the app as an interactive widget; data_list returns the same data without a UI. Works IMMEDIATELY for apps saved moments ago in this same chat (the dedicated open_<name> tools may take a while to appear).",
     "inputSchema": {
@@ -122,7 +123,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "App HTML (internal)"
     },
     "description": "Internal: returns raw app HTML plus its trust tier and capability grants for the universal loader widget. Not useful to call directly — use get_app to read source.",
     "inputSchema": {
@@ -273,7 +275,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "App authoring guide"
     },
     "description": "The authoring contract for creating or editing an app: the window.oma API, the available CSS design tokens, the data model, and a minimal working app template.",
     "inputSchema": {
@@ -302,7 +305,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "List apps"
     },
     "description": "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
     "inputSchema": {
@@ -343,7 +347,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "Get app source"
     },
     "description": "Read an app's ui source as a WINDOW — offset/length select it, next_offset continues, total is the full length. Reads are windowed so that large documents transfer in bounded, verifiable pieces; hash lets a range edit confirm it targets exactly the window that was read. Carries version — the expected_version for edit_app / save_app — and hash, the expect_hash for a range edit of exactly this window. node jumps the window to the element marked data-oma-node=\"<node>\". slot:\"manifest\" returns the declaration object instead (no window mechanics).",
     "inputSchema": {
@@ -443,7 +448,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Save app"
     },
     "description": "Create or update a UI app in the persistent registry. Two slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block) — and manifest, the app's declaration as a JSON object (kind, collections, settings, scene; keys in get_app_guide). manifest: null clears the declaration. Creating needs ui. Every save snapshots both slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
     "inputSchema": {
@@ -549,7 +555,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Edit app source"
     },
     "description": "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The #oma-manifest block is re-read on save.",
     "inputSchema": {
@@ -676,7 +683,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Promote visual to app"
     },
     "description": "Upgrade a kind:\"visual\" app to a full app in ONE atomic step: the engine flips `kind` in the stored manifest, keeping every other declared key, and saves a new version (OCC-guarded, history kept). Already an app is a no-op; downgrades are refused — demoting is an author edit (save_app with the manifest), not a lifecycle verb.",
     "inputSchema": {
@@ -739,7 +747,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": true,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Call an app function"
     },
     "description": "Run a function an app declares (manifest.functions) — data in, data out, no UI needed. The body is code the app's author wrote and it may make outbound network requests (a host may route them through an allowlisted gateway). Args are checked against the declared params; failures return the declared schema so the retry needs no extra read. The reply carries the return value plus a receipt per write.",
     "inputSchema": {
@@ -854,7 +863,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "List collection data"
     },
     "description": "Read items in full — every field, plus the item id you need to update or delete it. No UI (use open_app for that). Returns a PAGE: up to `limit` (default 100) matching items, with `total` and — when more exist — `next_cursor`; returned/total make a short delivery self-evident. `match` filters: a bare value means equals; an object is operators {ne, lt, lte, gt, gte, contains, prefix, exists} (numeric filters compare numerically, strings lexicographically — ISO dates work). Paging is a live keyset walk; items moved mid-page can be skipped or repeated.",
     "inputSchema": {
@@ -984,7 +994,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Many writes, one transaction"
     },
     "description": "Apply up to 200 writes in ONE transaction — for applying many known rows in one go instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item, as {type, ...args}: type is add_item | update_item | move_item. Deletion is not one of them: a delete needs its own confirmation, which an all-or-nothing batch cannot give per row, so it goes through data_delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
     "inputSchema": {
@@ -1085,7 +1096,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "What changed since you last looked"
     },
     "description": "What happened in a collection after a ledger position YOU hold — including edits the USER made in the widget, which never pass through you. Any mark you already have works as `since`: a write ack's `seq`, data_list's `version`, or the last call's `next_since`. Returns the contiguous run of events right after it (oldest first, whole events: actor, item id, fields) plus `next_since` to continue; omit `since` to just learn the current position.",
     "inputSchema": {
@@ -1167,7 +1179,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "Data change probe"
     },
     "description": "The cheapest possible change check: returns the store's global change counter (seq) plus settings/files sub-counters. An unchanged counter means nothing in the store changed. Widgets read it for adaptive polling.",
     "inputSchema": {
@@ -1209,7 +1222,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "List collections"
     },
     "description": "List every data collection that exists (name, item count, last activity). Use when unsure where data lives, what boards the user has, or which collection to bind an app to. Renders no UI.",
     "inputSchema": {
@@ -1269,7 +1283,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Add item"
     },
     "description": "Add an item to a collection. `group` is the app-defined lane/section (e.g. a kanban column); `fields` is a JSON object (e.g. {title, done, notes…}).",
     "inputSchema": {
@@ -1398,7 +1413,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Update item fields"
     },
     "description": "Shallow-merge fields into an item (set a key to null to remove it). Uses optimistic concurrency.",
     "inputSchema": {
@@ -1525,7 +1541,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Move item"
     },
     "description": "Move an item to another group and/or position (e.g. kanban column).",
     "inputSchema": {
@@ -1649,7 +1666,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Delete item"
     },
     "description": "Delete an item permanently. May return reason:\"confirmation_required\" with a request_state — show the user what is named in `note`, then re-send the same call with request_state attached.",
     "inputSchema": {
@@ -1779,7 +1797,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "List app files"
     },
     "description": "List the files an app (app) has stored — a PAGE of {path, size, mime, version} plus usage totals; limit/cursor page through, prefix narrows. These are opaque user files (attachments, exports) the app keeps — separate from its structured data collection. Renders no UI.",
     "inputSchema": {
@@ -1913,7 +1932,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "Read an app file"
     },
     "description": "Read one file an app has stored, as a WINDOW of its bytes: offset/length select it, data_base64 carries exactly that window, next_offset continues (same window grammar as get_app, and for the same reason). Reassemble by concatenating decoded windows; sha256 is the WHOLE file's hash, so reassembly is checkable.",
     "inputSchema": {
@@ -2005,7 +2025,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Store an app file"
     },
     "description": "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
     "inputSchema": {
@@ -2087,7 +2108,8 @@
       "destructiveHint": false,
       "idempotentHint": false,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Begin a chunked file write"
     },
     "description": "Start a chunked upload for a file too big for file_write's single call. Returns an upload_id; send the bytes in order with file_write_chunk (each chunk up to ~5 MiB of raw bytes), then file_write_commit names the file. Uploads expire after 30 idle minutes; per-file ceiling 250 MiB.",
     "inputSchema": {
@@ -2130,7 +2152,8 @@
       "destructiveHint": false,
       "idempotentHint": false,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Append a chunk to an upload"
     },
     "description": "Append the next chunk of bytes (base64) to an upload started with file_write_begin. Send chunks strictly in order, one at a time. Pass `seq` (0-based chunk index) so a resend after a lost response is acknowledged instead of double-appended.",
     "inputSchema": {
@@ -2184,7 +2207,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Commit a chunked file write"
     },
     "description": "Finalize an upload as an app file (create or overwrite by path) — the chunked equivalent of file_write. The upload is consumed either way; on failure, restart from file_write_begin.",
     "inputSchema": {
@@ -2257,7 +2281,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Delete an app file"
     },
     "description": "Permanently delete one file an app has stored.",
     "inputSchema": {
@@ -2341,7 +2366,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "App history (checkpoints)"
     },
     "description": "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots BOTH slots (ui + manifest); restore brings back the pair.",
     "inputSchema": {
@@ -2399,7 +2425,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Restore an app version"
     },
     "description": "Roll an app back to one of its earlier checkpoints: re-saves that checkpoint's HTML as a NEW current one (nothing is lost — history is preserved and you can roll forward again). Use when a newer edit broke the UI. Get the checkpoint number from list_app_checkpoints; after restoring, open_app to view it.",
     "inputSchema": {
@@ -2430,7 +2457,8 @@
       "destructiveHint": true,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Delete app"
     },
     "description": "Delete an app from the registry. Default data:\"keep\" is a tombstone: its data, files and history are KEPT and restore_app can bring the app back. data:\"cascade\" ALSO permanently deletes the data provably only this app used (plus its settings) — it always returns a disposition plan first: read the plan to the user (what will be deleted AND what will be kept and why), then re-send the same call with request_state. Cascade is NOT undoable. Shared or unprovable collections are always kept.",
     "inputSchema": {
@@ -2479,7 +2507,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "List App Store apps"
     },
     "description": "Browse the built-in App Store: ready-made, high-quality apps shipped with the engine that the user can install into their registry. Shows install state. Renders no UI — open_app {app: \"app-store\"} shows the browsable App Store app.",
     "inputSchema": {
@@ -2563,7 +2592,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "App Store live-preview payload (internal)"
     },
     "description": "Internal: returns an App Store entry's ui and manifest plus its mock-data fixtures, so the App Store app can render a LIVE sandboxed preview card (srcdoc + stub oma + mock snapshot). Read-only; nothing is installed. Not useful to call directly.",
     "inputSchema": {
@@ -2685,7 +2715,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Install an App Store app"
     },
     "description": "Install (or update) a ready-made app from the built-in App Store into the user's registry. Once installed it behaves like any app of the user's own; its UI updates come from the App Store (newer store version), not from edits. Use app_store_list to see what's available.",
     "inputSchema": {
@@ -2753,7 +2784,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": true
+      "readOnlyHint": true,
+      "title": "Shared preference catalog"
     },
     "description": "The engine-owned catalog of SHARED preferences (key, type, label, default, options) that the settings app renders. Apps read effective values via oma.pref(); this tool only describes what exists. Read-only.",
     "inputSchema": {
@@ -2869,7 +2901,8 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
-      "readOnlyHint": false
+      "readOnlyHint": false,
+      "title": "Set a security policy key"
     },
     "description": "Privileged writer for reserved settings keys (security:* / policy:*) — the ONLY tool that can write them; the generic data_* tools refuse reserved keys. Upserts one key/value in the settings collection.",
     "inputSchema": {
