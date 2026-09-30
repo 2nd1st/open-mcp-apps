@@ -7,6 +7,18 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.7.2 — 2026-09-30
+
+**`destructiveHint` now answers for the user, not for the engine.** `data_update_item` and
+`apply_data_writes` are annotated `destructiveHint: true`. Both overwrite field values (and
+`null` removes a field), and no tool lets the user get an overwritten value back — the engine's
+own history could replay it, but the user cannot reach that history, so from where the user
+stands the old value is gone. The rule an annotation now follows is "can this call take away
+something the user cannot get back through this same tool surface": adding and moving items are
+still non-destructive, app writes still are too (every save is a checkpoint and `restore_app`
+brings it back), and deletes and file overwrites were already destructive. Hosts may ask the
+user before these two tools run; no behaviour changed. `oma.contract` stays 3.
+
 ## 0.7.1 — 2026-09-29
 
 **Every tool now carries `annotations.title`.** Each tool already had a human-readable `title`;

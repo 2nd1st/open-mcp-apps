@@ -1321,15 +1321,15 @@ const bTypo = await client.callTool({ name: "apply_data_writes", arguments: { co
 ] } });
 ok("a typo'd type is refused by the schema, not a thrown internal error",
   bTypo.isError === true && /add_item/.test(bTypo.content[0].text));
-// THE DELETE WALL. `apply_data_writes` claims destructiveHint:false, and this is the assertion that
-// makes the claim checkable: the verb that could falsify it cannot be expressed on this seat at
-// all. A row deletion is data_delete_item's, where the confirmation gate can pin one row.
+// THE DELETE WALL. A delete needs its own confirmation pinned to one row, which an all-or-nothing
+// batch cannot give; this is the assertion that makes that checkable: the verb cannot be expressed
+// on this seat at all. A row deletion is data_delete_item's, where the confirmation gate can pin it.
 const bDeleteRow = (await client.callTool({ name: "data_add_item",
   arguments: { command_id: randomUUID(), collection: "batch-probe", fields: { title: "not deletable in a batch" } } })).structuredContent.id;
 const bDel = await client.callTool({ name: "apply_data_writes", arguments: { command_id: randomUUID(), commands: [
   { type: "delete_item", id: bDeleteRow },
 ] } });
-ok("delete_item is refused by apply_data_writes's schema — the destructive verb is not on this seat",
+ok("delete_item is refused by apply_data_writes's schema — the delete verb is not on this seat",
   bDel.isError === true && /add_item/.test(bDel.content[0].text));
 ok("...and the row it aimed at is still there",
   (await client.callTool({ name: "data_list", arguments: { collection: "batch-probe" } }))

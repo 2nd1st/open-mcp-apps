@@ -86,7 +86,9 @@ export function register(ctx) {
       title: "Many writes, one transaction",
       // Idempotent for the same reason the single-write tools are: the batch's command_id gives each
       // command inside it a derived, stable id, so replaying the batch replays nothing. Measured.
-      annotations: WRITE,
+      // Destructive because it carries update_item, which overwrites values the user has no tool to
+      // get back (contracts.mjs, the user-side rule).
+      annotations: DESTRUCTIVE,
       description: "Apply up to 200 writes in ONE transaction — for applying many known rows in one go instead of one call per row. Each command is exactly what you would send to data_add_item / data_update_item / data_move_item, as {type, ...args}: type is add_item | update_item | move_item. Deletion is not one of them: a delete needs its own confirmation, which an all-or-nothing batch cannot give per row, so it goes through data_delete_item. All or nothing: the first failure rolls back everything and names which command failed. The reply is one line per command ({id, seq}) — not the rows, which you already have.",
       inputSchema: {
         ...cmdArgs,
@@ -95,10 +97,11 @@ export function register(ctx) {
         // the store validates each one exactly as it would alone, and copying their schemas into
         // this one would mean two places to change and two chances to disagree — the shape is
         // taught once, in get_app_guide. But `type` is not an argument, it is WHICH VERBS this
-        // tool carries, and that is this tool's own claim about itself: the annotation says
-        // destructiveHint:false, so the wire has to make it impossible for a delete to arrive
-        // here. Declared as an enum rather than checked in the handler because a reader of
-        // tools/list has to be able to see the same three verbs the annotation is promising.
+        // tool carries, and that is this tool's own claim about itself: a delete needs its own
+        // confirmation, pinned to one row (confirmation.mjs), which an all-or-nothing batch cannot
+        // give — so the wire has to make it impossible for a delete to arrive here. Declared as an
+        // enum rather than checked in the handler because a reader of tools/list has to be able to
+        // see the same three verbs the description is promising.
         commands: z.array(z.object({ type: z.enum(["add_item", "update_item", "move_item"]) }).passthrough())
           .describe("[{type: \"add_item\", collection, fields, group?}, {type: \"update_item\", id, fields}, …] — same arguments as the single-write tools"),
       },
@@ -331,7 +334,7 @@ export function register(ctx) {
     "data_update_item",
     {
       title: "Update item fields",
-      annotations: WRITE,
+      annotations: DESTRUCTIVE,  // overwrites field values (null removes one); no tool returns the old value
       description: "Shallow-merge fields into an item (set a key to null to remove it). Uses optimistic concurrency.",
       inputSchema: z.object({
         ...cmdArgs, id: z.string(), fields: z.record(z.string(), z.any()),

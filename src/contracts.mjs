@@ -20,21 +20,29 @@ import { z } from "zod";
 // cannot destroy and can be repeated is exactly what these two values say.
 const RO = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
 const WRITE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
-// destructiveHint is documented as false = "performs only additive updates", which read literally
-// would make every edit destructive and have hosts confirm each one. The criterion that is actually
-// decidable, and the one this codebase uses:
+// destructiveHint is documented as false = "performs only additive updates". The criterion this
+// codebase uses is the one a host is actually asking on the user's behalf:
 //
-//     Can this call destroy something THE ENGINE ITSELF cannot give back?
+//     Can this call take away something THE USER cannot get back through this same tool surface?
 //
-// Applied to what the engine actually retains:
-//   · item edits/moves   → the ledger records them (item_updated{fields}, item_moved{from,to}), so
-//                          replaying from item_added reconstructs any point in time  → NOT destructive
-//   · app writes   → the html lives in app_history (see store.mjs schema)  → NOT destructive
-//   · settings writes    → ordinary items, same ledger                                 → NOT destructive
-//   · FILE overwrites    → the previous blob becomes an orphan and the GC sweep unlinks it. The bytes
-//                          are gone and nothing here can return them                   → DESTRUCTIVE
-// So file_write and file_write_commit carry this, and ordinary editing does not — which keeps host
-// confirmation prompts for the case that actually loses data. (Audit finding, 2026-07-26.)
+// It is about the user, not about the engine. The first version of this rule (2026-07-26) asked
+// what the ENGINE could give back, and so called item edits non-destructive because the ledger
+// can replay them — but no tool lets the user reach that ledger, so from where the user stands an
+// overwritten field is simply gone. OpenAI's plugin review flagged exactly those two tools
+// (2026-09-30), and it was right: an annotation describes what the user experiences.
+//
+//   · item ADD          → additive                                                   → NOT destructive
+//   · item MOVE         → content intact; the old group/position is structure the
+//                         user can see and move back                                  → NOT destructive
+//   · item UPDATE       → overwrites field values (null removes a field); no tool
+//                         returns the old value — data_update_item, apply_data_writes → DESTRUCTIVE
+//   · item DELETE       → gone                                                        → DESTRUCTIVE
+//   · app writes        → every save is a checkpoint, and restore_app — on this same
+//                         surface — brings any of them back                           → NOT destructive
+//   · FILE overwrites   → the previous blob is unlinked by the GC sweep               → DESTRUCTIVE
+//
+// The line is "is there a way back the USER can take", not "could the data exist somewhere".
+// Should item history ever get a user-facing restore, item UPDATE is re-judged by this same rule.
 const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false };
 // WRITE claims idempotentHint: true, and that claim is only TRUE for tools carrying an idempotency
 // key (cmdArgs' command_id, enforced by change_event's UNIQUE(command_id)). Repeating a call that
