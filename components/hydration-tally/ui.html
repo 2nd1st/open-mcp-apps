@@ -3,1140 +3,831 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-  <title>Hydration Tally</title>
-  <meta name="description" content="One-tap water tracking against a daily goal, with weekly trends.">
-  <meta name="oma-category" content="Health & Habits">
-  <style>
-  * { box-sizing: border-box; }
-  :root {
-    --accent: var(--color-text-info, var(--color-ring-primary));
-    --success: var(--color-text-success, var(--accent));
-    --warning: var(--color-text-warning, var(--accent));
-    --wash: color-mix(in oklab, var(--accent) 10%, transparent);
-    --wash-strong: color-mix(in oklab, var(--accent) 18%, transparent);
+<title>Hydration Tally</title>
+<meta name="description" content="A glass that fills as you drink: one tap logs a pour against your daily goal, with the past week and today's pours beside it.">
+<meta name="oma-category" content="Health & Habits">
+<style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
+  /* The signature is THE GLASS: today's intake is its water level, the goal is a mark on its side,
+     and every pour is a faint layer inside the water. Everything on the page — the big number, the
+     week of small glasses, the streak, the pour list — comes from one model() pass over the same
+     rows, so no number here can disagree with the water. */
+  .ht {
+    --ht: light-dark(#0a74a6, #5cc6ee);
+    --k-accent: var(--ht);
+    --k-accent-bg: color-mix(in oklab, var(--ht) 10%, transparent);
+    --k-accent-brd: color-mix(in oklab, var(--ht) 30%, transparent);
+    --ht-water: color-mix(in oklab, var(--ht) 17%, transparent);
+    --ht-line: var(--color-text-tertiary);
   }
-  /* No body rule. Padding, ground and the outer frame are the kit's stage contract now;
-     colour, font and margin the kit already sets for every app. The old root overflow was worse:
-     on a fixed-height frame it killed the scroll wheel and stranded everything below the fold. */
-  button { font: inherit; }
-  button:focus-visible {
-    outline: 2px solid var(--color-ring-primary);
-    outline-offset: 2px;
-  }
-  /* The root is `.k-stage` now: the kit draws one card in chat and no card when the app owns
-     the screen. Nothing from the old shell rule was load-bearing once its decorative ring moved
-     into the hydration hero below; the width now comes from manifest.stage.width. */
-  /* This 250px ring is identity, not frame chrome. It lives on a content section now, so removing
-     the shell's border cannot erase the app's face. */
-  .hero::before {
-    content: "";
-    position: absolute;
-    z-index: 0;
-    width: 250px;
-    height: 250px;
-    top: -170px;
-    right: -55px;
-    border: 34px solid color-mix(in oklab, var(--accent) 8%, transparent);
-    border-radius: var(--border-radius-full, 999px);
-    pointer-events: none;
-  }
-  /* `.topbar` is `.k-appbar` now: row, gap, padding, mark box, title/eyebrow scale and the
-     chat-only rule all come from the kit. Its stacking remains load-bearing because the content
-     ring reaches upward from the hero and must stay behind the bar. */
-  .topbar {
-    min-height: 68px;
-    position: relative;
-    z-index: 1;
-  }
-  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
-     strips frames, never faces. */
-  .brand-mark {
-    color: var(--accent);
-    border: 1px solid var(--color-border-primary);
-    background: linear-gradient(145deg, var(--wash-strong), color-mix(in oklab, var(--accent) 5%, transparent));
-  }
-  .brand-summary {
-    margin-top: 3px;
-    color: var(--color-text-secondary);
-    font-size: var(--font-text-sm-size, 12px);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  /* The app had no error surface, so its one Ask-AI hand-off could only fail silently. */
+  button { font: inherit; color: inherit; }
+
+  /* ── app bar: mark · name · the AI hand-off ── */
+  .ht-mark { color: var(--ht); border: 1px solid var(--k-accent-brd); background: var(--k-accent-bg); }
+  .ht-mark svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+  .ht-bar .k-btn.sec { margin-left: auto; flex: none; }
+  .ht-bar .k-btn svg { width: 15px; height: 15px; }
+
   .error-strip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    margin: 10px 16px 0;
+    margin: 10px 20px 0;
     padding: 8px 10px;
-    position: relative;
-    z-index: 1;
-    border: 1px solid color-mix(in oklab, var(--color-text-danger) 34%, var(--color-border-secondary));
-    border-radius: var(--border-radius-md, 8px);
-    color: var(--color-text-danger);
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 32%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 10px);
     background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
-    font-size: 12px;
-  }
-  .error-strip[hidden] { display: none; }
-  .top-actions {
-    display: flex;
-    gap: 8px;
-    margin-left: auto;
-  }
-  .btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 7px;
-    min-height: 36px;
-    padding: 8px 12px;
-    flex: 0 0 auto;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md);
-    background: var(--color-background-primary);
-    color: var(--color-text-primary);
-    font-weight: 650;
-    line-height: 1;
-    cursor: pointer;
-  }
-  .btn svg { width: 16px; height: 16px; flex: 0 0 auto; }
-  .btn.ghost { background: var(--color-background-primary); }
-  .overview {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: minmax(166px, .8fr) repeat(3, minmax(0, 1fr));
-    align-items: center;
-    gap: 16px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--accent) 5%, var(--color-background-secondary));
-    font-variant-numeric: tabular-nums;
-  }
-  .overview-lead {
-    min-width: 0;
-    padding-right: 16px;
-    border-right: 1px solid var(--color-border-secondary);
-  }
-  .overview-label {
-    color: var(--color-text-tertiary);
-    font: 700 10px/1.2 var(--font-mono);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  #todayLabel {
-    margin-left: 5px;
-    letter-spacing: 0;
-    text-transform: none;
-  }
-  .overview-value {
-    margin-top: 4px;
-    font: 750 clamp(29px, 5vw, 38px)/.95 var(--font-sans);
-    letter-spacing: -.055em;
-    white-space: nowrap;
-  }
-  .overview-unit {
-    margin-left: 4px;
-    color: var(--color-text-secondary);
+    color: var(--color-text-danger);
     font-size: var(--font-text-sm-size, 12px);
-    font-weight: 650;
-    letter-spacing: 0;
   }
-  .overview-stat {
-    min-width: 0;
-    display: grid;
-    gap: 3px;
-  }
-  .overview-stat span {
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .07em;
-    text-transform: uppercase;
-  }
-  .overview-stat strong {
-    overflow: hidden;
-    font: 700 var(--font-text-md-size, 14px)/1.2 var(--font-mono);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
+
+  /* ── hero: the glass, the number, the pour ── */
   .hero {
-    padding: 20px;
     display: grid;
-    grid-template-columns: minmax(210px, .84fr) minmax(310px, 1.16fr);
-    gap: 18px;
-    position: relative;
-    background:
-      radial-gradient(circle at 14% 22%, color-mix(in oklab, var(--accent) 15%, transparent), transparent 34%),
-      linear-gradient(135deg, color-mix(in oklab, var(--accent) 8%, var(--color-background-secondary)), var(--color-background-primary) 72%);
-  }
-  .hero > * { position: relative; z-index: 1; }
-  .hero::after {
-    content: "";
-    position: absolute;
-    z-index: 0;
-    width: 72px;
-    height: 72px;
-    right: 28px;
-    bottom: -50px;
-    border: 16px solid color-mix(in oklab, var(--accent) 6%, transparent);
-    border-radius: var(--border-radius-full, 999px);
-    pointer-events: none;
-  }
-  .gauge-card {
-    min-height: 238px;
-    display: grid;
-    place-items: center;
-    position: relative;
-    border: 1px solid color-mix(in oklab, var(--accent) 13%, var(--color-border-secondary));
-    border-radius: var(--border-radius-lg);
-    background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
-    box-shadow: var(--shadow-sm);
-  }
-  .gauge {
-    width: 204px;
-    height: 204px;
-    position: relative;
-    display: grid;
-    place-items: center;
-  }
-  .gauge svg {
-    width: 100%;
-    height: 100%;
-    overflow: visible;
-    transform: rotate(-90deg);
-  }
-  .ring-track, .ring-progress { fill: none; stroke-width: 13; }
-  .ring-track { stroke: color-mix(in oklab, var(--accent) 11%, var(--color-border-secondary)); }
-  .ring-progress {
-    stroke: url(#hydration-ring-gradient);
-    stroke-linecap: round;
-    filter: drop-shadow(0 3px 5px color-mix(in oklab, var(--accent) 22%, transparent));
-  }
-  .ring-marker {
-    fill: var(--color-background-primary);
-    stroke: color-mix(in oklab, var(--accent) 30%, var(--color-border-primary));
-    stroke-width: 2;
-  }
-  .gauge-center {
-    position: absolute;
-    inset: 34px;
-    display: flex;
-    flex-direction: column;
+    grid-template-columns: 206px minmax(0, 1fr);
+    grid-template-areas: "glass read" "glass pour";
+    column-gap: 32px;
+    row-gap: 18px;
     align-items: center;
-    justify-content: center;
-    text-align: center;
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-background-primary) 92%, transparent);
-    box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--accent) 7%, transparent);
+    padding: 22px 28px 24px 24px;
   }
-  .gauge-label {
-    color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
-    font-weight: 650;
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  .gauge-drop {
-    width: 35px;
-    height: 35px;
-    margin: 12px 0 10px;
-    border-radius: 68% 32% 66% 34% / 68% 35% 65% 32%;
-    background: linear-gradient(145deg, var(--accent), var(--success));
-    box-shadow: 0 6px 16px color-mix(in oklab, var(--accent) 20%, transparent);
-    transform: rotate(45deg);
-  }
-  .gauge-unit {
-    color: var(--color-text-secondary);
-    font-size: var(--font-text-sm-size, 12px);
-    text-align: center;
-  }
-  .action-panel {
-    min-width: 0;
-    padding: 7px 2px 3px;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-  }
-  .status-line {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    color: var(--accent);
-    font-size: var(--font-text-sm-size, 12px);
-    font-weight: 700;
-  }
-  .status-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: var(--border-radius-full, 999px);
-    background: currentColor;
-    box-shadow: 0 0 0 5px color-mix(in oklab, currentColor 12%, transparent);
-  }
-  .status-title {
-    margin: 7px 0 2px;
-    font-size: var(--font-heading-lg-size, 25px);
-    line-height: 1.15;
-    letter-spacing: -.035em;
-  }
-  .status-copy {
-    margin: 0;
-    color: var(--color-text-secondary);
-    font-size: var(--font-text-sm-size, 12px);
-  }
-  .drink-picker {
-    margin: 17px 0 10px;
-    padding: 3px;
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-md);
-    background: color-mix(in oklab, var(--color-background-tertiary) 70%, transparent);
-  }
-  .drink-option {
-    min-width: 0;
-    padding: 7px 8px;
-    border: 0;
-    border-radius: calc(var(--border-radius-md) - 2px);
-    background: transparent;
-    color: var(--color-text-secondary);
-    font-weight: 600;
-    cursor: pointer;
-  }
-  .drink-option[aria-pressed="true"] {
-    background: var(--color-background-primary);
-    color: var(--color-text-primary);
-    box-shadow: var(--shadow-sm);
-  }
-  .quick-row { display: grid; grid-template-columns: 1fr 1fr; gap: 9px; }
-  .quick {
-    min-height: 57px;
-    padding: 8px 14px;
-    overflow: hidden;
-    position: relative;
-    border: 1px solid color-mix(in oklab, var(--accent) 35%, transparent);
-    border-radius: var(--border-radius-md);
-    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 91%, var(--color-background-primary)), var(--accent));
-    color: var(--color-text-inverse);
-    box-shadow: 0 5px 14px color-mix(in oklab, var(--accent) 18%, transparent);
-    cursor: pointer;
-  }
-  .quick-copy {
+  .glass { grid-area: glass; margin: 0; }
+  .glass svg { display: block; width: 100%; height: auto; overflow: visible; }
+  .read { grid-area: read; align-self: end; min-width: 0; }
+  .pour { grid-area: pour; align-self: start; min-width: 0; }
+
+  .g-out { fill: none; stroke: var(--color-text-secondary); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+  .g-base { fill: none; stroke: var(--color-border-primary); stroke-width: 1.6; stroke-linecap: round; }
+  .g-tick { stroke: var(--color-border-primary); stroke-width: 1.4; stroke-linecap: round; }
+  .g-goal { stroke: var(--ht); stroke-width: 1.8; stroke-linecap: round; }
+  .g-lbl { fill: var(--color-text-tertiary); font: 500 9px var(--font-sans); font-variant-numeric: tabular-nums; }
+  .g-lbl.goal { fill: var(--ht); font-weight: 650; }
+  .w-body { fill: var(--ht-water); }
+  .w-surf { fill: none; stroke: var(--ht); stroke-width: 2.2; stroke-linecap: round; }
+  .w-layer { stroke: color-mix(in oklab, var(--ht) 30%, transparent); stroke-width: 1; stroke-dasharray: 2 3; }
+  .stream { fill: none; stroke: var(--ht); stroke-width: 3.5; stroke-linecap: round; opacity: 0; }
+  #level, #surf { transform-box: view-box; }
+
+  .kicker { margin: 0 0 6px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); font-weight: 550; }
+  .big { margin: 0; display: flex; align-items: baseline; gap: 6px; line-height: .95; }
+  .big b { font-size: 60px; font-weight: 720; letter-spacing: -.045em; font-variant-numeric: tabular-nums; }
+  .big span { color: var(--color-text-secondary); font-size: 17px; font-weight: 600; }
+  .of { margin: 8px 0 0; color: var(--color-text-secondary); font-size: var(--font-text-md-size, 14px); font-variant-numeric: tabular-nums; }
+  .status { margin: 10px 0 0; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--ht); font-size: var(--font-text-md-size, 14px); font-weight: 650; }
+  .status .k-badge { font-variant-numeric: tabular-nums; }
+
+  .drinks { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
+  .drinks .k-chip { padding: 4px 12px; font-size: var(--font-text-sm-size, 12px); }
+  .pours { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .pbtn {
+    min-height: 52px;
     display: flex;
     align-items: baseline;
     justify-content: center;
     gap: 4px;
+    border: 0;
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--ht);
+    color: var(--color-background-primary);
+    cursor: pointer;
   }
-  .quick strong {
-    font-size: 20px;
-    line-height: 1;
-    letter-spacing: -.03em;
-    font-variant-numeric: tabular-nums;
-  }
-  .quick small { font-size: var(--font-text-sm-size, 12px); opacity: .84; }
-  .quick::after {
-    content: "Logged  ✓";
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-items: center;
-    opacity: 0;
-    font-weight: 750;
-  }
-  .quick.saved .quick-copy { opacity: 0; }
-  .quick.saved::after { opacity: 1; }
-  html[lang="zh-CN"] .quick::after { content: "已记录 ✓"; }
+  .pbtn { align-items: center; }
+  .pbtn b { font-size: 21px; font-weight: 700; letter-spacing: -.02em; font-variant-numeric: tabular-nums; }
+  .pbtn small { font-size: var(--font-text-sm-size, 12px); font-weight: 600; opacity: .85; }
+  .pbtn:hover { background: color-mix(in oklab, var(--ht) 88%, var(--color-text-primary)); }
+  .pbtn:focus-visible { outline: 2px solid var(--color-ring-primary, var(--ht)); outline-offset: 2px; }
+
+  /* ── below: the past week and today's pours, quieter ── */
   .below {
-    padding: 14px 18px 16px;
     display: grid;
-    grid-template-columns: minmax(0, 1.42fr) minmax(150px, .58fr);
-    gap: 12px;
+    grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+    gap: 28px;
+    padding: 18px 24px 22px;
     border-top: 1px solid var(--color-border-secondary);
   }
-  .card {
-    min-width: 0;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-  }
-  .card-head {
-    padding: 11px 12px 0;
-    display: flex;
-    align-items: flex-start;
-    gap: 10px;
-  }
-  .card-title {
-    font-weight: 700;
-    font-size: var(--font-text-sm-size, 12px);
-  }
-  .card-subtitle {
-    margin-top: 1px;
-    color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
-  }
-  .spark-wrap { padding: 3px 9px 8px; }
-  #spark {
-    width: 100%;
-    height: 78px;
-    display: block;
-    overflow: visible;
-  }
-  #sparkArea { fill: url(#spark-gradient); }
-  #sparkLine {
-    fill: none;
-    stroke: var(--accent);
-    stroke-width: 3;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-  #targetLine {
-    stroke: color-mix(in oklab, var(--color-text-tertiary) 30%, transparent);
-    stroke-width: 1;
-    stroke-dasharray: 4 5;
-  }
-  #sparkDots circle {
-    fill: var(--color-background-primary);
-    stroke: var(--accent);
-    stroke-width: 2;
-  }
-  #sparkDots circle.hit { fill: var(--success); stroke: var(--success); }
-  .day-labels {
-    margin-top: -4px;
+  .sec-h { margin: 0 0 12px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .sec-h h2 { margin: 0; font-size: var(--font-text-sm-size, 12px); font-weight: 650; color: var(--color-text-primary); }
+  .sec-h p { margin: 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
+
+  .week { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .day { display: grid; justify-items: center; gap: 4px; min-width: 0; }
+  .day svg { width: 100%; max-width: 30px; height: auto; display: block; overflow: visible; }
+  .day .o { fill: none; stroke: var(--color-border-primary); stroke-width: 1.4; stroke-linejoin: round; }
+  .day .f { fill: var(--ht-water); }
+  .day.hit .f { fill: color-mix(in oklab, var(--ht) 45%, transparent); }
+  .day.hit .o { stroke: color-mix(in oklab, var(--ht) 60%, var(--color-border-primary)); }
+  .day .gl { stroke: color-mix(in oklab, var(--ht) 55%, transparent); stroke-width: 1; stroke-dasharray: 2 2; }
+  .day em { font-style: normal; font-size: 11px; font-weight: 600; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .day i { font-style: normal; font-size: 10.5px; color: var(--color-text-tertiary); }
+  .day.none em { color: var(--color-text-tertiary); font-weight: 500; }
+  .streak { margin-top: 12px; }
+
+  .list { margin: 0; padding: 0; list-style: none; max-height: 232px; overflow-y: auto; }
+  .row {
     display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    color: var(--color-text-tertiary);
-    font: 600 10px/1 var(--font-mono);
-    text-align: center;
-    text-transform: uppercase;
-  }
-  .streak {
-    padding: 12px;
-    overflow: hidden;
-    position: relative;
-    background: linear-gradient(150deg, color-mix(in oklab, var(--success) 10%, var(--color-background-primary)), var(--color-background-primary));
-  }
-  .streak::after {
-    content: "";
-    position: absolute;
-    width: 66px;
-    height: 66px;
-    right: -28px;
-    top: -26px;
-    border: 12px solid color-mix(in oklab, var(--success) 8%, transparent);
-    border-radius: var(--border-radius-full, 999px);
-  }
-  .streak-icon {
-    width: 32px;
-    height: 32px;
-    display: grid;
-    place-items: center;
-    color: var(--success);
-    border-radius: var(--border-radius-md);
-    background: color-mix(in oklab, var(--success) 13%, transparent);
-  }
-  .streak-icon svg { width: 17px; height: 17px; }
-  .streak-number {
-    margin-top: 12px;
-    font: 750 32px/.9 var(--font-sans);
-    letter-spacing: -.05em;
-    font-variant-numeric: tabular-nums;
-  }
-  .streak-number span {
-    margin-left: 3px;
-    color: var(--color-text-secondary);
-    font-size: var(--font-text-sm-size, 12px);
-    font-weight: 600;
-    letter-spacing: 0;
-  }
-  .streak-label { margin-top: 7px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); }
-  .streak-dots { margin-top: 11px; display: flex; gap: 4px; }
-  .streak-dots i {
-    width: 100%;
-    height: 5px;
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-text-tertiary) 14%, transparent);
-  }
-  .streak-dots i.hit { background: var(--success); }
-  .recent {
-    grid-column: 1 / -1;
-    overflow: hidden;
-  }
-  .recent .card-head { padding-bottom: 9px; }
-  .log-count {
-    margin-left: auto;
-    padding: 3px 7px;
-    border-radius: var(--border-radius-full, 999px);
-    background: var(--wash);
-    color: var(--accent);
-    font: 700 11px/1.2 var(--font-mono);
-  }
-  #logs {
-    max-height: none;
-    overflow: visible;
-    border-top: 1px solid var(--color-border-secondary);
-  }
-  .log-row {
-    min-height: 49px;
-    padding: 8px 11px;
-    display: flex;
+    grid-template-columns: 18px minmax(0, 1fr) auto auto;
     align-items: center;
     gap: 10px;
-    border-top: 1px solid color-mix(in oklab, var(--color-border-secondary) 68%, transparent);
+    min-height: 38px;
+    padding: 4px 2px 4px 4px;
+    border-top: 1px solid var(--color-border-secondary);
+    border-radius: 2px;
   }
-  .log-row:first-child { border-top: 0; }
-  .drink-glyph {
-    width: 30px;
-    height: 30px;
-    flex: 0 0 auto;
+  .row:first-child { border-top: 0; }
+  .row svg { width: 16px; height: 16px; fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+  .row .nm { min-width: 0; font-size: var(--font-text-sm-size, 12.5px); font-weight: 550; overflow-wrap: anywhere; }
+  .row .tm { margin-left: 6px; color: var(--color-text-tertiary); font-weight: 450; font-variant-numeric: tabular-nums; }
+  .row .amt { font-size: var(--font-text-sm-size, 12.5px); font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .row .del {
+    width: 26px;
+    height: 26px;
     display: grid;
     place-items: center;
-    border-radius: 58% 42% 54% 46% / 38% 42% 58% 62%;
-    background: var(--wash-strong);
-    color: var(--accent);
-    font-size: 10px;
-    font-weight: 800;
-    text-transform: uppercase;
-  }
-  .drink-glyph.tea { color: var(--success); background: color-mix(in oklab, var(--success) 15%, transparent); }
-  .drink-glyph.coffee { color: var(--warning); background: color-mix(in oklab, var(--warning) 15%, transparent); }
-  .log-main { flex: 1; min-width: 0; }
-  .log-main strong {
-    display: block;
-    overflow: hidden;
-    font-size: var(--font-text-sm-size, 12px);
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-transform: capitalize;
-  }
-  .log-time { color: var(--color-text-tertiary); font-size: 11px; }
-  .log-amount {
-    font: 700 var(--font-text-sm-size, 12px)/1 var(--font-mono);
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-  .delete {
-    min-width: 28px;
-    height: 28px;
-    padding: 0 7px;
     border: 0;
-    border-radius: var(--border-radius-sm);
+    border-radius: var(--border-radius-sm, 6px);
     background: transparent;
     color: var(--color-text-tertiary);
     cursor: pointer;
   }
-  .empty {
-    padding: 18px;
-    color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
-    text-align: center;
-  }
+  .row .del:hover { background: var(--k-ink-4); color: var(--color-text-primary); }
+  .row.fresh { background: var(--k-accent-bg); }
+  .row.going { opacity: .45; pointer-events: none; }
+  .empty { margin: 0; padding: 8px 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12.5px); line-height: 1.5; }
+
   @media (hover: hover) {
-    .log-row:hover { background: color-mix(in oklab, var(--color-text-primary) 3%, transparent); }
-    .delete { opacity: 0; }
-    .log-row:hover .delete, .delete:focus-visible { opacity: 1; }
+    .row .del { opacity: 0; }
+    .row:hover .del, .row .del:focus-visible { opacity: 1; }
   }
+
+  /* The one action that matters is a pour: the stream drops in, the water springs up to its new
+     level and its surface sloshes once. Nothing moves on load, and nothing moves at all under
+     reduced motion — the level simply is where it is. */
   @media (prefers-reduced-motion: no-preference) {
-    .btn, .drink-option, .quick, .delete {
-      transition: transform 180ms cubic-bezier(.2,.8,.3,1), background 180ms ease, border-color 180ms ease, box-shadow 180ms ease, opacity 180ms ease;
+    .live #level { transition: transform 900ms var(--k-spring); }
+    .live #surf.slosh { animation: ht-slosh 1100ms var(--k-ease); }
+    .stream.go { animation: ht-stream 700ms var(--k-ease); }
+    .pbtn { transition: transform var(--k-t-fast) var(--k-ease), background var(--k-t-fast); }
+    .pbtn:active { transform: scale(.96); }
+    .row.fresh { transition: background 1200ms var(--k-ease); }
+    @keyframes ht-slosh {
+      0% { transform: translateX(-22px) scaleY(2.2); }
+      45% { transform: translateX(8px) scaleY(1.3); }
+      100% { transform: none; }
     }
-    .btn:hover, .quick:hover { transform: translateY(-1px); }
-    .btn:active, .drink-option:active, .quick:active, .delete:active { transform: scale(.975); }
-    .quick-copy, .quick::after { transition: opacity 160ms ease, transform 240ms cubic-bezier(.34,1.56,.64,1); }
-    .quick::after { transform: scale(.78); }
-    .quick.saved { animation: save-pop 500ms cubic-bezier(.34,1.56,.64,1); }
-    .quick.saved::after { transform: scale(1); }
-    .ring-progress { animation: ring-in 760ms cubic-bezier(.2,.8,.3,1) both; }
-    #sparkLine { animation: spark-in 700ms cubic-bezier(.2,.8,.3,1) both; }
-    #sparkDots circle { animation: dot-in 360ms cubic-bezier(.34,1.56,.64,1) both; transform-box: fill-box; transform-origin: center; }
-    @keyframes save-pop { 0%,100% { transform: scale(1); } 45% { transform: scale(1.035); } }
-    @keyframes ring-in { from { stroke-dashoffset: 515.22; } }
-    @keyframes spark-in { from { stroke-dasharray: 0 1000; } to { stroke-dasharray: 1000 0; } }
-    @keyframes dot-in { from { transform: scale(0); } }
+    @keyframes ht-stream {
+      0% { opacity: 1; stroke-dasharray: 0 400; }
+      45% { opacity: 1; stroke-dasharray: 400 0; }
+      100% { opacity: 0; stroke-dasharray: 400 0; }
+    }
   }
-  @media (max-width: 640px) {
-    .topbar { min-height: 62px; padding: 11px 12px; gap: 10px; }
-    .brand-summary { display: none; }
-    .btn { padding: 8px; }
-    .btn span { display: none; }
-    .overview {
-      grid-template-columns: minmax(142px, 1.1fr) repeat(3, minmax(0, .72fr));
-      gap: 10px;
-      padding: 12px;
+
+  @media (max-width: 600px) {
+    .hero {
+      grid-template-columns: 138px minmax(0, 1fr);
+      grid-template-areas: "glass read" "pour pour";
+      column-gap: 20px;
+      padding: 18px 16px 20px;
     }
-    .overview-lead { padding-right: 10px; }
-    .hero { padding: 13px; grid-template-columns: 1fr; gap: 11px; }
-    .gauge-card { min-height: 202px; }
-    .gauge { width: 178px; height: 178px; }
-    .gauge-center { inset: 30px; }
-    .action-panel { padding: 5px 2px 1px; }
-    .status-title { font-size: 22px; }
-    .drink-picker { margin-top: 13px; }
-    .below { padding: 11px 12px 13px; grid-template-columns: minmax(0, 1fr) 116px; gap: 9px; }
-    .streak { padding: 10px; }
-    .streak-number { font-size: 28px; }
-    #logs { max-height: none; }
-  }
-  @media (max-width: 390px) {
-    .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .overview-lead {
-      grid-column: 1 / -1;
-      padding: 0 0 10px;
-      border-right: 0;
-      border-bottom: 1px solid var(--color-border-secondary);
-    }
-    .below { grid-template-columns: 1fr; }
-    .streak { display: grid; grid-template-columns: auto 1fr; column-gap: 10px; align-items: center; }
-    .streak-number { margin-top: 0; }
-    .streak-label, .streak-dots { grid-column: 1 / -1; }
-    .recent { grid-column: 1; }
+    .read { align-self: center; }
+    /* A phone-sized glass keeps its tick marks but drops the quarter labels — at this scale they
+       would be unreadable — and the goal label grows so it still reads. JS narrows the viewBox. */
+    .g-lbl.q { display: none; }
+    .g-lbl { font-size: 14px; }
+    .big b { font-size: 46px; }
+    .big span { font-size: 15px; }
+    .below { grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 16px 16px 20px; }
+    .error-strip { margin: 10px 16px 0; }
   }
 </style>
-
 </head>
 <body>
-<main class="shell k-stage">
-  <header class="topbar k-appbar">
-    <div class="brand-mark k-appmark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none">
-        <path d="M5.5 3.5h13l-1.3 17h-10.4l-1.3-17Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
-        <path d="M6.1 10.2c1.6-.9 2.8-.9 4.3 0 1.6.9 2.8.9 4.4 0 1.1-.6 2-.8 2.9-.5" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
-        <path d="M14.8 6.8h3.1M14.5 14.1h2.9M14.3 17.1h2.8" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
-      </svg>
-    </div>
-    <div class="brand-copy k-appcopy">
-      <div class="shell-kicker k-eyebrow">DAILY INTAKE</div>
-      <h1>Hydration tally</h1>
-      <div class="brand-summary">One-tap water tracking</div>
-    </div>
-    <div class="top-actions">
-      <button class="btn ghost" id="targetButton" type="button" title="Ask AI to help set a sensible target">
-        <svg viewBox="0 0 20 20" fill="none" aria-hidden="true">
-          <path d="M10 1.8c.35 4.85 3.35 7.85 8.2 8.2-4.85.35-7.85 3.35-8.2 8.2C9.65 13.35 6.65 10.35 1.8 10 6.65 9.65 9.65 6.65 10 1.8Z" fill="currentColor"/>
-        </svg>
-        <span>Set my target</span>
-      </button>
-    </div>
+<main class="ht k-stage">
+  <header class="ht-bar k-appbar">
+    <span class="ht-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 18 18"><path d="M3.5 2.5h11l-1.4 13h-8.2z"/><path d="M4.6 8.2c1.5-.8 2.9-.8 4.4 0s2.9.8 4.4 0"/></svg>
+    </span>
+    <div class="k-appcopy"><h1 data-t="name">Hydration tally</h1></div>
+    <button id="askBtn" class="k-btn sec" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 .8 3.2A6.5 6.5 0 0 0 17.5 11l3.2.8-3.2.8a6.5 6.5 0 0 0-4.7 4.7L12 20.5l-.8-3.2a6.5 6.5 0 0 0-4.7-4.7l-3.2-.8 3.2-.8a6.5 6.5 0 0 0 4.7-4.8L12 3Z"/></svg>
+      <span data-t="ask">Set my target</span>
+    </button>
   </header>
 
-  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
-    <span id="errorText"></span>
-  </div>
-
-  <section class="overview" aria-label="Today’s hydration overview">
-    <div class="overview-lead">
-      <div class="overview-label">Today <span id="todayLabel"></span></div>
-      <div class="overview-value"><span id="todayTotal">0</span><span class="overview-unit">mL</span></div>
-    </div>
-    <div class="overview-stat">
-      <span>Goal</span>
-      <strong id="targetCopy">2,000 mL</strong>
-    </div>
-    <div class="overview-stat">
-      <span>Progress</span>
-      <strong id="percentBadge">0%</strong>
-    </div>
-    <div class="overview-stat">
-      <span>7-day avg</span>
-      <strong id="average">0 mL</strong>
-    </div>
-  </section>
+  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden></div>
 
   <section class="hero">
-    <div class="gauge-card" id="gaugeCard">
-      <div class="gauge">
-        <svg viewBox="0 0 200 200" role="img" id="ringSvg" aria-label="Daily hydration progress">
-          <defs>
-            <linearGradient id="hydration-ring-gradient" x1="20" y1="20" x2="180" y2="180" gradientUnits="userSpaceOnUse">
-              <stop stop-color="var(--accent)"/>
-              <stop offset="1" stop-color="var(--success)"/>
-            </linearGradient>
-          </defs>
-          <circle class="ring-track" cx="100" cy="100" r="82"/>
-          <circle class="ring-progress" id="ringProgress" cx="100" cy="100" r="82" stroke-dasharray="515.22" stroke-dashoffset="515.22"/>
-          <circle class="ring-marker" cx="100" cy="18" r="4"/>
-        </svg>
-        <div class="gauge-center">
-          <div class="gauge-label">Daily progress</div>
-          <div class="gauge-drop" aria-hidden="true"></div>
-          <div class="gauge-unit">Every pour counts</div>
-        </div>
-      </div>
+    <figure class="glass">
+      <svg id="glassSvg" viewBox="-34 -30 228 252" role="img" aria-label="">
+        <defs>
+          <clipPath id="ht-in"><path d="M25.5 20h109l-13.9 170h-81.2z"/></clipPath>
+        </defs>
+        <g id="ticks"></g>
+        <path class="stream" id="stream" d="M80 -26V100"/>
+        <g clip-path="url(#ht-in)">
+          <g id="level">
+            <g id="surf">
+              <path class="w-body" id="wBody" d=""/>
+              <path class="w-surf" id="wSurf" d=""/>
+            </g>
+          </g>
+          <g id="layers"></g>
+        </g>
+        <path class="g-out" d="M20 14h120l-15.5 190a6 6 0 0 1-6 5.5h-77a6 6 0 0 1-6-5.5z"/>
+        <path class="g-base" d="M38.5 194h83"/>
+      </svg>
+    </figure>
+
+    <div class="read">
+      <p class="kicker" id="dateLine"></p>
+      <p class="big"><b id="total">0</b><span>mL</span></p>
+      <p class="of" id="ofLine"></p>
+      <p class="status" id="status" aria-live="polite"></p>
     </div>
 
-    <div class="action-panel">
-      <div class="status-line"><span class="status-dot"></span><span id="statusKicker">Fresh start</span></div>
-      <h2 class="status-title" id="statusTitle">Ready for your first sip?</h2>
-      <p class="status-copy" id="statusCopy">Small pours add up. Choose a drink, then tap an amount.</p>
-      <div class="drink-picker" role="group" aria-label="Drink type">
-        <button class="drink-option" type="button" data-drink="water" aria-pressed="true">Water</button>
-        <button class="drink-option" type="button" data-drink="tea" aria-pressed="false">Tea</button>
-        <button class="drink-option" type="button" data-drink="coffee" aria-pressed="false">Coffee</button>
+    <div class="pour">
+      <div class="drinks" role="group" id="drinks">
+        <button class="k-chip on" type="button" data-drink="water" data-t="water" aria-pressed="true">Water</button>
+        <button class="k-chip" type="button" data-drink="tea" data-t="tea" aria-pressed="false">Tea</button>
+        <button class="k-chip" type="button" data-drink="coffee" data-t="coffee" aria-pressed="false">Coffee</button>
       </div>
-      <div class="quick-row" aria-label="Quick add">
-        <button class="quick" type="button" data-amount="250" aria-label="Log 250 millilitres">
-          <span class="quick-copy"><strong>+250</strong><small>mL</small></span>
-        </button>
-        <button class="quick" type="button" data-amount="500" aria-label="Log 500 millilitres">
-          <span class="quick-copy"><strong>+500</strong><small>mL</small></span>
-        </button>
+      <div class="pours">
+        <button class="pbtn" type="button" data-amount="250"><b>+250</b><small>mL</small></button>
+        <button class="pbtn" type="button" data-amount="500"><b>+500</b><small>mL</small></button>
       </div>
     </div>
   </section>
 
   <section class="below">
-    <article class="card trend">
-      <div class="card-head">
-        <div>
-          <div class="card-title">Last 7 days</div>
-          <div class="card-subtitle">Daily intake against target</div>
-        </div>
-      </div>
-      <div class="spark-wrap">
-        <svg id="spark" viewBox="0 0 320 84" preserveAspectRatio="none" role="img" aria-label="Seven day hydration chart">
-          <defs>
-            <linearGradient id="spark-gradient" x1="0" y1="0" x2="0" y2="1">
-              <stop stop-color="var(--accent)" stop-opacity=".24"/>
-              <stop offset="1" stop-color="var(--accent)" stop-opacity="0"/>
-            </linearGradient>
-          </defs>
-          <line id="targetLine" x1="10" x2="310" y1="14" y2="14"/>
-          <path id="sparkArea"/>
-          <path id="sparkLine"/>
-          <g id="sparkDots"></g>
-        </svg>
-        <div class="day-labels" id="dayLabels"></div>
-      </div>
-    </article>
-
-    <aside class="card streak">
-      <div class="streak-icon" aria-hidden="true">
-        <svg viewBox="0 0 20 20" fill="none">
-          <path d="M10 1.5c3.25 4.25 5.25 7.05 5.25 10.2a5.25 5.25 0 1 1-10.5 0C4.75 8.55 6.75 5.75 10 1.5Z" fill="currentColor"/>
-          <path d="M7.2 12.2c.3 1.4 1.2 2.2 2.8 2.5" stroke="var(--color-background-primary)" stroke-width="1.4" stroke-linecap="round"/>
-        </svg>
-      </div>
-      <div class="streak-number" id="streakNumber">0<span>days</span></div>
-      <div class="streak-label" id="streakLabel">Hit your target to begin a streak.</div>
-      <div class="streak-dots" id="streakDots" aria-label="Goal hits over the last seven days"></div>
-    </aside>
-
-    <article class="card recent">
-      <div class="card-head">
-        <div>
-          <div class="card-title">Today’s pours</div>
-          <div class="card-subtitle">Newest first · tap × to correct a log</div>
-        </div>
-        <div class="log-count" id="logCount">0 logs</div>
-      </div>
-      <div id="logs"></div>
-    </article>
+    <div>
+      <div class="sec-h"><h2 data-t="week">Past 7 days</h2><p id="weekLine"></p></div>
+      <div class="week" id="week"></div>
+      <div class="streak" id="streak"></div>
+    </div>
+    <div>
+      <div class="sec-h"><h2 data-t="today">Today’s pours</h2><p id="pourCount"></p></div>
+      <ul class="list" id="list"></ul>
+    </div>
   </section>
 </main>
 
 <script type="module">
   const NS = "http://www.w3.org/2000/svg";
-  const RING_LENGTH = 515.22;
-  let latestState = { items: [] };
-  let selectedDrink = "water";
-  let seeded = false;
 
-  const pad = (value) => String(value).padStart(2, "0");
-  const dateKey = (date) => `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
-  const dayAt = (offset) => {
-    const value = new Date();
-    value.setHours(12, 0, 0, 0);
-    value.setDate(value.getDate() + offset);
-    return value;
+  // ── copy ────────────────────────────────────────────────────────────────────────────────
+  const COPY = {
+    en: {
+      name: "Hydration tally",
+      ask: "Set my target",
+      water: "Water",
+      tea: "Tea",
+      coffee: "Coffee",
+      week: "Past 7 days",
+      today: "Today’s pours",
+      of: (g, p) => `of ${g} mL goal · ${p}%`,
+      toGo: (n) => `${n} mL to go`,
+      reached: "Goal reached",
+      over: (n) => `+${n} mL`,
+      fresh: "Nothing poured yet today",
+      weekLine: (avg, hits) => `avg ${avg} mL · goal hit ${hits} of 7`,
+      streak: (n) => `${n}-day streak`,
+      noStreak: "Reach the goal to start a streak",
+      count: (n) => `${n} ${n === 1 ? "pour" : "pours"}`,
+      empty: "Nothing logged today. Tap +250 or +500 — or tell the AI “log a 500 mL bottle of water”.",
+      goal: "goal",
+      pourLabel: (n, d) => `Log ${n} mL of ${d}`,
+      del: (a, d) => `Delete ${a} ${d}`,
+      glass: (t, g, p) => `${t} of ${g} mL today, ${p}%`,
+      dayTitle: (d, t) => `${d}: ${t} mL`,
+      drinkGroup: "Drink",
+      errAsk: "Couldn't reach the assistant — try again.",
+      errSave: "Couldn't save that pour — try again.",
+      prompt: (goal, today, avg) => `Help me set a sensible daily hydration target. My current target is ${goal} mL, today I have logged ${today} mL, and my 7-day average is ${avg} mL/day. Please ask about the factors that matter (such as body size, activity, climate, diet, pregnancy, and relevant health conditions or medications), then suggest a practical target in mL and explain the reasoning briefly.`
+    },
+    zh: {
+      name: "饮水记录",
+      ask: "设定目标",
+      water: "水",
+      tea: "茶",
+      coffee: "咖啡",
+      week: "过去 7 天",
+      today: "今天喝的",
+      of: (g, p) => `目标 ${g} mL · ${p}%`,
+      toGo: (n) => `还差 ${n} mL`,
+      reached: "今日达标",
+      over: (n) => `超出 ${n} mL`,
+      fresh: "今天还没喝水",
+      weekLine: (avg, hits) => `日均 ${avg} mL · 7 天中 ${hits} 天达标`,
+      streak: (n) => `连续达标 ${n} 天`,
+      noStreak: "达标一天就开始连续记录",
+      count: (n) => `${n} 次`,
+      empty: "今天还没有记录。点 +250 或 +500，或者对 AI 说「记一瓶 500 mL 的水」。",
+      goal: "目标",
+      pourLabel: (n, d) => `记录 ${n} mL ${d}`,
+      del: (a, d) => `删除 ${a} ${d}`,
+      glass: (t, g, p) => `今天 ${t} / ${g} mL，${p}%`,
+      dayTitle: (d, t) => `${d}：${t} mL`,
+      drinkGroup: "饮品",
+      errAsk: "没能联系上助手，请重试。",
+      errSave: "这一杯没存上，请重试。",
+      prompt: (goal, today, avg) => `帮我定一个合理的每日饮水目标。我现在的目标是 ${goal} mL，今天已经喝了 ${today} mL，过去 7 天日均 ${avg} mL。请先问我那些真正相关的因素（体型、运动量、气候、饮食、是否怀孕、相关的健康状况或用药），再给出一个具体的 mL 目标，并简单说明理由。`
+    }
   };
-  const locale = () => {
-    const setting = oma.pref("locale", "auto");
-    return setting === "auto" ? navigator.language : setting;
+  const loc = () => {
+    const s = oma.pref("locale", "auto");
+    return s === "auto" ? navigator.language : s;
   };
-  const number = (value) => new Intl.NumberFormat(locale(), { maximumFractionDigits: 0 }).format(value);
-  const target = () => Math.min(6000, Math.max(500, Number(oma.pref("daily_target_ml", 2000)) || 2000));
+  const isZh = () => String(loc()).toLowerCase().startsWith("zh");
+  const T = () => (isZh() ? COPY.zh : COPY.en);
+  const num = (v) => new Intl.NumberFormat(loc(), { maximumFractionDigits: 0 }).format(v);
 
-  function toMl(fields) {
-    const amount = Math.max(0, Number(fields.amount) || 0);
-    const unit = String(fields.unit || "mL").trim().toLowerCase().replace(/\s/g, "");
-    if (unit === "l" || unit === "liter" || unit === "litre" || unit === "liters" || unit === "litres") return amount * 1000;
-    if (unit === "oz" || unit === "floz" || unit === "ounce" || unit === "ounces") return amount * 29.5735;
+  // ── time ────────────────────────────────────────────────────────────────────────────────
+  const pad = (v) => String(v).padStart(2, "0");
+  const keyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = () => {
+    const n = new Date();
+    return new Date(n.getFullYear(), n.getMonth(), n.getDate());
+  };
+  const addDays = (d, k) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + k);
+  const dateOf = (it) => String(it.fields?.date || it.group || "").slice(0, 10);
+
+  // ── data ────────────────────────────────────────────────────────────────────────────────
+  const goalMl = () => Math.min(6000, Math.max(500, Number(oma.pref("daily_target_ml", 2000)) || 2000));
+
+  // Rows written by people and AIs carry whatever unit they said; the glass only speaks mL.
+  function toMl(f) {
+    const amount = Math.max(0, Number(f.amount) || 0);
+    const unit = String(f.unit || "mL").trim().toLowerCase().replace(/\s/g, "");
+    if (["l", "liter", "litre", "liters", "litres"].includes(unit)) return amount * 1000;
+    if (["oz", "floz", "ounce", "ounces"].includes(unit)) return amount * 29.5735;
     if (unit === "cup" || unit === "cups") return amount * 240;
     return amount;
   }
 
-  function totalsByDate(items) {
-    const totals = new Map();
-    for (const item of items) {
-      const key = String(item.fields.date || item.group || "");
-      totals.set(key, (totals.get(key) || 0) + toMl(item.fields));
+  const KNOWN = { water: "water", tea: "tea", coffee: "coffee" };
+  // The picker writes a lowercase key; a person or an AI may write anything. Known keys get the
+  // UI's word for them, everything else is the user's own text and is shown as written.
+  const drinkName = (raw) => {
+    const s = String(raw || "").trim();
+    const k = KNOWN[s.toLowerCase()];
+    return k ? T()[k] : s || T().water;
+  };
+  const drinkKind = (raw) => {
+    const s = String(raw || "").toLowerCase();
+    if (/coffee|latte|espresso|americano|咖啡|拿铁|美式/.test(s)) return "coffee";
+    if (/tea|matcha|茶/.test(s)) return "tea";
+    return "water";
+  };
+
+  let latest = { items: [] };
+  // Optimistic overlay: a pour shows in the glass the moment it is tapped. Each entry leaves once
+  // the store's own snapshot carries it (matched by the ack's id, or — if the snapshot beat the
+  // ack — by its fields on a row that did not exist when the pour began).
+  const pending = [];
+  const hidden = new Set();
+  // A delete waits on the engine's own confirmation (confirm_delete), so the row dims while the
+  // person decides and only leaves the glass once the ack says it is gone.
+  const deleting = new Set();
+  let tokSeq = 0;
+
+  function reconcile(state) {
+    const ids = new Set(state.items.map((it) => it.id));
+    const claimed = new Set();
+    for (let i = pending.length - 1; i >= 0; i--) {
+      const p = pending[i];
+      if (p.id && ids.has(p.id)) { pending.splice(i, 1); continue; }
+      if (!p.id) {
+        const hit = state.items.find((it) => !p.seen.has(it.id) && !claimed.has(it.id) &&
+          dateOf(it) === p.fields.date && String(it.fields.time) === p.fields.time &&
+          Number(it.fields.amount) === p.fields.amount && it.fields.drink_type === p.fields.drink_type);
+        if (hit) { claimed.add(hit.id); pending.splice(i, 1); }
+      }
     }
-    return totals;
+    for (const id of hidden) if (!ids.has(id)) hidden.delete(id);
   }
 
-  function sevenDays(items) {
-    const totals = totalsByDate(items);
-    return Array.from({ length: 7 }, (_, index) => {
-      const date = dayAt(index - 6);
-      const key = dateKey(date);
-      return { date, key, total: Math.round(totals.get(key) || 0) };
+  function model(state) {
+    const goal = goalMl();
+    const t0 = today();
+    const tKey = keyOf(t0);
+    // A row's day is fields.date, else its group (the app files each pour under its date).
+    const rows = state.items.filter((it) => !hidden.has(it.id))
+      .map((it) => ({ id: it.id, day: dateOf(it), fields: it.fields || {}, position: it.position }));
+    for (const p of pending) {
+      if (p.id && hidden.has(p.id)) continue;
+      rows.push({ id: p.id, fresh: p.at, day: p.fields.date, fields: p.fields, position: 1e9 + p.tok });
+    }
+    const byDate = new Map();
+    for (const r of rows) byDate.set(r.day, (byDate.get(r.day) || 0) + toMl(r.fields));
+    const todayRows = rows.filter((r) => r.day === tKey);
+    const total = Math.round(todayRows.reduce((s, r) => s + toMl(r.fields), 0));
+    const past = Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(t0, i - 7);
+      const k = keyOf(d);
+      return { d, k, total: Math.round(byDate.get(k) || 0) };
     });
-  }
-
-  function currentStreak(items, goal) {
-    const totals = totalsByDate(items);
-    const cursor = dayAt(0);
-    if ((totals.get(dateKey(cursor)) || 0) < goal) cursor.setDate(cursor.getDate() - 1);
-    let count = 0;
-    while (count < 3660 && (totals.get(dateKey(cursor)) || 0) >= goal) {
-      count += 1;
-      cursor.setDate(cursor.getDate() - 1);
+    const avg = Math.round(past.reduce((s, x) => s + x.total, 0) / 7);
+    const hits = past.filter((x) => x.total >= goal).length;
+    let streak = 0;
+    let c = total >= goal ? t0 : addDays(t0, -1);
+    while (streak < 3660 && (byDate.get(keyOf(c)) || 0) >= goal) {
+      streak += 1;
+      c = addDays(c, -1);
     }
-    return count;
+    todayRows.sort((a, b) =>
+      String(b.fields.time || "").localeCompare(String(a.fields.time || "")) || (b.position - a.position));
+    return { goal, t0, total, past, avg, hits, streak, todayRows };
   }
 
-  function renderSparkline(days, goal) {
-    const width = 320;
-    const top = 10;
-    const bottom = 70;
-    const max = Math.max(goal, ...days.map((day) => day.total), 1) * 1.08;
-    const x = (index) => 10 + index * ((width - 20) / 6);
-    const y = (value) => bottom - (Math.min(value, max) / max) * (bottom - top);
-    const points = days.map((day, index) => [x(index), y(day.total)]);
-    const line = points.map((point, index) => `${index ? "L" : "M"}${point[0].toFixed(2)},${point[1].toFixed(2)}`).join(" ");
-    document.getElementById("sparkLine").setAttribute("d", line);
-    document.getElementById("sparkArea").setAttribute("d", `${line} L${points.at(-1)[0]},${bottom} L${points[0][0]},${bottom} Z`);
-    const goalY = y(goal);
-    const targetLine = document.getElementById("targetLine");
-    targetLine.setAttribute("y1", goalY);
-    targetLine.setAttribute("y2", goalY);
+  // ── the glass ───────────────────────────────────────────────────────────────────────────
+  // Interior runs from y=190 (empty) to y=20 (brim). The goal sits at y=46, so a good day has
+  // headroom and an over-goal day visibly rises past the mark toward the rim.
+  const EMPTY_Y = 190;
+  const GOAL_Y = 46;
+  const BRIM_Y = 22;
+  // Nothing poured = the surface sits below the clip, so an empty glass shows no water at all.
+  const levelY = (ml, goal) => (ml <= 0 ? EMPTY_Y + 8 : Math.max(BRIM_Y, EMPTY_Y - (ml / goal) * (EMPTY_Y - GOAL_Y)));
 
-    const dots = document.getElementById("sparkDots");
-    dots.innerHTML = "";
-    points.forEach((point, index) => {
-      const dot = document.createElementNS(NS, "circle");
-      dot.setAttribute("cx", point[0]);
-      dot.setAttribute("cy", point[1]);
-      dot.setAttribute("r", days[index].total >= goal ? "3.8" : "3.2");
-      dot.setAttribute("class", days[index].total >= goal ? "hit" : "");
-      dot.style.animationDelay = `${index * 45}ms`;
-      dots.appendChild(dot);
-    });
+  const wave = (() => {
+    let d = "M-40 0";
+    for (let x = -40; x < 220; x += 40) d += ` q10 -4.5 20 0 t20 0`;
+    return d;
+  })();
+  document.getElementById("wSurf").setAttribute("d", wave);
+  document.getElementById("wBody").setAttribute("d", `${wave} V260 H-40 Z`);
 
-    const labels = document.getElementById("dayLabels");
-    labels.innerHTML = "";
-    for (const day of days) {
-      const label = document.createElement("span");
-      label.textContent = new Intl.DateTimeFormat(locale(), { weekday: "narrow" }).format(day.date);
-      labels.appendChild(label);
+  const narrow = matchMedia("(max-width: 600px)");
+  const fitGlass = () => document.getElementById("glassSvg").setAttribute("viewBox", narrow.matches ? "6 -30 190 252" : "-34 -30 228 252");
+  narrow.addEventListener("change", () => { fitGlass(); drawTicks(goalMl()); });
+  fitGlass();
+
+  function drawTicks(goal) {
+    const g = document.getElementById("ticks");
+    g.textContent = "";
+    const add = (tag, attrs, text) => {
+      const el = document.createElementNS(NS, tag);
+      for (const [k, v] of Object.entries(attrs)) el.setAttribute(k, v);
+      if (text != null) el.textContent = text;
+      g.appendChild(el);
+      return el;
+    };
+    // Left side: quarter marks of the goal, labelled in mL. Right side: the goal itself.
+    for (const q of [0.25, 0.5, 0.75]) {
+      const y = levelY(goal * q, goal);
+      const xEdge = 20 + ((y - 14) / 190) * 15.5;
+      add("line", { class: "g-tick", x1: xEdge - 9, x2: xEdge - 3, y1: y, y2: y });
+      add("text", { class: "g-lbl q", x: xEdge - 12, y: y + 3, "text-anchor": "end" }, num(goal * q));
     }
-    document.getElementById("spark").setAttribute(
-      "aria-label",
-      days.map((day) => `${new Intl.DateTimeFormat(locale(), { weekday: "short" }).format(day.date)} ${number(day.total)} millilitres`).join(", ")
-    );
+    const xg = 140 - ((GOAL_Y - 14) / 190) * 15.5;
+    add("line", { class: "g-goal", x1: xg + 3, x2: xg + 12, y1: GOAL_Y, y2: GOAL_Y });
+    add("text", { class: "g-lbl goal", x: xg + 15, y: GOAL_Y - 3 }, T().goal);
+    add("text", { class: "g-lbl goal", x: xg + 15, y: GOAL_Y + (narrow.matches ? 14 : 9) }, num(goal));
   }
 
-  function renderLogs(items) {
-    const logs = document.getElementById("logs");
-    logs.innerHTML = "";
-    const sorted = [...items].sort((a, b) =>
-      String(b.fields.time || "").localeCompare(String(a.fields.time || "")) || b.position - a.position
-    );
-    document.getElementById("logCount").textContent = `${sorted.length} ${sorted.length === 1 ? "log" : "logs"}`;
+  function drawLayers(rowsOldestFirst, goal) {
+    const g = document.getElementById("layers");
+    g.textContent = "";
+    let acc = 0;
+    for (let i = 0; i < rowsOldestFirst.length - 1; i++) {
+      acc += toMl(rowsOldestFirst[i].fields);
+      const y = levelY(acc, goal);
+      if (y <= BRIM_Y + 2) break;
+      const line = document.createElementNS(NS, "line");
+      line.setAttribute("class", "w-layer");
+      line.setAttribute("x1", "0");
+      line.setAttribute("x2", "160");
+      line.setAttribute("y1", y.toFixed(1));
+      line.setAttribute("y2", y.toFixed(1));
+      g.appendChild(line);
+    }
+  }
 
-    if (!sorted.length) {
-      const empty = document.createElement("div");
-      empty.className = "empty";
-      empty.textContent = "Nothing logged yet — choose a drink and make your first pour.";
-      logs.appendChild(empty);
+  let shownTotal = null;
+  let countRaf = 0;
+  const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+  function setTotal(to, animate) {
+    const el = document.getElementById("total");
+    if (to === shownTotal) return;          // a same-total re-render must not cut a count-up short
+    cancelAnimationFrame(countRaf);
+    if (!animate || reduced() || shownTotal == null) {
+      el.textContent = num(to);
+      shownTotal = to;
       return;
     }
-
-    for (const item of sorted) {
-      const row = document.createElement("div");
-      row.className = "log-row";
-      const type = String(item.fields.drink_type || "drink").trim() || "drink";
-      const glyph = document.createElement("div");
-      glyph.className = `drink-glyph ${type.toLowerCase()}`;
-      glyph.textContent = type.slice(0, 1);
-      const main = document.createElement("div");
-      main.className = "log-main";
-      const name = document.createElement("strong");
-      name.textContent = type;
-      const time = document.createElement("span");
-      time.className = "log-time";
-      time.textContent = item.fields.time || "Time not set";
-      main.append(name, time);
-      const amount = document.createElement("div");
-      amount.className = "log-amount";
-      amount.textContent = `${number(Number(item.fields.amount) || 0)} ${item.fields.unit || "mL"}`;
-      const remove = document.createElement("button");
-      remove.type = "button";
-      remove.className = "delete";
-      remove.title = "Delete this log";
-      remove.setAttribute("aria-label", `Delete ${amount.textContent} ${type} log`);
-      remove.textContent = "×";
-      remove.onclick = () => oma.deleteItem(item.id);
-      row.append(glyph, main, amount, remove);
-      logs.appendChild(row);
-    }
-  }
-
-  function render(state) {
-    latestState = state;
-    const goal = target();
-    const today = dateKey(new Date());
-    const todayItems = state.items.filter((item) => String(item.fields.date || item.group || "") === today);
-    const total = Math.round(todayItems.reduce((sum, item) => sum + toMl(item.fields), 0));
-    const ratio = Math.min(total / goal, 1);
-    const percent = Math.round((total / goal) * 100);
-    const remaining = Math.max(0, goal - total);
-    const days = sevenDays(state.items);
-    const streak = currentStreak(state.items, goal);
-    const average = Math.round(days.reduce((sum, day) => sum + day.total, 0) / days.length);
-
-    document.getElementById("todayLabel").textContent = new Intl.DateTimeFormat(locale(), {
-      weekday: "long", month: "short", day: "numeric"
-    }).format(new Date());
-    document.getElementById("todayTotal").textContent = number(total);
-    document.getElementById("targetCopy").textContent = `${number(goal)} mL`;
-    document.getElementById("percentBadge").textContent = `${percent}%`;
-    document.getElementById("ringProgress").style.strokeDashoffset = String(RING_LENGTH * (1 - ratio));
-    document.getElementById("ringSvg").setAttribute("aria-label", `${number(total)} of ${number(goal)} millilitres, ${percent} percent`);
-
-    const kicker = document.getElementById("statusKicker");
-    const title = document.getElementById("statusTitle");
-    const copy = document.getElementById("statusCopy");
-    if (total >= goal) {
-      kicker.textContent = "Daily target reached";
-      title.textContent = total > goal ? `${number(total - goal)} mL beyond your goal` : "Right on target — nicely done";
-      copy.textContent = "Goal complete. Keep sipping naturally if you’re thirsty.";
-    } else if (total > 0) {
-      kicker.textContent = `${percent}% complete`;
-      title.textContent = `${number(remaining)} mL to go`;
-      copy.textContent = remaining <= 500 ? "One more good pour could close the gap." : "Small pours add up — keep your rhythm going.";
-    } else {
-      kicker.textContent = "Fresh start";
-      title.textContent = "Ready for your first sip?";
-      copy.textContent = "Choose a drink, then tap an amount to begin.";
-    }
-
-    document.getElementById("average").textContent = `${number(average)} mL`;
-    document.getElementById("streakNumber").innerHTML = `${streak}<span>${streak === 1 ? "day" : "days"}</span>`;
-    document.getElementById("streakLabel").textContent = streak
-      ? `${streak === 1 ? "A strong start" : "Consistency looks good on you"}.`
-      : "Hit your target to begin a streak.";
-    const streakDots = document.getElementById("streakDots");
-    streakDots.innerHTML = "";
-    for (const day of days) {
-      const dot = document.createElement("i");
-      if (day.total >= goal) dot.className = "hit";
-      dot.title = `${day.key}: ${number(day.total)} mL`;
-      streakDots.appendChild(dot);
-    }
-
-    renderSparkline(days, goal);
-    renderLogs(todayItems);
-  }
-
-  async function seed() {
-    const rows = [
-      { offset: 0, time: "08:20", amount: 250, drink_type: "coffee" },
-      { offset: 0, time: "10:45", amount: 500, drink_type: "water" },
-      { offset: 0, time: "13:10", amount: 250, drink_type: "tea" },
-      { offset: -1, time: "09:05", amount: 1000, drink_type: "water" },
-      { offset: -1, time: "15:30", amount: 1000, drink_type: "water" },
-      { offset: -2, time: "08:50", amount: 750, drink_type: "water" },
-      { offset: -2, time: "14:15", amount: 1250, drink_type: "water" },
-      { offset: -3, time: "12:20", amount: 750, drink_type: "water" }
-    ];
-    for (const row of rows) {
-      const date = dateKey(dayAt(row.offset));
-      await oma.addItem({
-        group: date,
-        fields: {
-          date,
-          time: row.time,
-          amount: row.amount,
-          unit: "mL",
-          drink_type: row.drink_type
-        }
-      });
-    }
-  }
-
-  document.querySelectorAll(".drink-option").forEach((button) => {
-    button.onclick = () => {
-      selectedDrink = button.dataset.drink;
-      document.querySelectorAll(".drink-option").forEach((option) => {
-        option.setAttribute("aria-pressed", String(option === button));
-      });
+    const from = shownTotal;
+    shownTotal = to;
+    const t0 = performance.now();
+    const step = (now) => {
+      const k = Math.min(1, (now - t0) / 650);
+      const e = 1 - Math.pow(1 - k, 3);
+      el.textContent = num(Math.round(from + (to - from) * e));
+      if (k < 1) countRaf = requestAnimationFrame(step);
     };
+    countRaf = requestAnimationFrame(step);
+  }
+
+  // ── week of small glasses (built once, updated in place) ────────────────────────────────
+  const weekEl = document.getElementById("week");
+  const dayCells = Array.from({ length: 7 }, () => {
+    const cell = document.createElement("div");
+    cell.className = "day";
+    cell.innerHTML =
+      `<svg viewBox="0 0 30 38" aria-hidden="true"><defs><clipPath><path d="M4 3h22l-2.6 32h-16.8z"/></clipPath></defs>` +
+      `<rect class="f" x="0" width="30" y="35" height="0"/><line class="gl" x1="4" x2="26"/>` +
+      `<path class="o" d="M3.2 2.2h23.6l-2.7 33.3a1.6 1.6 0 0 1-1.6 1.4H7.5a1.6 1.6 0 0 1-1.6-1.4z"/></svg>` +
+      `<em></em><i></i>`;
+    weekEl.appendChild(cell);
+    return cell;
+  });
+  dayCells.forEach((cell, i) => {
+    const cp = cell.querySelector("clipPath");
+    cp.id = `ht-d${i}`;
+    cell.querySelector(".f").setAttribute("clip-path", `url(#ht-d${i})`);
   });
 
-  document.querySelectorAll(".quick").forEach((button) => {
-    button.onclick = () => {
-      const now = new Date();
-      const date = dateKey(now);
-      oma.addItem({
-        group: date,
-        fields: {
-          date,
-          time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
-          amount: Number(button.dataset.amount),
-          unit: "mL",
-          drink_type: selectedDrink
-        }
-      });
-      button.classList.remove("saved");
-      void button.offsetWidth;
-      button.classList.add("saved");
-      setTimeout(() => button.classList.remove("saved"), 760);
-    };
-  });
-
-  // Keep this visible in standalone: oma.sendMessage falls back to the clipboard outside a chat
-  // host, so the degraded channel is still a working feature.
-  //
-  // AWAITED, and disabled in flight: this crosses a bridge with a 10s deadline, and accepting more
-  // clicks meanwhile would queue duplicate target requests into someone's chat.
-  //
-  // A DEGRADED RESULT IS NOT A FAILURE. With no chat attached, sendMessage returns
-  // `{isError: true, degraded: "clipboard"}` after the runtime has copied the prompt and told the
-  // user. Only an unsoftened error belongs in the red strip.
-  const targetButton = document.getElementById("targetButton");
-  targetButton.onclick = async () => {
-    const goal = target();
-    const days = sevenDays(latestState.items);
-    const average = Math.round(days.reduce((sum, day) => sum + day.total, 0) / days.length);
-    const todayTotal = days.at(-1).total;
-    clearError();
-    targetButton.disabled = true;
-    try {
-      const result = await oma.sendMessage(
-        `Help me set a sensible daily hydration target. My current target is ${goal} mL, today I have logged ${todayTotal} mL, and my 7-day average is ${average} mL/day. Please ask about the factors that matter (such as body size, activity, climate, diet, pregnancy, and relevant health conditions or medications), then suggest a practical target in mL and explain the reasoning briefly.`
-      );
-      if (result && result.isError === true && !result.degraded) showError(localizeText("Couldn't reach the assistant — try again."));
-    } catch (error) {
-      showError(String(error?.message || error || localizeText("Couldn't reach the assistant — try again.")));
-    } finally {
-      targetButton.disabled = false;
-    }
-  };
-
-  const UI_COPY = {
-    "DAILY INTAKE": "每日饮水",
-    "Hydration tally": "饮水记录",
-    "One-tap water tracking": "一键记录饮水",
-    "Set my target": "设置我的目标",
-    "Today": "今天",
-    "Goal": "目标",
-    "Progress": "进度",
-    "7-day avg": "7 日平均",
-    "DAILY PROGRESS": "每日进度",
-    "Daily progress": "每日进度",
-    "Every pour counts": "每一口都算数",
-    "Fresh start": "新的开始",
-    "Ready for your first sip?": "准备好喝第一口了吗？",
-    "Small pours add up. Choose a drink, then tap an amount to begin.": "一点点积累也很重要。选择饮品，再点击金额开始记录。",
-    "Choose a drink, then tap an amount to begin.": "选择饮品，再点击金额开始记录。",
-    "Water": "水",
-    "Tea": "茶",
-    "Coffee": "咖啡",
-    "Last 7 days": "过去 7 天",
-    "Daily intake against target": "每日饮水与目标",
-    "Hit your target to begin a streak.": "达到目标后就能开始连续记录。",
-    "Today’s pours": "今天的饮水",
-    "Newest first · tap × to correct a log": "最新记录在前 · 点击 × 修正记录",
-    "Nothing logged yet — choose a drink and make your first pour.": "还没有记录，选择一种饮品并记录第一口吧。",
-    "Daily target reached": "已达到今日目标",
-    "Right on target — nicely done": "刚好达标，做得很好。",
-    "Goal complete. Keep sipping naturally if you’re thirsty.": "目标完成了，口渴时继续自然补水就好。",
-    "One more good pour could close the gap.": "再喝一杯就快达标了。",
-    "Small pours add up — keep your rhythm going.": "小口补水也会累积，继续保持节奏。",
-    "A strong start": "开了个好头",
-    "Consistency looks good on you": "稳定坚持很适合你",
-    "Time not set": "未设置时间",
-    "Delete this log": "删除这条记录",
-    "Today’s hydration overview": "今日饮水概览",
-    "Drink type": "饮品类型",
-    "Quick add": "快速添加",
-    "Logged ✓": "已记录 ✓",
-    "Goal hits over the last seven days": "过去七天的目标完成情况",
-    "log": "条记录",
-    "days": "天",
-    "day": "天",
-    "logs": "条记录",
-    "Couldn't reach the assistant — try again.": "没能联系上助手，请重试。"
-  };
-  const UI_COPY_ZH = Object.fromEntries(Object.entries(UI_COPY).map(([en, zh]) => [zh, en]));
-  const isZhUi = () => locale().toLowerCase().startsWith("zh");
-  const localizeText = (value) => {
-    const zh = isZhUi();
-    let next = (zh ? UI_COPY : UI_COPY_ZH)[value] || value;
-    if (zh) {
-      next = next.replace(/^(\d+) days?$/i, "$1 天");
-      next = next.replace(/^(\d+) logs?$/i, "$1 条记录");
-      next = next.replace(/^(\d+) mL beyond your goal$/i, "超出目标 $1 mL");
-      next = next.replace(/^(\d+)% complete$/i, "已完成 $1%");
-      next = next.replace(/^(\d+) mL to go$/i, "还差 $1 mL");
-      next = next.replace(/^([\d,]+) of ([\d,]+) millilitres, (\d+) percent$/i, "$1 / $2 mL，$3%");
-      next = next.replace(/^Log (\d+) millilitres$/i, "记录 $1 mL");
-    }
-    return next;
-  };
-  function applyUiLocale() {
-    const zh = isZhUi();
-    document.documentElement.lang = zh ? "zh-CN" : "en";
-    document.title = zh ? "饮水记录" : "Hydration Tally";
-    document.querySelectorAll("body *:not(script):not(style)").forEach((element) => {
-      for (const node of element.childNodes) {
-        if (node.nodeType !== Node.TEXT_NODE) continue;
-        const raw = node.nodeValue || "";
-        const trimmed = raw.trim();
-        if (!trimmed) continue;
-        const translated = localizeText(trimmed);
-        if (translated !== trimmed) node.nodeValue = raw.replace(trimmed, translated);
-      }
-      for (const attribute of ["aria-label", "title", "placeholder"]) {
-        const value = element.getAttribute(attribute);
-        if (!value) continue;
-        const translated = localizeText(value);
-        if (translated !== value) element.setAttribute(attribute, translated);
-      }
+  function renderWeek(m) {
+    const wd = new Intl.DateTimeFormat(loc(), { weekday: "short" });
+    const full = new Intl.DateTimeFormat(loc(), { weekday: "long", month: "short", day: "numeric" });
+    // Mini glass: empty at y=35, goal at y=9 (same proportions as the big one).
+    m.past.forEach((x, i) => {
+      const cell = dayCells[i];
+      const y = Math.max(3, 35 - (x.total / m.goal) * 26);
+      const f = cell.querySelector(".f");
+      f.setAttribute("y", y.toFixed(1));
+      f.setAttribute("height", (35 - y).toFixed(1));
+      const gl = cell.querySelector(".gl");
+      gl.setAttribute("y1", "9");
+      gl.setAttribute("y2", "9");
+      cell.classList.toggle("hit", x.total >= m.goal);
+      cell.classList.toggle("none", x.total === 0);
+      cell.querySelector("em").textContent = x.total ? `${(x.total / 1000).toFixed(1)} L` : "—";
+      cell.querySelector("i").textContent = wd.format(x.d);
+      cell.title = T().dayTitle(full.format(x.d), num(x.total));
     });
+    document.getElementById("weekLine").textContent = m.avg ? T().weekLine(num(m.avg), m.hits) : "";
+    const st = document.getElementById("streak");
+    st.textContent = "";
+    const b = document.createElement("span");
+    b.className = m.streak ? "k-badge info" : "k-badge";
+    b.textContent = m.streak ? T().streak(m.streak) : T().noStreak;
+    st.appendChild(b);
   }
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both already framed by the host, so the kit draws no card.
-  if (oma.standalone) document.body.classList.add("standalone");
+  // ── today's pours ───────────────────────────────────────────────────────────────────────
+  const ICON = {
+    water: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8c2.6 3.3 4.2 5.5 4.2 7.7a4.2 4.2 0 1 1-8.4 0c0-2.2 1.6-4.4 4.2-7.7Z"/></svg>`,
+    tea: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 6h9v3.5a4 4 0 0 1-4 4h-1a4 4 0 0 1-4-4z"/><path d="M11.5 7.2h.8a1.7 1.7 0 0 1 0 3.4h-1.1"/><path d="M6 2.2c.6.7-.6 1.3 0 2"/></svg>`,
+    coffee: `<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5h8.5l-.9 8.2a1 1 0 0 1-1 .8H4.9a1 1 0 0 1-1-.8z"/><path d="M2.4 3h9.7"/><path d="M4 8.3h6.5"/></svg>`
+  };
 
+  function renderList(m) {
+    const list = document.getElementById("list");
+    list.textContent = "";
+    document.getElementById("pourCount").textContent = m.todayRows.length ? T().count(m.todayRows.length) : "";
+    if (!m.todayRows.length) {
+      const p = document.createElement("li");
+      p.className = "empty";
+      p.textContent = T().empty;
+      list.appendChild(p);
+      return;
+    }
+    for (const r of m.todayRows) {
+      const li = document.createElement("li");
+      li.className = "row";
+      // A new pour's row glows for a moment, then fades (the tint's transition does the fade).
+      if (r.id && deleting.has(r.id)) li.classList.add("going");
+      if (r.fresh && performance.now() - r.fresh < 900) {
+        li.classList.add("fresh");
+        setTimeout(() => li.classList.remove("fresh"), 900 - (performance.now() - r.fresh));
+      }
+      li.innerHTML = ICON[drinkKind(r.fields.drink_type)];
+      const nm = document.createElement("span");
+      nm.className = "nm";
+      nm.textContent = drinkName(r.fields.drink_type);
+      if (r.fields.time) {
+        const tm = document.createElement("span");
+        tm.className = "tm";
+        tm.textContent = r.fields.time;
+        nm.appendChild(tm);
+      }
+      const amt = document.createElement("span");
+      amt.className = "amt";
+      const unit = String(r.fields.unit || "mL");
+      amt.textContent = `${num(Number(r.fields.amount) || 0)} ${unit}`;
+      const del = document.createElement("button");
+      del.type = "button";
+      del.className = "del";
+      del.textContent = "×";
+      del.setAttribute("aria-label", T().del(amt.textContent, nm.firstChild.textContent));
+      del.title = del.getAttribute("aria-label");
+      if (!r.id) del.disabled = true;
+      del.onclick = () => removePour(r.id);
+      li.append(nm, amt, del);
+      list.appendChild(li);
+    }
+  }
+
+  // ── render ──────────────────────────────────────────────────────────────────────────────
+  let lastLevel = null;
+
+  function render(state, opts = {}) {
+    latest = state;
+    const m = model(state);
+    const L = T();
+    const pct = Math.round((m.total / m.goal) * 100);
+
+    document.getElementById("dateLine").textContent =
+      new Intl.DateTimeFormat(loc(), { weekday: "long", month: "long", day: "numeric" }).format(m.t0);
+    setTotal(m.total, opts.pour);
+    document.getElementById("ofLine").textContent = L.of(num(m.goal), pct);
+
+    const status = document.getElementById("status");
+    status.textContent = "";
+    if (m.total >= m.goal) {
+      const b = document.createElement("span");
+      b.className = "k-badge info";
+      b.textContent = L.reached;
+      status.appendChild(b);
+      if (m.total > m.goal) status.append(L.over(num(m.total - m.goal)));
+    } else if (m.total > 0) {
+      status.textContent = L.toGo(num(m.goal - m.total));
+    } else {
+      status.textContent = L.fresh;
+    }
+
+    const y = levelY(m.total, m.goal);
+    if (y !== lastLevel) {
+      document.getElementById("level").style.transform = `translateY(${y.toFixed(2)}px)`;
+      if (opts.pour && lastLevel != null && !reduced()) {
+        const surf = document.getElementById("surf");
+        surf.classList.remove("slosh");
+        void surf.getBBox();
+        surf.classList.add("slosh");
+        const stream = document.getElementById("stream");
+        stream.setAttribute("d", `M80 -26V${y.toFixed(1)}`);
+        stream.classList.remove("go");
+        void stream.getBBox();
+        stream.classList.add("go");
+      }
+      lastLevel = y;
+    }
+    const oldestFirst = [...m.todayRows].reverse();
+    drawLayers(oldestFirst, m.goal);
+    drawTicks(m.goal);
+    document.getElementById("glassSvg").setAttribute("aria-label", L.glass(num(m.total), num(m.goal), pct));
+
+    renderWeek(m);
+    renderList(m);
+  }
+
+  // ── copy that doesn't change with data ─────────────────────────────────────────────────
+  function applyCopy() {
+    const L = T();
+    document.documentElement.lang = isZh() ? "zh-CN" : "en";
+    document.title = isZh() ? "饮水记录" : "Hydration Tally";
+    for (const el of document.querySelectorAll("[data-t]")) el.textContent = L[el.dataset.t];
+    document.getElementById("drinks").setAttribute("aria-label", L.drinkGroup);
+    syncPourLabels();
+  }
+  let selectedDrink = "water";
+  function syncPourLabels() {
+    for (const b of document.querySelectorAll(".pbtn")) {
+      b.setAttribute("aria-label", T().pourLabel(b.dataset.amount, T()[selectedDrink]));
+    }
+  }
+
+  // ── actions ─────────────────────────────────────────────────────────────────────────────
   const errorStrip = document.getElementById("errorStrip");
-  const errorText = document.getElementById("errorText");
   let errorTimer = null;
-  function showError(message) {
+  function showError(msg) {
     clearTimeout(errorTimer);
-    errorText.textContent = message;
+    errorStrip.textContent = msg;
     errorStrip.hidden = false;
     errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
   }
-  function clearError() {
-    clearTimeout(errorTimer);
-    errorStrip.hidden = true;
+
+  for (const chip of document.querySelectorAll("#drinks .k-chip")) {
+    chip.onclick = () => {
+      selectedDrink = chip.dataset.drink;
+      for (const c of document.querySelectorAll("#drinks .k-chip")) {
+        c.classList.toggle("on", c === chip);
+        c.setAttribute("aria-pressed", String(c === chip));
+      }
+      syncPourLabels();
+    };
   }
 
-  oma.ready((state) => {
-    render(state);
-    applyUiLocale();
-    // App Store apps install EMPTY — sample data lives only in the oma-fixtures block (store preview).
-  });
-  oma.onChange((state) => { render(state); applyUiLocale(); });
-  oma.onPrefChange((change) => {
-    if (change.key === "daily_target_ml" || change.key === "locale") {
-      render(latestState);
-      applyUiLocale();
+  for (const btn of document.querySelectorAll(".pbtn")) {
+    btn.onclick = async () => {
+      const now = new Date();
+      const date = keyOf(now);
+      const fields = {
+        date,
+        time: `${pad(now.getHours())}:${pad(now.getMinutes())}`,
+        amount: Number(btn.dataset.amount),
+        unit: "mL",
+        drink_type: selectedDrink
+      };
+      const p = { tok: ++tokSeq, at: performance.now(), id: null, fields, seen: new Set(latest.items.map((it) => it.id)) };
+      pending.push(p);
+      render(latest, { pour: true });
+      let ack = null;
+      try {
+        ack = await oma.addItem({ group: date, fields });
+      } catch (e) {
+        ack = null;
+      }
+      const at = pending.indexOf(p);
+      if (ack && ack.ok !== false && ack.id) {
+        p.id = ack.id;
+        if (latest.items.some((it) => it.id === ack.id) && at >= 0) pending.splice(at, 1);
+        render(latest);                       // the row now has an id, so it can be deleted
+      } else {
+        if (at >= 0) pending.splice(at, 1);
+        showError(T().errSave);
+        render(latest);
+      }
+    };
+  }
+
+  async function removePour(id) {
+    if (!id || deleting.has(id)) return;
+    deleting.add(id);
+    render(latest);
+    let ack = null;
+    try {
+      ack = await oma.deleteItem(id);
+    } catch (e) {
+      ack = null;
     }
+    deleting.delete(id);
+    if (ack && ack.ok !== false) hidden.add(id);
+    render(latest);
+  }
+
+  // AWAITED and disabled in flight: sendMessage crosses a bridge with a deadline, and extra clicks
+  // meanwhile would queue duplicate requests into the chat. A degraded result (no chat attached:
+  // the runtime copied the prompt to the clipboard and said so) is not a failure.
+  const askBtn = document.getElementById("askBtn");
+  askBtn.onclick = async () => {
+    const m = model(latest);
+    askBtn.disabled = true;
+    try {
+      const r = await oma.sendMessage(T().prompt(m.goal, m.total, m.avg));
+      if (r && r.isError === true && !r.degraded) showError(T().errAsk);
+    } catch (e) {
+      showError(T().errAsk);
+    } finally {
+      askBtn.disabled = false;
+    }
+  };
+
+  // ── mount ───────────────────────────────────────────────────────────────────────────────
+  if (oma.standalone) document.body.classList.add("standalone");
+  oma.ready((s) => {
+    applyCopy();
+    render(s);
+    // Transitions switch on only after the first paint: opening the app shows the level where it
+    // is, the spring is saved for the pour.
+    requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector(".ht").classList.add("live")));
+  });
+  oma.onChange((s) => {
+    reconcile(s);
+    render(s);
+  });
+  oma.onPrefChange((c) => {
+    if (c.key === "locale") applyCopy();
+    if (c.key === "locale" || c.key === "daily_target_ml") render(latest);
   });
 </script>
 </body>

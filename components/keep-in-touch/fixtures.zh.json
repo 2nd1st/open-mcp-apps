@@ -1,0 +1,155 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "5790a419-f7ef-48cc-abf5-16e5390d558c",
+      "group": "大学同学",
+      "position": 1,
+      "fields": {
+        "person": "李想",
+        "relationship": "大学同学",
+        "last_contact": "2026-06-15",
+        "next_contact": "2026-07-15",
+        "channel": "微信",
+        "context": "他刚去深圳创业，问问第一轮融资谈得怎么样",
+        "priority": "high"
+      },
+      "version": 1
+    },
+    {
+      "id": "8a9b81d8-9865-42e4-a5ea-4d339f042363",
+      "group": "前同事",
+      "position": 1,
+      "fields": {
+        "person": "王姐",
+        "relationship": "前同事",
+        "last_contact": "2026-06-01",
+        "next_contact": "2026-07-31",
+        "channel": "微信",
+        "context": "她的新书出版了，买一本请她签名",
+        "priority": "medium"
+      },
+      "version": 1
+    },
+    {
+      "id": "688376cd-e624-4a63-a4d8-21ea63d5a2c5",
+      "group": "家人",
+      "position": 1,
+      "fields": {
+        "person": "外婆",
+        "relationship": "家人",
+        "last_contact": "2026-07-27",
+        "next_contact": "2026-08-03",
+        "channel": "视频通话",
+        "context": "问问换了降压药之后头还晕不晕",
+        "priority": "high"
+      },
+      "version": 1
+    },
+    {
+      "id": "2e30a4df-e5aa-4ff4-a5cf-1ac67394fcd0",
+      "group": "大学同学",
+      "position": 2,
+      "fields": {
+        "person": "林晓",
+        "relationship": "大学同学",
+        "last_contact": "2026-07-05",
+        "next_contact": "2026-08-04",
+        "channel": "微信",
+        "context": "她在准备考公，发几句鼓励",
+        "priority": "medium"
+      },
+      "version": 1
+    },
+    {
+      "id": "dfb916c4-7f49-4303-ada3-fa62c598cced",
+      "group": "家人",
+      "position": 2,
+      "fields": {
+        "person": "妈妈",
+        "relationship": "家人",
+        "last_contact": "2026-08-03",
+        "next_contact": "2026-08-06",
+        "channel": "电话",
+        "context": "问周末回不回家吃饭",
+        "priority": "high"
+      },
+      "version": 1
+    },
+    {
+      "id": "5fa51364-fc87-4f9a-a4cf-f584acb5d960",
+      "group": "同事",
+      "position": 1,
+      "fields": {
+        "person": "小周",
+        "relationship": "同事",
+        "last_contact": "2026-07-23",
+        "next_contact": "2026-08-08",
+        "channel": "约饭",
+        "context": "他转岗到数据组，问问适不适应",
+        "priority": "medium"
+      },
+      "version": 1
+    },
+    {
+      "id": "7dd219b7-c6e7-43c3-a097-eb6c244d6e17",
+      "group": "导师",
+      "position": 1,
+      "fields": {
+        "person": "陈老师",
+        "relationship": "导师",
+        "last_contact": "2026-05-20",
+        "next_contact": "2026-08-18",
+        "channel": "邮件",
+        "context": "论文终于投出去了，告诉她结果并道谢",
+        "priority": "medium"
+      },
+      "version": 1
+    },
+    {
+      "id": "16e22fd7-a68f-4db5-a3a6-5b6b1d21bc8e",
+      "group": "家人",
+      "position": 3,
+      "fields": {
+        "person": "表哥",
+        "relationship": "家人",
+        "last_contact": "2026-07-18",
+        "next_contact": "2026-08-17",
+        "channel": "电话",
+        "context": "问问孩子上小学学区的事",
+        "priority": "low"
+      },
+      "version": 1
+    },
+    {
+      "id": "849bb56b-63e6-4734-a07d-d4d472168ba1",
+      "group": "发小",
+      "position": 1,
+      "fields": {
+        "person": "阿杰",
+        "relationship": "发小",
+        "last_contact": "2026-07-10",
+        "next_contact": "2026-08-24",
+        "channel": "微信",
+        "context": "国庆回老家约一顿烧烤",
+        "priority": "low"
+      },
+      "version": 1
+    },
+    {
+      "id": "714565fd-d808-4305-a372-596857210de8",
+      "group": "邻居",
+      "position": 1,
+      "fields": {
+        "person": "张阿姨",
+        "relationship": "邻居",
+        "last_contact": "2026-07-30",
+        "next_contact": "2026-08-29",
+        "channel": "当面",
+        "context": "还她的保温桶，谢谢上次的饺子",
+        "priority": "low"
+      },
+      "version": 1
+    }
+  ]
+}

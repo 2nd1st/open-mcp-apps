@@ -36,7 +36,7 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.7.2 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.8.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
@@ -174,8 +174,7 @@ Every setting is an environment variable, set in the `env` block of your host's 
       "args": ["-y", "@2nd1st/open-mcp-apps"],
       "env": {
         "OMA_VIEWER": "1",
-        "PORT": "8787",
-        "OMA_DYNAMIC_TOOLS": "0"
+        "PORT": "8787"
       }
     }
   }
@@ -186,8 +185,13 @@ Every setting is an environment variable, set in the `env` block of your host's 
 |---|---|---|
 | `OMA_VIEWER` | `1` | The browser viewer on loopback. `0` doesn't start it at all. |
 | `PORT` | `8787` | Where the viewer listens. |
-| `OMA_DYNAMIC_TOOLS` | `0` | `1` also publishes one `open_<name>` tool per saved app. Off by default because it costs prompt cache — and one approval prompt per app. |
 | `OMA_DB` | per-user store | Path to the SQLite store. Set it to isolate a store. |
+| `OMA_APP_STORE_DIRS` | — | Extra App Store sources: folders laid out like `components/` (one folder per app), separated by `:` (`;` on Windows). Searched before the built-in apps; the first source with a name wins. |
+
+**An app's own tool.** Every app opens through `open_app`. To give one app its own `open_<name>`
+tool as well, pin it: **Settings → Installed → the app → Own tool**. The tool list changes only
+when you pin, unpin or delete a pinned app, and Claude.ai and ChatGPT show the new tool after you
+refresh the connector's tool list.
 
 **Where your data lives.** The whole store is one SQLite file, `open-mcp-apps.db`, in
 `~/Library/Application Support/open-mcp-apps/` (macOS), `%APPDATA%\open-mcp-apps\` (Windows), or
@@ -380,8 +384,8 @@ gets) — both resolve through the package `exports`.
 
 **[`RUNTIME.md`](RUNTIME.md) is the contract** — the `window.oma` API in both modes, what a
 sandboxed app can still do, and the traps that only bite authors who aren't the AI. It carries a
-version (`oma.contract`) and `test/runtime-contract.mjs` pins it to the two runtimes' real
-surfaces, so it can't drift from them silently.
+version, and `test/runtime-contract.mjs` pins it to the two runtimes' real surfaces, so it can't
+drift from them silently.
 
 ## Security model
 
@@ -416,7 +420,7 @@ for shared/published apps later, where review + sandboxing arrive together. See
 |---|---|
 | Updated, but the host still shows the old behaviour | The host keeps its old server process on the old data until **fully quit** (Cmd-Q, not just closing the window). |
 | Approval dialogs came back after a Claude Desktop auto-update | A Desktop auto-update occasionally resets these decisions (upstream [#56954](https://github.com/anthropics/claude-code/issues/56954), closed 2026-06-23 as *not planned*) — no fix is coming from that issue, so just re-allow. |
-| One approval prompt per app | `OMA_DYNAMIC_TOOLS=1` is in your host entry — either you put it there, or you installed between 2026-07-28 and 2026-08-16, when the installer set it for Claude Desktop and Claude Code as a workaround. `node install.mjs --check` calls such an entry `stale`; re-running the installer removes that one key and keeps the rest of your env. See [Configuration](#configuration). |
+| One approval prompt per app | Each app you pinned (**Settings → Installed → the app → Own tool**) has its own `open_<name>` tool, and a host asks once per tool. Unpin the ones you don't need. An `OMA_DYNAMIC_TOOLS=1` left in your host entry from 2026-07-28–2026-08-16 does nothing any more; `node install.mjs --check` calls it `stale` and re-running the installer removes that one key. See [Configuration](#configuration). |
 | No viewer link, or the viewer is somebody else's | The port is taken by a non-open-mcp-apps process. Set `PORT` to something free. |
 | A widget loses its data after a page refresh (ChatGPT web) | Known, mitigation shipped, live re-test pending — [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md). |
 | Widget clicks can update but not add (Codex desktop) | Blocked host-side. The umbrella request [openai/codex#28912](https://github.com/openai/codex/issues/28912) closed as completed on 2026-08-05, but that one is an `enhancement`, not this defect: the matching `bug`, [#30092](https://github.com/openai/codex/issues/30092), was still open on 2026-08-16. Update Codex and try, but expect it to still bite. |
@@ -427,7 +431,7 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server; single `open_app` path (per-app `open_<name>` tools off unless `OMA_DYNAMIC_TOOLS=1`) |
+| `src/server.mjs` | stdio MCP server; single `open_app` path (plus an `open_<name>` tool for each app the user pins) |
 | `src/http.mjs` | `/mcp` (stateless Streamable HTTP) + `/view/<name>` browser viewer, bound to `127.0.0.1` |
 | `src/store.mjs` | SQLite: items + app registry + `change_event` ledger (idempotent, OCC) |
 | `src/shell-runtime.js` | browser runtime injected into every app (`window.oma`) |
@@ -438,10 +442,10 @@ for shared/published apps later, where review + sandboxing arrive together. See
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 453 assertions over real stdio — incl. runtime app creation
-node test/http-smoke.mjs     #  81 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/server-smoke.mjs   # 471 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  87 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
-node test/seed-smoke.mjs     #  22 assertions on the seed / design-kit pipeline
+node test/seed-smoke.mjs     #  26 assertions on the seed / design-kit pipeline
 node test/files-smoke.mjs    #  41 assertions on the per-app file store (chunked uploads, GC races)
 ```
 

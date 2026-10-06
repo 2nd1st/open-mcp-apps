@@ -27,10 +27,10 @@
 // correct code is the failure mode this file exists to prevent, so the state shape is pinned to
 // the runtime's own initialiser now (runtime-contract.mjs §2b).
 //
-// The 19 PORTABLE names are declared required and the 3 direct-only names OPTIONAL, which is the
+// The 17 PORTABLE names are declared required and the 8 direct-only names OPTIONAL, which is the
 // literal truth of the two runtimes: an app running behind the sandboxed runner reads `undefined`
-// for `embed`, `openLink` and `viewBase` (RUNTIME.md §4, "Reading one of these in a sandboxed app
-// gives undefined"). Optional members make the compiler ask for the feature-detection the prose
+// for `embed`, `openLink`, `viewBase`, `tools` and the four display names (RUNTIME.md §4, "Reading one of
+// these in a sandboxed app gives undefined"). Optional members make the compiler ask for the feature-detection the prose
 // asks for.
 
 export interface OmaItem {
@@ -148,9 +148,7 @@ export interface OmaEmbedOptions {
 }
 
 export interface Oma {
-  // ── the portable surface (19) — present in BOTH runtimes ────────────────────────────────────
-  /** This contract's version. Adding a name does not bump it; feature-detect instead. */
-  readonly contract: number;
+  // ── the portable surface (17) — present in BOTH runtimes ────────────────────────────────────
   readonly state: OmaState;
   /** cb(state) once connected AND the first data has arrived — START HERE. Released after a
    *  deadline with an empty snapshot if the host never delivers, so it always fires. */
@@ -190,16 +188,42 @@ export interface Oma {
 
   /** true in a plain browser page (no chat attached). */
   readonly standalone: boolean;
-  /** Arguments of the call that mounted this widget. */
-  readonly toolInput: Record<string, unknown> | null;
 
-  // ── direct mode only (3) — `undefined` behind the sandboxed runner ──────────────────────────
+  // ── direct mode only (8) — `undefined` behind the sandboxed runner ──────────────────────────
   /** Mount another app inside this one (depth 1). `oma.embed("@live", …)` is the reserved name. */
   embed?(name: string, opts: OmaEmbedOptions): Promise<unknown>;
   /** Ask the host to open a URL. Resolves {ok:false} on a host that will not, never throws. */
   openLink?(url: string): Promise<{ ok: boolean }>;
   /** Base path for app→app links, default "/view/". */
   readonly viewBase?: string;
+  /** Where the app is shown now; also stamped on `<html data-oma-display>`. */
+  readonly display?: "inline" | "fullscreen";
+  /** The modes this host will switch to. */
+  readonly displayModes?: ReadonlyArray<"inline" | "fullscreen">;
+  /** Ask the host for a display mode (from a click). `mode` is where the host actually put the app. */
+  requestDisplay?(mode: "inline" | "fullscreen"): Promise<{ ok: boolean; mode: string }>;
+  /** Fires on every display change, including the host's own expand/close controls. */
+  onDisplayChange?(cb: (mode: string) => void): void;
+  /** The app's own tools, which the AI calls by name (ext-apps "App-provided tools"). This page
+   *  only — never persisted. */
+  readonly tools?: OmaTools;
+}
+
+/** One app-provided tool. `inputSchema` is plain JSON Schema for an object (`properties`,
+ *  `required`); `run` returns a string, any JSON value, or an MCP CallToolResult, and a throw is
+ *  answered to the AI as a tool error carrying its message. */
+export interface OmaToolDef<I = Record<string, unknown>> {
+  name: string;
+  title?: string;
+  description?: string;
+  inputSchema?: { properties?: Record<string, unknown>; required?: string[]; [key: string]: unknown };
+  annotations?: { readOnlyHint?: boolean; destructiveHint?: boolean; idempotentHint?: boolean; [key: string]: unknown };
+  run(input: I): unknown;
+}
+
+export interface OmaTools {
+  /** Register (or replace, by name) a tool; returns the function that removes it. */
+  register<I = Record<string, unknown>>(def: OmaToolDef<I>): () => void;
 }
 
 declare global {

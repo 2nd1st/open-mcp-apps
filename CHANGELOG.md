@@ -7,6 +7,186 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.8.0 — 2026-10-06
+
+Breaking changes in this wave, for anyone embedding the engine or carrying apps across:
+
+- **`KIT_CSS` → `BASE_CSS`, `kitCss` → `baseCss`.** The kit is gone; the engine injects only the
+  host tokens and a base layer (reset, fonts, `[hidden]`, safe-area defaults). The export and the
+  `composeChildDoc` / `composePreviewDoc` option are renamed with it.
+- **Manifest `stage` is removed.** An app that places the `@live` brick says so with
+  `manifest.live_frame: true`, which replaces `stage.display`.
+- **Runtime contract 4: data is opt-in.** An app reads its collection only once it subscribes with
+  `oma.onChange` (see below). An app that read `state.items` in `ready()` without subscribing now
+  gets no rows.
+- **`oma.updateModelContext`, `oma.contract` and `oma.toolInput` are removed.** No app used them;
+  `screen_read` now tells the AI what the user is looking at.
+- **`promote_app` is removed, and with it the visual/app split.** A manifest's `kind` is no longer
+  read (it still saves, ignored like any unknown key), `list_apps` no longer takes `kind`, and
+  `save_app` / `edit_app` no longer suggest one. Since data is opt-in, the split meant nothing.
+- **`get_data_version` is app-only**: it carries `_meta.ui.visibility: ["app"]`, so the model no
+  longer sees it. Widgets poll it as before.
+- **`OMA_DYNAMIC_TOOLS` is removed.** No app gets its own `open_<name>` tool unless the user pins
+  it (see below). `createEngine`'s `dynamicTools` now means "honour pins" (default `true`); `false`
+  still means no per-app tools and a constant `tools/list`. `install.mjs` removes the old variable
+  from configs it wrote.
+- **The loader resource is renamed**: its `ui://` URI is now content-hashed. Every name it has had
+  (the original unhashed one, any earlier hash) still resolves to the current loader.
+- **Cross-account sharing** (deployments only): `createEngine` takes `caller`, `mounts` and
+  `sharing` (see `src/sharing.mjs`). With all three, `share` and `copy_app` are appended to
+  `tools/list` and `@owner/name` handles reach what other accounts shared. Without them nothing
+  changes. Shared writes are capped (rows per shared collection, writes per hour), shared deletes
+  always ask for confirmation, and an idempotency key never replays another
+  account's or another collection's write.
+- **Store schema v8**: a `principal` column on the ledger (which account wrote an event) and a
+  principal label table. Opening an older store migrates it forward.
+- **Store schema v9**: a `skill` column on apps and on their history (see below). Opening an older
+  store migrates it forward, every existing app and revision with no skill.
+- **Collection names beginning with `@` are reserved**, on every install — that prefix is the
+  shared namespace. New writes and declarations under such a name are refused
+  (`reserved_collection`); existing rows are untouched. Kept in the open-source engine on purpose,
+  so a store moves between a local install and a hosted one without a name changing meaning.
+
+**The App Store reads from more than one folder.** `OMA_APP_STORE_DIRS` names extra source
+folders, laid out like `components/` and separated by the platform path delimiter. They are searched
+before the built-in apps, and the first source that has a name wins it, so an outside store can
+replace a built-in app by shipping the same name. System apps (`settings`, `dashboard`,
+`app-store`) come only from the engine's own `components/`. Store apps are moving to their own
+repository, and `trip-planner`, `life` and `fleet` already live there: the built-in store now
+ships 22 apps.
+
+**An app can carry a skill: how an AI uses it.** An app is shared as a format, never with its keys,
+so what has to travel with it is its author's account of how it is worked — which collection gets
+what, on what schedule, what never to do. That is now a third slot beside `ui` and `manifest`:
+text in the Agent Skills `SKILL.md` format (frontmatter with a `description`, then the workflow;
+16,384 bytes at most). Only the meta rides the cheap surfaces — the skill's description becomes the
+app's description everywhere it is listed, and `open_app`, `install_from_app_store` and a
+`data_list` over one of the app's collections each add one line pointing at it — while the new tool
+`get_app_skill` returns the whole guide, headed, for an App Store or shared app, with whose words it
+is. `save_app` takes `skill` (omitted keeps it, `null` clears it), every checkpoint carries it, the
+App Store reads `<entry>/skill.md` (and counts it when deciding whether an update is available),
+`copy_app` copies it and `install-app.mjs --skill` pushes it. A copied skill keeps its author: the
+copy records who wrote it (`skill_from`, the first author even for a copy of a copy), and every
+surface names them — so another account's guide is never read as the user's own words — until the
+user rewrites it, which makes it theirs; restore and undo bring the author back with the text. `companion` and `competitor-weekly`
+used to carry their instructions for the AI inside `<meta name="description">`; each now ships them
+as a skill, and its description is a sentence for people again.
+
+**Apps can load libraries from the platform CDNs.** Every app may now load scripts, styles and fonts
+from cdnjs, jsDelivr, unpkg, `cdn.tailwindcss.com`, `code.jquery.com` and Google Fonts without
+declaring anything; `manifest.csp` and the user's own additions widen that as before. The loader
+now rebuilds the app document faithfully: external `<script src>` run in document order, each
+waiting for the one before, and `<title>`, the head's `<link>` / `<style>` and the `<html>` /
+`<body>` attributes come along. Before, external scripts and links were silently dropped. So an app
+can be written with React (UMD builds plus `htm`; there is no JSX compiler) or Tailwind. `save_app`
+no longer warns that external resources are banned and React unsupported; it names only origins
+the deployment does not allow. `createEngine({ csp: { base, extensible } })` sets the policy: a
+hosted plane passes `extensible: false` so the base is the whole statement, and a malformed base
+throws. `composePreviewDoc` takes the app's `csp` too (same shape as `composeChildDoc`), so a
+server-composed preview of a React, Tailwind or Google Fonts app no longer renders blank; without
+it the preview keeps its locked-down floor.
+
+**The guide is a contract, not a house style.** `get_app_guide` teaches the two ways to write an
+app (plain HTML, or React with `htm`), where libraries come from, laying out by width, display
+modes, safe areas and app tools. The house-style and app-shell prescriptions are gone: the host
+owns the structure, and the app keeps its own look.
+
+**Data is opt-in.** An app that subscribes with `oma.onChange` reads and writes its collection as
+before. One that never subscribes is a page: no collection reads, no polling, ready at once, and
+`open_app` says only `Opened "name".` instead of announcing an empty collection. Before, every
+widget bound a default collection and polled the host every 20 seconds, even a dice roller. The
+check runs after the app's own scripts, so a top-level subscription counts, and an app that
+subscribes later is read then.
+
+**Apps can go full screen.** The widget now declares both `inline` and `fullscreen` to the host.
+`oma.display` says where the app is shown now (also stamped on `<html data-oma-display>`, so CSS
+alone can adapt), `oma.displayModes` what the host offers, `oma.requestDisplay(mode)` asks for one
+from a click, and `oma.onDisplayChange(cb)` fires on every change, the host's own controls
+included. Both hosts' guidelines keep the inline card compact and put rich views in fullscreen;
+now an app can design for that split. In fullscreen the engine stops pinning `html` and `body` to
+their content height, so an app laid out on `height: 100%` fills the host's frame instead of
+collapsing to a strip. Sandboxed apps read these names as `undefined`.
+
+**Every card has a way into full screen.** When the host can go fullscreen, the runtime draws a
+40px bar above the app on the card: an "Open full screen" button top-left and the app's title.
+Space is reserved for it, so it never covers the app. It hides in fullscreen, where the host's own
+close control is the way back. It is part of the page, so the AI can press it too.
+
+**Safe areas.** `--oma-safe-top`, `--oma-safe-right`, `--oma-safe-bottom` and `--oma-safe-left` on
+`<html>` hold the larger of the host's reported `safeAreaInsets` and the device's
+`env(safe-area-inset-*)`, updated whenever the host's context changes, and `0px` where nothing is
+reported. Pad whatever must stay visible: in Claude's desktop fullscreen, the bottom inset is the
+chat input lying over the app.
+
+**Pin an app to give it its own tool.** In the settings app, Installed → an app → "Own tool" adds
+an `open_<name>` tool for that app, so the AI can open it directly; Claude.ai and ChatGPT show it
+after the connector's tool list is refreshed. Every other app opens through `open_app`.
+`tools/list` changes only when the user pins, unpins or deletes a pinned app, with one
+`list_changed` per batch, where before the opt-in variable gave every app a tool and moved the list
+on every save. A manifest cannot declare the pin.
+
+**An app can give the AI its own tools.** `oma.tools.register({ name, description, inputSchema,
+annotations, run })` declares something the app can do, and returns a function that unregisters it
+(at most 50 per app). Registrations live in the page only, and registering a name again replaces
+it. A host that asks a view for its tools gets them natively, through `tools/list` and
+`tools/call` with `list_changed` when the set changes (the ext-apps draft "App-provided tools").
+Everywhere else the AI reaches them through the screen relay below. Direct mode only: a tool's name
+and description are text the model reads, and in an unreviewed author's hands that is an injection
+channel.
+
+**The AI can see and use the app on screen.** `screen_read` returns what the user is looking at in
+the app they have open — its text, every control they could press or fill (each with a ref), and
+the app's own tools — and `screen_act` does what the user would do: press a control, fill or select
+a value, or call one of the app's tools. "Show me Thursday" becomes a tap in the app instead of a
+query beside it. The open widget receives the job over an app-only long poll (`screen_poll`), so it
+works on hosts that never hand a view's own tools to the model (claude.ai and ChatGPT, measured).
+It was an experiment behind `OMA_SCREEN=1`; it is now on for every engine and the flag is gone. The
+engine's own controls are out of its reach: the delete confirmation is not listed, cannot be found
+by label, and answers only a click the browser marks as the person's. Before that fix, the relay
+could press "Remove" in an app and then the card's "Delete", confirming a deletion nobody approved.
+The three tools add 2,568 bytes to `tools/list`.
+
+**Apps are meant to be small, and the engine says so.** An app that fits one `get_app` read
+(30,000 characters, the default read window) is one any AI sees whole and changes readily; a 173K
+app was measured being declined while a 17K rebuild of its useful part was edited without pause.
+`save_app` now adds a warning when the document is past that size, and `edit_app` adds it once, on
+the edit that crosses it. Nothing is refused, and an app built outside the store (`oma-asset:`) is
+not told. The guide's size advice changes with it: one app, one job; a bigger idea is several apps
+on the same collection.
+
+**An app reading its own data is no longer held to a model's page size.** `data_list` shrinks each
+page to the result budget (36,000 serialized characters), which exists because some hosts cut a
+long tool result before the model reads it. The widget runtime walks its collection through the
+same tool, so a 226-row, ~305K collection took 12 pages, the walk stopped at its 10-page cap, and
+the rows sorting last never reached the app. Every call the runtime makes now says, in the
+request's `_meta`, that the app is the reader (`"app.openmcp/reader": "app"`), and `data_list`
+then sizes the page for the app: up to 500,000 characters, so that collection arrives in one page.
+For the app the text channel carries the headline only, since a widget reads `structuredContent`.
+A call without the key gets exactly the page it got before. The key costs `tools/list` nothing. It is not a permission: a model that sends it only gets
+a bigger page into its own context. A host that drops `_meta` on the way leaves the app on the old
+page size: the walk takes more round trips, and `truncated` still marks a walk that hit the cap.
+`/rpc` passes `_meta` through as well, so the standalone viewer reads the same way.
+
+The same goes for files. `oma.files.read` walks `file_read`'s byte windows to the end, so a window
+sized for a model never lost a byte, only cost round trips: about 80 for a 2 MB image. `file_read`
+now sizes the window by the same reader key, so the app's read of that image takes a handful.
+
+**Store previews stay current, in two languages.** A store app's `<entry>/fixtures.json` can declare
+`as_of`, and every preview shifts each date in the sample data by the days between `as_of` and
+today, keeping the gaps between them. Sample data written in August no longer previews as an empty
+week in October. An `<entry>/fixtures.zh.json` beside it supplies Chinese sample data, and
+`preview_app_store_entry` takes `locale` (`en` or `zh`); fixtures without `as_of` are served
+unchanged. Twenty of the store apps were reworked at the same time: each now opens on the one view
+it is for, and the fixes include writes that failed silently on hosts without
+`crypto.randomUUID`, and user data that was run through the interface's translation table.
+
+**Fixes.** A request body split across network chunks in the middle of a multi-byte character no
+longer turns it into U+FFFD: any large non-ASCII request to `/mcp` or `/rpc` could arrive with a
+character garbled, and the body limit now counts bytes. The ↻ / ⚙ badge in a widget's corner no longer appears on hover over
+the app's own bottom-right button, or takes taps on touch screens while hidden. It shows only when
+a view loses its data, or always if the user sets it so, and keyboard focus still reaches it.
+`oma.openLink` in the browser viewer no longer reports failure for a tab it just opened.
+
 ## 0.7.2 — 2026-09-30
 
 **`destructiveHint` now answers for the user, not for the engine.** `data_update_item` and

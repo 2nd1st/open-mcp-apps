@@ -19,11 +19,11 @@ export {
   MAX_APP_FILE_BYTES, MAX_APP_FILE_COUNT,
   MAX_TOTAL_FILE_BYTES, MAX_TOTAL_FILE_COUNT,
 } from "./src/store.mjs";
-export { wrapApp, wrapLoader, TOKEN_FALLBACK_CSS, KIT_CSS } from "./src/shell.mjs";
+export { wrapApp, wrapLoader, TOKEN_FALLBACK_CSS, BASE_CSS } from "./src/shell.mjs";
 // The ONE sandbox/preview machine (write-set D): embedding shells compose preview documents
 // and enforcement from these instead of keeping hand-synced copies.
 export {
-  RUNNER_CSP, RUNNER_CSP_POLICY, TOKEN_NAMES, BRIDGE, kitStyle,
+  RUNNER_CSP, RUNNER_CSP_POLICY, TOKEN_NAMES, BRIDGE, baseStyle,
   composeChildDoc, composePreviewDoc, stubOmaScript, makeGuard, readFileParts,
 } from "./src/runner.mjs";
 export { openFileChannel } from "./src/files.mjs";

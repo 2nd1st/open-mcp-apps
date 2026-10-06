@@ -16,9 +16,5 @@
       },
       "strict": true
     }
-  },
-  "kind": "app",
-  "stage": {
-    "width": "column"
   }
 }

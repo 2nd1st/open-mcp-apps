@@ -4,8 +4,5 @@
     "locale",
     "week_start",
     "date_format"
-  ],
-  "stage": {
-    "width": "wide"
-  }
+  ]
 }

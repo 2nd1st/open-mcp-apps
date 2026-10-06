@@ -7,6 +7,7 @@
 // server.mjs / http.mjs / index.mjs keep importing them from there.
 
 import { z } from "zod";
+import { READER_META_KEY } from "./runtime-core.mjs";
 
 // Everything the engine itself does stays inside this store: reads, writes, files, the registry.
 // The ONE exception is a function body (call_function) — author-supplied code that runs with
@@ -134,13 +135,15 @@ const capsShape = z.object({
   cross_collection_read: z.boolean(), cross_collection_write: z.boolean(),
   settings_write: z.boolean(), read_source: z.boolean(),
   file_read: z.boolean(), file_write: z.boolean(),
+  // A shared app's reach: the `@owner/…` handles the runner pins every collection argument to.
+  collections: z.array(z.string()).optional(),
 });
 
 // Reserved settings groups (docs/settings-design.md §8): a group is an app name, so
 // these may never BE app names. Blocks naming only — not writes into those groups.
 // The last three are not vocabulary hygiene, they are a brick-the-server guard, and the mine is
-// live: install.mjs turns OMA_DYNAMIC_TOOLS on for every Anthropic host, and a per-app tool is
-// named `open_${name.replaceAll("-","_")}`. So an app called `app` registers `open_app`
+// live: a pinned app gets a per-app tool named `open_${name.replaceAll("-","_")}`. So an app
+// called `app` would register `open_app`
 // — the static opener's own name — the SDK throws on the duplicate, createEngine throws, and the
 // server no longer starts. At that point `delete_app` cannot be reached either: the only way
 // out is editing SQLite by hand. `app` collides with the loader URI the same way.
@@ -177,7 +180,7 @@ const SHARED_PREFS = [
   { key: "confirm_delete", type: "boolean", label: "Confirm before delete", default: true,
     desc: "Apps ask before deleting anything." },
   { key: "system_badge", type: "enum", label: "Widget refresh button", default: "hover",
-    options: ["hover", "always"], desc: "The small ↻ in a widget's corner (D-13): appears on hover by default, or stays visible." },
+    options: ["hover", "always"], desc: "The small ↻ ⚙ in a widget's corner (D-13): by default it appears only when a view loses its data, so it never covers the app's own controls; or keep it visible." },
   { key: "proactivity", type: "enum", label: "AI proactivity", default: "on-request",
     options: [{ value: "proactive", label: "Proactive — act when it fits" }, { value: "on-request", label: "On request — only when asked" }],
     desc: "Whether the AI opens or builds apps on its own when they fit, or only when you ask. Usually set during onboarding; takes effect after restarting the chat app." },
@@ -235,56 +238,26 @@ const defaultCollectionFor = (comp) => {
   return comp.name ?? null;
 };
 
-// -------------------------------------------------------------------------- stage width track
-/** Which width track a stored app runs on — the kit's `.k-stage` reads it off the body class
- *  (components/_system.css), and this is the ONE place the answer is computed.
+// -------------------------------------------------------------------------- live frame
+/** Does this app declare itself a LIVE FRAME — a surface whose job is showing OTHER apps (it
+ *  places the `@live` brick)? `manifest.live_frame: true`.
  *
- *  `stage.width` is an optional manifest field, and optional in the strong sense: an app that
- *  says nothing gets NO class, because `column` is the kit's base rule. So an un-migrated app's
- *  document is unchanged byte for byte, which is what makes this whole contract safe to ship
- *  under a fleet that has not adopted it.
+ *  It decides two things, both because the app is the frame and not the picture:
+ *    · an open_* door does NOT move the live pointer for it. The pointer means "the app the AI
+ *      last put in front of the user", and a frame shows whatever the pointer names — recording it
+ *      would aim the wall at itself, and the `@live` brick inside it would mount the wall inside
+ *      the wall;
+ *    · the browser viewer serves it bare (http.mjs `/view`, `?chrome=1` brings the bar back): a
+ *      wall on a spare tablet is a screen the app was written to own, edge to edge.
+ *  The engine does not guess it from anything (an app that embeds `@live` and does not declare is
+ *  simply an app that also gets pointed at, which is a choice its author is allowed to make — the
+ *  brick's own check in shell-runtime.js is what keeps that from nesting).
  *
- *  UNKNOWN VALUES FALL BACK RATHER THAN FAIL, the same way the store IGNORES a manifest key it
- *  does not know (store.mjs manifestError): a document written for a newer engine must still open
- *  on an older one, so a fourth track invented later reads as `column` here instead of as a
- *  broken page.
- *
- *  The two system apps carry no manifest.json at all (seed reads components/<name>/ and finds
- *  none) and both are the rail-and-main shape the `fluid` track exists for, so their answer is
- *  written here rather than invented at each call site. It is inert until they adopt `.k-stage` —
- *  every rule keyed on the body class also requires that element. */
-const SYSTEM_STAGE_WIDTH = { settings: "fluid", "app-store": "fluid" };
-const STAGE_WIDTHS = new Set(["column", "wide", "fluid"]);
-const stageWidthFor = (comp) => {
-  if (!comp) return null;
-  if (comp.manifest) {
-    try {
-      const w = JSON.parse(comp.manifest)?.stage?.width;
-      if (STAGE_WIDTHS.has(w)) return w;
-    } catch { /* a manifest that no longer parses must not break OPENING the app */ }
-  }
-  return SYSTEM_STAGE_WIDTH[comp.name] ?? null;
-};
-
-/** Does this app declare itself a DISPLAY — a surface whose job is showing OTHER apps?
- *  `manifest.stage.display: true`, and the sibling of stage.width for a reason: both answer
- *  "how does this app sit on a screen", and an app that owns a wall answers both at once.
- *
- *  ONE consequence, and it is the whole point: an open_* door does NOT move the live pointer for
- *  an app that declares this. The pointer means "the app the AI last put in front of the user",
- *  and a display is the FRAME that shows whatever the pointer names — recording it would aim the
- *  wall at itself, and the `@live` brick inside it would mount the wall inside the wall. The
- *  declaration is how an app says "I am the frame, not the picture"; the engine does not guess it
- *  from anything (an app that embeds `@live` and forgets to declare is simply an app that also
- *  gets pointed at, which is a choice its author is allowed to make — the brick's own second wall
- *  is what keeps that from nesting).
- *
- *  STRICTLY `true`. Every other value — absent, false, "yes", 1 — is not a declaration, for the
- *  same reason stageWidthFor falls back rather than fails: a key this build does not understand
- *  must leave the app opening exactly as it did before. */
-const stageDisplayFor = (comp) => {
+ *  STRICTLY `true`. Every other value — absent, false, "yes", 1 — is not a declaration: a key
+ *  this build does not understand must leave the app opening exactly as an undeclared one. */
+const liveFrameFor = (comp) => {
   if (!comp || !comp.manifest) return false;
-  try { return JSON.parse(comp.manifest)?.stage?.display === true; }
+  try { return JSON.parse(comp.manifest)?.live_frame === true; }
   catch { return false; }   // a manifest that no longer parses must not break OPENING the app
 };
 
@@ -340,7 +313,36 @@ const TIER_CAPS = {
   unreviewed: { call_tools: [], send_message: false, delete_items: "deny",
     cross_collection_read: false, cross_collection_write: false, settings_write: false, read_source: false,
     file_read: false, file_write: false },
+  // ANOTHER ACCOUNT's app, opened through a share (store.mjs scopeStore). The author is someone the
+  // viewer chose to trust with a view of their screen, not with their store, so it runs behind the
+  // runner like unreviewed code — never messages the conversation, never reads source, never
+  // touches settings, never reaches beyond the collections it was shared over. What it may do is
+  // operate on the shared data, through the data and file tools only (the runner pins every one of
+  // them to the shared collections and the app's own files). This preset is the VIEWER's; an
+  // editor's grant widens it by exactly the writes (sharedCaps). It is never overlaid by either
+  // account's security:* rows: the owner's express trust in their own app, the recipient's are
+  // keyed by an app name that is not this one.
+  shared: { call_tools: ["data_list", "data_changes", "file_list", "file_read"], send_message: false, delete_items: "deny",
+    cross_collection_read: false, cross_collection_write: false, settings_write: false, read_source: false,
+    file_read: true, file_write: false },
 };
+/** The caps a shared app runs under: the `shared` preset, the role's writes, and the `collections`
+ *  it may reach — the handles it was shared over, which the runner substitutes for the single
+ *  bound collection it otherwise pins every read and write to. */
+function sharedCaps(role, collections) {
+  const base = TIER_CAPS.shared;
+  const editor = role === "editor";
+  return {
+    ...base,
+    call_tools: editor
+      ? [...base.call_tools, "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
+          "file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_delete"]
+      : [...base.call_tools],
+    delete_items: editor ? "confirm" : "deny",
+    file_write: editor,
+    collections: [...collections],
+  };
+}
 // Overlay-value coercion. security_set stores strings, so accept allow/deny/confirm/true/false
 // (plus "*", JSON or CSV arrays for call_tools). Unrecognized values keep the tier default —
 // a mistyped policy row must fail closed to the preset, not open.
@@ -387,6 +389,27 @@ const capValueHelp = (cap) =>
 // (measured), so a raw-length check passes payloads that arrive mutilated.
 const RESULT_BUDGET = 36_000;
 
+// THE OTHER READER. RESULT_BUDGET exists for a MODEL's context; when the app's own runtime walks
+// its collection the page goes to the app (src/shell-runtime.js pageFetcher), and holding that
+// read to a model's knife made a 305K collection cost 12 pages and fall off the walk's page cap.
+// The runtime says who is reading in the request's `_meta` (runtime-core READER_META_KEY) and a
+// read tool picks its budget with readBudget(). Absent or any other value ⇒ the model's budget,
+// byte for byte as before. Not a security boundary (see READER_META_KEY): a model that claims to
+// be the app only gets a bigger page into its own context.
+//
+// 500,000 serialized chars, and why not more: a tool result relayed to a widget passes through the
+// host, and the one host size ceiling ever measured on that path's neighbour is claude.ai's
+// ~2.5 MB per MCP UI resource (docs/runtime-plan-2026-08-16.md, appendix D). 500K UTF-16 units
+// encode to at most 1.5 MB of UTF-8 even when every char is CJK (3 B), so a page stays under the
+// only measured number with room to spare. It also pairs with the walk's row limit (WALK_LIMIT
+// 500): the two bounds trip together at ~1K chars a row, so neither is decorative.
+const APP_READ_BUDGET = 500_000;
+
+/** Does THIS call say the app is reading? `ctx` is the tool handler's second argument. */
+const appReads = (ctx) => ctx?.mcpReq?._meta?.[READER_META_KEY] === "app";
+/** The page budget for this call's reader. */
+const readBudget = (ctx) => (appReads(ctx) ? APP_READ_BUDGET : RESULT_BUDGET);
+
 // The envelope. Three marks in three POSITIONS, because the three ways a result gets damaged are
 // distinguishable only by position:
 //   `returned` rides BEFORE the bulk  → survives a middle-elision, so counting the rows you can
@@ -398,6 +421,13 @@ const RESULT_BUDGET = 36_000;
 // cut": a check that only appears when we predict damage is a check that cannot detect the damage
 // we failed to predict. The one measured cut was invisible to us at the time — that is the lesson.
 const EOT = "·eot";
+
+/** The default read window — what one get_app call hands back of an app's source. It is also the
+ *  size an app should stay under: a document that fits one window is read WHOLE, and an AI changes
+ *  what it has seen whole without hesitating (measured 2026-10-03: Claude declined to edit a 173K
+ *  app and rebuilt the part it needed as a 17K one). save_app / edit_app say so when an app grows
+ *  past it — advice, never a refusal; an app built elsewhere is the oma-asset: path. */
+const READ_WINDOW = RESULT_BUDGET - 6_000;
 
 /** Serialized size of what we are about to hand over. The only honest way to ask "does this fit". */
 const sizeOf = (body) => JSON.stringify(body).length;
@@ -417,7 +447,7 @@ function textWindow(whole, { offset, length } = {}, wrap = (t) => t) {
   // a surrogate pair — JSON survives it and concatenating windows reassembles exactly, but a
   // non-JS consumer of one lone window may replace the dangling half; documented, not defended.
   const rawLen = Math.floor(Number(length));
-  const wantLen = Number.isFinite(rawLen) && rawLen > 0 ? rawLen : (RESULT_BUDGET - 6_000);
+  const wantLen = Number.isFinite(rawLen) && rawLen > 0 ? rawLen : READ_WINDOW;
   let want = Math.max(1, Math.min(wantLen, Math.max(total - at, 1)));
   let text = whole.slice(at, at + want);
   while (text.length > 1 && sizeOf(wrap(text)) > RESULT_BUDGET) {
@@ -501,8 +531,8 @@ export {
   RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, OPEN_WORLD_WRITE,
   itemShape, snapshotSchema, ackSchema, fileMetaShape, capsShape,
   RESERVED_APP_NAMES, SEEDED_APPS, SHARED_PREFS, LOCKED_APPS, SCENE_CATEGORIES,
-  tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor,
-  CAP_NAMES, TIER_CAPS, coerceCap, capValueHelp,
+  tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, liveFrameFor,
+  CAP_NAMES, TIER_CAPS, sharedCaps, coerceCap, capValueHelp,
   cmdArgs,
-  RESULT_BUDGET, EOT, sizeOf, textWindow, answer, toMcp,
+  RESULT_BUDGET, READ_WINDOW, APP_READ_BUDGET, appReads, readBudget, EOT, sizeOf, textWindow, answer, toMcp,
 };

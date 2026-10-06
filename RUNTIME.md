@@ -1,10 +1,10 @@
 # The runtime contract — `window.oma`
 
-**Contract version: 3** (read it at runtime as `oma.contract`; 3 = the write verbs
-`addItem`/`updateItem`/`moveItem`/`deleteItem`/`setPref` now resolve to an `OmaAck` object
-instead of the raw MCP envelope — an app that read `.ok`/`.id`/`.item` off those calls gets a
-real answer now where it saw `undefined` before. 2 was the 2026-08-04 name removals; an app
-built against an earlier number that used none of the changed surfaces runs unchanged.)
+**Contract version: 4** (4 = data is opt-in: the collection is read only once the app subscribes
+with `onChange` — an app that read `state.items` in `ready()` without subscribing now sees none —
+and `oma.contract` / `oma.toolInput` are gone. 3 made the write verbs resolve to an `OmaAck`;
+2 was the 2026-08-04 name removals. An app built against an earlier number that used none of the
+changed surfaces runs unchanged.)
 
 This is the contract for writing an app **outside** this repo — in your own editor, with your own
 bundler — and installing it with `install-app.mjs`. If an AI is writing your app it doesn't need
@@ -16,8 +16,8 @@ Everything below was measured against a real engine in a real browser, not read 
 
 > ### 🔴 This file is the API surface. It is not the whole contract.
 >
-> The complete authoring contract — the API **plus** the visual kit, the house style, the app-shell
-> bones and the worked examples — is the `GUIDE` the engine hands its AI, **29,746 bytes** of it.
+> The complete authoring contract — the API **plus** the two ways to write an app, the design
+> direction and the worked examples — is the `GUIDE` the engine hands its AI, **24,413 bytes** of it.
 > This file used to be a third of that, and the argument for reading the GUIDE was simply that it
 > was the bigger document. It isn't much bigger any more — but the gap closed from **this** side,
 > when §8 and §9 were added, and neither of them is the house style or the examples. Size was never
@@ -37,22 +37,23 @@ Everything below was measured against a real engine in a real browser, not read 
 ## 1. What an app is
 
 Two slots, saved together as one version: `ui` — one self-contained HTML document — and
-`manifest` — a JSON object declaring what the app is (its collection, fields, settings, kind).
+`manifest` — a JSON object declaring what the app is (its collection, fields, settings).
 On disk (an App Store entry, or an app you build yourself) that is a directory:
-`<name>/ui.html` + `<name>/manifest.json`.
+`<name>/ui.html` + `<name>/manifest.json`. An optional third slot, `skill` (`<name>/skill.md`),
+tells an AI how to *use* the app (§5.2).
 
 | | |
 |---|---|
 | Size | no cap. The engine refuses an empty document (`empty_ui`) and nothing else about size |
-| Network | no requests — the runtime iframe's CSP is `default-src 'none'`, so `fetch`/XHR fail and remote images, fonts and scripts do not load. Inline every asset (`data:` URIs are allowed for images and fonts). **This is not a data-egress guarantee**: CSP does not govern a page navigating itself, so treat anything your app can read as something it could also send somewhere. Don't put secrets in an app you wouldn't publish |
-| Provided for you | the kit CSS, the host's design-token layer, and `window.oma` — all injected at serve time, so don't ship your own copy |
+| Network | scripts, styles, fonts and images may load from the platform's CDNs — cdnjs, jsdelivr, unpkg, Tailwind's play script, jQuery's CDN, Google Fonts (`store.PLATFORM_CSP`). The iframe's CSP is otherwise `default-src 'none'`: nothing else loads and `fetch`/XHR fail, unless you declare it (§5.1) and the deployment allows it. **This is not a data-egress guarantee**: CSP does not govern a page navigating itself, so treat anything your app can read as something it could also send somewhere. Don't put secrets in an app you wouldn't publish |
+| Provided for you | the host's design tokens as CSS variables (with fallbacks), a minimal base (`box-sizing`, `body` margin 0 and the host font, `[hidden]`, safe-area defaults) and `window.oma` — all injected at serve time. No classes: the look is yours (§8) |
 | Declaration | the manifest slot, naming your collection and its fields (§5). NOT inside the html — a document carrying a legacy `#oma-manifest` block is refused on save |
 
 Bundle whatever you like into it. The cap that used to live here is gone: the only size that still
 costs you anything is on the READ side, where `get_app` returns the source in windows — so a large
 app is not refused, it is merely read in more trips. Data still belongs in the collection rather
-than in the document, and the kit CSS and design tokens are already provided, so most documents
-that grew large did so for a reason worth fixing anyway.
+than in the document, and a library belongs on its CDN rather than inlined, so most documents that
+grew large did so for a reason worth fixing anyway.
 
 ## 2. Your script must be a module
 
@@ -95,14 +96,17 @@ writes to any other collection, `sendMessage`, `setPref`, deleting items.
 
 ## 4. The API
 
-### Available in BOTH modes — the portable surface (19)
+### Available in BOTH modes — the portable surface (17)
 
 ```js
-oma.contract                        // number — this contract's version (3)
 oma.state                           // {collection, items:[{id, group, position, fields, version}], version, total, truncated,
                                     //  app, host} — app is which app this is; host is a LABEL (usually empty), never a branch
+                                    // truncated: the read stopped at its page cap — items are the first part
+                                    // of `total` rows; say "N of M", never treat them as the whole (same on readCollection)
 oma.ready(cb)                       // cb(state) once connected AND the first data has arrived — START HERE
-oma.onChange(cb)                    // cb(state) after every change, including your own writes
+oma.onChange(cb)                    // cb(state) after every change, including your own writes.
+                                    // Subscribing is what loads the collection: an app that never
+                                    // calls it is a page — no reads, no polling, ready() at once.
 oma.refresh()                       // re-read the bound collection
 
 oma.addItem({group, fields, position})   // → Promise<ack>  — see "what a write resolves to" below
@@ -141,7 +145,6 @@ oma.openLink(url) -> {ok}           // DIRECT MODE ONLY. Ask the host to open a 
                                     // an outbound channel, and the sandbox closes those.
 
 oma.standalone                      // true in a plain browser page (no chat attached)
-oma.toolInput                       // arguments of the call that mounted this widget
 ```
 
 Retired from this surface 2026-08-04 (each returns WITH its real consumer, never ahead of it):
@@ -193,7 +196,7 @@ consecutive rows of your own collection read `version` 1 and 4 when other writes
 subtract two of them. It is the same number a conditional update compares against; one number, two
 uses, not two numbers.
 
-### Direct mode only (2)
+### Direct mode only (3)
 
 ```js
 oma.embed(name, opts)               // mount another app inside this one (depth 1 — a child cannot embed)
@@ -201,13 +204,56 @@ oma.embed("@live", opts)            // ONE reserved name: a region showing the a
                                     // LAST, swapping itself as it opens others. Extra opt:
                                     // onApp(name|null), fired on every switch. Standalone follows;
                                     // in a chat it is a static tile that reads nothing. An app
-                                    // carrying one declares "stage": {"display": true} (§8.1.1).
+                                    // carrying one declares "live_frame": true (§5).
                                     // The switch rides /events (SSE) and nothing else — no poll
                                     // behind it. A dropped feed leaves the last app on screen;
                                     // EventSource reconnects and the connect frame carries the
                                     // current pointer, so the display catches up by itself.
 oma.viewBase                        // base path for app→app links, default "/view/"
+oma.display                         // "inline" (a card in the chat) | "fullscreen" (the host gave
+                                    // the app the view). Also <html data-oma-display="…"> for CSS.
+                                    // Pad what the device/host covers with var(--oma-safe-top)
+                                    // (/right/bottom/left) — host-reported or env(), the larger.
+                                    // On a card whose host can go fullscreen, the runtime draws a
+                                    // 40px bar above the app (the way in; the host's ✕ is the way
+                                    // out) and pads <html> for it — nothing to do in the app.
+oma.displayModes                    // what this host will switch to, e.g. ["inline","fullscreen"]
+oma.requestDisplay(mode)            // ask for "fullscreen" / "inline" from a click → {ok, mode}
+oma.onDisplayChange(cb)             // cb(mode) — the host's own expand/close controls fire it too
+oma.tools.register({ name, description, inputSchema, annotations, run })
+                                    // a tool of the app's own, for the AI to call by name; returns
+                                    // the function that removes it. See "The app's own tools".
 ```
+
+#### The app's own tools
+
+What the app can do, named for the AI — "show day 3", "add a stop" — so the AI calls the app's own
+function instead of reading the screen and pressing buttons (ext-apps draft, *App-provided tools*):
+
+```js
+oma.tools.register({
+  name: "show_day",                                   // letters, digits, _ - . (≤ 128); ≤ 50 per app
+  description: "Open one day of the trip and get its stops.",
+  inputSchema: { properties: { day: { type: "string" } }, required: ["day"] },   // plain JSON Schema
+  annotations: { readOnlyHint: true },                // optional MCP hints
+  run({ day }) { go(day); return summaryOf(day); },   // string | JSON value | CallToolResult; may be async
+});
+```
+
+The input is checked against `required` and each property's `type` / `enum` before `run` sees it;
+a mismatch or a throw goes back to the AI as a tool error carrying the message, so it can correct
+itself. Registrations belong to the page: never stored, gone on reload, and registering a name again
+replaces it. The AI reaches them natively on a host that sends `tools/list` to the app (the runtime
+declares the `tools` capability and answers it), and otherwise through the screen relay — listed in
+`screen_read`, called with `screen_act {tool, input}`.
+
+The same document is shown on a phone and on a desktop, as a card and (where the host offers it)
+fullscreen. **Width decides layout** — `@media` or container queries on width; a phone's fullscreen
+is as narrow as its card, a desktop's is several times wider. The mode is yours to use or ignore: a
+card can be a glance and fullscreen the whole app, or the page can simply respond to its width. The
+engine draws no frame and fixes no height; in a chat the host sizes the card to your content.
+
+The browser viewer is always `"fullscreen"`.
 
 Reading one of these in a sandboxed app gives `undefined`. If your app needs them, it needs to be
 installed as local — which means the person installing it has decided to trust it.
@@ -218,6 +264,10 @@ Render everything from `state` inside one `render(state)` function; register it 
 `ready()` and `onChange()`. Mutations just call `oma.*` and do not touch local state — the engine
 echoes the new snapshot back, which re-renders. The shell polls while visible and fires `onChange`
 only on real changes, so edits from the AI or another tab appear on their own; never poll yourself.
+
+Data is optional. A calculator, a game, a one-off chart needs none of it: leave `onChange` out and
+the app is a plain page — `ready()` still fires, `oma.pref` and the theme still apply, and nothing
+reads or polls a collection.
 
 Because a re-render can arrive at any moment, keep transient UI state (an open input, a drag in
 flight) in variables *outside* `render()`.
@@ -231,8 +281,7 @@ The manifest is its own file (`manifest.json` beside `ui.html`), stored as its o
   "collections": { "trips": { "fields": { "place": {"type":"string","required":true},
                                           "days":  {"type":"number"} },
                               "label_field": "place", "strict": true } },
-  "settings": [ {"key":"compact","type":"boolean","label":"Compact rows","default":false} ],
-  "kind": "app" }
+  "settings": [ {"key":"compact","type":"boolean","label":"Compact rows","default":false} ] }
 ```
 
 Slot semantics on save: an omitted manifest keeps the stored one; an object replaces it whole;
@@ -245,7 +294,9 @@ write to that collection, from your app, from the AI, from anywhere.
 
 ### 5.1 Network: declare what you connect to
 
-An app reaches nothing by default. Say where you need to go, and the engine relays it:
+Every app may already load scripts, styles, fonts and images from the platform's CDNs
+(`store.PLATFORM_CSP`: cdnjs, jsdelivr, unpkg, cdn.tailwindcss.com, code.jquery.com, Google Fonts)
+and reaches no server. Say where else you need to go, and the engine relays it:
 
 ```json
 { "csp": { "connectDomains":  ["https://api.example.com", "wss://live.example.com"],
@@ -263,8 +314,35 @@ Each is an array of origins (`scheme://host[:port]`, or `https://*.example.com` 
 no paths, no trailing slash. The user can add origins of their own on top of yours, per app or
 globally, through the settings keys `policy:csp:<app>` and `policy:csp:*`.
 
-**Hosts enforce this, per the MCP Apps spec; the engine only relays the union of the two.** Whether
-a given host honours a declaration is that host's business — test where you ship.
+**Hosts enforce this, per the MCP Apps spec; the engine relays the platform base ∪ your declaration
+∪ the user's additions.** A hosted deployment may fix the policy to its own base
+(`createEngine({csp: {extensible: false}})`), and then declarations are stored but not relayed —
+`save_app` names any origin your document loads from that the policy will not allow. Whether a given
+host honours a declaration is that host's business — test where you ship.
+
+### 5.2 Skill: how an AI uses your app
+
+The skill slot is text in the Agent Skills `SKILL.md` format — YAML frontmatter, then Markdown:
+
+```markdown
+---
+name: trips
+description: Plans trips day by day. Use when the user is planning, changing or reviewing a trip.
+---
+Add one `trips` row per stop: `place` required, `days` as a number. …
+```
+
+- `description` is required: one line, at most 1,024 characters, saying what the app does and when
+  to use it. `name` is optional. The engine reads only these two keys (single-line `key: value`,
+  optionally quoted) and stores everything verbatim. The whole skill is at most 16,384 bytes.
+- The description becomes the app's description everywhere it is listed. `open_app` and
+  `install_from_app_store` add one line naming it, `data_list` over one of the app's collections
+  points at it, and `get_app_skill` returns the whole text.
+- Same slot rules as the manifest: omitted keeps it, `null` clears it, a string replaces it whole;
+  every save snapshots it with the other two, so restore/undo bring it back with them.
+- It travels with the app — installed from the App Store, shared, copied. Never put keys or secrets
+  in it. A copied app's skill keeps its original author's name (shown wherever the skill is) until
+  the skill is rewritten.
 
 ## 6. Installing, and what provenance means
 
@@ -302,7 +380,7 @@ A bundler's output is not source, so the registry does not store it as source. E
 ```
 
 ```bash
-node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
+node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json --skill ./skill.md \
      --asset ./dist/app.js --asset ./dist/app.css --update
 ```
 
@@ -337,10 +415,10 @@ it, and re-running the command above is the edit.
 
 ## 7. Versioning
 
-`oma.contract` is `1`. It bumps only on a change an existing app could notice — a name removed, a
-signature or return shape changed, a documented behaviour altered. **Adding a name does not bump**,
-so an app built against 1 keeps running on an engine that has grown since, and feature-detects
-anything new:
+The contract version is the number at the top of this file. It bumps only on a change an existing
+app could notice — a name removed, a signature or return shape changed, a documented behaviour
+altered. **Adding a name does not bump**, so an app built against one version keeps running on an
+engine that has grown since, and feature-detects anything new:
 
 ```js
 if (typeof oma.somethingNew === "function") { … }
@@ -349,97 +427,37 @@ if (typeof oma.somethingNew === "function") { … }
 
 `test/runtime-contract.mjs` pins every **API name** listed here against the two runtimes' actual
 sources, so the API surface cannot drift from them silently — a name that disappears, or one that
-appears without being documented, fails the suite. `test/doc-facts.mjs` pins §8's kit inventory the
-same way. Neither pins the prose.
+appears without being documented, fails the suite. It does not pin the prose.
 
 ## 8. The visual layer — the part with no error message
 
-§1 says the kit CSS is injected and tells you not to ship your own. That sentence is where authors
-who are not the AI get lost, and the way they find out is **that they don't**: an app that ignores
-all of this installs, runs, writes data, and simply looks wrong. There is no warning, because
-nothing is broken.
+An app that ignores all of this installs, runs, writes data, and simply looks wrong. There is no
+warning, because nothing is broken.
 
-### 8.1 The kit selects nothing on its own
+### 8.1 What the engine gives you, and what it doesn't
 
-The kit is **30 classes**, and it styles **only** those classes. It does not touch `button`,
-`input`, `h1`, `table` or any other bare element — a hand-written `<button>` gets the browser's
-1996 default, next to a `.k-btn` that looks native to the host. That contrast **is** the bug
-report; there will not be another one.
+The engine injects the host's design tokens (§8.2) and a minimal base: `*{box-sizing:border-box}`,
+`body{margin:0}` in the host font and text colour, `[hidden]{display:none!important}`, and
+`--oma-safe-*` defaults. That is all — no classes, no page frame, no fixed heights. A bare
+`<button>` gets the browser's default look, so style it: your own CSS, Tailwind's play script
+(`<script src="https://cdn.tailwindcss.com"></script>`, tokens as arbitrary values like
+`bg-[var(--color-background-secondary)]`), or a component library loaded from the platform CDNs.
 
-```
-layout    .k-row (flex row + gap)   .k-grow (fill)   .k-grid (auto card grid)   .k-li (list line)
-text      .k-h1  .k-sub  .k-mut  .k-num (tabular)  .k-code  .k-ellip / .k-ellip2 (clamp)
-surfaces  .k-card (+ .is-click for the hover lift)     .k-empty (empty state)
-controls  .k-btn (+ .sec .ghost .danger)   .k-chip (+ .on .static)   .k-field (input/select)
-          .k-switch (styled checkbox)      .k-tabs > .k-tab (+ .on)
-status    .k-badge (+ .info .ok .warn .bad)   .k-dot (group colour)   .k-icon (16px inline SVG)
-motion    .k-stagger (list entrance; set style="--i:N")   .k-pop   .k-skel (loading shimmer)
-page      .k-stage (your root container)   .k-appbar (+ .k-appmark .k-appcopy .k-eyebrow)
-```
+Two ways to write an app are supported: plain HTML with vanilla DOM, and React from cdnjs's UMD
+builds with htm for markup (there is no JSX compiler — `GUIDE` has both templates). Library
+`<script src>` tags go before your module and load in document order. Other frameworks load the same
+way and usually work, but are not promised.
 
-The kit already sets `*{box-sizing:border-box}`, a sensible `body`, and reduced-motion handling —
-don't re-declare those. Write your own CSS for what makes **this** app different from every other
-one. If you catch yourself styling a button, chip, card, input or empty state from scratch, use the
-class; if you need a variant, override the kit class rather than inventing a parallel one.
+**Never write `overflow: hidden` on `html` or `body`.** In a fixed-height frame that is the
+scrollport's own overflow — the wheel stops working and everything below the fold is unreachable.
 
-### 8.1.1 `.k-stage` — do not draw your own card
+### 8.2 Colour: structure from the host, identity from the app
 
-Your app is shown in two places and they want opposite chrome. **In a chat** it is a card floating
-in someone's conversation, and something has to draw that card. **On a screen it owns** — the
-browser viewer, a panel host — the page is framed already, and a second frame inside the first is a
-double bezel your users will see as sloppiness.
-
-You do not decide which one you are in. Put your root container inside `<body>`, give it
-`k-stage`, and add one line at mount:
-
-```html
-<body>
-  <main class="k-stage">…your whole page…</main>   <!-- a fixed-position modal stays OUTSIDE -->
-</body>
-```
-```js
-if (oma.standalone) document.body.classList.add("standalone");
-```
-
-That is the whole contract. The kit draws the border, radius, surface and shadow in a chat, drops
-them entirely on a phone-width frame (where the host's own frame is the card), and draws nothing at
-all when `standalone`. **Do not** put a border, border-radius, box-shadow or `max-width` on that
-element yourself, and do not set `padding` or `background` on `body` — those are exactly the
-declarations this contract exists to own.
-
-How wide the page may get is a **declaration**, not a number in your CSS. In `manifest.json`:
-
-```json
-"stage": { "width": "column" }
-```
-
-`column` (the default; omit the key and you get it) is a 760px reading column — lists, counters,
-forms. `wide` is 1120px — calendars, boards, anything with lanes or many columns. `fluid` has no
-limit, for a layout with its own sidebar. The engine writes the answer onto `<body>` as
-`stage-column|wide|fluid`; you never read it.
-
-The same object takes `"display": true` — "this app is a frame for OTHER apps", which is what an
-always-on screen built on `oma.embed("@live")` is (§4, direct mode). Declaring it exempts your app
-from the last-opened pointer, so opening the frame never aims the frame at itself.
-
-Your header goes in `.k-appbar` — a content header, so no rule and no fill of its own; the kit adds
-the rule under it in a chat, where the bar is the card's title bar:
-
-```html
-<header class="k-appbar">
-  <span class="k-appmark">…your icon…</span>       <!-- the kit sizes it, YOU paint it -->
-  <div class="k-appcopy"><p class="k-eyebrow">SECTION</p><h1>App name</h1></div>
-  <div class="tail">…buttons…</div>
-</header>
-```
-
-Finally: **never write `overflow: hidden` on `html` or `body`.** In a fixed-height frame that is the
-scrollport's own overflow — the wheel stops working and everything below the fold becomes
-unreachable. `overflow-x: clip` on your `.k-stage` is the belt you actually wanted.
-
-### 8.2 Colour comes from the host, never from you
-
-Hardcode a colour and your app is the one thing on screen that ignores the user's theme.
+ChatGPT and Claude publish the same rule for apps shown in their chats, and their directory review
+holds apps to it: the **structure** — backgrounds, text, borders, dividers, icons — takes the host's
+tokens, so the app follows the user's theme; the **identity** — one accent — is the app's own. For
+your own apps this is the recommended default, not a requirement: a person who asks for a look of
+their own should get it. Apps shipped in this repo's App Store follow it strictly.
 
 Written out rather than as `--color-text-primary|secondary|…`, so that searching this file for the
 token you are about to type actually finds it:
@@ -456,31 +474,40 @@ token you are about to type actually finds it:
 --font-sans  --font-mono  --font-text-sm-size  --font-text-md-size
 --border-radius-sm  --border-radius-md  --border-radius-lg  --border-radius-full
 --shadow-xs  --shadow-sm  --shadow-md  --shadow-lg
---k-s1 --k-s2 --k-s3 --k-s4  = 4/8/12/16px      --k-t-fast  --k-t  --k-t-slow
---k-ease  standard                              --k-spring  for the one confirming action
 ```
 
-- **Accent**: `var(--color-text-info, var(--color-ring-primary, #3b6cf6))` — never a brand colour.
-  The chain ends in a guaranteed shell fallback; the first token is used only if the host offers it.
-- **Tints**: `color-mix(in oklab, <token> 10-12%, transparent)`. Hover wash:
-  `color-mix(in oklab, var(--color-text-primary) 4%, transparent)`. These flip with the theme.
+- **Accent**: ONE per app, its own hue with a light and a dark value —
+  `--accent: light-dark(#c2381f, #ff8a6e);` — spent where identity lives: the primary action,
+  badges, the signature view, a progress mark. (An app with no identity of its own can borrow the
+  host's: `var(--color-text-info, var(--color-ring-primary, #3b6cf6))`.)
+- **No page backgrounds, gradients or patterns** of your own; root on transparent or
+  `var(--color-background-primary)`. **Tints**: `color-mix(in oklab, <token> 10-12%, transparent)`.
+- **Type**: `var(--font-sans)`, no other families. Personality comes from scale and weight. Amounts get
+  `font-variant-numeric: tabular-nums`.
+- **Pictures are content**: inline SVG line art that carries meaning (a route, a place, a state), in
+  the accent or text colour — never wallpaper behind text.
 - **Motion**: 120–260ms `cubic-bezier(.2,.8,.3,1)`; one springy `cubic-bezier(.34,1.56,.64,1)` on
-  the action that saves. Wrap **all** of it in `@media (prefers-reduced-motion: no-preference)`.
-- Hover `translateY(-1px)`, press `scale(.96–.985)`. Amounts get `font-variant-numeric: tabular-nums`.
+  the action that matters. Wrap **all** of it in `@media (prefers-reduced-motion: no-preference)`.
 - Empty state: a friendly line **plus what to say to the AI to fill it** — never a bare "no data".
-- Don't root on white or black. Root on transparent or `var(--color-background-primary)`.
 
-### 8.3 The shell every app shares
+### 8.3 Lead with the subject, not a template
 
-Apps read as a family because they share bones. Build them out of the kit classes:
+There is no shared app shell to copy. Ask what this app IS at a glance — a route, a wall of days, a
+jar filling, a desk of cards — and make that the first screen, with the one number that matters at
+display size beside it. A generic header + stats band + tabs is what every app looks like when
+nobody asked that question (measured: the same model, given the old shell prescription, built an
+admin dashboard; without it, it built the subject). Match the occasion — a one-off can be a
+keepsake, a daily tool should be quiet and fast.
 
-- **App bar** — a ~42px square mark holding one inline SVG glyph (1px token border, radius-lg,
-  `aria-hidden`), then the identity block, then any action pushed right with `margin-left:auto`.
-- **Identity** — an EYEBROW above the app's name: `var(--font-mono)`, ~10px, weight 700,
-  letter-spacing `.11em`, uppercase, `var(--color-text-tertiary)`. It names the beat this app keeps
-  — "PERSONAL LEDGER", "DAILY RHYTHM" — not a tagline. The app's name sits under it at heading size.
-- **AI hand-off** — where the AI can do something the UI can't, a quiet `.k-btn.sec` in the bar
-  calling `oma.sendMessage`. Same weight in every app, so it reads as the same affordance everywhere.
+Two habits keep a live app feeling alive:
+
+- **Update, don't redraw.** On `onChange`, change what changed in place. Rebuilding the whole page
+  on every refresh replays entrance animations and cuts your own confirmation animation short.
+- **Answer the click at once.** Show the result optimistically; the write's ack, or the next
+  `onChange`, confirms or corrects it.
+
+Where the AI can do something the UI can't, a quiet secondary button calling `oma.sendMessage` is
+the hand-off — or register the action with `oma.tools.register` and let the AI call it (§4).
 
 ## 9. Traps that only bite authors who aren't the AI
 

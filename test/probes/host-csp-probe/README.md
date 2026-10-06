@@ -41,7 +41,7 @@ The same probe has to run twice in each host:
 | door | how you open it | what rides on it |
 |---|---|---|
 | `open_app` | the default. Ask the assistant to *open host-csp-probe* | One universal loader resource serves every app, so the `_meta.ui.csp` on it is the **union** of everything declared in the store plus the user's global additions |
-| `open_host_csp_probe` | needs `OMA_DYNAMIC_TOOLS=1` in the server's environment; then ask the assistant to use that tool by name | The per-app `ui://` resource, carrying **only this app's** merged declaration |
+| `open_host_csp_probe` | pin the app first (Settings → Installed → host-csp-probe → Own tool), refresh the host's tool list, then ask the assistant to use that tool by name | The per-app `ui://` resource, carrying **only this app's** merged declaration |
 
 The app detects which one it is in by itself (it looks for the loader module in its own document,
 and at `oma.standalone` for the browser viewer) and preselects the **Door** dropdown. If it guesses
@@ -53,11 +53,11 @@ running, because a row labelled with the wrong door is worse than no row.
 Nothing below changes what you press; it is only how each host gets the server in front of it.
 
 - **Claude Desktop** — stdio. `node install.mjs` writes the entry; `⌘Q` and relaunch after any
-  install, because the tool and resource lists are read at connect time. For the second cell, add
-  `"OMA_DYNAMIC_TOOLS": "1"` to that entry's `env` and relaunch again.
+  install, because the tool and resource lists are read at connect time. For the second cell, pin
+  the app (see above) and relaunch again.
 - **claude.ai** — the remote `/mcp` endpoint (`node src/http.mjs` behind whatever tunnel you use).
-  A new tunnel URL is a new connector; re-add it rather than editing one in place. Same
-  `OMA_DYNAMIC_TOOLS=1` for the second cell, set on the process before it starts.
+  A new tunnel URL is a new connector; re-add it rather than editing one in place. Same pin for
+  the second cell, then refresh the connector's tool list.
 - **ChatGPT** — same `/mcp` endpoint, added as a connector. Expect `connect-loopback` to be the
   interesting cell here and expect `sendMessage`-shaped affordances elsewhere in the engine to
   behave differently; neither affects these nine.

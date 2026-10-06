@@ -71,9 +71,5 @@
       },
       "strict": true
     }
-  },
-  "kind": "app",
-  "stage": {
-    "width": "wide"
   }
 }

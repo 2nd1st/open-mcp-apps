@@ -3,8 +3,6 @@
   "settings": [],
   "uses_shared": [
     "locale",
-    "date_format",
-    "density",
     "week_start"
   ],
   "collections": {
@@ -41,11 +39,7 @@
       }
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "teach-sim"
-  },
-  "stage": {
-    "width": "column"
   }
 }

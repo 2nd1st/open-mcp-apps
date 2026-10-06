@@ -1,0 +1,103 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "4832b64a-019b-46f7-a438-ba0196fe7b2d",
+      "group": "active",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "title": "应急备用金",
+        "target_amount": 30000,
+        "current_amount": 22300,
+        "currency": "CNY",
+        "target_date": "2026-12-31",
+        "priority": 1
+      }
+    },
+    {
+      "id": "b120b365-df79-4215-a2da-18f65010a684",
+      "group": "active",
+      "position": 2,
+      "version": 3,
+      "fields": {
+        "title": "国庆回成都",
+        "target_amount": 4500,
+        "current_amount": 3200,
+        "currency": "CNY",
+        "target_date": "2026-09-25",
+        "priority": 2
+      }
+    },
+    {
+      "id": "efaf4de2-63a5-45d2-acca-ffe756ab4a3b",
+      "group": "active",
+      "position": 3,
+      "version": 5,
+      "fields": {
+        "title": "车险续保",
+        "target_amount": 3200,
+        "current_amount": 2750,
+        "currency": "CNY",
+        "target_date": "2026-08-01",
+        "priority": 3
+      }
+    },
+    {
+      "id": "3baa4315-3afe-44e9-be9b-1e16e5e20539",
+      "group": "active",
+      "position": 4,
+      "version": 2,
+      "fields": {
+        "title": "给爸妈换空调",
+        "target_amount": 6800,
+        "current_amount": 2600,
+        "currency": "CNY",
+        "target_date": "2026-10-31",
+        "priority": 4
+      }
+    },
+    {
+      "id": "db12fa12-040b-4b80-b1a5-0db5d36e5bf6",
+      "group": "active",
+      "position": 5,
+      "version": 4,
+      "fields": {
+        "title": "雅思考试 + 课程",
+        "target_amount": 8000,
+        "current_amount": 1450,
+        "currency": "CNY",
+        "target_date": "2027-03-01",
+        "priority": 5
+      }
+    },
+    {
+      "id": "06327a24-2fbb-4110-aead-49cf6736d806",
+      "group": "reached",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "title": "新手机",
+        "target_amount": 5999,
+        "current_amount": 5999,
+        "currency": "CNY",
+        "target_date": "2026-06-18",
+        "priority": 6
+      }
+    },
+    {
+      "id": "b3e8f729-5a8a-4324-b4f8-4eb64ad4bfd7",
+      "group": "reached",
+      "position": 7,
+      "version": 3,
+      "fields": {
+        "title": "猫咪疫苗和体检",
+        "target_amount": 1200,
+        "current_amount": 1200,
+        "currency": "CNY",
+        "target_date": "2026-05-10",
+        "priority": 7
+      }
+    }
+  ]
+}

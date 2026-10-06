@@ -33,6 +33,44 @@ STRUCTURE RULES
 <title>Dashboard</title>
 <meta name="description" content="Your home screen — every app you keep, one glance away.">
 <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-ink-7:color-mix(in oklab,var(--color-text-primary) 7%,transparent);--k-hue-0:var(--k-accent);--k-hue-1:var(--k-ok);--k-hue-2:var(--k-warn);--k-hue-3:var(--k-bad);--k-hue-4:color-mix(in oklab,var(--k-accent) 55%,var(--k-bad));--k-hue-5:color-mix(in oklab,var(--k-ok) 55%,var(--k-accent));--k-s3:12px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}.k-stagger>*,.k-pop,.k-skel{animation:none!important}}
+  body{padding:16px}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-card{position:relative;border:1px solid var(--color-border-primary);border-radius:var(--border-radius-lg,14px);background:var(--color-background-primary);padding:var(--k-s3) 14px;transition:transform var(--k-t) var(--k-ease),box-shadow var(--k-t) var(--k-ease),border-color var(--k-t) var(--k-ease)}
+  .k-card.is-click{cursor:pointer}
+  .k-card.is-click:hover{transform:translateY(-1px);box-shadow:var(--shadow-md,var(--shadow-sm));border-color:color-mix(in oklab,var(--k-accent) 28%,transparent)}
+  .k-card.is-click:active{transform:translateY(0) scale(.985);box-shadow:none}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-skel{color:transparent;border-radius:var(--border-radius-sm,7px);background:linear-gradient(100deg,var(--k-ink-4) 40%,var(--k-ink-7) 50%,var(--k-ink-4) 60%) 0 0/300% 100%;animation:k-shimmer 1.4s linear infinite}
+  .k-pop{animation:k-pop 320ms var(--k-spring)}
+  @keyframes k-shimmer{to{background-position:-300% 0}}
+  @keyframes k-pop{0%{scale:.7}60%{scale:1.08}100%{scale:1}}
+
   /* ===== section: foundation ===== */
   :root {
     color-scheme: light dark;
@@ -62,9 +100,9 @@ STRUCTURE RULES
     min-height: 100vh;
     padding: 18px;
     /* clip, not hidden: both stop a stray wide child from adding a horizontal scrollbar, but
-       `hidden` makes this element a scroll container — and a scroll container on <body> is what
-       the stage contract's overflow rule exists to keep off (it swallows the wheel on a
-       fixed-height frame and gives `position:sticky` a box that can never scroll). `clip` refuses
+       `hidden` makes this element a scroll container — and a scroll container on <body>
+       swallows the wheel on a fixed-height frame and gives `position:sticky` a box that can
+       never scroll. `clip` refuses
        the scroll instead of offering one nobody can reach. */
     overflow-x: clip;
     background: transparent;

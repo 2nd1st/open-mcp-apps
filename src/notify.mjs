@@ -18,6 +18,8 @@
 // collection, so there is nothing on the host to invalidate — the widget poll and `data_changes`
 // (a caller-held ledger mark) own that plane, and inventing a resource per collection just to
 // have something to invalidate would add a surface to serve a mechanism rather than a user.
+// The one exception is the tool list: a settings write may pin or unpin an app's own opener, so
+// a burst that moved the settings sub-version (or touched the app plane) runs `syncTools`.
 
 /** Ledger commands that change what the host is holding. Everything else is data-plane. */
 const APP_PLANE = new Set(["save_app", "delete_app", "archive_app"]);
@@ -46,12 +48,16 @@ const APP_PLANE = new Set(["save_app", "delete_app", "archive_app"]);
  * must refetch on reconnect. Nothing here queues for absent clients; a dropped notification is
  * indistinguishable from never having subscribed, which is exactly what the primitive promises.
  */
-export function bridgeInvalidations(store, server, { dynamicTools = false, hasApp = () => false } = {}) {
+export function bridgeInvalidations(store, server, { hasApp = () => false, syncTools } = {}) {
   if (!store?.events || !server?.server) return () => {};
   const uriOf = (name) => `ui://open-mcp-apps/${name}.html`;
+  const settingsVersion = () => { try { return store.dataVersion().settings_version; } catch { return undefined; } };
 
   let pendingList = false;
   const pendingUris = new Set();
+  let pendingTools = false;    // an app-plane write: the opener set may have moved
+  let pendingData = false;     // any other write: it may have been a pin, if settings moved
+  let lastSettings = syncTools ? settingsVersion() : undefined;
   let scheduled = false;
 
   // Every send is best-effort, and it has to swallow BOTH shapes of failure: the SDK's senders
@@ -66,21 +72,30 @@ export function bridgeInvalidations(store, server, { dynamicTools = false, hasAp
 
   const flush = () => {
     scheduled = false;
-    const list = pendingList, uris = [...pendingUris];
-    pendingList = false; pendingUris.clear();
-    if (list) {
-      quiet(() => server.server.sendResourceListChanged());
-      // The tool surface only moves with the app set when the per-app openers are ON. With them
-      // off (the default) the surface is CONSTANT, and saying it changed would invalidate every
-      // user's prompt cache for a change that never touched a byte of tools/list — the exact
-      // cost OMA_DYNAMIC_TOOLS is defaulted off to avoid.
-      if (dynamicTools) quiet(() => server.server.sendToolListChanged());
-    }
+    const list = pendingList, uris = [...pendingUris], tools = pendingTools, data = pendingData;
+    pendingList = false; pendingUris.clear(); pendingTools = false; pendingData = false;
+    if (list) quiet(() => server.server.sendResourceListChanged());
     for (const uri of uris) quiet(() => server.server.sendResourceUpdated({ uri }));
+    // tools/list_changed is never sent from here: syncTools registers/removes openers and the SDK
+    // announces those (debounced to one per tick). No opener moved ⇒ nothing is sent, so an
+    // ordinary save_app leaves every prompt cache intact.
+    if (syncTools && (tools || data)) {
+      const sv = settingsVersion();
+      const moved = sv !== lastSettings;
+      lastSettings = sv;
+      if (tools || moved) quiet(syncTools);
+    }
   };
 
+  const schedule = () => { if (!scheduled) { scheduled = true; queueMicrotask(flush); } };
+
   const onChange = (e) => {
-    if (!e || !APP_PLANE.has(e.type)) return;
+    if (!e) return;
+    if (!APP_PLANE.has(e.type)) {
+      if (syncTools) { pendingData = true; schedule(); }
+      return;
+    }
+    pendingTools = true;
     const name = typeof e.name === "string" ? e.name : "";
     // WHICH invalidation, decided HERE rather than at flush time. A save arrives while the app's
     // resource registration is still pending — the store emits inside execute(), and the tool
@@ -89,7 +104,7 @@ export function bridgeInvalidations(store, server, { dynamicTools = false, hasAp
     // resource the host has never heard of.
     if (e.type === "save_app" && name && hasApp(name)) pendingUris.add(uriOf(name));
     else pendingList = true;
-    if (!scheduled) { scheduled = true; queueMicrotask(flush); }
+    schedule();
   };
 
   store.events.on("change", onChange);

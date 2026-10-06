@@ -11,13 +11,13 @@
       "step": 1
     },
     {
-      "key": "spark_points",
+      "key": "chart_weeks",
       "type": "number",
-      "label": "Trend history points",
-      "default": 8,
-      "min": 3,
-      "max": 8,
-      "step": 1
+      "label": "Weeks shown in the load chart",
+      "default": 12,
+      "min": 4,
+      "max": 52,
+      "step": 2
     }
   ],
   "uses_shared": [
@@ -78,11 +78,7 @@
       "strict": true
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "input-cocreate"
-  },
-  "stage": {
-    "width": "column"
   }
 }

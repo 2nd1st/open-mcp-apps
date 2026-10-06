@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.7.2([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.8.0([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -160,8 +160,7 @@ node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
       "args": ["-y", "@2nd1st/open-mcp-apps"],
       "env": {
         "OMA_VIEWER": "1",
-        "PORT": "8787",
-        "OMA_DYNAMIC_TOOLS": "0"
+        "PORT": "8787"
       }
     }
   }
@@ -172,8 +171,12 @@ node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
 |---|---|---|
 | `OMA_VIEWER` | `1` | loopback 上的浏览器 viewer。设 `0` 则干脆不起。 |
 | `PORT` | `8787` | viewer 监听在哪。 |
-| `OMA_DYNAMIC_TOOLS` | `0` | 设 `1` 则每个已保存的 app 另有一个 `open_<name>` tool。默认关,因为它吃 prompt cache —— 且每个 app 各花一次授权提示。 |
 | `OMA_DB` | 用户级 store | SQLite store 的路径。想隔离一份 store 就设它。 |
+| `OMA_APP_STORE_DIRS` | — | 额外的 App Store 来源:和 `components/` 同样布局的目录(一个 app 一个子目录),用 `:` 分隔(Windows 用 `;`)。先于内置 app 查找,同名时排在前面的来源胜出。 |
+
+**app 自己的 tool。** 每个 app 都通过 `open_app` 打开。想让某个 app 另有一个自己的 `open_<name>` tool,
+就 pin 它:**Settings → 已安装 → 该 app → 单独的工具**。只有在你 pin、取消 pin 或删除一个已 pin 的
+app 时 tool 列表才会变;Claude.ai 和 ChatGPT 要在刷新连接器的工具列表后才会出现新 tool。
 
 **你的数据在哪。** 整个 store 就是一个 SQLite 文件 `open-mcp-apps.db`,位于
 `~/Library/Application Support/open-mcp-apps/`(macOS)、`%APPDATA%\open-mcp-apps\`(Windows)或
@@ -342,7 +345,7 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 `@2nd1st/open-mcp-apps/types/oma-function`(函数体拿到的 `args`/`api`),都经包的 `exports` 解析。
 
 **[`RUNTIME.md`](../RUNTIME.md) 是契约**——两种模式下的 `window.oma` API、沙盒 app 还能做什么,
-以及只咬非 AI 作者的那些坑。它带一个版本号(`oma.contract`),`test/runtime-contract.mjs` 把它钉在
+以及只咬非 AI 作者的那些坑。它带一个版本号,`test/runtime-contract.mjs` 把它钉在
 两个 runtime 的真实表面上,所以它不会悄悄跟它们漂开。
 
 ## 安全模型
@@ -373,7 +376,7 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 | 更新了,但宿主行为还是旧的 | 宿主不**彻底退出**(Cmd-Q,不是关窗)就会一直挂着连旧数据的旧 server 进程。 |
 | `pnpm install` 以 1 退出，报 `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 在你表态之前不跑第三方构建脚本，并把这件事算作错误。这里没有东西需要构建 —— `better-sqlite3` 加载它自带的预编译产物，esbuild 的二进制来自它的平台包 —— 所以它留下的这棵树是完整可用的。`pnpm approve-builds` 随你怎么答，或者用 npm。我们不去声明「允许这些脚本」：那会让 pnpm 在没有工具链的机器上（容器、多数 CI）真的去编译 `better-sqlite3`，白白失败。 |
 | Claude Desktop 自动更新后又开始弹批准框 | Desktop 自动更新偶尔会重置这些决定(上游 [#56954](https://github.com/anthropics/claude-code/issues/56954),已于 2026-06-23 以 *not planned* 关闭)——那条 issue 不会带来修复,重新允许即可。 |
-| 每个 app 各弹一次授权 | 你的宿主条目里有 `OMA_DYNAMIC_TOOLS=1` —— 要么是你自己设的,要么你是在 2026-07-28 到 2026-08-16 之间装的:那段时间安装器把它当绕行写给了 Claude Desktop 和 Claude Code。`node install.mjs --check` 会把这样的条目报成 `stale`;重跑安装器只删这一个键,其余 env 保留。见[配置](#配置)。 |
+| 每个 app 各弹一次授权 | 每个你 pin 过的 app(**Settings → 已安装 → 该 app → 单独的工具**)都有自己的 `open_<name>` tool,宿主对每个 tool 各问一次。用不着的就取消 pin。2026-07-28 到 2026-08-16 之间留在宿主条目里的 `OMA_DYNAMIC_TOOLS=1` 现在已经不起作用;`node install.mjs --check` 会把它报成 `stale`,重跑安装器只删这一个键。见[配置](#配置)。 |
 | 没有 viewer 链接,或 viewer 是别人的 | 端口被一个非 open-mcp-apps 的进程占了。把 `PORT` 换成空闲的。 |
 | ChatGPT web 上刷新页面后 widget 丢数据 | 已知,缓解已 ship,实测复验待做——[`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md)。 |
 | Codex desktop 上 widget 能改不能加 | 被宿主侧拦住。伞状请求 [openai/codex#28912](https://github.com/openai/codex/issues/28912) 已于 2026-08-05 以 completed 关闭,但那条是 `enhancement`、不是这个缺陷本身:对得上的那个 `bug` [#30092](https://github.com/openai/codex/issues/30092) 在 2026-08-16 仍是 open。可以升级 Codex 试试,但预期它还在。 |
@@ -383,7 +386,7 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 
 | | |
 |---|---|
-| `src/server.mjs` | stdio MCP server;单一 `open_app` 打开路径(per-app `open_<name>` tool 默认关,`OMA_DYNAMIC_TOOLS=1` 才开) |
+| `src/server.mjs` | stdio MCP server;单一 `open_app` 打开路径(用户 pin 过的 app 另各有一个 `open_<name>` tool) |
 | `src/http.mjs` | `/mcp`(无状态 Streamable HTTP)+ `/view/<name>` 浏览器 viewer,绑定 `127.0.0.1` |
 | `src/store.mjs` | SQLite:item + app registry + `change_event` ledger(幂等,乐观并发) |
 | `src/shell-runtime.js` | 注入每个 app 的浏览器 runtime(`window.oma`) |
@@ -394,10 +397,10 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 453 条断言,走真实 stdio——含运行时 app 创建
-node test/http-smoke.mjs     #  81 条断言,走 HTTP transport(含 SSE /events、viewer)
+node test/server-smoke.mjs   # 471 条断言,走真实 stdio——含运行时 app 创建
+node test/http-smoke.mjs     #  87 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
-node test/seed-smoke.mjs     #  22 条断言,验 seed / design-kit 流水线
+node test/seed-smoke.mjs     #  26 条断言,验 seed / design-kit 流水线
 node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
 ```
 

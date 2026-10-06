@@ -108,6 +108,7 @@
 // what to add. Both directions, because each is the same silence wearing a different hat.
 
 import { Worker, MessageChannel } from "node:worker_threads";
+import { AsyncLocalStorage } from "node:async_hooks";
 // The one answer to "which collection is this app's, when nobody said" — the widget binds by it
 // (tools/apps.mjs, http.mjs), so the function api reads it rather than keeping a second rule.
 // contracts.mjs imports only zod, so this cannot close a cycle with store.mjs's import of us.
@@ -479,14 +480,19 @@ export function makeFunctionHost(store, { executor, egress } = {}) {
     // answer is caught on the way OUT of dispatch, on the parent's side of every seam: an executor
     // reports `{kind:"abort"}` and the parent already holds the only receipt that ever existed.
     let lastAbort = null;
-    const dispatch = (method, p) => {
+    // The CALL's async context, captured here and re-entered on every dispatch: a body's store
+    // round trip arrives on a message port (or, under a remote executor, off a wire), and the
+    // writes it makes must carry the same caller the call did — the principal stamp (store.mjs
+    // principalScope) and the host label alike — however the request found its way back.
+    const inCall = AsyncLocalStorage.snapshot();
+    const dispatch = (method, p) => inCall(() => {
       try {
         return rawDispatch(method, p);
       } catch (e) {
         if (isRefusal(e)) lastAbort = e.receipt;
         throw e;
       }
-    };
+    });
 
     // The effective deadline. There is NO policy ceiling — a declared timeout_ms is used as-is.
     // The only bound left is the mechanism's own: the value must be a positive integer setTimeout

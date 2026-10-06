@@ -8,7 +8,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 
-import { kitStyle, SELF_HEIGHT_UNPIN_SCRIPT } from "./runner.mjs";
+import { baseStyle, SELF_HEIGHT_UNPIN_SCRIPT } from "./runner.mjs";
 import { TOKEN_NAME_RE, TOKEN_VALUE_RE } from "./runtime-core.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -32,7 +32,7 @@ function runtime() {
 // those references fell through to whatever literal the author had written after the comma —
 // i.e. exactly the hardcoded colour this token layer exists to prevent. The values are chosen so
 // the common fallbacks resolve to the SAME paint they already showed: info equals the ring
-// colour every app fell back to, warning equals the kit's own `--k-warn` literal. Light/dark is
+// colour every app fell back to, warning equals the `#b98200` apps carry as their literal. Light/dark is
 // handled the way the neighbours handle it — system colours and scheme-neutral literals, no
 // media query.
 export const TOKEN_FALLBACK_CSS = `
@@ -61,21 +61,25 @@ export const TOKEN_FALLBACK_CSS = `
 body { font-family: var(--font-sans); color: var(--color-text-primary); }
 `;
 
-// The system UI kit — 25 app classes (.k-btn .k-card .k-chip .k-field .k-tab …), all of
-// them token-derived. It used to be inlined at SEED time into the three system apps via a
-// marker, which made it invisible to every OTHER author: measured across four real apps
-// (three model-written, one hand-written) the `k-` usage was ZERO and the guide never named it,
-// while CSS was 32-47% of every app. So the kit is now INJECTED into every rendered
-// document — the author gets it for free, and the guide (get_app_guide) teaches it.
-//
-// It stays in components/ and stays MIT (the root LICENSE now covers the whole tree, the
-// design kit included); this module only READS it, so the licence of the bytes is unchanged.
-// Read once at first use, like the runtime bundle above.
-let kitCss = null;
-export function KIT_CSS() {
-  if (kitCss == null) kitCss = readFileSync(join(HERE, "..", "components", "_system.css"), "utf-8");
-  return kitCss;
-}
+// The page BASE — the whole of what the engine adds to an app's document besides the tokens
+// above. An app writes its own CSS (or Tailwind, or a library from the allowed CDNs); the engine
+// draws nothing and lays nothing out. What is left here is what a page needs before any of that
+// to come out right on every host:
+//   · box-sizing — the reset every modern stylesheet (Tailwind's preflight included) assumes;
+//   · body margin, font and colour from the host tokens, so an unstyled page already reads as
+//     part of the host instead of as Times on white;
+//   · `[hidden]` that stays hidden — the UA rule has the lowest weight there is, so ANY author
+//     rule setting `display` outranks it, and `el.hidden = true` then leaves the element on screen
+//     with no error anywhere;
+//   · the safe-area variables defined everywhere: the runtime stamps the host's real insets onto
+//     <html> (shell-runtime.js stampSafeArea), and a document it does not run in — a sandboxed
+//     child, a gallery preview — still resolves var(--oma-safe-*) to 0 instead of to nothing.
+// No padding, no width, no frame: those are the app's.
+export const BASE_CSS =
+  "*{box-sizing:border-box}" +
+  ":root{--oma-safe-top:0px;--oma-safe-right:0px;--oma-safe-bottom:0px;--oma-safe-left:0px}" +
+  "body{margin:0;font-family:var(--font-sans);font-size:var(--font-text-md-size,14px);color:var(--color-text-primary)}" +
+  "[hidden]{display:none!important}";
 
 // The universal loader: mounts ANY registry app at runtime. This is what makes a
 // just-saved app openable IMMEDIATELY via the static open_app tool, without
@@ -146,30 +150,32 @@ function boundToolName() {
     var t = (window.__OMA_HOST_CONTEXT__ || {}).toolInfo;
     var n = t && t.tool && t.tool.name;
     // Every door that opens an app is open_…: the universal opener, and the per-app tools
-    // OMA_DYNAMIC_TOOLS registers. Anything else cannot be carrying our name.
+    // pinned apps get. Anything else cannot be carrying our name.
     return typeof n === "string" && n && n.indexOf("open_") !== 0 ? n : null;
   } catch (e) { return null; }
 }
 
-// WHICH APP AM I — three questions, all answerable now, and then we stop.
+// WHICH APP AM I — answered by the runtime's __OMA_IDENTITY__:
 //
-//   1. did someone just tell us (live toolInput / N11's state.app)?
-//   2. did the host replay a note we wrote on a previous mount (__OMA_IDENTITY__)?
+//   1. did someone just tell us (the live tool input / N11's state.app)?
+//   2. did the host replay a note we wrote on a previous mount?
 //      This is the one that survives a re-render bound to another call.
-//   3. neither — so say so, immediately.
+//   3. neither yet — wait for the input a bounded while (awaitAppName), then say so.
 //
-// There USED to be a fourth step: wait 12s in case the answer was still in flight. It is gone, and
-// it was never justified. The premise was a "race" between the host's delivery and oma.ready's 8s
-// deadline — but the deadline only fires when NOTHING arrived, because identity arriving is itself
-// what triggers the walk that makes ready true. Being released by the deadline therefore already
-// means the answer is not coming, and waiting another 12s only bought the user a spinner in front
-// of the one screen that explains what happened. Measured, too: every re-render that failed was
-// handed another call's envelope verbatim — an envelope that will never name us, no matter how
-// long we hold it.
-function appName(state) {
-  var live = (oma.toolInput && oma.toolInput.app) || state.app;
-  if (live) return live;
+// The wait was removed once, on the premise that ready implies identity ("identity arriving is what
+// triggers the walk that makes ready true"). Opt-in data broke that premise: this document never
+// subscribes, so it is ready when prefs are warm, which can be before the host's input arrives.
+// A re-render bound to ANOTHER call still ends in lost(): that envelope never names us, so the
+// wait simply runs out.
+function appName() {
   try { return window.__OMA_IDENTITY__() || null; } catch (e) { return null; }
+}
+// Ready is not identity any more (data is opt-in, and this document subscribes to nothing), so a
+// name still in flight gets a bounded wait — the same 8s the runtime gives a silent host.
+async function awaitAppName() {
+  const now = appName();
+  if (now || typeof window.__OMA_AWAIT_IDENTITY__ !== "function") return now;
+  try { return (await window.__OMA_AWAIT_IDENTITY__(8000)) || null; } catch (e) { return null; }
 }
 
 // The identity-loss screen, cut to what changes the OUTCOME (elegance A15, 2026-08-04): once
@@ -179,7 +185,6 @@ function appName(state) {
 // when toolInfo says), and a compact console record for anyone diagnosing a host.
 function lost() {
   var d = {};
-  try { d.toolInput = oma.toolInput || null; } catch (e) { d.toolInput = null; }
   try { var st = oma.state || {}; d.state = { app: st.app, collection: st.collection }; } catch (e) {}
   try { d.toolName = boundToolName(); } catch (e) {}
   try { console.warn("[oma] identity lost — the host re-rendered without replaying the opening call:", d); } catch (e) {}
@@ -198,25 +203,41 @@ function lost() {
   wrap.appendChild(h); wrap.appendChild(p);
   document.body.appendChild(wrap);
 }
-function mount(html) {
-  const doc = new DOMParser().parseFromString(html, "text/html");
-  const scripts = [...doc.querySelectorAll("script")].map((s) => ({ type: s.type, text: s.textContent }));
-  for (const s of doc.querySelectorAll("script")) s.remove();
-  for (const el of doc.querySelectorAll("head style")) document.head.appendChild(el.cloneNode(true));
-  // Copying innerHTML leaves the app's BODY TAG behind, attributes and all — this document's body
-  // is the loader's, not the app's. One attribute has to survive that: the stage class the server
-  // stamped on (shell.mjs stampStage), because the kit's page-level shape reads it from body and
-  // an app mounted through this door would otherwise be the one copy laid out on the wrong track.
-  // Only \`stage-*\` is carried: every other body class the app wrote is dropped here today, and
-  // widening that is a separate question with its own blast radius.
-  for (const c of [...doc.body.classList]) if (c.indexOf("stage-") === 0) document.body.classList.add(c);
-  document.body.innerHTML = doc.body.innerHTML;
-  for (const sp of scripts) {
-    const el = document.createElement("script");
-    if (sp.type) el.type = sp.type;
-    el.textContent = sp.text;
-    document.body.appendChild(el);
+// MOUNT = THE APP'S DOCUMENT, AS ITS AUTHOR WROTE IT, INSIDE THIS ONE.
+//
+// An app may load libraries from the allowed CDNs (React from cdnjs, Tailwind's play script, a
+// font stylesheet), so this has to reproduce what a browser does with the app's own document, not
+// just its inline code: the title, the head's stylesheets and links, the html/body attributes, and
+// every script in DOCUMENT ORDER. Scripts parsed by DOMParser never run, so each is rebuilt; an
+// external one is awaited before the next is inserted, because a dynamically inserted script is
+// async and the inline code after a <script src=react> expects React to exist when it runs.
+// Attributes carry over except data-oma-*, which belong to this runtime (display mode and friends).
+function carryAttributes(from, to) {
+  for (const a of [...from.attributes]) {
+    if (a.name.indexOf("data-oma") === 0) continue;
+    if (a.name === "class") { for (const c of from.classList) to.classList.add(c); continue; }
+    to.setAttribute(a.name, a.value);
   }
+}
+function runScript(s) {
+  const el = document.createElement("script");
+  for (const a of [...s.attributes]) el.setAttribute(a.name, a.value);
+  if (!s.src) { el.textContent = s.textContent; document.body.appendChild(el); return Promise.resolve(); }
+  return new Promise(function (done) {
+    el.onload = el.onerror = function () { done(); };
+    document.body.appendChild(el);
+  });
+}
+async function mount(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const scripts = [...doc.querySelectorAll("script")];
+  for (const s of scripts) s.remove();
+  if (doc.title) document.title = doc.title;
+  for (const el of doc.head.querySelectorAll("style, link")) document.head.appendChild(el.cloneNode(true));
+  carryAttributes(doc.documentElement, document.documentElement);
+  carryAttributes(doc.body, document.body);
+  document.body.innerHTML = doc.body.innerHTML;
+  for (const s of scripts) await runScript(s);
 }
 
 // First paint hangs on this ONE read, and a host can discard, with no reply, bridge calls sent in an
@@ -262,7 +283,7 @@ oma.ready(async (state) => {
   // We are alive: from here the ladder below owns the failure surface, so stand the watchdog down.
   try { window.__OMA_LOADER_STARTED__ = true; } catch (e) {}
   try {
-    const name = appName(state);
+    const name = await awaitAppName();
     if (!name) return lost();
     const r = await fetchAppHtml(name);
     const sc = (r && r.structuredContent) || {};
@@ -292,7 +313,7 @@ oma.ready(async (state) => {
       // 2026-08-16). So a declared origin is reachable here on hosts that honour that _meta — and
       // a host that cached the loader picks a new declaration up on its next read, not mid-session.
       window.__OMA_APP__ = name;
-      return mount(sc.html);
+      return await mount(sc.html);
     }
     document.body.innerHTML = "";
     await oma.embed(name, {
@@ -310,54 +331,20 @@ oma.ready(async (state) => {
 });
 `;
 
-// ─────────────────────────────────────────────────────────── the stage class, written in bytes
-/** Write `stage-<width>` onto a document's own <body> tag.
- *
- *  The kit's stage block (components/_system.css) keys its width track on a body class, and this
- *  is how the class gets there. A CLASS ATTRIBUTE, not a script: the alternative is a line of JS
- *  that runs after parse, which means a first paint at the wrong width on every open — and this
- *  answer is known at serve time, so nothing has to be measured or awaited to produce it.
- *
- *  Which width is a question for the app's declaration (contracts.mjs stageWidthFor); this
- *  function only writes what it is handed, and writes NOTHING when handed nothing — an app that
- *  declares no stage keeps a byte-identical document.
- *
- *  Three body shapes exist in the wild and all three are handled: `<body>`, `<body class="x">`
- *  (quoted or not) and `<body data-…>`. Only the first is rewritten — but "first" means the first
- *  ELEMENT, not the first occurrence of the characters.
- *
- *  THAT DISTINCTION IS A REAL BUG, MEASURED 2026-08-16. An app built outside the chat has its
- *  bundle inlined into this document before it is stamped, and a bundler puts its script in
- *  <head> — so the first `<body` in the served bytes was a STRING INSIDE THE BUNDLE, and stamping
- *  rewrote it. React's development build contains the words `<body>` in an error message; the
- *  served app died with `missing ) after argument list` and rendered a blank card. The scan that
- *  fixes it is firstTag below — shared with wrapApp, which had the identical bug on `<head>`.
- *
- *  IDEMPOTENT, because the seams stamp the TEMPLATE and wrapApp stamps again on its way out: an
- *  app whose body already carries this exact class comes back byte-identical rather than wearing
- *  it twice. Two calls, one class — which is what makes the correct order safe to adopt without
- *  making the wrapApp option a trap for anyone who does it the other way. */
-const STAGE_WIDTHS = new Set(["column", "wide", "fluid"]);
-
-// ─────────────────────────────────────────────────────────── one scanner, three consumers
+// ─────────────────────────────────────────────────────────── one scanner for structural tags
 /** The first `<name …>` START TAG in a document — the ELEMENT, not the characters.
  *
  *  Whole `<script>` and `<style>` elements are alternatives ahead of the tag itself, so a match
  *  inside script or style TEXT is consumed as part of that element and never returned. That is the
- *  same idiom assets.mjs's TAG_RE already uses, and it is here because this repo has now been bitten
- *  by the naive version twice, in two different consumers, by the same bundle:
- *
- *    · stampStage rewrote a `<body>` that lived inside React's development build (its error text
- *      says "<body>"), which terminated a string literal — `missing ) after argument list`, dead app.
- *    · wrapApp injected the ENTIRE shell at the first `<head>`, which for a FRAGMENT template — the
- *      shape RUNTIME.md §6.1 prints — is also inside that bundle: measured, the shell landed at byte
- *      846,769 of a 1.5 MB document, `Invalid or unexpected token`, blank card.
- *
- *  An app's own markup and a bundle's string literals are not the same kind of thing, and one
- *  scanner that knows the difference is cheaper than remembering to at every call site.
+ *  same idiom assets.mjs's TAG_RE already uses. It matters because an app built outside the chat
+ *  has its bundle inlined into the template before this runs, and a bundle's string literals
+ *  mention tags: React's development build says "<body>" in an error message, and a FRAGMENT
+ *  template (the shape RUNTIME.md §6.1 prints) has no <head> of its own — so the first `<head>`
+ *  in the raw characters is inside that bundle, and injecting the shell there splits a JS string
+ *  (`Invalid or unexpected token`, blank card — measured on a 1.5 MB document).
  *
  *  Not for finding a `<script>` (the alternation would eat it) — for the structural tags only,
- *  which is every use there is: body, head, html. */
+ *  which is every use there is: head, html. */
 const TAG_SCANNERS = new Map();
 export function firstTag(html, name) {
   let re = TAG_SCANNERS.get(name);
@@ -373,21 +360,6 @@ export function firstTag(html, name) {
     return { start: m.index, end: m.index + m[0].length, attrs: m[1], tag: m[0] };
   }
   return null;
-}
-
-export function stampStage(html, width) {
-  if (!width || !STAGE_WIDTHS.has(width)) return html;
-  const cls = `stage-${width}`;
-  const src = String(html ?? "");
-  const at = firstTag(src, "body");
-  if (!at) return src;
-  const q = at.attrs.match(/\sclass\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'>]+))/i);
-  const cur = q ? (q[1] ?? q[2] ?? q[3] ?? "") : "";
-  if (new RegExp(`(?:^|\\s)${cls}(?:\\s|$)`).test(cur)) return src;   // already stamped
-  const tag = q
-    ? `<body${at.attrs.replace(q[0], ` class="${(cur + " " + cls).trim()}"`)}>`
-    : `<body class="${cls}"${at.attrs}>`;
-  return src.slice(0, at.start) + tag + src.slice(at.end);
 }
 
 // JSON destined for an inline <script> block: escape "<" so a string that came from a URL
@@ -451,7 +423,7 @@ function hostTokenStyle(tokens) {
 export function wrapLoader(opts = {}) {
   return `<!DOCTYPE html><html><head><meta charset="UTF-8">
 ${opts.standalone ? `<script data-oma="standalone">window.__OMA_STANDALONE__=${scriptJson(opts.standalone)}</script>\n` : ""}${viewBaseScript(opts.viewBase)}<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>
-${kitStyle(KIT_CSS())}
+${baseStyle(BASE_CSS)}
 ${SELF_HEIGHT_UNPIN_SCRIPT}
 <script data-oma="watchdog">${LOADER_WATCHDOG}</script>
 <script type="module" data-oma="runtime">${runtime()}</script>
@@ -465,7 +437,7 @@ ${SELF_HEIGHT_UNPIN_SCRIPT}
  * mode (no MCP host); the config global must be defined BEFORE the runtime module evaluates.
  * endpoint/events default to "/rpc" and "/events"; an embedding front door (hosted shell)
  * points them at its own same-origin proxy paths. chrome:false renders the BARE widget —
- * no viewer bar, no stage framing — for shells that own the surrounding chrome. viewBase is
+ * no viewer bar, no page framing — for shells that own the surrounding chrome. viewBase is
  * the base path for app→app links (window.oma.viewBase, default "/view/"); an
  * embedding shell points it at its own mount base. It flows through window.__OMA_STANDALONE__
  * to the runtime as-is — no other engine code change is needed for it to reach oma.viewBase.
@@ -474,9 +446,6 @@ ${SELF_HEIGHT_UNPIN_SCRIPT}
  * different door; see viewBaseScript.
  * opts.app — app name, injected as window.__OMA_APP__ so the runtime knows
  * its identity on the dynamic-tools resource path (the generic loader cannot carry it).
- * opts.stage — "column" | "wide" | "fluid": the width track the app declared, written onto its
- * <body> as `stage-<width>` for the kit (see stampStage). Absent = an app that declared none,
- * and then this function returns exactly the bytes it always did.
  */
 export function wrapApp(appHtml, opts = {}) {
   // The early-error buffer is a CLASSIC script and goes FIRST: app classic inline scripts
@@ -490,19 +459,15 @@ export function wrapApp(appHtml, opts = {}) {
     (opts.collection ? `<script data-oma="collection">window.__OMA_COLLECTION_HINT__=${scriptJson(opts.collection)}</script>\n` : "") +
     `<style data-oma="tokens">${TOKEN_FALLBACK_CSS}</style>\n` +
     hostTokenStyle(opts.tokens) + // after the fallbacks, so the embedder's values win
-    kitStyle(KIT_CSS()) + "\n" + // …and after the tokens, since every kit colour reads one
+    baseStyle(BASE_CSS) + "\n" + // …and after the tokens, since the base reads them
     // The same height unpin the loader and the runner's children carry: this document is the OTHER
-    // top-level widget document (a per-app ui:// resource under OMA_DYNAMIC_TOOLS), and a host
+    // top-level widget document (the per-app ui:// resource a pinned app's opener points at), and a host
     // sizes its frame from what its own shim measures here — so an app that pins html/body would
     // be measured at the frame height it already has and could never be seen to grow. It no-ops
     // when nothing is embedding us (the /view case this same function also serves) and when the
     // embedder is a shell that owns the frame — see SELF_HEIGHT_UNPIN_SOURCE.
     SELF_HEIGHT_UNPIN_SCRIPT + "\n" +
     `<script type="module" data-oma="runtime">${runtime()}</script>\n`;
-
-  // The stage class rides on the app's own <body>, so it is written before the head injection —
-  // which only ever touches <head>/<html>, and cannot reach a body tag that comes after it.
-  const staged = stampStage(appHtml, opts.stage);
 
   // Put the shell BEFORE the app's own markup/scripts so window.oma exists first
   // (module scripts execute in document order).
@@ -511,11 +476,11 @@ export function wrapApp(appHtml, opts = {}) {
   // already INLINED, so "the first <head>" over raw characters can be a string inside a bundle.
   // Measured on the §6.1 fragment shape + React's dev build — the whole shell went into the middle
   // of a JS string literal and the app never parsed.
-  const head = firstTag(staged, "head");
-  if (head) return staged.slice(0, head.end) + "\n" + inject + staged.slice(head.end);
-  const htmlTag = firstTag(staged, "html");
-  if (htmlTag) return staged.slice(0, htmlTag.end) + "\n<head>" + inject + "</head>" + staged.slice(htmlTag.end);
-  // Fragment: build a full document around it — the body tag is ours, so it is stamped here.
-  const cls = opts.stage && STAGE_WIDTHS.has(opts.stage) ? ` class="stage-${opts.stage}"` : "";
-  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body${cls}>${staged}</body></html>`;
+  const src = String(appHtml ?? "");
+  const head = firstTag(src, "head");
+  if (head) return src.slice(0, head.end) + "\n" + inject + src.slice(head.end);
+  const htmlTag = firstTag(src, "html");
+  if (htmlTag) return src.slice(0, htmlTag.end) + "\n<head>" + inject + "</head>" + src.slice(htmlTag.end);
+  // Fragment: build a full document around it.
+  return `<!DOCTYPE html><html><head><meta charset="UTF-8">${inject}</head><body>${src}</body></html>`;
 }

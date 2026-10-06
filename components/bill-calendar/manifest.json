@@ -7,8 +7,5 @@
     "currency",
     "density",
     "confirm_delete"
-  ],
-  "stage": {
-    "width": "wide"
-  }
+  ]
 }

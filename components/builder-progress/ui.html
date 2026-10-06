@@ -7,6 +7,30 @@
 <meta name="oma-category" content="Tools">
 <meta name="description" content="Parallel build lanes and receipts for apps created across agents and CLIs.">
 <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-s2:8px;--k-s3:12px;--k-s4:16px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-h1{margin:0;font-size:var(--font-heading-sm-size,18px);font-weight:650;letter-spacing:-.01em}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
   :root {
     --bp-accent: var(--color-text-info, var(--color-ring-primary));
     --bp-success: var(--color-text-success, var(--color-ring-primary));
@@ -14,20 +38,11 @@
     --bp-danger: var(--color-text-danger, var(--color-text-primary));
   }
 
-  /* No body rule. The private 860px cap that lived there is a stage declaration now
-     (manifest.stage.width: column); centring, padding and ground belong to the kit's stage
-     contract rather than to the page the host already frames. */
-
-  /* `.shell` is `.k-stage` now. Its overflow, border, radius, fill and shadow were only a
-     self-drawn card frame, so none survive: the kit draws exactly one card in a chat and no card
-     when this ledger owns the screen. This shell had no separate layout job to preserve. */
-
-  /* `.app-bar` is `.k-appbar` now: row, gap, padding, mark box and title/eyebrow scale come from
-     the kit, along with the rule drawn only when this header belongs to a chat card. */
+  /* `.shell` is the `.k-stage` root (the 760px column above). `.app-bar` is a `.k-appbar`; its
+     minimum height is this app's own rhythm. */
   .app-bar { min-height: 66px; }
 
-  /* The mark keeps its PAINT and loses its box. Identity is content; the stage contract strips
-     frames, never faces. */
+  /* The mark's box comes from `.k-appbar .k-appmark`; its paint is this app's. */
   .mark {
     border: 1px solid var(--color-border-primary);
     color: var(--color-text-secondary);
@@ -1147,9 +1162,8 @@
     workspace.append(grid);
   }
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  // `standalone` = the browser viewer or a panel host, which frame the page already; absent = a
+  // widget in someone's conversation. The `body:not(.standalone) .k-appbar` rule above reads it.
   if (oma.standalone) document.body.classList.add("standalone");
 
   oma.ready(render);

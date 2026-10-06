@@ -15,7 +15,8 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { McpServer, CLIENT_INFO_META_KEY, SUPPORTED_PROTOCOL_VERSIONS } from "@modelcontextprotocol/server";
 import { EXTENSION_ID } from "./mcp-apps.mjs";
-import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE } from "./store.mjs";
+import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE, cspPolicy, principalScope } from "./store.mjs";
+import { normalizeSharing, makeRouter } from "./sharing.mjs";
 import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_APPS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
 import { isControlPlaneTool, TOOL_ALIASES } from "./tool-policy.mjs";
@@ -29,11 +30,13 @@ import { register as registerFileTools } from "./tools/files.mjs";
 import { register as registerRegistryTools } from "./tools/registry.mjs";
 import { register as registerAppStoreTools } from "./tools/app-store.mjs";
 import { register as registerSettingsTools } from "./tools/settings.mjs";
+import { register as registerScreenTools } from "./tools/screen.mjs";
+import { register as registerSharingTools } from "./tools/sharing.mjs";
 import { register as registerPrompts } from "./prompts.mjs";
 
 // Part of this module's public surface (server.mjs / http.mjs / index.mjs import them from here),
 // so the move into contracts.mjs is invisible to callers.
-export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor } from "./contracts.mjs";
+export { tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, liveFrameFor } from "./contracts.mjs";
 
 // WHO is calling, carried across await points. Two writers, one reader:
 //   · the HTTP entry wraps each /mcp dispatch in run({ fallback }) — its User-Agent/body-derived
@@ -58,6 +61,7 @@ ROUTING:
 - data_list and list_data_collections read facts without a UI. data_add_item / data_update_item / data_move_item / data_delete_item / apply_data_writes write; visible widgets refresh themselves.
 - data_changes attributes the edits a user made inside a widget, which never pass through this conversation.
 - get_app_guide holds the authoring contract for building or changing an app. An existing app can be bound to a different collection instead of being rewritten.
+- An app may carry a skill: its author's guide to how an AI uses it. Before first working with an app's data in a conversation, read it with get_app_skill.
 - "app-store" is the built-in store of ready-made apps: app_store_list browses it, install_from_app_store installs one. dashboard and settings are the other system apps.
 - An app can keep FILES too (file_write / file_list / file_read): images, PDFs, exports — per app, across chats.
 
@@ -92,8 +96,9 @@ const ONBOARDING = `GETTING STARTED — this user has no apps of their own yet, 
 // What replaces it once the user has apps of their own.
 //
 // ⚠️ NOT a list of those apps. That was the first attempt and Leo killed it on grounds we had
-// already accepted once: OMA_DYNAMIC_TOOLS is OFF by default "because every save_app would
-// invalidate the whole conversation's prompt cache" — and this string lives in that prefix (codex
+// already accepted once: per-app tools exist only for apps the user pins, because a tool list that
+// moved on every save_app would invalidate the whole conversation's prompt cache — and this string
+// lives in that prefix (codex
 // carries it inside tool_search's description, which sits in req.tools at the very front). Naming
 // the user's apps here re-introduces the exact property we refused, through a different door.
 // Guiding the model to LIST is the cheap direction: a tool result lands in the conversation body,
@@ -282,7 +287,7 @@ function installUnlistedFilter(server, hidden) {
  *                            `runFunctionBody`'s call/outcome shape (functions.mjs, exported for
  *                            exactly this): a container, a socket, another machine. Everything
  *                            belonging to the STORE stays on this side of it.
- *                        Neither moves `oma.contract` and neither adds an env flag: they are
+ *                        Neither changes the runtime contract and neither adds an env flag: they are
  *                        options an embedder passes, invisible to every app and every host.
  * @param opts.unlisted   tool names to REGISTER BUT NOT LIST. They are still callable through
  *                        `tools/call` exactly as before; they simply stop appearing in
@@ -303,13 +308,37 @@ function installUnlistedFilter(server, hidden) {
  *                        no-op and the file is never created, which is what a deployment needs
  *                        when the alternative is disclosing a collection it has no product reason
  *                        to keep.
- * @param opts.dynamicTools  register a per-app `open_<name>` tool for every app. When PASSED it
- *                        decides; when omitted, `OMA_DYNAMIC_TOOLS=1` still does. An env flag is
- *                        the right control for a person running this locally and the wrong one
- *                        for a deployment that must be able to state what its tool list is — a
- *                        per-app opener makes `tools/list` move whenever a user saves an app.
+ * @param opts.dynamicTools  allow PINNED apps their own `open_<name>` tool. DEFAULT true: an app
+ *                        the user pins in the settings app (`open_tool`) gets one, every other app
+ *                        opens through `open_app`, and `tools/list` moves only when the user pins,
+ *                        unpins or deletes a pinned app. `false` = never any per-app tool, pins
+ *                        ignored, `tools/list` constant — for a deployment that has to be able to
+ *                        state what its tool list is.
+ * @param opts.csp        where widgets may load from: `{ base?, extensible? }`. DEFAULT = the
+ *                        platform base (store.PLATFORM_CSP: the CDN script hosts and Google Fonts)
+ *                        widened by each app's manifest.csp and the user's `policy:csp:*` rows.
+ *                        A hosted plane passes `extensible: false` (and its own `base` if it needs
+ *                        one) so every widget's network policy is the operator's one statement.
+ *                        A malformed base THROWS, same rule as `functions`.
+ * @param opts.caller     WHO is calling: `{principal, label?}`, an identity the DEPLOYMENT
+ *                        authenticated. Every write made on this engine — into its own store or,
+ *                        through a share, into another account's — carries `principal` in the
+ *                        ledger, stamped server-side (store.mjs principalScope); no argument can set
+ *                        or change it. Absent (every local install) ⇒ nothing is stamped.
+ * @param opts.mounts     what OTHER accounts have shared with the caller (src/sharing.mjs
+ *                        MountsProvider). Present ⇒ `@owner/name` handles resolve in every tool,
+ *                        each through store.mjs scopeStore, with the grants re-read on every call.
+ *                        Requires `caller`. Adds no tool and changes no description.
+ * @param opts.sharing    the caller's OWN shares (src/sharing.mjs SharingProvider). Present ⇒ the
+ *                        `share` and `copy_app` tools are registered — after every other tool, so
+ *                        the rest of tools/list is byte-identical to an engine without them. Requires
+ *                        `mounts`. All three absent ⇒ the engine is exactly what it was before
+ *                        sharing existed, on the wire and in behaviour.
  */
-export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false, unlisted = [], telemetry = true, dynamicTools: dynamicToolsOpt } = {}) {
+export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false, unlisted = [], telemetry = true, dynamicTools = true, csp, caller, mounts, sharing } = {}) {
+  // Identity and the two providers, normalised once and THROWING on a malformed shape (sharing.mjs
+  // normalizeSharing says why: an identity that silently degrades to none is unattributed writes).
+  const shareOpts = normalizeSharing({ caller, mounts, sharing });
   // The seat, normalised once here into `false | {egress?, executor?}` so that every reader
   // downstream (the tool registration, the guide) asks the same object the same way. A malformed
   // seat THROWS rather than degrading: a hosted plane that meant to pass a gateway and passed a
@@ -320,20 +349,15 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // `undefined | {ui?, openai?}` so the one reader downstream (uiSecurityFor) never has to ask
   // which of the two shapes it got.
   const widgetDomains = normalizeWidgetDomain(widgetDomain);
+  const cspRule = cspPolicy(csp);
   // Registered but not listed. Fixed at construction: `tools/list` is a cached prefix, so a set
   // that could move mid-connection would be a cache break with no event to hang it on. The
   // retired names are in it unconditionally — an embedder does not get to advertise them, and a
   // caller that omits `unlisted` entirely still gets a list with no dead spellings in it.
   const unlistedTools = new Set([...Object.values(TOOL_ALIASES), ...unlisted]);
-  // THE OPTION WINS WHERE IT IS GIVEN, and the environment answers where it is not. An env flag is
-  // the right control for a person running the local product and the wrong one for a deployment
-  // that has to be able to state what its tool list is: a per-app opener makes `tools/list` move
-  // whenever a user saves an app, which is exactly what a directory's versioned-metadata contract
-  // forbids. `undefined` — not `false` — is what "not given" means here, so an embedder can pass
-  // `false` and MEAN it on a machine whose environment says otherwise.
-  const dynamicTools = dynamicToolsOpt === undefined
-    ? process.env.OMA_DYNAMIC_TOOLS === "1"
-    : !!dynamicToolsOpt;
+  // Whether pinned apps may have their own opener. The prompt-cache tradeoff: with it on,
+  // tools/list moves only when the user pins, unpins or deletes a pinned app — never on save_app.
+  const pinning = !!dynamicTools;
   const server = new McpServer(
     // Reported to the host at initialize (legacy era) / server-discover (2026-07-28). Real version,
     // not a literal — see version.mjs for why being unable to tell which build a deployment runs
@@ -351,20 +375,20 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       // EVERY listChanged bit is written out, true or false, and never left to the SDK — because
       // silence here does NOT mean "not declared": registering a tool or a prompt makes the SDK
       // declare that capability itself, filling the bit in with `?? true`. `tools.listChanged`
-      // learned this the hard way. It used to be a conditional spread that added the key only with
-      // the per-app openers on, meaning to say "off ⇒ the surface never moves, don't re-list" —
-      // and it said `true` in every mode for as long as it existed, because an absent key is not
-      // `false`; measured 2026-08-16, and test/capabilities.mjs pins both modes now. The intent
-      // was right: with the openers off the tool surface is fixed for the life of the process, and
-      // claiming it might move is an invitation to re-list — the prompt-cache cost OMA_DYNAMIC_TOOLS
-      // is defaulted off to avoid. `prompts` is the same ruling: one prompt, compiled in, registered
-      // before the transport is attached, so the list provably cannot move.
+      // learned this the hard way: an absent key is not `false` (test/capabilities.mjs pins both
+      // modes). With pinning off the tool surface is fixed for the life of the process, and
+      // claiming it might move is an invitation to re-list; with pinning on it moves when the user
+      // pins or unpins. `prompts` is the same ruling as the off case: one prompt, compiled in,
+      // registered before the transport is attached, so the list provably cannot move.
       capabilities: {
         extensions: { [EXTENSION_ID]: {} },
         resources: { subscribe: true, listChanged: true },
         prompts: { listChanged: false },
-        tools: { listChanged: dynamicTools },
+        tools: { listChanged: pinning },
       },
+      // A pin sync may register and remove several openers at once; the SDK announces each, and
+      // this folds them into one notification per tick.
+      debouncedNotificationMethods: ["notifications/tools/list_changed"],
       // Both eras, one engine: the SDK's default list is legacy-only, and a list with a modern
       // entry is ALSO the switch that registers `server/discover` (a MUST on 2026-07-28) — so
       // this line is the whole modern-era opt-in, not a version cosmetics.
@@ -376,7 +400,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       // deliberately omitted too: its instructions are personalised per store (onboarding vs
       // inventory), so the conservative default is the correct scope, not an oversight.
       cacheHints: {
-        "tools/list": listCacheHints({ dynamicTools }),
+        "tools/list": listCacheHints({ dynamicTools: pinning }),
         "resources/templates/list": ENGINE_CONSTANT,
       },
     },
@@ -411,15 +435,14 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
     "app_store_list", "preview_app_store_entry", "install_from_app_store",
     "list_apps", "list_data_collections",
-    "get_ui_preference_schema", "call_function",
+    "get_ui_preference_schema", "call_function", "screen_poll",
   ]);
   // MCP Apps `_meta.ui.visibility` (elegance C2, Leo 2026-08-04): tools whose only real callers
   // are widgets/system apps — their own descriptions say "internal" — declared app-only, which the
   // standard specifies as "do not expose to the model". On a host that honors it this moves their
   // schemas out of the model's resident context entirely; on one that does not, nothing changes.
   // The wire (tools/list) still carries them either way — the golden tracks raw-wire bytes.
-  // get_data_version stays model-visible on purpose: its description invites the model to poll.
-  const APP_ONLY = new Set(["get_app_html", "preview_app_store_entry", "get_ui_preference_schema", "security_set"]);
+  const APP_ONLY = new Set(["get_app_html", "get_data_version", "preview_app_store_entry", "get_ui_preference_schema", "security_set", "screen_poll"]);
   // ONE line per control-plane tool call that REACHES US. Deliberately not a call log: only the
   // handful of names tool-policy already treats as privileged, and only the name — never arguments,
   // never a row, never anything the user typed.
@@ -442,13 +465,21 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // at the ONE seam every tool passes through — is what lets hostName() name THE CALL instead of
   // whichever connection happened to open first. The ctx is found by shape, not position, because
   // the SDK hands no-input tools a shorter argument list.
-  const perCallHost = (handler) => (...args) => {
+  //
+  // The same seam enters the CALLER's principal scope (store.mjs principalScope): every write any
+  // tool makes from here down — the item tools, the file channel, a function body's dispatch, a
+  // write into another account's store through a share — is stamped with the authenticated
+  // account, and nothing a caller sends can reach that value.
+  const asCaller = shareOpts.caller
+    ? (fn) => principalScope.run(shareOpts.caller, fn)
+    : (fn) => fn();
+  const perCallHost = (handler) => (...args) => asCaller(() => {
     const ctx = args.find((x) => x && typeof x === "object" && x.mcpReq);
     const ci = ctx?.mcpReq?.envelope?.[CLIENT_INFO_META_KEY];
     return (ci && typeof ci.name === "string" && ci.name)
       ? hostContext.run({ ...hostContext.getStore(), call: ci.name }, () => handler(...args))
       : handler(...args);
-  };
+  });
   server.registerTool = (name, config, handler) => {
     let cfg = config;
     // annotations.title mirrors the tool's own `title`. The MCP spec puts a display name in both
@@ -577,6 +608,10 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     if (r.error === "built_outside") return `built_outside — "${r.name}" was built outside this store: its ui is a template that loads bundled assets (oma-asset:…), and the code those assets came from is not here. Source lives outside this store; rebuild and re-install with install-app.mjs. Nothing was written.`;
     if (r.error === "bad_asset_ref") return `bad_asset_ref — ${r.detail}. An oma-asset: reference names a file in THIS app's file plane (file_list shows them).`;
     if (r.error === "group_too_long") return `group_too_long — a group is a lane name (max ${r.limit} chars), not a data field.`;
+    if (r.error === "reserved_collection") return `reserved_collection — "${r.collection}": a name beginning with "@" belongs to another account's shared collection, so no collection of your own can have one. Pick a name without the "@".`;
+    if (r.error === "collection_full") return `collection_full — this shared collection already holds ${r.limit} rows, the most another account's share may add to; nothing was written. Its owner can archive or move rows.`;
+    if (r.error === "rate_limited") return `rate_limited — ${r.limit} writes to shared data in the last hour is the most one account may make through one owner's shares; nothing was written. Try again in about ${r.retry_after_minutes} minute(s).`;
+    if (r.error === "app_files_full") return `app_files_full — this shared app's files are at the most another account's share may add to (${r.limit_files} files, ${Math.round(r.limit_bytes / 1024 / 1024)} MiB); nothing was written. Its owner can delete files.`;
     if (r.error === "confirmation_expired") return "confirmation_expired — the confirmation window closed. Re-send WITHOUT request_state to get a fresh one.";
     if (r.error === "confirmation_invalid") return "confirmation_invalid — the request_state does not match this exact delete (row, version, caller). Re-send WITHOUT request_state to get a fresh one.";
     if (r.confirmation_required) return `Confirmation required — deleting "${r.preview}". Confirm with the user, then re-send with request_state.`;
@@ -625,9 +660,10 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // caps = tier preset ⊕ policy:defaults:<tier>:<cap> ⊕ security:<app>:<cap> (last wins).
   // Rows come from the settings snapshot scanned in items[] order (the same last-wins scan the
   // pref merge uses). Overlays apply verbatim — security_set is the only writer and is privileged.
-  // (The dormant caller axis — computeCaps(app, tier, caller) with caller always "owner" —
-  // retired 2026-08-04, elegance A4: a parameter with one value is a promise, not a feature.
-  // WHO-is-asking arrives with its first real second caller, as a signature change then.)
+  // WHO is asking does not enter here: an app reached through a share never comes through this
+  // function. It runs under contracts.mjs sharedCaps — its own preset, the grant's role, the shared
+  // collections — and neither account's security:* rows overlay it (the owner's express trust in
+  // their own app; the recipient's are keyed by app names that are not this one).
   function computeCaps(app, tier) {
     const preset = TIER_CAPS[tier] || TIER_CAPS.unreviewed;
     const caps = { ...preset, call_tools: [...preset.call_tools] };
@@ -673,7 +709,10 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   };
 
   // The shared context every tool module gets.
-  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, functions: fnSeat, telemetry, dynamicTools };
+  // `route` is the handle resolver, and its ABSENCE is what keeps a local install exactly as it was:
+  // every tool asks `route && isHandle(x)` before treating a name as anything but its own.
+  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, cspPolicy: cspRule, functions: fnSeat, telemetry, dynamicTools: pinning,
+    caller: shareOpts.caller, route: shareOpts.mounts ? makeRouter(shareOpts.mounts) : null, sharing: shareOpts.sharing };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
   // apps goes first because it hands back registerApp, which app-store and registry
@@ -684,6 +723,14 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   registerRegistryTools(ctx);
   registerAppStoreTools(ctx);
   registerSettingsTools(ctx);
+  // The screen: the AI uses the open app like the user would (tools/screen.mjs). On by default
+  // since 2026-10-05 (Leo: 「很有用 转默认」), after the confirmation card was taken off its reach.
+  registerScreenTools(ctx);
+  // Cross-account sharing's two verbs, only on a deployment that keeps grant records. Registered
+  // after the fixed surface, so an engine without them lists every other tool byte-identically.
+  if (ctx.sharing) registerSharingTools(ctx);
+  // Pinned openers last, so they append to the fixed surface rather than interleave with it.
+  ctx.syncOpeners();
 
   // Prompts are a different MCP primitive on a different verb (`prompts/list`), so they sit
   // outside src/tools/ and outside the tool-surface golden — nothing registered here reaches
@@ -727,7 +774,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // released with the connection: engines are per-connection, the store's emitter is not, so a
   // subscription that outlives its server is a listener writing to a closed transport forever.
   // The transport owns `onclose`; chaining rather than assigning keeps whatever it already had.
-  const releaseBridge = bridgeInvalidations(store, server, { dynamicTools, hasApp: ctx.hasApp });
+  const releaseBridge = bridgeInvalidations(store, server, { hasApp: ctx.hasApp, syncTools: pinning ? ctx.syncOpeners : undefined });
   const priorClose = server.server.onclose;
   server.server.onclose = () => { releaseBridge(); if (typeof priorClose === "function") priorClose(); };
 

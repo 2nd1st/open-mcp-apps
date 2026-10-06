@@ -66,8 +66,9 @@ while keeping every other env key you have set, printing what it took out.
 
 What was measured is that **this symptom does not occur on this build** — read on one machine, on
 the builds named. Nobody here can see the host's source, so this is not a fix record and does not
-say the bridge was repaired. `OMA_DYNAMIC_TOOLS=1` remains a supported setting you can put back
-yourself (README → Configuration) if the hang returns. Two notes on scope: the flag never bought
+say the bridge was repaired. If the hang returns, pin the app (Settings → Installed → the app → Own
+tool): that gives it the same per-app `open_<name>` door (README → Configuration). The engine no
+longer reads `OMA_DYNAMIC_TOOLS`. Two notes on scope: the flag never bought
 Claude Code's **terminal** surface anything — a terminal has no inline widget surface at all, by
 design — and the ChatGPT-web entry above is a different family that this reading says nothing about.
 

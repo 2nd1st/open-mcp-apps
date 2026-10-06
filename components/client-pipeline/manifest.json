@@ -1,9 +1,6 @@
 {
   "manifest_version": 2,
   "uses_shared": ["locale", "date_format"],
-  "stage": {
-    "width": "wide"
-  },
   "collections": {
     "clients": {
       "label_field": "name",
@@ -22,6 +19,5 @@
       },
       "strict": true
     }
-  },
-  "kind": "app"
+  }
 }

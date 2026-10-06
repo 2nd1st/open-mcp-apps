@@ -12,9 +12,9 @@ license from this document.
 
 The engine (the registry, the shell runtime, the data/command layer, the host
 adapters, the HTTP/stdio servers, the build) and the `components/` library (the
-single-file HTML apps, their fixtures, the `_system.css` design kit, and the demo
-data) are all licensed under the **MIT License** — see the single root
-[`LICENSE`](LICENSE), which governs the whole tree.
+single-file HTML apps, their fixtures, and the demo data) are all licensed under
+the **MIT License** — see the single root [`LICENSE`](LICENSE), which governs the
+whole tree.
 
 MIT means you may use, copy, modify, merge, publish, distribute, sublicense, and
 sell copies of any part of this project, including running a modified version as

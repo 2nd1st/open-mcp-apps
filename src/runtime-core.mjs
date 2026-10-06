@@ -15,21 +15,26 @@
 // single inequality is the whole 0-RTT mechanism, and it needs no collection-scoped stamp
 // on the read face.
 
-/** The RUNTIME CONTRACT version, readable by any app as `oma.contract`.
+/** WHO READS the result of a call this runtime makes: the app, never a model. Every call the
+ *  runtime sends carries it in the request's `_meta` (not an argument, so it costs tools/list
+ *  nothing), and a read tool answers it with the app's page budget instead of the model's
+ *  (contracts.mjs APP_READ_BUDGET). Reverse-DNS namespaced, the shape MCP gives `_meta` keys.
  *
- *  It exists for apps written OUTSIDE this repo (install-app.mjs). An AI-authored app is
- *  written against the engine it is running on and pulls the guide in the same breath; a file
- *  built in someone else's editor months earlier has neither, and "which window.oma am I talking
- *  to" is a question it must be able to answer from inside the page. RUNTIME.md is the prose;
- *  this is the number that prose is about, and both runtimes expose the same one.
- *
- *  Bump ONLY on a change an existing app could notice: a name removed, a signature or return
- *  shape changed, a documented behaviour altered. Adding a name does not bump — an app built
- *  against 1 keeps working on an engine that added something, and feature-detects what it wants.
- *  test/runtime-contract.mjs pins the surfaces this number describes. */
-export const RUNTIME_CONTRACT = 3;
+ *  NOT a security boundary, and nothing may treat it as one: any caller can send it, a model
+ *  included, and all it buys is a bigger page — which only a widget can absorb; a model that sends
+ *  it fills its own context. Nor a guarantee: a host that strips `_meta` on the way through
+ *  leaves the read on the model's budget — slower (more pages), never wrong. */
+export const READER_META_KEY = "app.openmcp/reader";
+export const APP_READER_META = Object.freeze({ [READER_META_KEY]: "app" });
 
-/** Pages a mount walk will fetch before declaring the projection truncated (honestly). */
+/** Pages a mount walk will fetch before declaring the projection truncated (honestly).
+ *  10 was sized when every page was the MODEL's (≈36K chars) — a 360K ceiling that a real
+ *  collection outgrew (226 rows / 305K: the last group fell off page 12, 2026-10-03). Under the
+ *  app's budget a page is bounded by WALK_LIMIT rows (500) or ≈500K chars, whichever comes
+ *  first, so the same 10 now mean 5,000 rows in at most 10 bridge round trips — the number
+ *  stays, what it buys changed. Past that, holding the whole collection in a widget is the wrong
+ *  design (filter with data_list through callTool), and the snapshot says so: `truncated: true`,
+ *  with `total` the real count. On a host that strips the reader `_meta`, the old 360K stands. */
 export const MAX_PAGES = 10;
 /** Times a walk restarts when a write moves the version mid-walk, before adopting anyway. */
 export const MAX_WALK_RESTARTS = 3;
@@ -456,6 +461,46 @@ export function childPreviewSnapshot(rows, { app, declaration, apps, tier } = {}
 // ---------------------------------------------------------------- via (shadow provenance)
 
 /** App names, as the store enforces them (contracts bad_name rule). */
+/** Run things once the app's own scripts have run — the moment the runtime may decide whether the
+ *  app is a data app (it subscribed with onChange) or a page. Call it at the runtime's FIRST run and
+ *  keep the returned `when(cb)`; each cb fires once, after that moment.
+ *
+ *  That moment is DOMContentLoaded, never readyState: an app's <script type="module"> runs after
+ *  parsing ends (readyState already "interactive") and before DOMContentLoaded. Judged by readyState,
+ *  a viewer whose runtime module ran first saw no subscription yet, called the app a page, and handed
+ *  ready() an empty snapshot (measured 2026-10-04: ready 0 rows, onChange 0, onChange 3). `load` is
+ *  the fallback for a runtime that arrived after the event; the extra task lets an inline module the
+ *  loader inserted — which evaluates in a task of its own — subscribe first. */
+export function afterAppScripts(doc, win, defer = (f) => setTimeout(f, 0)) {
+  let done = doc.readyState === "complete";
+  const waiting = [];
+  const fire = () => { if (done && !waiting.length) return; done = true; for (const cb of waiting.splice(0)) defer(cb); };
+  if (!done) {
+    doc.addEventListener("DOMContentLoaded", fire, { once: true });
+    win.addEventListener("load", fire, { once: true });
+  }
+  return (cb) => { if (done) defer(cb); else waiting.push(cb); };
+}
+
+/** Who owns the frame's height, per display mode. INLINE, the host sizes the card from our content,
+ *  so html/body are unpinned (runner.unpinDocumentHeight: height auto !important) or a pinned app
+ *  could never be measured. FULLSCREEN, the host hands us a fixed frame and the app is meant to fill
+ *  it — and the same unpin, left in place, collapsed every `height:100%` app to its natural height:
+ *  fleet and trip-planner opened full screen as a strip across the top of an empty frame (Leo,
+ *  Claude desktop, 2026-10-03). So fullscreen takes the three declarations back off, and inline puts
+ *  them back. `unpin` is the injected runner function; `els` are <html> and <body>. */
+export function fitFrame(display, els, unpin) {
+  if (display === "fullscreen") {
+    for (const el of els) {
+      if (!el || !el.style) continue;
+      for (const p of ["height", "min-height", "overflow-y"]) el.style.removeProperty(p);
+    }
+    return "app";
+  }
+  unpin();
+  return "content";
+}
+
 export const VIA_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 
 /** The via stamp for a widget write — OBJECT FORM, frozen before the first stamp (row #8):
@@ -466,4 +511,132 @@ export const VIA_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 export function viaOf(app) {
   const c = String(app || "");
   return VIA_NAME_RE.test(c) ? { app: c } : undefined;
+}
+
+// ---------------------------------------------------------------- app tools (the app names what it can do)
+
+/** Tool names the way MCP spells them (SEP-986: letters, digits, `_` `-` `.`, at most 128). */
+export const APP_TOOL_NAME_RE = /^[A-Za-z0-9_.-]{1,128}$/;
+/** Per page — the ext-apps draft's recommended host limit, held at the source instead. */
+export const MAX_APP_TOOLS = 50;
+
+const textResult = (text, isError) => ({ content: [{ type: "text", text: String(text) }], ...(isError ? { isError: true } : {}) });
+
+/** What a `run(input)` returned, as a CallToolResult: an MCP result passes through; nothing is
+ *  "Done."; a string is the text; anything else is its JSON (and, for an object, structuredContent). */
+export function appToolResult(v) {
+  if (v && typeof v === "object" && Array.isArray(v.content)) return v;
+  if (v === undefined || v === null) return textResult("Done.");
+  if (typeof v === "string") return textResult(v);
+  const r = textResult(JSON.stringify(v));
+  return typeof v === "object" && !Array.isArray(v) ? { ...r, structuredContent: v } : r;
+}
+
+/** Why `input` does not fit `schema`, or null. Deliberately shallow — an object, its required
+ *  keys, and the primitive type / enum of each declared property: what an AI actually gets wrong,
+ *  answered as a tool error it can read and correct (not a protocol error it cannot). */
+function inputProblem(schema, input) {
+  if (!input || typeof input !== "object" || Array.isArray(input)) return "input must be an object";
+  const missing = ((schema && schema.required) || []).filter((k) => input[k] === undefined || input[k] === null);
+  if (missing.length) return "missing " + missing.join(", ");
+  for (const [k, p] of Object.entries((schema && schema.properties) || {})) {
+    const v = input[k];
+    if (v === undefined || v === null || !p) continue;
+    if (Array.isArray(p.enum) && !p.enum.includes(v)) return `${k} must be one of ${p.enum.map((e) => JSON.stringify(e)).join(", ")}`;
+    const t = p.type;
+    if (t === "integer" ? !Number.isInteger(v) : ["string", "number", "boolean"].includes(t) && typeof v !== t) return `${k} must be ${t === "integer" ? "an" : "a"} ${t}`;
+  }
+  return null;
+}
+
+/** One line per tool, for a reader that is not handed a tools/list (the screen relay): the name,
+ *  its arguments with their types (`?` = optional), and what it does. */
+function describeTool(t) {
+  const s = t.inputSchema || {}, req = new Set(s.required || []);
+  const args = Object.entries(s.properties || {}).map(([k, p]) => {
+    const type = p && Array.isArray(p.enum) ? p.enum.map((e) => JSON.stringify(e)).join("|") : (p && p.type) || "any";
+    const note = p && p.description ? ` (${String(p.description).replace(/\s+/g, " ").slice(0, 80)})` : "";
+    return `${k}${req.has(k) ? "" : "?"}: ${type}${note}`;
+  });
+  const what = t.description ? " — " + String(t.description).replace(/\s+/g, " ").slice(0, 240) : "";
+  return `${t.name}(${args.join(", ")})${what}`;
+}
+
+/** The page's own tools (ext-apps draft "App-provided tools"): what the app says it can do, by
+ *  name, for the AI to call instead of reading the screen and pressing. In memory, per page — the
+ *  draft's "Hosts MUST NOT persist app tool registrations across sessions" holds by construction:
+ *  nothing here is ever written anywhere, and a reload starts empty.
+ *
+ *  `register` returns the unregister function. Registering a name again REPLACES it (an app that
+ *  registers in its render must not throw on the second paint), and the older handle's unregister
+ *  then does nothing — it no longer owns the name. `onChange(cb)` hears every change to the list. */
+export function createAppTools() {
+  const tools = new Map();   // name → { tool, run }
+  const subs = [];
+  const changed = () => { for (const cb of subs) { try { cb(); } catch { /* a listener never breaks registration */ } } };
+  return {
+    register(def) {
+      const { name, title, description, inputSchema, annotations, run } = def || {};
+      if (!APP_TOOL_NAME_RE.test(String(name || ""))) throw new TypeError(`oma.tools.register: bad name ${JSON.stringify(name)} (letters, digits, _ - . — at most 128)`);
+      if (typeof run !== "function") throw new TypeError(`oma.tools.register(${name}): run(input) must be a function`);
+      if (!tools.has(name) && tools.size >= MAX_APP_TOOLS) throw new RangeError(`oma.tools.register(${name}): at most ${MAX_APP_TOOLS} tools per app`);
+      const tool = {
+        name,
+        ...(title ? { title: String(title) } : {}),
+        ...(description ? { description: String(description) } : {}),
+        inputSchema: inputSchema && typeof inputSchema === "object" ? { ...inputSchema, type: "object" } : { type: "object", properties: {} },
+        ...(annotations && typeof annotations === "object" ? { annotations } : {}),
+      };
+      const entry = { tool, run };
+      tools.set(name, entry);
+      changed();
+      return () => { if (tools.get(name) === entry) { tools.delete(name); changed(); } };
+    },
+    has: (name) => tools.has(name),
+    /** The tools/list `tools` array. */
+    list: () => [...tools.values()].map((e) => e.tool),
+    /** Run one. ALWAYS a CallToolResult: bad input, a throw, an unknown name → isError + why. */
+    async call(name, input) {
+      const e = tools.get(name);
+      if (!e) return textResult(`This app has no tool "${name}"` + (tools.size ? `; it has ${[...tools.keys()].join(", ")}.` : "."), true);
+      const args = input === undefined || input === null ? {} : input;
+      const bad = inputProblem(e.tool.inputSchema, args);
+      if (bad) return textResult(`${name}: ${bad}. It takes ${describeTool(e.tool)}`, true);
+      try { return appToolResult(await e.run(args)); }
+      catch (err) { return textResult(`${name} failed: ${(err && err.message) || err}`, true); }
+    },
+    /** The listing for a reader without tools/list, one tool per line; "" when there are none. */
+    describe: () => [...tools.values()].map((e) => "- " + describeTool(e.tool)).join("\n"),
+    onChange(cb) { if (typeof cb === "function") subs.push(cb); },
+  };
+}
+
+/** The text a relayed call hands back to the model — the relay carries text, so the result's
+ *  text blocks, joined; any other block is named rather than silently dropped. */
+export function appToolText(result) {
+  const parts = ((result && result.content) || []).map((c) => (c && c.type === "text" ? c.text : `[${(c && c.type) || "content"}]`));
+  return parts.join("\n") || "Done.";
+}
+
+/** THE NATIVE ROAD — the one function here that touches the bridge, handed in as `app` (an
+ *  ext-apps App constructed WITH appCapabilities.tools, or the SDK refuses these handlers) so a
+ *  node test can drive it with a real SDK App. A host implementing the draft sends tools/list and
+ *  tools/call to the view; both are answered from `tools`. Whether the host does is learned from
+ *  the host itself — its first tools/list — never from its name, and only after that does a change
+ *  send notifications/tools/list_changed (coalesced: a burst of registrations is one notice). */
+export function serveAppTools(app, tools) {
+  let listed = false, queued = false;
+  app.onlisttools = async () => { listed = true; return { tools: tools.list() }; };
+  app.oncalltool = async (params) => {
+    // An unknown name is a protocol error on this road (MCP's "Unknown tool"); the relay answers
+    // the same case as a readable tool error, because there the model has no tools/list to check.
+    if (!tools.has(params && params.name)) throw new Error(`Unknown tool: ${params && params.name}`);
+    return tools.call(params.name, params.arguments);
+  };
+  tools.onChange(() => {
+    if (!listed || queued) return;
+    queued = true;
+    queueMicrotask(() => { queued = false; Promise.resolve().then(() => app.sendToolListChanged()).catch(() => {}); });
+  });
+  return { get listed() { return listed; } };
 }

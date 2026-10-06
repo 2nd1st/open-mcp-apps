@@ -6,16 +6,26 @@
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
-import { randomUUID } from "node:crypto";
+import { ResourceTemplate, ResourceNotFoundError } from "@modelcontextprotocol/server";
+import { randomUUID, createHash } from "node:crypto";
 import { registerAppResource, registerAppTool, RESOURCE_MIME_TYPE } from "../mcp-apps.mjs";
-import { APP_NAME_RE, cspFor, cspUnion } from "../store.mjs";
-import { wrapApp, wrapLoader, stampStage } from "../shell.mjs";
+import { APP_NAME_RE, cspFor, cspUnion, SETTINGS_COLLECTION, OPEN_TOOL_PREF } from "../store.mjs";
+import { latestPref, coercePref } from "../runtime-core.mjs";
+import { wrapApp, wrapLoader } from "../shell.mjs";
 import { resolveAssets, appAssetReader, hasAssetReferences } from "../assets.mjs";
 import { GUIDE, guideChapter } from "../guide.mjs";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, OPEN_WORLD_WRITE, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, stageWidthFor, stageDisplayFor, answer, toMcp, textWindow } from "../contracts.mjs";
+import { RO, WRITE, WRITE_NOT_IDEMPOTENT, OPEN_WORLD_WRITE, snapshotSchema, capsShape, cmdArgs, SEEDED_APPS, RESERVED_APP_NAMES, LOCKED_APPS, SCENE_CATEGORIES, tierOf, RUNNER_REQUIRED_HTML, defaultCollectionFor, liveFrameFor, sharedCaps, answer, toMcp, textWindow, READ_WINDOW } from "../contracts.mjs";
+import { isHandle, handleOf, notShared, sharedLocked, provenanceLine } from "../sharing.mjs";
+import { sharedScopeOf } from "../store.mjs";
 import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
 import { makeFunctionHost } from "../functions.mjs";
 import { editTelemetry } from "../edit-telemetry.mjs";
+import { skillLine, skillProvenance, skillAuthor } from "../skill.mjs";
+
+// Advice, never a refusal (contracts READ_WINDOW): said when an app's document stops fitting one read.
+const sizeAdvice = (name, size) => `"${name}" is ${size.toLocaleString()} chars — past one get_app read ` +
+  `(${READ_WINDOW.toLocaleString()}). An AI reads an app this size in pieces and is slow to change what it ` +
+  `never sees whole. Keep an app to one job; a bigger one splits into apps that share the collection.`;
 
 // "Does this document actually talk to the API?" — the shapes a real app reaches it by.
 // The original test was the literal `oma.` alone, which fired on working code: `const OMA =
@@ -25,23 +35,35 @@ import { editTelemetry } from "../edit-telemetry.mjs";
 // Exported so the false-positive cases stay pinned in test/server-smoke.
 export const OMA_REFERENCE_RE = /\boma\s*[.[]|window\s*\.\s*oma\b|window\s*\[\s*["']oma["']\s*\]|\{[^{}]*\boma\b[^{}]*\}\s*=/;
 
-// suggested_kind (§8-R3) — a DIAGNOSTIC, never a decision. "app" when the document binds
-// persistent state (the oma data/file verbs, the data_*/file_* tools, or declared collections);
-// "visual" otherwise. `oma.pref` is deliberately NOT a binding — theming a one-shot visual does
-// not make it a keeper. The arbitration forbids this value from influencing enumeration, closure,
-// export or retention, and from ever upgrading anything by itself — which is why it ships as a
-// prose sentence and never as a structured field: a ban is easiest to hold on a value no program
-// can reach.
+// Whether an app binds persistent data: the oma data/file verbs, the data_*/file_* tools, or
+// declared collections. `oma.pref` is deliberately NOT a binding — reading a setting to theme a
+// page does not give it data.
 const BINDS_RE = /\boma\s*\.\s*(addItem|updateItem|moveItem|deleteItem|onChange|readCollection|refresh|files)\b|\bdata_(add_item|update_item|move_item|delete_item|list|query|batch|collections|changes|version)\b|\bfile_(write|read|list|delete)\b/;
-export const suggestedKind = (ui, manifest) =>
-  ((manifest && manifest.collections && typeof manifest.collections === "object"
-    && Object.keys(manifest.collections).length > 0) || BINDS_RE.test(String(ui ?? "")))
-    ? "app" : "visual";
+const bindsData = (ui, manifest) =>
+  (manifest && manifest.collections && typeof manifest.collections === "object"
+    && Object.keys(manifest.collections).length > 0) || BINDS_RE.test(String(ui ?? ""));
 
-// The universal opener's document. Module-level because cache-hints.mjs has to tell it apart from
-// the per-app resources: this one is built from the engine binary alone (same bytes for every
-// tenant, every store), and that is exactly the difference between a shareable cache and a leak.
-export const LOADER_URI = "ui://open-mcp-apps/app.html";
+// What opening an app tells the model. A page — no data verbs, nothing declared, nothing stored,
+// no collection asked for — is just opened: naming a collection it never reads had the model
+// announce "the collection is empty, you're starting fresh" over a dice roller.
+const openedText = (comp, collection, total, asked) =>
+  !asked && total === 0 && !bindsData(comp.ui, comp.manifest ? JSON.parse(comp.manifest) : null)
+    ? `Opened "${comp.name}".`
+    : `Opened "${comp.name}" on collection "${collection}" (${total} item(s)). The widget loads its own data; if YOU need rows, read data_list.`;
+// …and, for an app whose author wrote down how it is used, ONE more line: the skill's description and
+// the way to the rest (src/skill.mjs). The meta, never the body — this rides every open. It travels
+// as the structured `note` too, because the model on some hosts reads only that channel.
+const withSkill = (text, how) => (how ? { text: `${text}\n${how}`, note: how } : { text });
+
+// The universal opener's document is NAMED BY ITS OWN BYTES. A host keys its template cache on the
+// URI — ChatGPT's docs say it outright ("publish a new URI" for a breaking HTML/JS/CSS change), and
+// stg measured the cost of a fixed name on 2026-07-29: eight minutes of widgets rendered by the
+// previous build's loader, and on 2026-10-02 a "Refresh tools" that refreshed the tools and kept
+// the old loader. Hashing what is served (runtime bundle, loader, viewer base, the platform's CSP
+// base) makes every build that changes it a new URI and a build that changes nothing the same one.
+// The dot keeps it out of every app's way: APP_NAME_RE has no dot, so no `<name>.html` can claim it.
+export const loaderUriFor = (doc) => `ui://open-mcp-apps/app.${createHash("sha256").update(doc).digest("hex").slice(0, 12)}.html`;
+export const LOADER_URI_RE = /^ui:\/\/open-mcp-apps\/app\.[0-9a-f]{12}\.html$/;
 
 // The app-write receipt, shared by save_app / edit_app / (conflict answers).
 // Terse for the same reason ackSchema is: outputSchema bytes are resident for every conversation.
@@ -60,23 +82,83 @@ const saveAckSchema = {
   eot: z.string().optional(),
 };
 
+// The absolute origins a document loads from: any src, <link href>, ES `import … from`
+// and `import()`, CSS `@import`/`url()`, and fetch/WebSocket targets. A lint, not a parser — it
+// only has to name what a host's CSP would refuse, and an origin it misses costs a warning, never
+// a wrong save.
+const ORIGIN_SITES = [
+  /\bsrc\s*=\s*["'](https?:\/\/[^"'/?#\s]+)/gi,
+  /<link\b[^>]*?\bhref\s*=\s*["'](https?:\/\/[^"'/?#\s]+)/gi,   // not <a href>: navigation is not a load
+  /\bfrom\s*["'](https?:\/\/[^"'/?#\s]+)/gi,
+  /\bimport\s*\(\s*["'](https?:\/\/[^"'/?#\s]+)/gi,
+  /\burl\(\s*["']?(https?:\/\/[^"'/?#\s)]+)/gi,
+  /@import\s+["'](https?:\/\/[^"'/?#\s]+)/gi,
+  /\b(?:fetch|WebSocket|EventSource)\s*\(\s*["'`]((?:https?|wss?):\/\/[^"'`/?#\s]+)/gi,
+];
+function externalOrigins(html) {
+  const out = new Set();
+  for (const re of ORIGIN_SITES) for (const m of html.matchAll(re)) out.add(m[1].toLowerCase());
+  return [...out];
+}
+function originAllowed(origin, csp) {
+  const all = [...(csp.resourceDomains || []), ...(csp.connectDomains || [])];
+  return all.some((d) => {
+    const w = d.match(/^([a-z]+:\/\/)\*\.(.+)$/i);
+    if (!w) return d.toLowerCase() === origin;
+    return origin.startsWith(w[1].toLowerCase()) && origin.endsWith("." + w[2].toLowerCase());
+  });
+}
+
 export function register(ctx) {
-  const { server, store, fileChannel, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain } = ctx;
-  const DYNAMIC_TOOLS = !!ctx.dynamicTools;
+  const { server, store, fileChannel, hostName, run, failNote, fail, computeCaps, viewBase, widgetDomain, cspPolicy } = ctx;
+  const PINNING = !!ctx.dynamicTools;
+  const { route } = ctx;
+
+  // ── apps other accounts shared with the caller (`@owner/app`) ──────────────────────────────
+  // null = the caller's own app; false = refused; else {m, app, role, row}. Without `route` (every
+  // local install) a name is only ever the caller's own.
+  const sharedApp = async (h) => (route && isHandle(h) ? (await route.session().app(h)) ?? false : null);
+  // The verbs that change an app's code, history or functions answer a share with ONE sentence: the
+  // owner's, and copy_app is the way to an editable one. An ungranted handle is just not shared.
+  const lockedOrNot = async (h) => {
+    const sa = await sharedApp(h);
+    return sa === null ? null : sa ? sharedLocked(h, sa.m.ownerLabel) : notShared(h);
+  };
+  // A shared app's document, with its OWN file plane for any bundled assets (the owner's channel,
+  // reached through the facade, pinned to this app).
+  const serveShared = (sa, comp) => resolveAssets(comp.ui, appAssetReader({ get: (app, path) => sa.m.face.files.get(app, path) }, comp.name));
+  // The handles a shared app's runner may reach — its scope, spelled the way the caller names it.
+  const sharedHandles = (sa) => sa.row.collections.map((c) => handleOf(sa.m.alias, c));
+
+  // SCOPE FOLLOWS THE APP (Leo 2026-10-02, design §10-5): binding a new collection to an app the
+  // owner has shared shares that collection too, from the very next call. So a save that moves the
+  // scope says so, with how many people it reaches — the moment the owner can still change course.
+  // `scopeOf` is read before the save, `scopeNote` after; both are no-ops on a deployment without
+  // grant records (`ctx.sharing`).
+  const scopeOf = (name) => (ctx.sharing ? sharedScopeOf(store, name, store.appBirth(name))?.collections ?? [] : null);
+  async function scopeNote(name, before) {
+    if (!ctx.sharing || !before) return null;
+    const after = sharedScopeOf(store, name, store.appBirth(name))?.collections ?? [];
+    const added = after.filter((c) => !before.includes(c)), removed = before.filter((c) => !after.includes(c));
+    if (!added.length && !removed.length) return null;
+    let listed;
+    try { listed = await ctx.sharing.list({ app: name }); } catch { return null; }
+    if (!listed || listed.ok !== true) return null;
+    const people = (listed.grants || []).filter((g) => g.role !== "owner").length;
+    const links = (listed.links || []).filter((l) => !l.revoked).length;
+    if (!people && !links) return null;
+    const who = [people ? `${people} account(s)` : null, links ? `${links} open share link(s)` : null].filter(Boolean).join(" and ");
+    return `"${name}" is shared (${who}): ` +
+      [added.length ? `they can now ALSO reach ${added.map((c) => `"${c}"`).join(", ")}` : null,
+        removed.length ? `they no longer reach ${removed.map((c) => `"${c}"`).join(", ")}` : null].filter(Boolean).join("; ") +
+      ". Tell the user — a shared app's scope follows what it binds.";
+  }
 
   // ONE of the three serve-time seams' shared step: a stored `ui` becomes a DOCUMENT here, and a
   // document may carry no external subresource (the widget CSP forbids it, and a host iframe cannot
   // reach this machine anyway), so an app built outside the chat has its bundle inlined on the way
   // out. An app with no `oma-asset:` reference passes through byte-identical.
-  //
-  // THE STAGE CLASS IS WRITTEN FIRST, on the TEMPLATE, and that order is the whole point of doing
-  // it here rather than at each seam: the class belongs on the app's OWN <body>, which is a tag
-  // the template has and the bundle merely mentions. Stamping afterwards meant scanning bytes the
-  // app never wrote (measured: React's dev build says "<body>" in an error string and got it
-  // rewritten, killing the app). stampStage is idempotent, so wrapApp's own stamp downstream is a
-  // no-op rather than a second class.
-  const serveUi = (comp) =>
-    resolveAssets(stampStage(comp.ui, stageWidthFor(comp)), appAssetReader(fileChannel, comp.name));
+  const serveUi = (comp) => resolveAssets(comp.ui, appAssetReader(fileChannel, comp.name));
 
   // A real, clickable URL for the HUMAN, produced only when this engine actually has a viewer to
   // link to. Bare stdio has none and prints none — the same rule list_apps already follows, and for
@@ -87,6 +169,9 @@ export function register(ctx) {
     ? `${String(viewBase).replace(/\/+$/, "")}/view/`
     : null;
   const viewUrl = (name) => (viewRoot ? viewRoot + encodeURIComponent(name) : null);
+  // Built once: every input is fixed for the life of this engine (see loaderUriFor).
+  const LOADER_DOC = wrapLoader({ viewBase: viewRoot });
+  const LOADER_URI = loaderUriFor(LOADER_DOC + JSON.stringify(cspPolicy.base));
 
   // R1 tripwire data source (W-E): one JSONL line per editing event, sidecar next to the DB.
   // recordEdit still returns a count when a REPORT_EVERY boundary is crossed; NOBODY READS IT
@@ -112,10 +197,8 @@ export function register(ctx) {
   // merge for the wire. Enforcement belongs to the host, per the MCP Apps spec; the OSS engine sets
   // no egress ceiling of its own (Leo, 2026-08-16).
   //
-  // An app that declares nothing reaches NOTHING, and that is still every app we ship: all of them
-  // are self-contained documents (verified 2026-07-28 — zero absolute URLs across the whole store
-  // and the runtime), so the honest declaration is also the strictest one there is, and it turns
-  // "we are self-contained" from a claim in a README into a machine-readable one on the wire.
+  // An app that declares nothing still gets the platform's base (store.PLATFORM_CSP — the CDN
+  // script hosts and Google Fonts), static loads only; it reaches no server it did not declare.
   //
   //   · connectDomains / resourceDomains are ALWAYS present, empty array and all. They have been on
   //     the wire since this declaration existed, an empty allowlist is a positive statement ("this
@@ -157,44 +240,16 @@ export function register(ctx) {
     },
     ...(widgetDomain?.openai ? { "openai/widgetDomain": widgetDomain.openai } : {}),
   });
-  // The app-agnostic one: the universal loader serves every app from a single URI, so there is no
-  // app whose declaration it could carry (see the loader's registration below).
-  const UI_SECURITY = uiSecurityFor();
-  // ---------------------------------------------------------- dynamic app wiring
-  // ⚠️ E12 — do not turn this on without re-reading this paragraph. Beyond the per-tool budget,
-  // registering a tool per app means the tool list CHANGES whenever save_app runs, and
-  // prompt caching is an exact-prefix match over tools+system+messages: measured, cache_read drops
-  // to 0. So every app the AI creates re-bills the entire conversation from scratch. The cost
-  // is not the extra tools, it is that building an app invalidates everything said before it.
-  // Per-app open_<name> tools are OPT-IN — `createEngine({dynamicTools})`, falling back to
-  // OMA_DYNAMIC_TOOLS=1 when the embedder says nothing. Every tool costs a separate host
-  // permission prompt and the tool list balloons with the registry — the universal open_app
-  // covers all apps behind ONE permission grant, and never suffers the host's slow
-  // tools/list_changed propagation. (The engine reads the resolved answer off ctx now, so there
-  // is one decision and not one per module.)
+  // ---------------------------------------------------------- per-app wiring
+  // Every app gets its ui:// resource. Only a PINNED app gets its own open_<name> tool (see
+  // syncOpeners below) — E12: a tool per app would make tools/list change on every save_app, and
+  // prompt caching is an exact-prefix match (measured: cache_read drops to 0), so building an app
+  // would re-bill the whole conversation. The universal open_app covers every app behind one grant.
   const registered = new Set();
   function registerApp(name) {
     if (registered.has(name)) return; // callbacks read the registry live; updates need no re-register
     registered.add(name);
     const uri = `ui://open-mcp-apps/${name}.html`;
-    // THE ENGINE MUST BOOT ON DATA IT WOULD NOT ACCEPT TODAY.
-    //
-    // `app` joined RESERVED_APP_NAMES on 2026-07-29. Reserving a name stops the next one; it
-    // says nothing about the stores that already exist, and this engine is public. An app
-    // called `app` claims exactly the universal loader's URI, so the loader's own registration
-    // below hit "already registered", createEngine threw, and the server never came up — and a
-    // server that will not start cannot be asked to delete the row that stops it. The only way out
-    // was hand-editing SQLite.
-    //
-    // The app yields, not the engine: it loses its per-app DIRECT resource and keeps everything
-    // else — open_app still opens it, its data and history are untouched. Note this cannot be
-    // fixed by wrapping the loop below in try/catch: the throw lands on the LOADER's registration,
-    // which is not in the loop.
-    if (uri === LOADER_URI) {
-      console.warn(`[oma] app "${name}" shares the loader's resource URI, so it gets no per-app ` +
-        `resource; it still opens through open_app. Renaming it restores direct embedding.`);
-      return;
-    }
 
     // No cacheHint: the SDK default ({ttlMs: 0, cacheScope: "private"}) IS the store-derived
     // answer — stated once in cache-hints.mjs, inherited here rather than restated (elegance A18).
@@ -206,10 +261,10 @@ export function register(ctx) {
     // never stale. Listing-then-reading can therefore show two values for an app whose declaration
     // changed mid-session; the read is the authority, and re-registering the resource to keep the
     // listing fresh would mean a resources/list_changed storm on every save.
-    registerAppResource(server, `app-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspFor(store.getApp(name), store)) }, async () => {
+    registerAppResource(server, `app-${name}`, uri, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspFor(store.getApp(name), store, cspPolicy)) }, async () => {
       const comp = store.getApp(name);
       if (!comp) throw new Error(`app ${name} not found`);
-      const security = uiSecurityFor(cspFor(comp, store));
+      const security = uiSecurityFor(cspFor(comp, store, cspPolicy));
       // Tier gate (docs/security-model.md §2.3): this per-app resource serves DIRECT mode
       // (wrapApp = the real window.oma, full trust) and has no runner branch — the loader's
       // tier branch (shell.mjs, via oma.embed) covers only the open_app path. Non-local tiers
@@ -244,10 +299,10 @@ export function register(ctx) {
       // every refetch call `get_app_html` without `mount`, and only the loader, at the moment it
       // mounts, passes it.
       //
-      // …and a DISPLAY app records nothing (contracts.mjs stageDisplayFor). An app carrying an
+      // …and a LIVE FRAME records nothing (contracts.mjs liveFrameFor). An app carrying an
       // `@live` brick is a frame around whatever the pointer names, so pointing at it would aim
       // the wall at itself. This is the OUTER of the two walls: it keeps the bad value from ever
-      // being written. The inner one lives in the brick, which refuses to mount a display app no
+      // being written. The inner one lives in the brick, which refuses to mount a live frame no
       // matter how the pointer came to name one — an old row, a hand-written store, a door written
       // after this line.
       //
@@ -259,14 +314,36 @@ export function register(ctx) {
       // openers off (the hosted shape) this path recorded nothing at all in a chat host, and the
       // `@live` wall stayed dark. The loader now says so itself, on the one call that holds the
       // name: `get_app_html {name, mount:true}`. Two doors, one row.
-      if (!stageDisplayFor(comp)) store.touchLiveApp(name);
-      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(await serveUi(comp), { app: name, collection: defaultCollectionFor(comp), stage: stageWidthFor(comp), viewBase: viewRoot }), _meta: security }] };
+      if (!liveFrameFor(comp)) store.touchLiveApp(name);
+      return { contents: [{ uri, mimeType: RESOURCE_MIME_TYPE, text: wrapApp(await serveUi(comp), { app: name, collection: defaultCollectionFor(comp), viewBase: viewRoot }), _meta: security }] };
     });
+  }
 
-    if (!DYNAMIC_TOOLS) return;
-    registerAppTool(
+  // ---------------------------------------------------------- pinned openers
+  // The user pins an app in the settings app (group = app name, key open_tool, value true); only
+  // then does it get open_<name>. syncOpeners reconciles the registered set with the pins and the
+  // registry; the invalidation bridge (notify.mjs) runs it after app-plane writes and settings
+  // changes. Each register/remove makes the SDK announce tools/list_changed, and engine.mjs
+  // debounces that method, so one sync is one notification — this is its only post-connect sender.
+  const openers = new Map();   // app name → the SDK's RegisteredTool handle
+  const openerName = (name) => `open_${name.replaceAll("-", "_")}`;
+  function syncOpeners() {
+    if (!PINNING) return;
+    const prefs = store.snapshot(SETTINGS_COLLECTION).items;
+    const want = new Set(store.listApps().map((c) => c.name)
+      .filter((name) => coercePref(latestPref(prefs, OPEN_TOOL_PREF, name)?.fields.value, false) === true));
+    for (const [name, tool] of openers) if (!want.has(name)) { tool.remove(); openers.delete(name); }
+    for (const name of want) {
+      if (openers.has(name)) continue;
+      try { registerApp(name); openers.set(name, registerOpener(name)); }
+      catch (e) { console.warn(`[oma] pinned app "${name}" gets no ${openerName(name)} (${e && e.message}); it still opens through open_app`); }
+    }
+  }
+  function registerOpener(name) {
+    const uri = `ui://open-mcp-apps/${name}.html`;
+    return registerAppTool(
       server,
-      `open_${name.replaceAll("-", "_")}`,
+      openerName(name),
       {
         title: `Open ${name}`,
         annotations: RO,
@@ -292,11 +369,12 @@ export function register(ctx) {
         // act, one step later, and a step that only happens when something really renders.
         const collection = (a && a.collection) || defaultCollectionFor(comp);
         const v = store.dataVersion();
+        const total = store.countItems(collection);
+        const said = withSkill(openedText(comp, collection, total, a && a.collection), skillLine(name, comp.skill, skillAuthor(comp)));
         return toMcp(answer.page(
           { app: name, collection, items: [], version: v.seq,
-            settings_version: v.settings_version, files_version: v.files_version },
-          { returned: 0, total: store.countItems(collection),
-            text: `Opened "${name}" on collection "${collection}". The widget loads its own data.` },
+            settings_version: v.settings_version, files_version: v.files_version, ...(said.note ? { note: said.note } : {}) },
+          { returned: 0, total, text: said.text },
         ));
       },
     );
@@ -326,8 +404,21 @@ export function register(ctx) {
   // The registration-time `_meta` (what resources/list shows) is a snapshot; the read is live.
   // And the LOADER cache hint is gone: its `public` scope held only while the answer was the same
   // for everybody, and an answer derived from a store is by construction not.
-  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspUnion(store)) },
-    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: wrapLoader({ viewBase: viewRoot }), _meta: uiSecurityFor(cspUnion(store)) }] }));
+  registerAppResource(server, "app-loader", LOADER_URI, { mimeType: RESOURCE_MIME_TYPE, _meta: uiSecurityFor(cspUnion(store, cspPolicy)) },
+    async () => ({ contents: [{ uri: LOADER_URI, mimeType: RESOURCE_MIME_TYPE, text: LOADER_DOC, _meta: uiSecurityFor(cspUnion(store, cspPolicy)) }] }));
+  // THE OLD NAMES STILL ANSWER — with today's document. The two hosts cache opposite halves:
+  // ChatGPT keys the template's CONTENT on its URI (hence the hash above), and Claude keeps the
+  // connector's TOOL LIST, so it goes on reading whatever URI it last saw — measured 2026-10-02,
+  // `resources/read ui://open-mcp-apps/app.html` well after that name was retired, and a widget
+  // that said "Unable to reach". So every name the loader has ever had (the bare app.html, any
+  // earlier hash) resolves to the current loader. Fixed resources are matched before templates, so
+  // an app that really is called `app` keeps its own `app.html`; any other tail is not ours.
+  server.registerResource("app-loader-earlier", new ResourceTemplate("ui://open-mcp-apps/app{tail}", { list: undefined }),
+    { mimeType: RESOURCE_MIME_TYPE },
+    async (uri, { tail }) => {
+      if (tail !== ".html" && !/^\.[0-9a-f]{12}\.html$/.test(tail)) throw new ResourceNotFoundError(uri.href);
+      return { contents: [{ uri: uri.href, mimeType: RESOURCE_MIME_TYPE, text: LOADER_DOC, _meta: uiSecurityFor(cspUnion(store, cspPolicy)) }] };
+    });
 
   registerAppTool(
     server,
@@ -344,6 +435,28 @@ export function register(ctx) {
       _meta: { ui: { resourceUri: LOADER_URI } },
     },
     async (a) => {
+      // Another account's app opens through the same loader, on ITS OWN shared data only: a
+      // collection argument outside the app's scope is refused rather than bound — a shared app
+      // pointed at the caller's own rows is exactly the reach a share must never grant (T13a).
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      if (sa) {
+        const comp = sa.m.face.getApp(sa.app);
+        if (!comp) return notShared(a.app);
+        const handles = sharedHandles(sa);
+        const bound = handleOf(sa.m.alias, defaultCollectionFor(comp));
+        const collection = a.collection || (handles.includes(bound) ? bound : handles[0]);
+        if (!handles.includes(collection)) return notShared(a.collection ?? a.app);
+        const total = sa.m.face.countItems(collection.slice(sa.m.alias.length + 2)) ?? 0;
+        const fv = sa.m.face.dataVersion({ collection: collection.slice(sa.m.alias.length + 2) });
+        const said = withSkill(`${provenanceLine(sa.m.ownerLabel, sa.role)}\nOpened "${a.app}" on collection "${collection}" (${total} item(s)). It runs sandboxed and reaches only what was shared; the widget loads its own data — if YOU need rows, read data_list.`,
+          skillLine(a.app, comp.skill, skillAuthor(comp, sa.m.ownerLabel)));
+        return toMcp(answer.page(
+          { app: a.app, collection, items: [], version: fv.seq ?? 0,
+            settings_version: store.dataVersion().settings_version, files_version: fv.files_version ?? 0, ...(said.note ? { note: said.note } : {}) },
+          { returned: 0, total, text: said.text },
+        ));
+      }
       const comp = store.getApp(a.app);
       if (!comp) return fail(`No app "${a.app}" in the registry. list_apps shows what exists.`);
       // THIS HANDLER WRITES NOTHING, and that is what lets `readOnlyHint: true` above be true.
@@ -363,19 +476,24 @@ export function register(ctx) {
       // Only an UNAMBIGUOUS declaration (exactly one collection) is used: with two or more there
       // is no "the" collection to pick, and guessing would be worse than the documented default.
       const collection = a.collection || defaultCollectionFor(comp);
+      // The caller's OWN app may be opened on a collection shared WITH them (their app, their
+      // trust, their grant): the size comes from the share — and a handle they hold no grant for
+      // is refused here, not bound and left to fail inside the widget.
+      const onShare = route && isHandle(collection) ? await route.session().collection(collection) : null;
+      if (route && isHandle(collection) && !onShare) return notShared(collection);
       const v = store.dataVersion();
-      const total = store.countItems(collection);
+      const total = onShare ? onShare.m.face.countItems(onShare.name) ?? 0 : store.countItems(collection);
       // No `seq` in the SENTENCE. It is the store's global ledger position — the number that
       // makes a user who edited an app twice ask why it jumped from 5 to 43 (nothing happened to
       // it; those 38 were their groceries). registry.mjs settled that for app history and this
       // line was the one that got missed. `version` still rides the structured channel, where
       // machinery reads it and nobody recites it.
+      const said = withSkill(openedText(comp, collection, total, a.collection)
+        + (viewUrl(a.app) ? ` In a browser: ${viewUrl(a.app)}` : ""), skillLine(a.app, comp.skill, skillAuthor(comp)));
       return toMcp(answer.page(
         { app: a.app, collection, items: [], version: v.seq,
-          settings_version: v.settings_version, files_version: v.files_version },
-        { returned: 0, total,
-          text: `Opened "${a.app}" on collection "${collection}" (${total} item(s)). The widget loads its own data; if YOU need rows, read data_list.`
-            + (viewUrl(a.app) ? ` In a browser: ${viewUrl(a.app)}` : "") },
+          settings_version: v.settings_version, files_version: v.files_version, ...(said.note ? { note: said.note } : {}) },
+        { returned: 0, total, text: said.text },
       ));
     },
   );
@@ -398,7 +516,7 @@ export function register(ctx) {
       outputSchema: {
         name: z.string(), version: z.number(), html: z.string(),
         author: z.string(),
-        tier: z.enum(["local", "unreviewed"]),
+        tier: z.enum(["local", "unreviewed", "shared"]),
         locked: z.boolean().describe("a fixed system app (settings renders these read-only)"),
         // THE HOST LABEL, on the one channel that has a use for it. It rode every read tool's
         // snapshot until now, which meant a provenance annotation for the ledger travelled into
@@ -433,6 +551,29 @@ export function register(ctx) {
       },
     },
     async (a) => {
+      // Another account's app: tier `shared`, always behind the runner (the loader mounts anything
+      // not `local` there), under sharedCaps — the role's verbs, pinned to the shared collections.
+      // Its binding and every collection it may reach are HANDLES; its network policy is its own
+      // declaration under this deployment's rule, never widened by either account's settings rows.
+      const sa = await sharedApp(a.name);
+      if (sa === false) return notShared(a.name);
+      if (sa) {
+        const comp = sa.m.face.getApp(sa.app);
+        if (!comp) return notShared(a.name);
+        const handles = sharedHandles(sa);
+        const bound = handleOf(sa.m.alias, defaultCollectionFor(comp));
+        // The live pointer is the CALLER's own (one row in their store, naming the handle) — the
+        // owner's is never touched by someone else opening their app.
+        if (a.mount === true && !liveFrameFor(comp)) store.touchLiveApp(a.name);
+        return {
+          content: [{ type: "text", text: `(app "${a.name}" v${comp.version}, ${comp.ui.length} chars, tier shared — consumed by the loader widget)` }],
+          structuredContent: { name: a.name, version: comp.version, author: comp.author, tier: "shared",
+            locked: true, collection: handles.includes(bound) ? bound : (handles[0] ?? bound), host: hostName(),
+            caps: sharedCaps(sa.role, handles), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
+            csp: cspFor(comp, null, cspPolicy),
+            html: await serveShared(sa, comp) },
+        };
+      }
       const comp = store.getApp(a.name);
       if (!comp) return fail(`No app "${a.name}".`);
       const tier = tierOf(comp.author);
@@ -451,29 +592,21 @@ export function register(ctx) {
       // brick and the loader "fetch through get_app_html, which is not a resource read at all";
       // that is still the shape of the answer, it is just now a parameter instead of a whole seat.
       //
-      // …and a DISPLAY app records nothing, the same outer wall the resource path carries: a frame
+      // …and a LIVE FRAME records nothing, the same outer wall the resource path carries: a frame
       // must never aim the pointer at itself, however it came to be mounted.
-      if (a.mount === true && !stageDisplayFor(comp)) store.touchLiveApp(comp.name);
+      if (a.mount === true && !liveFrameFor(comp)) store.touchLiveApp(comp.name);
       // Always the whole document. This call is the loader widget's mount source — the widget
       // cannot assemble windows, and the host↔widget bridge is the one channel measured intact
       // well past the model-facing cut (≥120K). The budget discipline therefore deliberately does
       // not apply here; a model reading source has get_app, which windows by default.
       // `html` stays the FIELD name here — it names the payload's format for the loader widget
       // (shell-runtime reads r.html), not the registry slot. The value is the ui slot.
-      //
-      // …carrying the stage class, because this is the loader's mount source and the loader is
-      // the third door onto the same document (serveUi stamps it for all three, before the assets
-      // go in — see its comment for why that order matters). Stamped in the BYTES rather than in a
-      // structuredContent key: the tool surface is resident context for every host on every
-      // connection, and this is a rendering detail the model has no use for. `declaration` right
-      // above already carries the manifest verbatim for anyone who wants to read the field
-      // itself; what the loader needs is the class, and one authority computes it (stageWidthFor).
       return {
         content: [{ type: "text", text: `(app "${comp.name}" v${comp.version}, ${comp.ui.length} chars, tier ${tier} — consumed by the loader widget)` }],
         structuredContent: { name: comp.name, version: comp.version, author: comp.author, tier,
           locked: LOCKED_APPS.has(comp.name), collection: defaultCollectionFor(comp), host: hostName(),
           caps: computeCaps(comp.name, tier), declaration: comp.manifest ? JSON.parse(comp.manifest) : null,
-          csp: cspFor(comp, store),
+          csp: cspFor(comp, store, cspPolicy),
           // …and its assets inlined, because this payload IS the document the loader mounts —
           // the third serve-time seam, and the one every non-local tier also travels (the runner's
           // child document is composed in the browser from exactly these bytes).
@@ -508,13 +641,11 @@ export function register(ctx) {
     {
       title: "List apps",
       annotations: RO,
-      description: "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
-      // Three params, frozen with this publish: name (the "open my X" lookup — exact match, so a
-      // registry of any size answers in one call), kind and visibility (the two columns that decide
-      // what is an app and what is retired/long-tail).
+      description: "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with visibility.",
+      // Two params: name (the "open my X" lookup — exact match, so a registry of any size answers
+      // in one call) and visibility (what is retired or long-tail).
       inputSchema: {
         name: z.string().optional().describe("exact app name — the fastest way to answer \"open my X\""),
-        kind: z.enum(["app", "visual", "primitive", "any"]).optional().describe("default app: what a person opens and reuses"),
         visibility: z.enum(["featured", "listed", "unlisted", "archived", "any"]).optional().describe("default featured+listed; archived/unlisted are retired or long-tail"),
       },
     },
@@ -524,15 +655,36 @@ export function register(ctx) {
       // Filters the caller actually passed still apply.
       const all = store.listApps({
         name: a.name,
-        kinds: a.kind === "any" ? undefined : a.kind ? [a.kind] : a.name ? undefined : ["app"],
         visibilities: a.visibility === "any" ? undefined : a.visibility ? [a.visibility] : a.name ? undefined : ["featured", "listed"],
       });
       const comps = all;
       const own = comps.filter((c) => !SEEDED_APPS.has(c.name));
-      // E10: the "→ open_<name>" pointer is only true when per-app tools are registered,
-      // and they are OPT-IN. With the default configuration those tools do not exist, so printing
-      // the arrow was telling the model to call something that would fail — and the universal
-      // open_app, which always works, is what it should reach for instead.
+      // Apps OTHER accounts shared with the caller, after the caller's own — only from the caller's
+      // grants (the router), under the same name/visibility filters, as `@owner/app` rows that say
+      // who shared them and what the caller may do. None on a local install.
+      const shared = [];
+      if (route) {
+        const wanted = a.visibility === "any" ? null : a.visibility ? [a.visibility] : a.name ? null : ["featured", "listed"];
+        for (const m of await route.session().all())
+          for (const s of m.face.scope().apps) {
+            const name = handleOf(m.alias, s.app);
+            if (a.name && a.name !== name) continue;
+            if (wanted && !wanted.includes(s.visibility)) continue;
+            shared.push({ name, version: s.version, description: s.description, author: s.author, ui_size: s.ui_size,
+              visibility: s.visibility, locked: true, ...(s.has_skill ? { has_skill: true } : {}),
+              shared: { from: m.ownerLabel, role: s.role, collections: s.collections.map((c) => handleOf(m.alias, c)) } });
+          }
+      }
+      const sharedLine = (c) => `- ${c.name} v${c.version} — shared by ${c.shared.from} · ` +
+        `${c.shared.role === "editor" ? "you can EDIT DATA" : "READ-ONLY"} · collections: ${c.shared.collections.join(", ") || "(none)"}` +
+        (c.description ? ` — ${c.description}` : "");
+      const sharedText = shared.length
+        ? "Shared with you (other accounts' apps — you can use them and, per role, their data; you cannot change their code: copy_app makes an editable copy of your own):\n" +
+          shared.map(sharedLine).join("\n")
+        : null;
+      // E10: the "→ open_<name>" pointer is printed only for an app whose opener is registered
+      // (a pinned one). For any other app it would name a tool that does not exist, and the
+      // universal open_app, which always works, is what the model should reach for instead.
       // `ui_size`, not `html_size`: the column is `length(ui) AS ui_size` (store.mjs allComps) and
       // has been since the manifest split. The old name survived here alone, and JS answers a
       // missing property with `undefined` rather than an error — so every row printed
@@ -549,7 +701,7 @@ export function register(ctx) {
         // hosted viewBase). Bare stdio has none, so it prints none — a URL that 404s teaches the
         // user this thing is broken, which is worse than no URL.
         (viewBase ? `  → ${String(viewBase).replace(/\/+$/, "")}/view/${encodeURIComponent(c.name)}` : "") +
-        (DYNAMIC_TOOLS ? `  → open_${c.name.replaceAll("-", "_")}` : "");
+        (openers.has(c.name) ? `  → ${openerName(c.name)}` : "");
       // Found by the live-model eval: a brand-new user's registry is NOT empty — we seed three
       // system apps — so the one line that pushed toward BUILDING ("Registry is empty…") could
       // never fire, and the model saw three perfectly plausible apps and opened one instead. The
@@ -557,18 +709,19 @@ export function register(ctx) {
       // data the model is looking at when it decides.
       // A filtered list must never read as the whole registry. `total` says how many matched,
       // before the rows — the same reason a page reports the collection's size and not its own length.
-      const scoped = a.name || a.kind || a.visibility;
-      const head = scoped ? `${all.length} match:` : null;
+      const scoped = a.name || a.visibility;
+      const head = scoped ? `${all.length + shared.length} match:` : null;
       const empty = a.name
         ? `No app named "${a.name}". Call list_apps with no arguments to see what exists.`
         : scoped
-        ? "Nothing matches that filter. Call list_apps with no arguments (or kind:\"any\", visibility:\"any\") to widen."
+        ? "Nothing matches that filter. Call list_apps with no arguments (or visibility:\"any\") to widen."
         : "Registry is empty. Call get_app_guide, then save_app to create the first one.";
       const text = comps.length
         ? [head, comps.map(line).join("\n"), own.length ? null :
             "The user has NO apps of their own yet — everything above ships with the engine and is not " +
-            "an answer to what they want. Build one: get_app_guide, then save_app, then open_app."]
+            "an answer to what they want. Build one: get_app_guide, then save_app, then open_app.", sharedText]
             .filter(Boolean).join("\n")
+        : sharedText ? [head, sharedText].filter(Boolean).join("\n")
         : empty;
       // `locked` rides each row so the settings pane can tell fixed system UI apart without a
       // second tool (app_permissions retired 2026-08-04 — get_app_html carries the per-app caps).
@@ -577,9 +730,15 @@ export function register(ctx) {
       // functions byte-identical to what they were before the field existed. (There is no
       // outputSchema on this tool, deliberately: an optional field costs nothing resident, while
       // declaring the row shape would put it in tools/list for every conversation forever.)
-      return { content: [{ type: "text", text }], structuredContent: { total: all.length, shown: comps.length,
-        apps: comps.map(({ fn_count, ...c }) => ({ ...c, locked: LOCKED_APPS.has(c.name),
-          ...(fn_count > 0 ? { functions: fn_count } : {}) })) } };
+      // `pinning` says whether a pin does anything here (absent under dynamicTools:false), so the
+      // settings app draws the "Own tool" switch only where it works.
+      return { content: [{ type: "text", text }], structuredContent: { total: all.length + shared.length, shown: comps.length + shared.length,
+        ...(PINNING ? { pinning: true } : {}),
+        // `has_skill` follows the same rule as `functions`: present (true) only on an app that has
+        // one, so a registry with no skills lists byte-identical rows. The TEXT line stays as it was —
+        // the skill's description is already the row's description (store.mjs save_app).
+        apps: [...comps.map(({ fn_count, has_skill, ...c }) => ({ ...c, locked: LOCKED_APPS.has(c.name),
+          ...(fn_count > 0 ? { functions: fn_count } : {}), ...(has_skill ? { has_skill: true } : {}) })), ...shared] } };
     },
   );
 
@@ -606,8 +765,14 @@ export function register(ctx) {
       },
     },
     async (a) => {
-      const comp = store.getApp(a.name);
-      if (!comp) return fail(`No app "${a.name}". list_apps shows what exists.`);
+      // A shared app's source is readable by either role: it is sent to the browser anyway, and
+      // copying it (copy_app) starts from it. Its HEAD only — history is not part of a share.
+      const sa = await sharedApp(a.name);
+      if (sa === false) return notShared(a.name);
+      const found = sa ? sa.m.face.getApp(sa.app) : store.getApp(a.name);
+      if (!found) return sa ? notShared(a.name) : fail(`No app "${a.name}". list_apps shows what exists.`);
+      // Named the way the caller named it: a shared app is `@owner/app` on every line it answers.
+      const comp = sa ? { ...found, name: a.name } : found;
       // The manifest slot is small and structured — it returns WHOLE, with the same version
       // (the OCC token covers both slots, because a version snapshots both).
       if (a.slot === "manifest") {
@@ -640,12 +805,39 @@ export function register(ctx) {
     },
   );
 
+  // The skill slot's read (src/skill.mjs). Every other surface carries one line of it — open_app,
+  // install, a data_list over its collections — and points here; this is the one place the body is
+  // handed over, whole (it is capped well inside the result budget, so it is never windowed).
+  server.registerTool(
+    "get_app_skill",
+    {
+      title: "How to use an app",
+      annotations: RO,
+      description: "How to USE an app — its workflow, what to write where, how to run it on a schedule — as its author wrote it. Read it before working on an app's data.",
+      inputSchema: { app: z.string().describe("app name (see list_apps)") },
+    },
+    async (a) => {
+      // A shared app's guide is readable by either role, like its source — and it is the OWNER's
+      // words, which the first line says before anything else (skillProvenance).
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      const comp = sa ? sa.m.face.getApp(sa.app) : store.getApp(a.app);
+      if (!comp) return sa ? notShared(a.app) : fail(`No app "${a.app}". list_apps shows what exists.`);
+      if (comp.skill == null)
+        return toMcp(answer.chunk({ name: a.app, version: comp.version, skill: null },
+          { text: `"${a.app}" has no skill — its author wrote no usage guide. open_app shows the app; data_list reads its data.` }));
+      const from = skillProvenance({ app: a.app, author: comp.author, owner: sa ? sa.m.ownerLabel : null, from: comp.skill_from });
+      return toMcp(answer.chunk({ name: a.app, version: comp.version, skill: comp.skill, ...(from ? { note: from } : {}) },
+        { text: `${from ? `${from}\n` : ""}// ${a.app} v${comp.version} — skill\n${comp.skill}` }));
+    },
+  );
+
   server.registerTool(
     "save_app",
     {
       title: "Save app",
       annotations: WRITE,
-      description: "Create or update a UI app in the persistent registry. Two slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block) — and manifest, the app's declaration as a JSON object (kind, collections, settings, scene; keys in get_app_guide). manifest: null clears the declaration. Creating needs ui. Every save snapshots both slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
+      description: "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
       inputSchema: {
         name: z.string().describe("app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')"),
         ui: z.string().optional().describe("complete self-contained HTML document using window.oma; omit on update to keep the current one"),
@@ -654,6 +846,7 @@ export function register(ctx) {
         // breaking the "a newer document must still save on an older engine" contract. Depth is
         // validated by the store (manifestShapeError), which preserves what it does not know.
         manifest: z.record(z.string(), z.any()).nullable().optional().describe("declaration object (whole-value replace), null to clear, omit to keep"),
+        skill: z.string().nullable().optional().describe("SKILL.md text (whole-value replace), null to clear, omit to keep"),
         description: z.string().optional().describe("one line: what this app shows and what data fields it uses"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
         expected_version: z.number().optional().describe("REQUIRED when overwriting an existing app: the version you read (get_app). Creating a new name needs none"),
@@ -661,6 +854,8 @@ export function register(ctx) {
       outputSchema: saveAckSchema,
     },
     async (a) => {
+      const shared = await lockedOrNot(a.name);
+      if (shared) return shared;
       if (!APP_NAME_RE.test(a.name || "")) return fail("Invalid name: must match ^[a-z][a-z0-9-]{0,31}$ (lowercase, digits, hyphens).");
       // The list is READ from the set, not retyped beside it. The hand-kept copy listed the
       // original six and silently went stale when `app`, `app` and `loader` were added — so a
@@ -705,8 +900,14 @@ export function register(ctx) {
       if (a.ui !== undefined) {
         if (!OMA_REFERENCE_RE.test(a.ui))
           warnings.push("The ui never references the oma API — it will render but won't load or save any data.");
-        if (/src\s*=\s*["']https?:|href\s*=\s*["']https?:|@import|fetch\s*\(/i.test(a.ui)) warnings.push("External URLs detected — the sandbox CSP blocks all external resources; the app may break. Inline everything.");
-        if (/React\.createElement|ReactDOM|from\s+["']react["']|import\s+React|@babel\/standalone|text\/babel/.test(a.ui)) warnings.push("React/JSX/Babel detected — widgets have no React runtime or JSX compiler (this is not claude.ai Artifacts). Rewrite with vanilla DOM per get_app_guide.");
+        if (a.ui.length > READ_WINDOW && !hasAssetReferences(a.ui)) warnings.push(sizeAdvice(a.name, a.ui.length));
+        // Where the document loads from, against where it MAY: the platform base plus (on an
+        // extensible deployment) this save's own manifest.csp and the user's additions. Only the
+        // outside origins are named — loading React from cdnjs is the supported path, not a smell.
+        const allowed = cspFor({ name: a.name, manifest: a.manifest ? JSON.stringify(a.manifest) : existing?.manifest }, store, cspPolicy);
+        const outside = externalOrigins(a.ui).filter((o) => !originAllowed(o, allowed));
+        if (outside.length)
+          warnings.push(`Loads from ${outside.join(", ")}, which this deployment's widget policy does not allow — the host will block it. Allowed: ${(allowed.resourceDomains || []).join(", ")}${cspPolicy.extensible ? " (or declare it in manifest.csp)" : ""}. Inline it, or load it from an allowed origin.`);
         // A one-way door, said out loud at the moment it is walked through. An `oma-asset:`
         // reference means "the source is elsewhere", and the engine takes that literally: from the
         // next save on, edit_app and save_app both refuse this app. Writing one from here is legal
@@ -716,9 +917,11 @@ export function register(ctx) {
         if (hasAssetReferences(a.ui))
           warnings.push("This ui references bundled assets (oma-asset:…), which marks the app as BUILT OUTSIDE this store — from now on edit_app and save_app both refuse it, and the only way to change it is install-app.mjs (--asset for the files). Inline the code instead if you meant to keep editing it here.");
       }
+      const scopeBefore = existing ? scopeOf(a.name) : null;
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
         name: a.name, ...(a.ui !== undefined ? { ui: a.ui } : {}), ...("manifest" in a ? { manifest: a.manifest } : {}),
+        ...("skill" in a ? { skill: a.skill } : {}),
         description: a.description || "", actor: "agent", host: hostName(),
         expected_version: a.expected_version,
       });
@@ -734,6 +937,10 @@ export function register(ctx) {
           return fail("The document carries a legacy #oma-manifest block. Declarations moved out of the html: remove the block and pass its JSON as the `manifest` parameter instead (entity-escape the tag if the app genuinely displays it as text).");
         if (r.error === "empty_manifest_use_null")
           return fail("manifest: {} is ambiguous (empty declaration vs clear) — pass manifest: null to clear the declaration, or omit the key to keep it.");
+        if (r.error === "empty_skill_use_null")
+          return fail("skill: \"\" is ambiguous (empty guide vs clear) — pass skill: null to clear it, or omit the key to keep it.");
+        if (r.error === "bad_skill")
+          return fail(`Invalid skill: ${r.detail}. The format is SKILL.md — get_app_guide covers it. NOTHING was saved.`);
         return fail(r.error === "bad_manifest" ? `Invalid manifest: ${r.detail}.` : failNote(r));
       }
       // A replay's receipt has no size/declaration facts (they belong to the original response) —
@@ -766,16 +973,19 @@ export function register(ctx) {
       // What this save did to the declaration, said out loud — a manifest-only save must never
       // read as "nothing changed", and an inherited declaration is a fact the next edit depends on.
       if (r.note) notes.push(r.note);
+      const reach = await scopeNote(a.name, scopeBefore);
+      if (reach) notes.push(reach);
       if (r.manifest_action === "replaced") notes.push("Declaration replaced.");
-      else if (r.manifest_action === "cleared") notes.push("Declaration cleared (kind and Library filing reset too).");
-      // The one place suggested_kind speaks on a save: a "visual" that binds persistent data has
-      // outgrown its declaration. One sentence, fired only on the divergence with an action
-      // attached — the reverse case (an app with no bindings yet) is every half-built app and
-      // would be noise on each save. Reads the RESOLVED slots from the receipt, so an inherited
-      // slot is judged by what it actually is, not by what this call happened to carry.
-      const savedUi = a.ui !== undefined ? a.ui : null;
-      if (r.kind === "visual" && savedUi !== null && suggestedKind(savedUi, r.manifest ? JSON.parse(r.manifest) : null) === "app")
-        notes.push(`suggested_kind: app — this "visual" binds persistent data. Nothing changes by itself; promote_app {name: "${a.name}"} upgrades it in place if it has become a keeper.`);
+      else if (r.manifest_action === "cleared") notes.push("Declaration cleared (Library filing reset too).");
+      if (r.skill_action === "replaced") notes.push("Skill replaced — its description is now this app's description.");
+      else if (r.skill_action === "cleared") notes.push("Skill cleared.");
+      // One description, and it is the skill's: say so when the caller passed a different one, rather
+      // than letting it believe the line it sent is what every listing now shows.
+      if (a.description && r.skill_action !== "cleared") {
+        const now = store.getApp(a.name);
+        if (now && now.skill != null && now.description !== a.description)
+          notes.push("description not applied: this app has a skill, and the skill's description is its description everywhere.");
+      }
       // Size pair on every save, unconditionally: a 82,623 → 74 char overwrite has to be visible
       // in the reply that caused it, not discoverable afterwards.
       const sizeNote = r.prev_size == null
@@ -828,6 +1038,8 @@ export function register(ctx) {
       outputSchema: saveAckSchema,
     },
     async (a) => {
+      const shared = await lockedOrNot(a.app);
+      if (shared) return shared;
       if (RESERVED_APP_NAMES.has(a.app)) return fail(`"${a.app}" is a reserved namespace.`);
       if (LOCKED_APPS.has(a.app)) return fail(`"${a.app}" is a locked system app — its UI ships with the engine.`);
       // Replay FIRST, before the version guard and before re-applying edits: the original edit may
@@ -918,85 +1130,13 @@ export function register(ctx) {
         return toMcp(answer.ack({ ok: true, name: a.app, version: r.version, applied: edits.length, note: "already applied (idempotent replay)" },
           `Already applied — "${a.app}" is at v${r.version} from this same command_id.`));
       tel("ok");
-      // Same divergence sentence save_app fires, because an edit is just as capable of adding the
-      // first binding to a "visual" — and the author deserves the hint at the moment it happened.
-      // The manifest is the RESOLVED (inherited) one from the receipt, not something re-parsed.
-      const sk = r.kind === "visual" && suggestedKind(html, r.manifest ? JSON.parse(r.manifest) : null) === "app"
-        ? `suggested_kind: app — this "visual" now binds persistent data. Nothing changes by itself; promote_app {name: "${a.app}"} upgrades it in place if it has become a keeper.` : null;
       return toMcp(answer.ack(
         { ok: true, name: a.app, version: r.version, size: r.size, prev_size: r.prev_size ?? null,
           applied: edits.length, manifest_action: r.manifest_action, ...(r.note ? { note: r.note } : {}) },
         `Edited "${a.app}" — ${edits.length} edit(s) applied, v${a.expected_version} → v${r.version}, ${(r.prev_size ?? 0).toLocaleString()} → ${r.size.toLocaleString()} chars.` +
           (r.note ? `\n${r.note}` : "") +
-          (sk ? `\n${sk}` : ""),
-      ));
-    },
-  );
-
-  server.registerTool(
-    "promote_app",
-    {
-      title: "Promote visual to app",
-      annotations: WRITE,
-      description: "Upgrade a kind:\"visual\" app to a full app in ONE atomic step: the engine flips `kind` in the stored manifest, keeping every other declared key, and saves a new version (OCC-guarded, history kept). Already an app is a no-op; downgrades are refused — demoting is an author edit (save_app with the manifest), not a lifecycle verb.",
-      inputSchema: {
-        name: z.string().describe("an existing app with kind \"visual\" (list_apps {kind:\"visual\"} shows them)"),
-        command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
-      },
-      // The promote receipt: state facts only. `suggested_kind` never appears here or anywhere
-      // structured — see the diagnostic's comment at the top of this file.
-      outputSchema: {
-        ok: z.boolean(), name: z.string().optional(), version: z.number().optional(),
-        kind: z.string().optional(), was: z.string().optional(),
-        reason: z.string().optional(), note: z.string().optional(), eot: z.string().optional(),
-      },
-    },
-    async (a) => {
-      if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — its UI ships with the engine.`);
-      // Replay first, same rule as save/edit: the original promote consumed the "visual" state it
-      // needs, so a retry re-run from scratch would answer "already an app" instead of reaching
-      // the store's replay branch — a receipt, not a shrug.
-      if (a.command_id) {
-        const prior = store.priorReceipt(a.command_id);
-        if (prior) {
-          if (prior.event_type !== "component_saved" || prior.aggregate_id !== a.name)
-            return fail(failNote({ error: "command_id_reused" }));
-          return toMcp(answer.ack(
-            { ok: true, name: a.name, version: prior.seq, kind: "app", note: "already promoted (idempotent replay)" },
-            `Already promoted — "${a.name}" is at v${prior.seq} from this same command_id.`));
-        }
-      }
-      const comp = store.getApp(a.name);
-      if (!comp) return fail(`No app "${a.name}". list_apps {kind:"visual"} shows what can be promoted.`);
-      if (comp.kind === "app")
-        return toMcp(answer.ack(
-          { ok: true, name: a.name, version: comp.version, kind: "app", note: "already an app — nothing to do" },
-          `"${a.name}" is already kind "app" (v${comp.version}) — nothing to do.`));
-      if (comp.kind !== "visual")
-        return fail(`"${a.name}" is kind "${comp.kind}" — promote_app only upgrades "visual" to "app" ("primitive" is a reserved kind with no lifecycle verbs).`);
-      // The transaction (§8-R3): read the authoritative manifest, flip its kind, save it back as a
-      // whole-slot replacement — every OTHER key rides along untouched, which is exactly why this
-      // verb exists (a caller replacing the manifest by hand must first read and re-transmit it,
-      // and a forgotten key is a deleted key). The ui slot is inherited; OCC turns a concurrent
-      // save into a clean conflict, never a half-promoted app. Riding the save_app command — not
-      // a new one — is what makes provenance, undo, history and the invalidation bridge all hold
-      // without a second copy of any rule.
-      const manifest = comp.manifest ? JSON.parse(comp.manifest) : {};
-      const r = store.execute({
-        type: "save_app", command_id: a.command_id || randomUUID(), name: a.name,
-        manifest: { ...manifest, kind: "app" },
-        description: "", actor: "agent", host: hostName(), expected_version: comp.version,
-      });
-      if (!r.ok) {
-        if (r.conflict)
-          return toMcp(answer.fail("version_conflict",
-            { name: a.name, ...(r.expected != null ? { expected_version: r.expected } : {}) },
-            `"${a.name}" changed while promoting (now v${r.expected}) — call promote_app again; it re-reads.`), { isError: true });
-        return fail(failNote(r));
-      }
-      return toMcp(answer.ack(
-        { ok: true, name: a.name, version: r.version, kind: "app", was: "visual" },
-        `Promoted "${a.name}" — kind visual → app, v${comp.version} → v${r.version}. Same ui, same declaration but for kind; history keeps every version.`,
+          // Said once, on the edit that crosses the line — not on every edit of an app already past it.
+          (r.size > READ_WINDOW && (r.prev_size ?? 0) <= READ_WINDOW ? `\n⚠ ${sizeAdvice(a.app, r.size)}` : ""),
       ));
     },
   );
@@ -1054,6 +1194,10 @@ export function register(ctx) {
         },
       },
       async (a) => {
+        // A shared app's functions run with its OWNER's egress and secrets, so a share never
+        // reaches them, at any role (design §7 T8).
+        const shared = await lockedOrNot(a.app);
+        if (shared) return shared;
         // await: the body runs on a worker thread (functions.mjs), so the executor answers on a
         // promise even for a body that never awaits anything of its own.
         const r = await fnHost.call({
@@ -1096,5 +1240,9 @@ export function register(ctx) {
   // `hasApp` is the same Set, read-only: the invalidation bridge has to tell a FIRST save (the
   // resource list grew) from a re-save (one resource's content moved), and this closure is the
   // only place that knows which registrations exist.
-  return { registerApp, hasApp: (name) => registered.has(name) };
+  // `syncOpeners` is called by engine.mjs once every fixed tool is registered (so pinned openers
+  // sort after the constant surface) and then by the invalidation bridge.
+  // `scopeOf` / `scopeNote` and `lockedOrNot` travel too: restore_app moves a declaration the same
+  // way save_app does, and the registry verbs answer a shared app the same way the code verbs do.
+  return { registerApp, hasApp: (name) => registered.has(name), syncOpeners, scopeOf, scopeNote, lockedOrNot };
 }

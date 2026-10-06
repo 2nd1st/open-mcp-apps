@@ -10,8 +10,5 @@
     }
   ],
   "uses_shared": ["locale"],
-  "stage": {
-    "width": "fluid",
-    "display": true
-  }
+  "live_frame": true
 }

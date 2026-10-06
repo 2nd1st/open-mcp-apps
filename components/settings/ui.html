@@ -6,7 +6,61 @@
 <title>Settings</title>
 <meta name="description" content="Preferences, installed apps, data collections and per-app permissions for your open-mcp-apps workbench.">
 <style>
-  /* app-specific styles; the shared system kit (.k-*) is injected by the engine into every document */
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-ink-7:color-mix(in oklab,var(--color-text-primary) 7%,transparent);--k-hue-0:var(--k-accent);--k-hue-1:var(--k-ok);--k-hue-2:var(--k-warn);--k-hue-3:var(--k-bad);--k-hue-4:color-mix(in oklab,var(--k-accent) 55%,var(--k-bad));--k-hue-5:color-mix(in oklab,var(--k-ok) 55%,var(--k-accent));--k-s2:8px;--k-t-fast:120ms;--k-t:180ms;--k-t-slow:260ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms;--k-t-slow:0ms}.k-stagger>*,.k-pop,.k-skel{animation:none!important}}
+  body{padding:16px}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-sub{color:var(--color-text-secondary)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-code{font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);border-radius:var(--border-radius-sm,7px);padding:1px 5px}
+  .k-ellip{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .k-ellip2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-dot{width:7px;height:7px;border-radius:50%;background:var(--k-hue-0);flex:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-switch{appearance:none;width:34px;height:20px;margin:0;position:relative;border-radius:999px;background:var(--color-background-tertiary);border:1px solid var(--color-border-primary);cursor:pointer;transition:background var(--k-t) var(--k-ease),border-color var(--k-t)}
+  .k-switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--color-background-primary);box-shadow:var(--shadow-sm);transition:translate var(--k-t) var(--k-spring)}
+  .k-switch:checked{background:var(--k-accent);border-color:var(--k-accent)}
+  .k-switch:checked::after{translate:14px 0}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-skel{color:transparent;border-radius:var(--border-radius-sm,7px);background:linear-gradient(100deg,var(--k-ink-4) 40%,var(--k-ink-7) 50%,var(--k-ink-4) 60%) 0 0/300% 100%;animation:k-shimmer 1.4s linear infinite}
+  .k-stagger>*{animation:k-in var(--k-t-slow) var(--k-ease) backwards;animation-delay:calc(min(var(--i,0),9)*35ms)}
+  .k-pop{animation:k-pop 320ms var(--k-spring)}
+  @keyframes k-shimmer{to{background-position:-300% 0}}
+  @keyframes k-in{from{opacity:0;translate:0 6px}}
+  @keyframes k-pop{0%{scale:.7}60%{scale:1.08}100%{scale:1}}
+
+  /* app-specific styles */
   :root {
     --ground: var(--color-background-secondary);
     --surface: var(--color-background-primary);
@@ -285,9 +339,9 @@
   .note a { color: var(--accent-deep); }
   code { background: var(--soft); border-radius: var(--border-radius-sm, 6px); padding: 1px 5px; font-family: var(--font-mono); font-size: 12px; }
 
-  /* kit classes set their own display, which beats the UA [hidden] rule — restate it */
+  /* the .k-* classes set their own display, which beats the UA [hidden] rule — restate it */
   #lib-cats[hidden], #d-cat[hidden], #d-open[hidden], #lib-none[hidden], #lib-empty[hidden], #d-delete[hidden],
-  #d-cascade-row[hidden], #d-plan[hidden], #d-live[hidden], #saved[hidden] { display: none !important; }
+  #d-pin-row[hidden], #d-cascade-row[hidden], #d-plan[hidden], #d-live[hidden], #saved[hidden] { display: none !important; }
 
   /* ---- wide state (>560px): the Codex desktop form — fixed left rail, row lists, dense grid ---- */
   @media (min-width: 561px) {
@@ -469,6 +523,16 @@
             <div><small data-i18n="metaAuthor"></small><b id="d-author">–</b></div>
           </div>
 
+          <!-- The pin: a per-app preference (group = app, key open_tool) the engine turns into this
+               app's own open_<name> tool. Hidden for locked system apps, and where the engine ignores pins. -->
+          <div class="group" id="d-pin-row" hidden>
+            <label class="row">
+              <span class="rowIcon" data-tone="mint" aria-hidden="true"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M5 4.5h6a3.5 3.5 0 0 1 0 7H5a3.5 3.5 0 0 1 0-7zM11 6.2a1.8 1.8 0 1 1 0 3.6 1.8 1.8 0 0 1 0-3.6z"/></svg></span>
+              <span class="rowCopy"><b data-i18n="ownTool"></b><small id="d-pin-detail"></small></span>
+              <input class="k-switch" type="checkbox" id="d-pin" data-i18n-aria="ownTool">
+            </label>
+          </div>
+
           <!-- Cascade opt-in (D-13 ③). Unchecked = the default tombstone: the app goes, its data
                stays and restore_app can bring it back. Checked = delete_app data:"cascade", which
                the engine answers with a PLAN before it removes anything. -->
@@ -584,6 +648,8 @@
         builtInLocked: "Built-in app — can't be deleted.",
         metaStorage: "Storage", metaSize: "Size", metaUpdated: "Updated", metaAuthor: "Author",
         items: "{n} items", item1: "1 item", files: "{n} files, {kb} KB", file1: "1 file, {kb} KB",
+        ownTool: "Own tool",
+        ownToolDetail: "Adds {tool} so your AI can open this app directly. Claude.ai and ChatGPT show it after you refresh the connector's tool list.",
         cascadeLabel: "Delete its data too",
         cascadeDetail: "Its own collections and settings go too, permanently. Data other apps also use is kept.",
         history: "History",
@@ -671,6 +737,8 @@
         builtInLocked: "内置应用——不能删除。",
         metaStorage: "存储", metaSize: "体积", metaUpdated: "更新于", metaAuthor: "作者",
         items: "{n} 条", item1: "1 条", files: "{n} 个文件，{kb} KB", file1: "1 个文件，{kb} KB",
+        ownTool: "单独的工具",
+        ownToolDetail: "添加 {tool}，让 AI 可以直接打开这个 app。Claude.ai 和 ChatGPT 要在刷新连接器的工具列表后才会出现。",
         cascadeLabel: "连同它的数据一起删除",
         cascadeDetail: "它自己的 collection 和设置也会永久删除。其他应用也在用的数据会保留。",
         history: "历史",
@@ -716,6 +784,8 @@
     // only) so the whole feature costs zero tool seats. They are NOT preferences, so they get
     // their own micro-group instead of reading as undeclared strays next to an app's options.
     const THEME = (k) => k.slice(0, 6) === "theme:";
+    // The engine-owned per-app pin: true gives that app its own open_<name> tool.
+    const OPEN_TOOL = "open_tool";
     // TOP_KEYS render first, unfolded (frozen 2026-07-25: the two decisions users revisit);
     // every other catalog key folds into "More options" under these micro-groups. A key the
     // catalog renames simply drops out of TOP and shows up foldered — visible, never silent.
@@ -922,6 +992,7 @@ function coercePref(v, fallback) {
 
     // ---- stored-settings access (the settings collection IS our bound collection) ----
     let compsCache = [];
+    let pinning = false;             // list_apps says whether a pin does anything on this engine
     let collsCache = [];             // data_collections snapshot — About stats + detail Storage line
     let collsLoaded = false;         // unknown ≠ zero: the detail view omits the item count until this flips
     const manifests = new Map();     // name -> {settings, uses_shared} | null (malformed/absent)
@@ -1119,6 +1190,7 @@ function coercePref(v, fallback) {
       const pending = bootingManifests && !manifests.has(name);   // manifest still in flight
       const mf = manifests.get(name) || null;
       const g = groupItems(name);
+      g.delete(OPEN_TOOL);   // shown as the detail view's switch, and "Reset all" must not unpin
       if (!mf && !g.size && !pending) return null;   // resolved with nothing to show; pending renders summary + skeleton below
       const declared = new Set(((mf && mf.settings) || []).map((s) => s.key));
       const d = el("details", "group");
@@ -1246,6 +1318,7 @@ function coercePref(v, fallback) {
       wrap.hidden = !secs.children.length;
       document.getElementById("comp-teach").hidden = !(compsCache.length && !secs.children.length && !bootingManifests);
       renderAdvanced();
+      syncPinSwitch();
       if (draft) {
         const c = [...document.querySelectorAll("input[data-pk]")].find((x) => x.dataset.pk === draft.pk);
         if (c) { c.value = draft.value; c.focus({ preventScroll: true }); try { c.setSelectionRange(draft.ss, draft.se); } catch { /* number inputs */ } }
@@ -1667,12 +1740,24 @@ function coercePref(v, fallback) {
       // survives an entry switch, so one app's answer can never travel to another.
       document.getElementById("d-cascade-row").hidden = !deletable;
       document.getElementById("d-cascade").checked = false;
+      document.getElementById("d-pin-row").hidden = !!c.locked || !pinning;
+      syncPinSwitch();
       hidePlan();
       showDetail(true);
       document.getElementById("d-close").focus();
       loadStorage(c);
       loadHistory(c);
     }
+    // The pin switch reads the stored row like every other per-app pref, so a write from anywhere
+    // (or a refused one, which re-renders) lands here through renderPrefs.
+    function syncPinSwitch() {
+      if (!drawerComp) return;
+      const name = drawerComp.name;
+      document.getElementById("d-pin-detail").textContent = t("ownToolDetail", { tool: "open_" + name.replaceAll("-", "_") });
+      const it = curStored(name, OPEN_TOOL);
+      document.getElementById("d-pin").checked = coercePref(it ? it.fields.value : undefined, false);
+    }
+    document.getElementById("d-pin").onchange = (e) => { if (drawerComp) setSetting(drawerComp.name, OPEN_TOOL, e.target.checked); };
     // Storage line: item count from the data_collections cache + lazy file_usage — pure
     // counts, never a quota framing. System collections are plumbing, not user data; an
     // unloaded cache is UNKNOWN, not zero, so the line stays a dash until the count is real.
@@ -1972,7 +2057,7 @@ function coercePref(v, fallback) {
       // Ownership must see the WHOLE registry: an archived app still stewards its data, and the
       // default list (featured+listed) would silently strip its chip from the Data pane.
       try {
-        const full = await oma.callTool("list_apps", { kind: "any", visibility: "any" });
+        const full = await oma.callTool("list_apps", { visibility: "any" });
         dataComps.clear();
         for (const c of full?.structuredContent?.apps || []) dataComps.set(c.name, c);
         await Promise.all([...dataComps.keys()].filter((n) => !declsRaw.has(n)).map((n) => loadManifest(n)));
@@ -2055,6 +2140,7 @@ function coercePref(v, fallback) {
     async function loadApps() {
       const comps = await oma.callTool("list_apps", {});
       compsCache = comps?.structuredContent?.apps || [];
+      pinning = comps?.structuredContent?.pinning === true;
       // COUNT RULE: "N apps" = what the user made or installed — system collections AND locked
       // built-ins are excluded, so a fresh install honestly reads 0. The Installed grid below
       // is the management view and still lists everything, locked included.
@@ -2084,6 +2170,7 @@ function coercePref(v, fallback) {
       for (const node of document.querySelectorAll("[data-i18n-aria]")) node.setAttribute("aria-label", t(node.dataset.i18nAria));
       pvLabel(!!pvHandle || pvStarting);
       disarmDelete();
+      syncPinSwitch();
       renderNav();
       renderStatic();
     }

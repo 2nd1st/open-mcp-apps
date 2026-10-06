@@ -73,6 +73,10 @@ export function register(ctx) {
       // itself, so the reservation does not depend on this tool being the only caller.)
       if (SECRET_KEY_RE.test(key)) return fail(`"${key}" is in the secret: namespace — ${SECRETS_RESERVED_NOTE}.`);
       if (!RESERVED_KEY_RE.test(key)) return fail(`security_set only writes reserved keys (security:* / policy:*). Use data_* for "${key}".`);
+      // A shared app's caps are its share's (contracts.mjs sharedCaps), never this store's policy
+      // rows — a row naming one would be stored and never read, which is a switch that lies.
+      if (ctx.route && /^(?:security|policy:csp):@/.test(key))
+        return fail(`"${key}" names another account's shared app — its permissions come from the share itself, not from your settings. NOTHING was written.`);
       // Cap-segment validation (naming contract): computeCaps only ever reads the snake_case
       // CAP_NAMES suffixes. An unknown suffix — e.g. dotted "sendMessage" — is still stored
       // (reserved namespace, forward-compat) but flagged, so a typo'd policy is VISIBLY

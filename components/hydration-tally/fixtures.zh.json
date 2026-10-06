@@ -1,0 +1,2631 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "bdc9b7c4-eceb-46fc-8f97-a6a0beab6193",
+      "group": "2026-06-26",
+      "position": 1,
+      "fields": {
+        "date": "2026-06-26",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a8e1d901-e2f0-419d-b4dc-5ca04fd42213",
+      "group": "2026-06-26",
+      "position": 2,
+      "fields": {
+        "date": "2026-06-26",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "a362704f-fb7c-45d4-b4a5-ae6afb3f3c1f",
+      "group": "2026-06-26",
+      "position": 3,
+      "fields": {
+        "date": "2026-06-26",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "fb632fb7-614f-4035-9b4a-3c7a2112f049",
+      "group": "2026-06-26",
+      "position": 4,
+      "fields": {
+        "date": "2026-06-26",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ec10d87b-d4be-4357-8f74-0544c6242e7b",
+      "group": "2026-06-26",
+      "position": 5,
+      "fields": {
+        "date": "2026-06-26",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "59ab2232-6522-48cf-bdd5-c9fa0a1db253",
+      "group": "2026-06-27",
+      "position": 6,
+      "fields": {
+        "date": "2026-06-27",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a699b4c1-c21e-42d5-b5d9-a051b9624870",
+      "group": "2026-06-27",
+      "position": 7,
+      "fields": {
+        "date": "2026-06-27",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "50dc5c8c-35e6-4e02-a96a-483788fbc698",
+      "group": "2026-06-27",
+      "position": 8,
+      "fields": {
+        "date": "2026-06-27",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "0a69a53b-0efc-4ea2-ac35-ef0168248da0",
+      "group": "2026-06-27",
+      "position": 9,
+      "fields": {
+        "date": "2026-06-27",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "78f7848b-6d68-4822-bc66-ab6350d08ae1",
+      "group": "2026-06-28",
+      "position": 10,
+      "fields": {
+        "date": "2026-06-28",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ee58dbcd-96de-427a-a908-96bad2ac3155",
+      "group": "2026-06-28",
+      "position": 11,
+      "fields": {
+        "date": "2026-06-28",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "f4836c9a-3ef5-4935-9dd5-beee6a13dedd",
+      "group": "2026-06-28",
+      "position": 12,
+      "fields": {
+        "date": "2026-06-28",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "4bd68ed0-abb6-4ea5-88fa-208c50b619c7",
+      "group": "2026-06-28",
+      "position": 13,
+      "fields": {
+        "date": "2026-06-28",
+        "time": "16:30",
+        "amount": 1,
+        "unit": "L",
+        "drink_type": "矿泉水"
+      },
+      "version": 1
+    },
+    {
+      "id": "6616fdb0-2c51-468b-9188-0a9b72099284",
+      "group": "2026-06-28",
+      "position": 14,
+      "fields": {
+        "date": "2026-06-28",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "7f8ca7c4-935b-4541-9e0a-18ccd25d0fbe",
+      "group": "2026-06-29",
+      "position": 15,
+      "fields": {
+        "date": "2026-06-29",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "e60707df-8950-45d9-842d-6849f7af5605",
+      "group": "2026-06-30",
+      "position": 16,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d055265d-6d7a-48bc-a19c-cd419f8160b1",
+      "group": "2026-06-30",
+      "position": 17,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "70ae72f1-eb38-4d4d-ae83-eb529bb877bf",
+      "group": "2026-06-30",
+      "position": 18,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c5f0d546-a934-4f0d-b0b5-4a90fb35d384",
+      "group": "2026-06-30",
+      "position": 19,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "74d6c9ed-100b-46c6-bb2b-435d6e2429e2",
+      "group": "2026-06-30",
+      "position": 20,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a3184c3b-6434-4356-80ce-e78ad71742bd",
+      "group": "2026-06-30",
+      "position": 21,
+      "fields": {
+        "date": "2026-06-30",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "bcb11d48-0e9e-4e00-812c-bc8a61e81877",
+      "group": "2026-07-01",
+      "position": 22,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "59aa134c-63fa-4164-abdd-4ae408bca4d8",
+      "group": "2026-07-01",
+      "position": 23,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "abf42b14-bd96-4fde-b169-a694f987e016",
+      "group": "2026-07-01",
+      "position": 24,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "dfb79eb9-ab1f-495c-bafe-6289b5743b49",
+      "group": "2026-07-01",
+      "position": 25,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "24c2a547-2b2c-4729-b81e-627745db03e7",
+      "group": "2026-07-01",
+      "position": 26,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c04ec3a2-1045-408a-bbe4-701a9a33d5a6",
+      "group": "2026-07-01",
+      "position": 27,
+      "fields": {
+        "date": "2026-07-01",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "76d4aea3-83b4-4dfc-8fc4-b254968c2f5b",
+      "group": "2026-07-02",
+      "position": 28,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ed873c3b-1f0f-4d25-803d-10ff8ae12b7d",
+      "group": "2026-07-02",
+      "position": 29,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "afbdcfb8-7925-451e-ac6a-0b4f114e3393",
+      "group": "2026-07-02",
+      "position": 30,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "cc739b0c-a436-40b4-baa0-570b25446623",
+      "group": "2026-07-02",
+      "position": 31,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "048a2153-9ee2-49e4-9e0b-ae144f3dc00f",
+      "group": "2026-07-02",
+      "position": 32,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "3564e6f5-9b3f-4d7c-8528-d0f6c00dc9a7",
+      "group": "2026-07-02",
+      "position": 33,
+      "fields": {
+        "date": "2026-07-02",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "da185d2c-3283-4846-a542-7e978815d67b",
+      "group": "2026-07-03",
+      "position": 34,
+      "fields": {
+        "date": "2026-07-03",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "4feb086a-fa5a-4d67-886b-983258e1629d",
+      "group": "2026-07-03",
+      "position": 35,
+      "fields": {
+        "date": "2026-07-03",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "6e289b30-48c9-4bae-b427-98a444c0f3d2",
+      "group": "2026-07-03",
+      "position": 36,
+      "fields": {
+        "date": "2026-07-03",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "f0068254-8bc3-4307-a988-a5667e47dd3d",
+      "group": "2026-07-03",
+      "position": 37,
+      "fields": {
+        "date": "2026-07-03",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "5692ea6a-4b95-4e0d-8ab9-2becca6e3959",
+      "group": "2026-07-03",
+      "position": 38,
+      "fields": {
+        "date": "2026-07-03",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "385f09a0-05b0-46d1-bd2e-c930f67be20a",
+      "group": "2026-07-04",
+      "position": 39,
+      "fields": {
+        "date": "2026-07-04",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c99bdf42-91d9-41b8-ab35-e726ca5532c7",
+      "group": "2026-07-04",
+      "position": 40,
+      "fields": {
+        "date": "2026-07-04",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1035d0a8-272f-4a46-8fe3-14f6e6b2b5eb",
+      "group": "2026-07-04",
+      "position": 41,
+      "fields": {
+        "date": "2026-07-04",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "23c11db3-f27c-4a24-87da-8bbcb070b86e",
+      "group": "2026-07-04",
+      "position": 42,
+      "fields": {
+        "date": "2026-07-04",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b250d412-1cc5-45b8-ad36-8347aac42cdb",
+      "group": "2026-07-05",
+      "position": 43,
+      "fields": {
+        "date": "2026-07-05",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "4027b0b8-f83a-472a-8f7b-aa81ebc26bc2",
+      "group": "2026-07-05",
+      "position": 44,
+      "fields": {
+        "date": "2026-07-05",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "951e9e0d-d3c7-48df-b48d-3d0c1c5da707",
+      "group": "2026-07-05",
+      "position": 45,
+      "fields": {
+        "date": "2026-07-05",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "f6445d85-14cf-47a8-944b-a293144ee27a",
+      "group": "2026-07-05",
+      "position": 46,
+      "fields": {
+        "date": "2026-07-05",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "7a13ffc6-b84c-4b02-88a7-4b39cb9dac33",
+      "group": "2026-07-06",
+      "position": 47,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "0909103d-a1c6-47fb-afb9-dd43f50a3820",
+      "group": "2026-07-06",
+      "position": 48,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "8b6ca4f0-45a6-485e-83ab-195c82fea45b",
+      "group": "2026-07-06",
+      "position": 49,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a29a3414-fe11-4c0f-abfb-cd0692a6a792",
+      "group": "2026-07-06",
+      "position": 50,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "eb8180ea-e023-4675-81c2-041fa58bdff2",
+      "group": "2026-07-06",
+      "position": 51,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a8f19e68-bc26-47a1-aba6-30a1328bf6ae",
+      "group": "2026-07-06",
+      "position": 52,
+      "fields": {
+        "date": "2026-07-06",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "a82fbbe4-1223-4737-ad5f-e5e3bb55b07b",
+      "group": "2026-07-07",
+      "position": 53,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "d5dd723d-2d12-4f5f-a1b6-38f7d1f8974a",
+      "group": "2026-07-07",
+      "position": 54,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "bc873b7d-0fab-4e33-bd1c-cc4e37a3b9c7",
+      "group": "2026-07-07",
+      "position": 55,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "428e34a5-246d-4cb7-a5c7-e5fea9a4c0bb",
+      "group": "2026-07-07",
+      "position": 56,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "999ecdc5-0002-4c8d-ad2f-8bd9f9c75613",
+      "group": "2026-07-07",
+      "position": 57,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "0baae9b5-c258-4d16-a2db-8041cf3ac133",
+      "group": "2026-07-07",
+      "position": 58,
+      "fields": {
+        "date": "2026-07-07",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "6bd8a523-926d-431b-8222-08e491bda47f",
+      "group": "2026-07-08",
+      "position": 59,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "0495e26a-a2e8-440a-8bb9-79eacc484d85",
+      "group": "2026-07-08",
+      "position": 60,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "0393a88d-cbfe-4ff2-a542-252623add564",
+      "group": "2026-07-08",
+      "position": 61,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "f0c49d84-9571-4cbd-a55b-b78b5a97c5a0",
+      "group": "2026-07-08",
+      "position": 62,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "f9c830cf-e76e-45a3-8ec7-bd53832eeac2",
+      "group": "2026-07-08",
+      "position": 63,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "7f22e697-da79-476f-8224-f6276a138b3c",
+      "group": "2026-07-08",
+      "position": 64,
+      "fields": {
+        "date": "2026-07-08",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "493fba46-537f-4b16-b4dc-dcdd14f13d46",
+      "group": "2026-07-09",
+      "position": 65,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "08d36e04-9ca8-401d-b7d5-8034abaac259",
+      "group": "2026-07-09",
+      "position": 66,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "4ea23adf-3539-4ecf-aa9c-f27dd512ddbc",
+      "group": "2026-07-09",
+      "position": 67,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1d6eb9a1-cbad-460e-975a-a8e1cddf89f5",
+      "group": "2026-07-09",
+      "position": 68,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d1f97504-23cb-4c84-a84f-4e2d2496c012",
+      "group": "2026-07-09",
+      "position": 69,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "1c6752bc-f9c2-499a-ab4e-60dc9552532d",
+      "group": "2026-07-09",
+      "position": 70,
+      "fields": {
+        "date": "2026-07-09",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c08f8139-6d8e-4942-96a9-dfaf9d1d7e9b",
+      "group": "2026-07-10",
+      "position": 71,
+      "fields": {
+        "date": "2026-07-10",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "2bdb5e05-cf3e-435e-b25a-3b7c81c1fcdb",
+      "group": "2026-07-11",
+      "position": 72,
+      "fields": {
+        "date": "2026-07-11",
+        "time": "10:00",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "矿泉水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a5ac2048-8969-4b72-ad4f-7b4285b4966b",
+      "group": "2026-07-11",
+      "position": 73,
+      "fields": {
+        "date": "2026-07-11",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "e4677dc6-ee9d-49a1-99c1-b8ef97e17cf4",
+      "group": "2026-07-11",
+      "position": 74,
+      "fields": {
+        "date": "2026-07-11",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "106eeb9e-d6d2-47da-b4cc-3a4ccce6de25",
+      "group": "2026-07-11",
+      "position": 75,
+      "fields": {
+        "date": "2026-07-11",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "19559cec-99a3-429c-a825-9e26442601f3",
+      "group": "2026-07-11",
+      "position": 76,
+      "fields": {
+        "date": "2026-07-11",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ced4bd9d-b7d9-4da5-9596-2b43d2b5c3e3",
+      "group": "2026-07-12",
+      "position": 77,
+      "fields": {
+        "date": "2026-07-12",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c0bff5b2-ea4b-45ed-9657-d1d4f3aa3c44",
+      "group": "2026-07-12",
+      "position": 78,
+      "fields": {
+        "date": "2026-07-12",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "6e25bd61-8219-4f46-9d79-f73b20ac4162",
+      "group": "2026-07-12",
+      "position": 79,
+      "fields": {
+        "date": "2026-07-12",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ad7c9959-3483-4fa4-906e-f9485b9642d7",
+      "group": "2026-07-12",
+      "position": 80,
+      "fields": {
+        "date": "2026-07-12",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "559ee5f7-fbcd-4220-a0dc-acbd80346dca",
+      "group": "2026-07-13",
+      "position": 81,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b60d4243-1960-4f92-8ff4-aa7ac4ad8319",
+      "group": "2026-07-13",
+      "position": 82,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a1841841-5ea2-4a5b-a5ce-4dfa3f6b3ce2",
+      "group": "2026-07-13",
+      "position": 83,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "37937a09-75a1-4e06-acd6-395be2992864",
+      "group": "2026-07-13",
+      "position": 84,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "cb0fec33-8cd9-4295-8f05-aefe28d665cf",
+      "group": "2026-07-13",
+      "position": 85,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "9052b330-09d0-4d36-95d7-71143f4a37e4",
+      "group": "2026-07-13",
+      "position": 86,
+      "fields": {
+        "date": "2026-07-13",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "18a26e4f-fda9-4c6a-b923-585097b911f9",
+      "group": "2026-07-14",
+      "position": 87,
+      "fields": {
+        "date": "2026-07-14",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "dd3d80f1-bc77-40a9-a15b-5b89c6a272f9",
+      "group": "2026-07-14",
+      "position": 88,
+      "fields": {
+        "date": "2026-07-14",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "5f6b3b1c-8fcc-4047-91ff-188e27131fd2",
+      "group": "2026-07-14",
+      "position": 89,
+      "fields": {
+        "date": "2026-07-14",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "0920df41-c256-48bb-880a-9cbaa30d9128",
+      "group": "2026-07-14",
+      "position": 90,
+      "fields": {
+        "date": "2026-07-14",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "29bc7f7d-0da5-4e06-911f-f4fd725b76fc",
+      "group": "2026-07-14",
+      "position": 91,
+      "fields": {
+        "date": "2026-07-14",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "5963b89d-43fa-4f67-a3d6-a7fced7e3cdf",
+      "group": "2026-07-15",
+      "position": 92,
+      "fields": {
+        "date": "2026-07-15",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b4b482a4-76d6-46b9-b4c5-f478bd092222",
+      "group": "2026-07-15",
+      "position": 93,
+      "fields": {
+        "date": "2026-07-15",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "4cfa8b13-5675-4ff9-ac67-670fc77957bf",
+      "group": "2026-07-15",
+      "position": 94,
+      "fields": {
+        "date": "2026-07-15",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "e91aaffa-6d92-4d95-8d40-aa3217ab9526",
+      "group": "2026-07-15",
+      "position": 95,
+      "fields": {
+        "date": "2026-07-15",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1abb0f31-cae5-4266-8a29-548b7ae266e2",
+      "group": "2026-07-15",
+      "position": 96,
+      "fields": {
+        "date": "2026-07-15",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "60b3bffb-aa9c-4733-882d-6650675c7b62",
+      "group": "2026-07-16",
+      "position": 97,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "044979e9-bb8f-4950-a435-44d96055d590",
+      "group": "2026-07-16",
+      "position": 98,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a61ff124-e14b-4f5f-90be-f1eb2c9a133c",
+      "group": "2026-07-16",
+      "position": 99,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "09310909-0611-4838-915e-0681f1c393f1",
+      "group": "2026-07-16",
+      "position": 100,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "541dbd4c-c72f-49c9-ad4c-eaf0dbbfef77",
+      "group": "2026-07-16",
+      "position": 101,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "d9eb1154-1b1c-44c1-a588-eaf0b168bc3e",
+      "group": "2026-07-16",
+      "position": 102,
+      "fields": {
+        "date": "2026-07-16",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "a77c56b8-c58c-4a24-ab16-df9cbb9ca09b",
+      "group": "2026-07-17",
+      "position": 103,
+      "fields": {
+        "date": "2026-07-17",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "55e635d7-f6b2-4662-996e-eff2a053bb90",
+      "group": "2026-07-17",
+      "position": 104,
+      "fields": {
+        "date": "2026-07-17",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "f2c64478-a233-4951-a446-a7bdf26b5e21",
+      "group": "2026-07-17",
+      "position": 105,
+      "fields": {
+        "date": "2026-07-17",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "68d4765a-24cf-4bcf-b31f-7302ecce41b1",
+      "group": "2026-07-17",
+      "position": 106,
+      "fields": {
+        "date": "2026-07-17",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "4648f021-87a4-4d21-a0ab-a2494c5cef5e",
+      "group": "2026-07-17",
+      "position": 107,
+      "fields": {
+        "date": "2026-07-17",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "98ea2099-f3ed-4588-8b12-d71d85ce23ea",
+      "group": "2026-07-18",
+      "position": 108,
+      "fields": {
+        "date": "2026-07-18",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "91d0c0e7-9f0e-490a-8fc5-55d2a2ccfd76",
+      "group": "2026-07-18",
+      "position": 109,
+      "fields": {
+        "date": "2026-07-18",
+        "time": "10:00",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "矿泉水"
+      },
+      "version": 1
+    },
+    {
+      "id": "830dfc06-f211-437a-a1da-bce59f0b9280",
+      "group": "2026-07-18",
+      "position": 110,
+      "fields": {
+        "date": "2026-07-18",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "2d87e666-bd4a-4c5b-acd4-dfd96681c80b",
+      "group": "2026-07-18",
+      "position": 111,
+      "fields": {
+        "date": "2026-07-18",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b99c8d7d-6705-4842-84ce-8c9399a3d27a",
+      "group": "2026-07-18",
+      "position": 112,
+      "fields": {
+        "date": "2026-07-18",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d0f41976-2757-4934-ba19-f46256ca14f6",
+      "group": "2026-07-19",
+      "position": 113,
+      "fields": {
+        "date": "2026-07-19",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c96c34ee-5604-44b8-a444-edcc02caca70",
+      "group": "2026-07-20",
+      "position": 114,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "e11f9348-14ca-4325-8c72-85ac4cda6820",
+      "group": "2026-07-20",
+      "position": 115,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b74e6b64-59d4-4c10-bacc-b6f37c485551",
+      "group": "2026-07-20",
+      "position": 116,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "69c70147-c7d0-497d-8df5-f4b7ed0ea709",
+      "group": "2026-07-20",
+      "position": 117,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1432f87e-d8d4-41ed-81c2-8d8daa42e809",
+      "group": "2026-07-20",
+      "position": 118,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "04e1a5cd-1dc4-4159-ad5b-1a604650c5c4",
+      "group": "2026-07-20",
+      "position": 119,
+      "fields": {
+        "date": "2026-07-20",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "e724037b-3a3b-4583-9c60-73f89c14fb76",
+      "group": "2026-07-21",
+      "position": 120,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "e5237242-6ccc-4856-9d7b-fee2fc2c32af",
+      "group": "2026-07-21",
+      "position": 121,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "9a38c2f0-3ee9-4c7c-9513-7823e2d8faac",
+      "group": "2026-07-21",
+      "position": 122,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "860dd45a-a083-4908-906b-f87617fea74c",
+      "group": "2026-07-21",
+      "position": 123,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "f1fd1012-418b-4486-82bd-04a3b161c4c8",
+      "group": "2026-07-21",
+      "position": 124,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "36c11031-f91f-43a6-b370-10e2ed42d969",
+      "group": "2026-07-21",
+      "position": 125,
+      "fields": {
+        "date": "2026-07-21",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "89a72ade-fb39-44a6-ac14-01bcaff06b7c",
+      "group": "2026-07-22",
+      "position": 126,
+      "fields": {
+        "date": "2026-07-22",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "7de43c29-25ec-4ebf-bbb0-ef0dfbb09952",
+      "group": "2026-07-22",
+      "position": 127,
+      "fields": {
+        "date": "2026-07-22",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c57f2230-bef7-4b8f-9244-b4d9baf8d0f1",
+      "group": "2026-07-22",
+      "position": 128,
+      "fields": {
+        "date": "2026-07-22",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "5ec273ee-56ec-4615-a883-8dc1bb5c7a04",
+      "group": "2026-07-22",
+      "position": 129,
+      "fields": {
+        "date": "2026-07-22",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "6d1a657e-968b-442b-b8a8-7f478b16e3ca",
+      "group": "2026-07-22",
+      "position": 130,
+      "fields": {
+        "date": "2026-07-22",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "bf4135a5-0d2c-4dec-bea9-4e31d9969e02",
+      "group": "2026-07-23",
+      "position": 131,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "9758851f-509b-45c9-a5f3-904e600da157",
+      "group": "2026-07-23",
+      "position": 132,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "10a48b36-1dda-4213-bc4a-9b4fcaa387c6",
+      "group": "2026-07-23",
+      "position": 133,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "2f1e271c-1d8c-4120-a09e-43e90fcae780",
+      "group": "2026-07-23",
+      "position": 134,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "48b88452-6f68-4b6b-9e29-cbcc1db42bb5",
+      "group": "2026-07-23",
+      "position": 135,
+      "fields": {
+        "date": "2026-07-23",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "2b48995f-5aea-427f-a02f-7ad7dd9e6b1f",
+      "group": "2026-07-24",
+      "position": 136,
+      "fields": {
+        "date": "2026-07-24",
+        "time": "07:50",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "5d066005-ab83-4b2f-a7f1-ace019e4d883",
+      "group": "2026-07-25",
+      "position": 137,
+      "fields": {
+        "date": "2026-07-25",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "de27461e-9238-49a6-8b72-0c075529b583",
+      "group": "2026-07-25",
+      "position": 138,
+      "fields": {
+        "date": "2026-07-25",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ead7cacc-74b5-4f6e-8fae-3077bf6478c0",
+      "group": "2026-07-25",
+      "position": 139,
+      "fields": {
+        "date": "2026-07-25",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "349c5e29-9e9b-49cc-bfc7-8796bbb860da",
+      "group": "2026-07-25",
+      "position": 140,
+      "fields": {
+        "date": "2026-07-25",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "65916b89-c329-4a6e-90b1-19ceda0e8756",
+      "group": "2026-07-26",
+      "position": 141,
+      "fields": {
+        "date": "2026-07-26",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "9966df54-bf0d-43d7-9947-4457e6b51220",
+      "group": "2026-07-26",
+      "position": 142,
+      "fields": {
+        "date": "2026-07-26",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "09740379-812d-4249-bdad-6911483f84f5",
+      "group": "2026-07-26",
+      "position": 143,
+      "fields": {
+        "date": "2026-07-26",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "29b37c8f-c8df-4aa6-a78f-15b7c5b3bc86",
+      "group": "2026-07-26",
+      "position": 144,
+      "fields": {
+        "date": "2026-07-26",
+        "time": "16:30",
+        "amount": 1,
+        "unit": "L",
+        "drink_type": "矿泉水"
+      },
+      "version": 1
+    },
+    {
+      "id": "09bc618f-d7d3-4c30-a3f8-c96abaf866a4",
+      "group": "2026-07-26",
+      "position": 145,
+      "fields": {
+        "date": "2026-07-26",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "656dfea9-8a81-4ac6-b504-97e8d3166b05",
+      "group": "2026-07-27",
+      "position": 146,
+      "fields": {
+        "date": "2026-07-27",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "204c3549-0b36-49df-a6fd-ebb6a3f8a1db",
+      "group": "2026-07-27",
+      "position": 147,
+      "fields": {
+        "date": "2026-07-27",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "5c842046-ba0d-4ff5-836c-5faf7a3a6924",
+      "group": "2026-07-27",
+      "position": 148,
+      "fields": {
+        "date": "2026-07-27",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a3eccc34-d92c-4724-8831-b740e9dbf413",
+      "group": "2026-07-27",
+      "position": 149,
+      "fields": {
+        "date": "2026-07-27",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "8b0e18cc-3ac7-438d-877f-182870763464",
+      "group": "2026-07-27",
+      "position": 150,
+      "fields": {
+        "date": "2026-07-27",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b6f24a64-a844-4d43-a40a-3e23e2b43a15",
+      "group": "2026-07-28",
+      "position": 151,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "47d0f4dc-09a6-4295-b43a-5028310c15c5",
+      "group": "2026-07-28",
+      "position": 152,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "31ae9c49-93a3-4b8d-8c72-2098e0c81cc4",
+      "group": "2026-07-28",
+      "position": 153,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "7c78bbfe-fd6b-414e-8ee1-57be1c0633bd",
+      "group": "2026-07-28",
+      "position": 154,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "00cfda63-c236-49cf-a362-cbf596557545",
+      "group": "2026-07-28",
+      "position": 155,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "7c183bdb-4183-4ac0-84f5-922fce70f28f",
+      "group": "2026-07-28",
+      "position": 156,
+      "fields": {
+        "date": "2026-07-28",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d92c8ea0-2c15-44d2-bb10-dd5285bb4513",
+      "group": "2026-07-29",
+      "position": 157,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "6bd4eab0-6f41-4647-bdd2-86ef9cc846d3",
+      "group": "2026-07-29",
+      "position": 158,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "b5b6fe57-1da5-49cc-b35f-9eddca3dbd35",
+      "group": "2026-07-29",
+      "position": 159,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "f93fdeb2-6314-46d5-afe0-c50c349e1063",
+      "group": "2026-07-29",
+      "position": 160,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1ee75d21-6814-439d-9e69-3368006703f5",
+      "group": "2026-07-29",
+      "position": 161,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "15:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "45788581-dd9f-4182-bc73-efc2f66abcf8",
+      "group": "2026-07-29",
+      "position": 162,
+      "fields": {
+        "date": "2026-07-29",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "d0e013a2-d4eb-4e26-842c-165e2e173e5a",
+      "group": "2026-07-30",
+      "position": 163,
+      "fields": {
+        "date": "2026-07-30",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "01d40178-3d58-4678-b7bb-345b399fbc72",
+      "group": "2026-07-30",
+      "position": 164,
+      "fields": {
+        "date": "2026-07-30",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "83a3af07-4b49-4aa8-af2b-a43ea3392611",
+      "group": "2026-07-30",
+      "position": 165,
+      "fields": {
+        "date": "2026-07-30",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "f6bf22db-15eb-447b-aa29-94b63385e136",
+      "group": "2026-07-31",
+      "position": 166,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "32b3de22-3145-4479-a960-b2492d40edbf",
+      "group": "2026-07-31",
+      "position": 167,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "ce0ab9e5-0abd-4ebc-b818-764be9705ebd",
+      "group": "2026-07-31",
+      "position": 168,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "123a1600-3653-4c95-a64e-aa348a4782e8",
+      "group": "2026-07-31",
+      "position": 169,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "2e61e1c7-00c5-4769-8520-8aa6b8642288",
+      "group": "2026-07-31",
+      "position": 170,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "92e693d8-bcd9-4c50-89f3-23075f154076",
+      "group": "2026-07-31",
+      "position": 171,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b3136426-694c-4eba-83f4-012506a19670",
+      "group": "2026-07-31",
+      "position": 172,
+      "fields": {
+        "date": "2026-07-31",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "e0492df9-7bf3-4426-9389-47f65373878f",
+      "group": "2026-08-01",
+      "position": 173,
+      "fields": {
+        "date": "2026-08-01",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "e2fa7cc3-1476-4dc6-8404-0a89a0efc641",
+      "group": "2026-08-01",
+      "position": 174,
+      "fields": {
+        "date": "2026-08-01",
+        "time": "13:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "0f85230d-4521-47ee-b95e-1b2fddad2488",
+      "group": "2026-08-02",
+      "position": 175,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "01033b8f-2206-4218-a7df-42f4c5a60e1d",
+      "group": "2026-08-02",
+      "position": 176,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "1bc12a12-3195-49e9-8f77-f93d1804b834",
+      "group": "2026-08-02",
+      "position": 177,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "f1cbb0d3-3f72-44e4-bfc7-6ece15787f8b",
+      "group": "2026-08-02",
+      "position": 178,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b1d25c3c-1624-4ae4-997d-d09d23b9c940",
+      "group": "2026-08-02",
+      "position": 179,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "444922c1-8748-49f6-b0b4-1998da13d346",
+      "group": "2026-08-02",
+      "position": 180,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "20:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "b794979d-821e-4809-bcf8-fed77f1d2850",
+      "group": "2026-08-02",
+      "position": 181,
+      "fields": {
+        "date": "2026-08-02",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "df11c651-0bc0-41c3-8ccb-a0a2cf7ec090",
+      "group": "2026-08-03",
+      "position": 182,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "07:30",
+        "amount": 250,
+        "unit": "mL",
+        "drink_type": "豆浆"
+      },
+      "version": 1
+    },
+    {
+      "id": "2bc89430-aa8b-42c4-8dc8-22de0b9c37ef",
+      "group": "2026-08-03",
+      "position": 183,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "d2a31f45-8174-4a4f-9218-a18a01cc0d49",
+      "group": "2026-08-03",
+      "position": 184,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d2430ba3-d978-421c-b9bb-26af9ff9fe87",
+      "group": "2026-08-03",
+      "position": 185,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "3deaa54c-66e6-4f45-9219-df43002baa81",
+      "group": "2026-08-03",
+      "position": 186,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "15:00",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "a99fcea9-9485-4b11-9bb9-2ab2501dcc32",
+      "group": "2026-08-03",
+      "position": 187,
+      "fields": {
+        "date": "2026-08-03",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ee001706-c107-4305-94fa-a9b70873d2cc",
+      "group": "2026-08-04",
+      "position": 188,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "d8d464e4-8c76-4a4b-8565-7ce6f4fd549a",
+      "group": "2026-08-04",
+      "position": 189,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "8114a26c-d5ca-4738-acd5-f0eaaa8d3194",
+      "group": "2026-08-04",
+      "position": 190,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "2d946e4c-d1c2-442a-aea2-0d1ad801a0da",
+      "group": "2026-08-04",
+      "position": 191,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "12:30",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "绿茶"
+      },
+      "version": 1
+    },
+    {
+      "id": "343c9921-166f-4a73-9d84-13577cbb70fe",
+      "group": "2026-08-04",
+      "position": 192,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "ecbe45fd-d7fc-4c18-8951-0ee3cb5f9bc0",
+      "group": "2026-08-04",
+      "position": 193,
+      "fields": {
+        "date": "2026-08-04",
+        "time": "21:30",
+        "amount": 200,
+        "unit": "mL",
+        "drink_type": "牛奶"
+      },
+      "version": 1
+    },
+    {
+      "id": "a304d78b-508c-4d00-937b-c365b370b8a8",
+      "group": "2026-08-05",
+      "position": 194,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "08:00",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "bf9d391e-9f72-4d19-a9e5-49cff996ba0a",
+      "group": "2026-08-05",
+      "position": 195,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "10:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "c1120993-c93e-48ed-8b18-b3e24ff97b1e",
+      "group": "2026-08-05",
+      "position": 196,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "11:10",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a6cd1b96-3d9f-4f7b-abb5-44013960b971",
+      "group": "2026-08-05",
+      "position": 197,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "12:50",
+        "amount": 500,
+        "unit": "mL",
+        "drink_type": "柠檬水"
+      },
+      "version": 1
+    },
+    {
+      "id": "1300e1b1-0e21-4b04-88cc-ea43e7be49a8",
+      "group": "2026-08-05",
+      "position": 198,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "16:40",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "a1950fcf-6592-48e3-93c8-7cabdea9dc60",
+      "group": "2026-08-05",
+      "position": 199,
+      "fields": {
+        "date": "2026-08-05",
+        "time": "18:40",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "682e96a0-b0e3-4104-a02c-ead292700ec0",
+      "group": "2026-08-06",
+      "position": 200,
+      "fields": {
+        "date": "2026-08-06",
+        "time": "08:05",
+        "amount": 300,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    },
+    {
+      "id": "947766f3-3849-409d-aec7-7cb7e70f7909",
+      "group": "2026-08-06",
+      "position": 201,
+      "fields": {
+        "date": "2026-08-06",
+        "time": "09:40",
+        "amount": 350,
+        "unit": "mL",
+        "drink_type": "美式"
+      },
+      "version": 1
+    },
+    {
+      "id": "28c7af9b-831c-4364-a5ef-c87b17cabaaf",
+      "group": "2026-08-06",
+      "position": 202,
+      "fields": {
+        "date": "2026-08-06",
+        "time": "11:20",
+        "amount": 400,
+        "unit": "mL",
+        "drink_type": "温水"
+      },
+      "version": 1
+    }
+  ]
+}

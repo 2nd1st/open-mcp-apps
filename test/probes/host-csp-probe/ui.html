@@ -7,6 +7,49 @@
   <meta name="description" content="Nine readings of what THIS host does with an app's csp declaration. Every reading is written to a collection, so it outlives the widget.">
   <meta name="oma-category" content="Developer">
   <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-s1:4px;--k-s2:8px;--k-s3:12px;--k-s4:16px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-h1{margin:0;font-size:var(--font-heading-sm-size,18px);font-weight:650;letter-spacing:-.01em}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-sub{color:var(--color-text-secondary)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-code{font-family:var(--font-mono);font-size:12px;background:var(--color-background-secondary);border-radius:var(--border-radius-sm,7px);padding:1px 5px}
+  .k-li{display:flex;align-items:center;gap:var(--k-s2);min-height:38px;padding:var(--k-s1) 0;border-bottom:1px solid var(--color-border-secondary)}
+  .k-card{position:relative;border:1px solid var(--color-border-primary);border-radius:var(--border-radius-lg,14px);background:var(--color-background-primary);padding:var(--k-s3) 14px;transition:transform var(--k-t) var(--k-ease),box-shadow var(--k-t) var(--k-ease),border-color var(--k-t) var(--k-ease)}
+  .k-card.is-click{cursor:pointer}
+  .k-card.is-click:hover{transform:translateY(-1px);box-shadow:var(--shadow-md,var(--shadow-sm));border-color:color-mix(in oklab,var(--k-accent) 28%,transparent)}
+  .k-card.is-click:active{transform:translateY(0) scale(.985);box-shadow:none}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:1120px;margin-inline:auto;overflow-x:clip}
+
   :root {
     --accent: var(--color-text-info, var(--color-ring-primary, #3b6cf6));
     --wash: color-mix(in oklab, var(--accent) 9%, transparent);
@@ -183,7 +226,7 @@
   // `window.oma` says nothing about this, so the answer is read off the DOCUMENT the engine
   // served. `open_app` points every host at ONE loader resource that mounts any app into itself;
   // that document — and only that document — carries the loader module. A per-app `ui://` resource
-  // (OMA_DYNAMIC_TOOLS=1, tool `open_<name>`) and the browser viewer both serve the app's own
+  // (a pinned app's tool `open_<name>`) and the browser viewer both serve the app's own
   // document, which has no loader in it; `oma.standalone` then separates those two.
   //
   // This reads engine internals (`script[data-oma]`), not the runtime contract. If the markers ever

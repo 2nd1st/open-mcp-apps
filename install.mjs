@@ -70,8 +70,8 @@ const hostArg = (argv.find((a) => a.startsWith("--host=")) || "").split("=")[1]
 // carrying NO flag renders through `open_app`, its clicks write, and the writes survive a full
 // quit — so the symptom the workaround existed for is gone on that build, and all three hosts are
 // registered the same way again. (What we measured is that this build no longer shows it; nobody
-// here can declare an upstream fix.) `OMA_DYNAMIC_TOOLS` remains a supported opt-in — README →
-// Configuration — what ended is the installer choosing it on your behalf.
+// here can declare an upstream fix.) The engine no longer reads the variable at all: an app gets
+// its own `open_<name>` when the user pins it in the settings app (README → Configuration).
 //
 // Deleting the code cannot un-write the configs already on disk, which is what the next three
 // constants are for. An entry still carrying the retired key reads STALE (so `--check` says so, and
@@ -84,7 +84,7 @@ const stripStaleEnv = (env) => Object.fromEntries(
   Object.entries(env || {}).filter(([k, v]) => !(k === STALE_ENV_KEY && v === "1")));
 // Removing a setting silently would be its own defect — somebody may have wanted it. Both adapters
 // print this next to what they removed, so the change is visible and reversible by hand.
-const STALE_ENV_UNDO = `set "${STALE_ENV_KEY}": "1" under env yourself to keep per-app open_<name> tools (README → Configuration)`;
+const STALE_ENV_UNDO = `the engine no longer reads it; to give an app its own open_<name> tool, pin it in Settings → Installed → the app → "Own tool" (README → Configuration)`;
 const STALE_ENV_WAS = `${STALE_ENV_KEY}=1 — the 2026-07-28 chat-surface workaround, retired`;
 const sameEntry = (e) => !!e && e.command === NODE && JSON.stringify(e.args) === JSON.stringify([SERVER]);
 const cmd = (bin) => (platform() === "win32" && bin === "npm") ? "npm.cmd" : bin;

@@ -29,7 +29,6 @@ import { readFileSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { BRIDGE, RUNNER_CSP_POLICY } from "../src/runner.mjs";
-import { RUNTIME_CONTRACT } from "../src/runtime-core.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 let pass = 0, fail = 0;
@@ -42,9 +41,9 @@ const ok = (name, cond, note) => (cond
 // (zero consumers) left the surface; bind moved to the internal __OMA_BIND__ loader hook.
 // callFunction RETURNED 2026-08-05 exactly on A10's condition — W3 shipped the server seat —
 // in both runtimes (the bridge's rides the generic callTool door, so the guard shaping fires).
-const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem", "files",
+const PORTABLE = ["addItem", "callFunction", "callTool", "deleteItem", "files",
   "moveItem", "onChange", "onPrefChange", "pref", "readCollection", "ready", "refresh",
-  "sendMessage", "setPref", "standalone", "state", "toolInput", "updateItem"];
+  "sendMessage", "setPref", "standalone", "state", "updateItem"];
 // openLink is DIRECT-ONLY on purpose, and it is a security decision rather than an oversight: a
 // URL is an outbound channel (the data rides in the query string), so handing a host-mediated
 // link opener to a SANDBOXED child would punch a hole through the very property measured in
@@ -54,7 +53,10 @@ const PORTABLE = ["addItem", "callFunction", "callTool", "contract", "deleteItem
 // runtime reads and writes. Its one caller is the universal loader, applying a binding the SERVER
 // computed; a sandboxed child that could call it could point itself at another app's rows, which is
 // precisely the boundary the guard's allowlist exists to hold.
-const DIRECT_ONLY = ["embed", "openLink", "viewBase"];
+// `tools` (2026-10-02) is direct-only for the openLink reason turned inward: a tool's name and
+// description are text the MODEL reads and its run() is code the model triggers — from a
+// sandboxed, unreviewed author that is a prompt-injection channel, not a feature.
+const DIRECT_ONLY = ["display", "displayModes", "embed", "onDisplayChange", "openLink", "requestDisplay", "tools", "viewBase"];
 
 const doc = readFileSync(join(ROOT, "RUNTIME.md"), "utf-8");
 const runtimeSrc = readFileSync(join(ROOT, "src", "shell-runtime.js"), "utf-8");
@@ -70,11 +72,22 @@ const directLiteral = runtimeSrc.slice(runtimeSrc.indexOf("window.oma = {"));
 {
   const decl = runtimeSrc.match(/new App\(\{ name: "open-mcp-apps"[^}]*\}, ([^)]*)\)/);
   ok("the widget's ui/initialize capability declaration was found", !!decl, String(decl));
-  ok("🔴 it declares NO tools capability — nothing in src/ implements one",
-    /^\{\s*\}$/.test(decl[1].trim()), decl[1]);
-  ok("…and that is still true of the implementation (if this fails, DECLARE it again, do not delete the test)",
-    !/\bon(call|list)tools?\b/i.test(runtimeSrc.replace(/\/\/.*$/gm, "")),
-    "a tools handler now exists in the runtime — the declaration must come back");
+  // Since 2026-10-01 it declares display modes, and the rule holds: a declared mode must be
+  // backed — the runtime asks the host for it and reads it back.
+  ok("…the display modes it declares are backed: the runtime calls ui/request-display-mode and reads displayMode back",
+    /availableDisplayModes: DISPLAY_MODES/.test(decl[1]) && /hostApp\.requestDisplayMode\(/.test(runtimeSrc)
+      && /ctx\.displayMode/.test(runtimeSrc), decl[1]);
+  // History of the other token: until 2026-10-02 the rule here was the inverse — NO tools, because
+  // nothing answered tools/list (2026-10-01 the screen experiment declared view tools, measured
+  // that neither claude.ai nor ChatGPT hands them to the model, and took the declaration back).
+  // App-provided tools (oma.tools) made it backed: serveAppTools answers both requests, and the
+  // SDK refuses those handlers unless the capability is declared — so the two must move together.
+  const core = readFileSync(join(ROOT, "src", "runtime-core.mjs"), "utf-8");
+  ok("🔴 it declares the tools capability WITH listChanged — and only because it is backed",
+    /tools: \{ listChanged: true \}/.test(decl[1]), decl[1]);
+  ok("…backed: serveAppTools answers tools/list + tools/call and sends list_changed, and the runtime wires it to hostApp",
+    /app\.onlisttools = /.test(core) && /app\.oncalltool = /.test(core) && /app\.sendToolListChanged\(\)/.test(core)
+      && /serveAppTools\(hostApp, appTools\)/.test(runtimeSrc));
 }
 
 const bridgeLiteral = BRIDGE.slice(BRIDGE.indexOf("window.oma={"));
@@ -142,10 +155,14 @@ console.log("\n2. every name the runtimes expose is documented (no undocumented 
   // bridge (2026-07-27, pre-contract). Ledger since: +contract, +openLink, +bind (2026-07-2x);
   // then the 2026-08-04 elegance cut removed callFunction, updateContext, host, isControlPlaneTool
   // and moved bind internal — direct 26→21, bridge 21→18; W3 (2026-08-05) returned callFunction
-  // with its server seat — 22/19. A static extractor that agrees with the
-  // ledger of a running one is the only reason to trust the extractor, so it is asserted.
-  ok("direct surface = the measured ledger (22 after W3's callFunction return)", direct.length === 22, `got ${direct.length}`);
-  ok("bridge surface = the measured ledger (19 after W3's callFunction return)", bridge.length === 19, `got ${bridge.length}`);
+  // with its server seat — 22/19; 2026-10-01 display modes (display, displayModes, requestDisplay,
+  // onDisplayChange — direct only for now) — 26/19; same day contract and toolInput (zero app
+  // consumers; the loader reads identity through __OMA_IDENTITY__) left both surfaces — 24/17;
+  // 2026-10-02 tools (app-provided tools, direct only) — 25/17.
+  // A static extractor that agrees with the ledger of a running one is the only reason to trust
+  // the extractor, so it is asserted.
+  ok("direct surface = the measured ledger (25 after tools joined)", direct.length === 25, `got ${direct.length}`);
+  ok("bridge surface = the measured ledger (17 after contract + toolInput left)", bridge.length === 17, `got ${bridge.length}`);
 }
 
 // ── 2b. …and the TYPES an app author compiles against name the same surface ──────────────────
@@ -244,7 +261,7 @@ console.log("\n2b. the app-author types (types/window-oma.d.ts) name the whole s
 //
 // ONE DIRECTION ONLY: every `oma.<name>` the guide prints must exist. The reverse is not required
 // and would be wrong to require — the guide is a teaching text that deliberately shows a subset
-// (it never mentions `contract` or `toolInput`), and a rule forcing it to name everything would
+// (it never mentions `viewBase` or `displayModes`), and a rule forcing it to name everything would
 // turn it back into the reference RUNTIME.md already is.
 //
 // The scan reads the FILE, not the exported `GUIDE` string, because the file is the superset: the
@@ -264,14 +281,7 @@ console.log("\n2c. the authoring guide (src/guide.mjs) names only members that e
     `the guide teaches ${ghosts.map((n) => "oma." + n).join(", ")} — removed from the runtime, so an app that copies this reads undefined`);
 }
 
-console.log("\n3. the document and the code agree on the version");
-ok("RUNTIME.md states the contract version the code exports",
-  new RegExp(`\\*\\*Contract version: ${RUNTIME_CONTRACT}\\*\\*`).test(doc), `code says ${RUNTIME_CONTRACT}`);
-ok("both runtimes report the SAME number — an app cannot tell them apart by it",
-  new RegExp(`get contract\\(\\)\\{return ${RUNTIME_CONTRACT}\\}`).test(BRIDGE)
-  && /get contract\(\) \{ return RUNTIME_CONTRACT; \}/.test(runtimeSrc));
-
-console.log("\n4. the claims RUNTIME.md makes about the engine, checked against the engine");
+console.log("\n3. the claims RUNTIME.md makes about the engine, checked against the engine");
 {
   const store = readFileSync(join(ROOT, "src", "store.mjs"), "utf-8");
   const runner = readFileSync(join(ROOT, "src", "runner.mjs"), "utf-8");
@@ -301,6 +311,68 @@ console.log("\n4. the claims RUNTIME.md makes about the engine, checked against 
     /tierOf\(comp\.author\) === "local"/.test(contracts) && doc.includes("**always its own name**"));
   ok("provenance really is unoverwritable in both directions (test/provenance.mjs owns the proof)",
     /tierOf\(existing\.author\) !== tierOf\(actor\)/.test(store) && doc.includes("not overwritable in either direction"));
+}
+
+// ── 4. app tools reach the AI on hosts that never ask the view (the RELAY road) ──────────────────
+// The native road is driven in test/runtime-core.mjs §13 against a real SDK App. This is the other
+// one, the road claude.ai and ChatGPT actually offer: the REAL server half (src/tools/screen.mjs)
+// and the REAL registry, with the widget's poll loop played here — its DOM half (screenRead)
+// cannot run in node, so the two lines of it that matter are pinned by source below.
+console.log("\n4. app tools over the screen relay — listed by screen_read, called by screen_act {tool, input}");
+{
+  const { register } = await import("../src/tools/screen.mjs");
+  const { createAppTools, appToolText } = await import("../src/runtime-core.mjs");
+  const handlers = {};
+  register({ server: { registerTool: (name, def, fn) => { handlers[name] = { def, fn }; } }, store: {}, hostName: () => "sim" });
+  ok("screen_act offers the call form: tool + input", !!(handlers.screen_act && handlers.screen_act.def.inputSchema.tool && handlers.screen_act.def.inputSchema.input));
+  ok("…and no sibling tool was added for it (one verb for \"do it in the app\")",
+    Object.keys(handlers).sort().join(",") === "screen_act,screen_poll,screen_read", Object.keys(handlers).join(","));
+
+  const appTools = createAppTools();
+  appTools.register({ name: "pack_item", inputSchema: { properties: { item: { type: "string" } }, required: ["item"] }, run: ({ item }) => item + " is packed. 3 of 5 packed." });
+  // The widget: one long poll → the job → run it the way shell-runtime's loop does → hand it back.
+  const poll = (args) => handlers.screen_poll.fn({ session: "w1", app: "trip-planner", visible: true, born: Date.now(), ...args });
+  const widget = (async () => {
+    const r = await poll({});
+    const job = r.structuredContent && r.structuredContent.job;
+    // Not a tool job → answer as a press would, so a broken relay reads as ✗ below, not a crash.
+    const out = job.tool ? await appTools.call(job.tool, job.input) : { content: [{ type: "text", text: "(pressed)" }] };
+    poll({ done: { id: job.id, text: appToolText(out), ...(out.isError ? { isError: true } : {}) } });   // the next poll carries it
+    return job;
+  })();
+  await new Promise((r) => setTimeout(r, 5));   // the widget is waiting in its poll
+  const res = await handlers.screen_act.fn({ tool: "pack_item", input: { item: "passport" } });
+  const job = await widget;
+  ok("the AI's call reaches the widget as a TOOL job (name + input), not a press", job.tool === "pack_item" && job.input.item === "passport" && !job.ref && !job.action, JSON.stringify(job));
+  ok("…and run()'s answer travels back to the AI as the result of screen_act",
+    res.content[0].text === "passport is packed. 3 of 5 packed." && !res.isError, JSON.stringify(res));
+
+  const w2 = (async () => {
+    const r = await poll({});
+    const j = r.structuredContent.job, out = await appTools.call(j.tool, j.input);
+    poll({ done: { id: j.id, text: appToolText(out), ...(out.isError ? { isError: true } : {}) } });
+  })();
+  await new Promise((r) => setTimeout(r, 5));
+  const bad = await handlers.screen_act.fn({ tool: "pack_itm", input: {} });
+  await w2;
+  ok("a wrong tool name comes back to the AI as an error naming the real ones", bad.isError === true && /pack_item/.test(bad.content[0].text), JSON.stringify(bad));
+
+  // The widget half that node cannot run, pinned where it lives.
+  ok("the runtime's relay loop runs a tool job through the registry and hands back appToolText",
+    /job\.tool \? await appTools\.call\(job\.tool, job\.input\)/.test(runtimeSrc) && /text: appToolText\(out\)/.test(runtimeSrc));
+  ok("screen_read lists the app's tools, ahead of the screen and outside its budget",
+    /const own = appTools\.describe\(\);\s*\n\s*if \(own\) out\.push\(/.test(runtimeSrc));
+  // The person's answer stays the person's. Reproduced 2026-10-05 in a real browser through
+  // host-sim, before the fix: screen_act pressed an app's "Remove", then the confirmation card's
+  // "Delete", and the row was gone. After it: "No control" for the AI, and a real click still
+  // deletes. node cannot run the DOM half, so the three lines that hold it are pinned here.
+  ok("the confirmation card is chrome — off the screen the relay reads and presses",
+    /el\.setAttribute\("data-oma-chrome", ""\);\s*\n\s*el\.append\(label, no, yes\)/.test(runtimeSrc));
+  ok("…its Delete answers only a click the browser marks as the person's (isTrusted)",
+    /yes\.onclick = \(e\) => \{ if \(e\.isTrusted\) done\(true\); \};/.test(runtimeSrc));
+  ok("…and screen_act cannot reach chrome by label either: every candidate passes screenOff",
+    /const all = \[\.\.\.document\.querySelectorAll\(ACTIONABLE\)\]\.filter\(\(e\) => screenVisible\(e\) && !screenOff\(e\)\);/.test(runtimeSrc)
+    && /if \(el && el\.isConnected && !screenOff\(el\)\) return el;/.test(runtimeSrc));
 }
 
 console.log(`\n${fail ? "FAILED" : "ALL PASS"}: ${pass} passed, ${fail} failed`);

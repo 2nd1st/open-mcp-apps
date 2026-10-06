@@ -1,20 +1,233 @@
 {
+  "as_of": "2026-08-06",
   "items": [
     {
-      "id": "landing-client-01", "group": "", "position": 1, "version": 1,
-      "fields": { "name": "Nakamura Studio", "company": "Nakamura Studio", "contact": "Maya Nakamura", "stage": "overdue", "amount": 4800, "currency": "USD", "quote_date": "2026-07-12", "invoice_due": "2026-07-31", "last_chased": "2026-08-05", "next_step": "Review draft, then send", "notes": "Brand systems engagement" }
+      "id": "client-01",
+      "group": "",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "name": "Nakamura Studio",
+        "company": "Nakamura Studio",
+        "contact": "Maya Nakamura",
+        "stage": "overdue",
+        "amount": 4800,
+        "currency": "USD",
+        "quote_date": "2026-07-06",
+        "invoice_due": "2026-07-31",
+        "last_chased": "2026-08-06",
+        "next_step": "Review draft, then send",
+        "notes": "Brand systems engagement"
+      }
     },
     {
-      "id": "landing-client-02", "group": "", "position": 2, "version": 1,
-      "fields": { "name": "Marrow & Field", "company": "Marrow & Field", "contact": "Eli Ward", "stage": "overdue", "amount": 2200, "currency": "USD", "quote_date": "2026-07-18", "invoice_due": "2026-08-02", "last_chased": "2026-08-05", "next_step": "Review draft, then send", "notes": "Research sprint" }
+      "id": "client-02",
+      "group": "",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "name": "Marrow & Field",
+        "company": "Marrow & Field",
+        "contact": "Eli Ward",
+        "stage": "overdue",
+        "amount": 2200,
+        "currency": "USD",
+        "quote_date": "2026-07-14",
+        "invoice_due": "2026-08-02",
+        "last_chased": "2026-08-03",
+        "next_step": "Call Eli's finance lead",
+        "notes": "Research sprint"
+      }
     },
     {
-      "id": "landing-client-03", "group": "", "position": 3, "version": 1,
-      "fields": { "name": "Northstar Lab", "company": "Northstar Lab", "contact": "Priya Shah", "stage": "active", "amount": 6500, "currency": "USD", "quote_date": "2026-07-25", "invoice_due": "2026-08-14", "last_chased": "", "next_step": "Deliver research synthesis", "notes": "Product strategy" }
+      "id": "client-03",
+      "group": "",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "name": "Northstar Lab",
+        "company": "Northstar Lab",
+        "contact": "Priya Shah",
+        "stage": "active",
+        "amount": 6500,
+        "currency": "USD",
+        "quote_date": "2026-07-20",
+        "invoice_due": "2026-08-14",
+        "last_chased": "",
+        "next_step": "Deliver research synthesis",
+        "notes": "Product strategy, phase 1"
+      }
     },
     {
-      "id": "landing-client-04", "group": "", "position": 4, "version": 1,
-      "fields": { "name": "Kite & Co", "company": "Kite & Co", "contact": "Jon Bell", "stage": "proposal", "amount": 1900, "currency": "USD", "quote_date": "2026-08-01", "invoice_due": "", "last_chased": "", "next_step": "Follow up Friday", "notes": "Operations audit" }
+      "id": "client-04",
+      "group": "",
+      "position": 4,
+      "version": 1,
+      "fields": {
+        "name": "Harbor Dental Group",
+        "company": "Harbor Dental Group",
+        "contact": "Dr. Lena Ortiz",
+        "stage": "active",
+        "amount": 3150,
+        "currency": "USD",
+        "quote_date": "2026-07-27",
+        "invoice_due": "2026-08-21",
+        "last_chased": "",
+        "next_step": "Second workshop on the 12th",
+        "notes": "Patient onboarding redesign"
+      }
+    },
+    {
+      "id": "client-05",
+      "group": "",
+      "position": 5,
+      "version": 1,
+      "fields": {
+        "name": "Kite & Co",
+        "company": "Kite & Co",
+        "contact": "Jon Bell",
+        "stage": "proposal",
+        "amount": 1900,
+        "currency": "USD",
+        "quote_date": "2026-08-01",
+        "invoice_due": "",
+        "last_chased": "",
+        "next_step": "Follow up Friday",
+        "notes": "Operations audit"
+      }
+    },
+    {
+      "id": "client-06",
+      "group": "",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "name": "Fern Street Bakery",
+        "company": "Fern Street Bakery",
+        "contact": "Rosa Lindqvist",
+        "stage": "proposal",
+        "amount": 1200,
+        "currency": "USD",
+        "quote_date": "2026-08-04",
+        "invoice_due": "",
+        "last_chased": "",
+        "next_step": "Send two package options",
+        "notes": "Menu + signage refresh"
+      }
+    },
+    {
+      "id": "client-07",
+      "group": "",
+      "position": 7,
+      "version": 1,
+      "fields": {
+        "name": "Tallow Outdoor",
+        "company": "Tallow Outdoor",
+        "contact": "Sam Achebe",
+        "stage": "lead",
+        "amount": 8000,
+        "currency": "USD",
+        "quote_date": "",
+        "invoice_due": "",
+        "last_chased": "",
+        "next_step": "Intro call Tuesday",
+        "notes": "Referral from Priya"
+      }
+    },
+    {
+      "id": "client-08",
+      "group": "",
+      "position": 8,
+      "version": 1,
+      "fields": {
+        "name": "Orchard Health",
+        "company": "Orchard Health",
+        "contact": "Nina Park",
+        "stage": "lead",
+        "amount": 2500,
+        "currency": "USD",
+        "quote_date": "",
+        "invoice_due": "",
+        "last_chased": "",
+        "next_step": "Waiting for their RFP",
+        "notes": "Met at the design meetup"
+      }
+    },
+    {
+      "id": "client-09",
+      "group": "",
+      "position": 9,
+      "version": 1,
+      "fields": {
+        "name": "Brightline Legal",
+        "company": "Brightline Legal",
+        "contact": "Owen Price",
+        "stage": "paid",
+        "amount": 3600,
+        "currency": "USD",
+        "quote_date": "2026-06-15",
+        "invoice_due": "2026-07-15",
+        "last_chased": "2026-07-14",
+        "next_step": "",
+        "notes": "Website audit"
+      }
+    },
+    {
+      "id": "client-10",
+      "group": "",
+      "position": 10,
+      "version": 1,
+      "fields": {
+        "name": "Nakamura Studio",
+        "company": "Nakamura Studio",
+        "contact": "Maya Nakamura",
+        "stage": "paid",
+        "amount": 2400,
+        "currency": "USD",
+        "quote_date": "2026-06-02",
+        "invoice_due": "2026-07-02",
+        "last_chased": "",
+        "next_step": "",
+        "notes": "Discovery phase"
+      }
+    },
+    {
+      "id": "client-11",
+      "group": "",
+      "position": 11,
+      "version": 1,
+      "fields": {
+        "name": "Cobalt Coffee",
+        "company": "Cobalt Coffee",
+        "contact": "Ada Moreno",
+        "stage": "paid",
+        "amount": 950,
+        "currency": "USD",
+        "quote_date": "2026-07-01",
+        "invoice_due": "2026-07-24",
+        "last_chased": "",
+        "next_step": "",
+        "notes": "Loyalty card design"
+      }
+    },
+    {
+      "id": "client-12",
+      "group": "",
+      "position": 12,
+      "version": 1,
+      "fields": {
+        "name": "Marrow & Field",
+        "company": "Marrow & Field",
+        "contact": "Eli Ward",
+        "stage": "paid",
+        "amount": 1800,
+        "currency": "USD",
+        "quote_date": "2026-06-20",
+        "invoice_due": "2026-07-20",
+        "last_chased": "2026-07-18",
+        "next_step": "",
+        "notes": "Kickoff deposit"
+      }
     }
   ]
 }

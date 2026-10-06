@@ -1,0 +1,1161 @@
+{
+ "as_of": "2026-08-06",
+ "items": [
+  {
+   "id": "job-binjiang",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "滨江 三室翻新",
+    "site": "滨江",
+    "address": "江南大道 1888 号 3 幢 1202",
+    "status": "active",
+    "crew": [
+     "老王",
+     "小李",
+     "阿杰"
+    ],
+    "start_date": "2026-07-20",
+    "due_date": "2026-08-15",
+    "progress": 58,
+    "next_action": "等水电开槽验收后，砌卫生间挡水墙",
+    "note": "钥匙在物业前台登记领取。中午 12 点到 2 点不能有噪音。"
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "job-xixi",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "西溪 咖啡店门面",
+    "site": "西溪",
+    "address": "文二西路 518 号 底商",
+    "status": "active",
+    "crew": [
+     "赵姐",
+     "小周"
+    ],
+    "start_date": "2026-08-03",
+    "due_date": "2026-08-12",
+    "progress": 35,
+    "next_action": "拆开左侧立柱，换掉受潮的木龙骨",
+    "note": "店里下午 4 点半恢复营业，收工前地面扫干净。"
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "job-gongshu",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "拱墅 开放式厨房",
+    "site": "拱墅",
+    "address": "湖墅南路 66 弄 5 号 402",
+    "status": "active",
+    "crew": [
+     "陈师傅",
+     "小李"
+    ],
+    "start_date": "2026-08-05",
+    "due_date": "2026-08-21",
+    "progress": 10,
+    "next_action": "石材公司来量板前，确认岛台定位",
+    "note": "橱柜周五早上 7 点送货，电梯要提前跟物业约。"
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "job-liangzhu",
+   "collection": "job-kit-jobs",
+   "group": "paused",
+   "fields": {
+    "title": "良渚 露台",
+    "site": "良渚",
+    "address": "良渚街道 玉鸟路 27 号",
+    "status": "paused",
+    "crew": [
+     "阿杰",
+     "小周"
+    ],
+    "start_date": "2026-07-27",
+    "due_date": "2026-08-19",
+    "progress": 40,
+    "next_action": "防腐木到货后恢复（供应商说下周一）",
+    "note": "龙骨已做完，盖了防雨布。"
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "job-shangcheng",
+   "collection": "job-kit-jobs",
+   "group": "upcoming",
+   "fields": {
+    "title": "上城 阳台洗衣房",
+    "site": "上城",
+    "address": "望江东路 9 号 7 幢 301",
+    "status": "upcoming",
+    "crew": [
+     "陈师傅"
+    ],
+    "start_date": "2026-08-11",
+    "due_date": "2026-08-15",
+    "progress": 0,
+    "next_action": "周一去建材市场提瓷砖",
+    "note": "业主在家办公，敲门，别按门铃。"
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "job-xiaoshan",
+   "collection": "job-kit-jobs",
+   "group": "done",
+   "fields": {
+    "title": "萧山 主卫",
+    "site": "萧山",
+    "address": "金城路 438 号 2 单元 901",
+    "status": "done",
+    "crew": [
+     "老王",
+     "赵姐",
+     "阿杰"
+    ],
+    "start_date": "2026-07-06",
+    "due_date": "2026-07-24",
+    "progress": 100,
+    "next_action": "",
+    "note": "7 月 24 日交付，业主满意。十月上门回访。"
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "tool-laser-level",
+   "collection": "job-kit-tools",
+   "group": "测量放线",
+   "fields": {
+    "name": "绿光激光水平仪",
+    "code": "TL-014",
+    "category": "测量放线",
+    "status": "checked_out",
+    "location": "滨江 · 一楼楼梯口旁",
+    "holder": "老王",
+    "job_id": "job-binjiang",
+    "kit": "绿色箱 · 三脚架 · 靶板",
+    "updated_at": "2026-08-06T07:40:00",
+    "note": "早上从 2 号车上拿的。"
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "tool-laser-battery",
+   "collection": "job-kit-tools",
+   "group": "测量放线",
+   "fields": {
+    "name": "激光仪备用电池",
+    "code": "TL-014-B",
+    "category": "测量放线",
+    "status": "missing",
+    "location": "最后见于 2 号车充电抽屉",
+    "holder": "",
+    "job_id": "job-binjiang",
+    "kit": "12V 备用电池",
+    "updated_at": "2026-08-06T08:05:00",
+    "note": "箱子里没有。下趟车从仓库带一块。"
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "tool-rotary-hammer",
+   "collection": "job-kit-tools",
+   "group": "钻孔紧固",
+   "fields": {
+    "name": "电锤",
+    "code": "DR-022",
+    "category": "钻孔紧固",
+    "status": "service",
+    "location": "城西仓库 · 维修台",
+    "holder": "小周",
+    "job_id": "",
+    "kit": "工具箱 · 侧手柄 · 深度尺",
+    "updated_at": "2026-08-04T16:20:00",
+    "note": "夹头打滑，先别带去工地。"
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "tool-dust-extractor",
+   "collection": "job-kit-tools",
+   "group": "现场防护",
+   "fields": {
+    "name": "工业吸尘器",
+    "code": "SC-006",
+    "category": "现场防护",
+    "status": "on_site",
+    "location": "滨江 · 地下车库隔间",
+    "holder": "",
+    "job_id": "job-binjiang",
+    "kit": "软管 · 地刷 · 备用尘袋",
+    "updated_at": "2026-08-05T15:00:00",
+    "note": "滤芯送过去前清过。"
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "tool-framing-nailer",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "气动钉枪",
+    "code": "CF-031",
+    "category": "切割木作",
+    "status": "on_site",
+    "location": "滨江 · 一楼工具箱",
+    "holder": "阿杰",
+    "job_id": "job-binjiang",
+    "kit": "箱 · 两块电池 · 充电器",
+    "updated_at": "2026-08-06T06:50:00",
+    "note": "箱里还剩一罐满气。"
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "tool-mitre-saw",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "斜切锯",
+    "code": "CF-008",
+    "category": "切割木作",
+    "status": "checked_out",
+    "location": "西溪 · 后门卸货区",
+    "holder": "赵姐",
+    "job_id": "job-xixi",
+    "kit": "支架 · 细齿锯片 · 电源线",
+    "updated_at": "2026-08-03T07:10:00",
+    "note": "周四下午前都在西溪。"
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "tool-track-saw",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "轨道锯",
+    "code": "CF-017",
+    "category": "切割木作",
+    "status": "on_site",
+    "location": "西溪 · 工具笼",
+    "holder": "小周",
+    "job_id": "job-xixi",
+    "kit": "1.4 米导轨 · 0.8 米导轨 · 夹具",
+    "updated_at": "2026-08-05T16:30:00",
+    "note": "两根导轨都在。"
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "tool-multitool",
+   "collection": "job-kit-tools",
+   "group": "钻孔紧固",
+   "fields": {
+    "name": "多功能磨切机",
+    "code": "DR-015",
+    "category": "钻孔紧固",
+    "status": "on_site",
+    "location": "西溪 · 工具笼",
+    "holder": "小周",
+    "job_id": "job-xixi",
+    "kit": "锯片盒 · 两块电池",
+    "updated_at": "2026-08-04T08:15:00",
+    "note": ""
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "tool-planer",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "电刨",
+    "code": "CF-026",
+    "category": "切割木作",
+    "status": "available",
+    "location": "城西仓库 · B3 架",
+    "holder": "",
+    "job_id": "",
+    "kit": "靠山 · 集尘袋 · 两片刨刀",
+    "updated_at": "2026-07-31T17:00:00",
+    "note": "电已充满。"
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "tool-thermal-camera",
+   "collection": "job-kit-tools",
+   "group": "检测",
+   "fields": {
+    "name": "红外热像仪",
+    "code": "IM-004",
+    "category": "检测",
+    "status": "available",
+    "location": "城西仓库 · 带锁柜",
+    "holder": "",
+    "job_id": "",
+    "kit": "硬壳箱 · USB-C 线",
+    "updated_at": "2026-07-28T15:40:00",
+    "note": "柜子钥匙在办公室登记领取。"
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "tool-impact-kit",
+   "collection": "job-kit-tools",
+   "group": "钻孔紧固",
+   "fields": {
+    "name": "充电起子套装",
+    "code": "DR-011",
+    "category": "钻孔紧固",
+    "status": "checked_out",
+    "location": "滨江 · 二楼工具包",
+    "holder": "阿杰",
+    "job_id": "job-binjiang",
+    "kit": "起子机 · 电钻 · 两块 5Ah 电池",
+    "updated_at": "2026-08-06T06:52:00",
+    "note": "跟钉枪一起带出去的。"
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "tool-sds-bits",
+   "collection": "job-kit-tools",
+   "group": "钻孔紧固",
+   "fields": {
+    "name": "电锤钻头套装",
+    "code": "DR-022-B",
+    "category": "钻孔紧固",
+    "status": "on_site",
+    "location": "滨江 · 地下车库隔间",
+    "holder": "老王",
+    "job_id": "job-binjiang",
+    "kit": "6–16 毫米混凝土钻头",
+    "updated_at": "2026-08-05T07:20:00",
+    "note": "电锤送修期间先用备用冲击钻。"
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "tool-work-lights",
+   "collection": "job-kit-tools",
+   "group": "现场防护",
+   "fields": {
+    "name": "双头工作灯",
+    "code": "SC-018",
+    "category": "现场防护",
+    "status": "on_site",
+    "location": "拱墅 · 厨房门口",
+    "holder": "陈师傅",
+    "job_id": "job-gongshu",
+    "kit": "三脚架 · 两个灯头 · 10 米线",
+    "updated_at": "2026-08-05T15:30:00",
+    "note": "跟地面保护膜一起送到的。"
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "tool-moisture-meter",
+   "collection": "job-kit-tools",
+   "group": "检测",
+   "fields": {
+    "name": "含水率测定仪",
+    "code": "IM-009",
+    "category": "检测",
+    "status": "checked_out",
+    "location": "良渚 · 阿杰皮卡的手套箱",
+    "holder": "阿杰",
+    "job_id": "job-liangzhu",
+    "kit": "探针 · 备用 9V 电池",
+    "updated_at": "2026-08-01T11:10:00",
+    "note": "下完雨要复测龙骨。"
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "tool-tile-saw",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "瓷砖切割机",
+    "code": "CF-040",
+    "category": "切割木作",
+    "status": "available",
+    "location": "城西仓库 · 2 号区",
+    "holder": "",
+    "job_id": "",
+    "kit": "水槽 · 250 毫米锯片",
+    "updated_at": "2026-07-24T16:00:00",
+    "note": "萧山回来已清洗。11 号上城要用。"
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "tool-stud-finder",
+   "collection": "job-kit-tools",
+   "group": "检测",
+   "fields": {
+    "name": "墙体探测仪",
+    "code": "IM-012",
+    "category": "检测",
+    "status": "missing",
+    "location": "最后见于萧山主卫浴室柜旁",
+    "holder": "",
+    "job_id": "job-xiaoshan",
+    "kit": "",
+    "updated_at": "2026-07-24T14:20:00",
+    "note": "交付清点时不在箱里，业主帮忙看一下浴室柜。"
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "tool-scaffold",
+   "collection": "job-kit-tools",
+   "group": "现场防护",
+   "fields": {
+    "name": "移动脚手架",
+    "code": "SC-002",
+    "category": "现场防护",
+    "status": "on_site",
+    "location": "滨江 · 南阳台",
+    "holder": "",
+    "job_id": "job-binjiang",
+    "kit": "架体 · 斜撑 · 四个万向轮",
+    "updated_at": "2026-07-22T09:00:00",
+    "note": "北侧轮子刹车有点紧，小心。"
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "tool-router",
+   "collection": "job-kit-tools",
+   "group": "切割木作",
+   "fields": {
+    "name": "修边机",
+    "code": "CF-021",
+    "category": "切割木作",
+    "status": "available",
+    "location": "城西仓库 · B1 架",
+    "holder": "",
+    "job_id": "",
+    "kit": "夹头 · 靠尺 · 铣刀",
+    "updated_at": "2026-08-02T11:30:00",
+    "note": "盖子里有新的带轴承铣刀。"
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "act-xs-waterproof",
+   "collection": "job-kit-actions",
+   "group": "job-xiaoshan",
+   "fields": {
+    "title": "淋浴区做防水",
+    "job_id": "job-xiaoshan",
+    "status": "done",
+    "priority": "today",
+    "owner": "老王",
+    "due_date": "2026-07-10",
+    "updated_at": "2026-07-10T15:10:00",
+    "note": ""
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "act-xs-vanity",
+   "collection": "job-kit-actions",
+   "group": "job-xiaoshan",
+   "fields": {
+    "title": "装浴室柜和镜子",
+    "job_id": "job-xiaoshan",
+    "status": "done",
+    "priority": "today",
+    "owner": "赵姐",
+    "due_date": "2026-07-21",
+    "updated_at": "2026-07-21T13:30:00",
+    "note": ""
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "act-xs-clean",
+   "collection": "job-kit-actions",
+   "group": "job-xiaoshan",
+   "fields": {
+    "title": "打胶和开荒保洁",
+    "job_id": "job-xiaoshan",
+    "status": "done",
+    "priority": "today",
+    "owner": "阿杰",
+    "due_date": "2026-07-24",
+    "updated_at": "2026-07-24T11:00:00",
+    "note": ""
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "act-bj-strip",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "拆一楼旧墙面",
+    "job_id": "job-binjiang",
+    "status": "done",
+    "priority": "today",
+    "owner": "阿杰",
+    "due_date": "2026-07-22",
+    "updated_at": "2026-07-22T16:00:00",
+    "note": ""
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "act-bj-drain",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "订卫生间地漏",
+    "job_id": "job-binjiang",
+    "status": "done",
+    "priority": "soon",
+    "owner": "小李",
+    "due_date": "2026-07-30",
+    "updated_at": "2026-07-30T10:00:00",
+    "note": ""
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "act-bj-frame",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "北墙龙骨",
+    "job_id": "job-binjiang",
+    "status": "done",
+    "priority": "today",
+    "owner": "阿杰",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T10:15:00",
+    "note": "等验收后封板。"
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "act-bj-curb",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "砌卫生间挡水墙",
+    "job_id": "job-binjiang",
+    "status": "blocked",
+    "priority": "now",
+    "owner": "老王",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T10:15:00",
+    "note": "水电开槽还没验收。"
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "act-bj-stairs",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "楼梯踏步放样",
+    "job_id": "job-binjiang",
+    "status": "open",
+    "priority": "today",
+    "owner": "阿杰",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T09:30:00",
+    "note": "激光线已经打在楼梯口。"
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "act-bj-plaster",
+   "collection": "job-kit-actions",
+   "group": "job-binjiang",
+   "fields": {
+    "title": "约周二的泥瓦师傅",
+    "job_id": "job-binjiang",
+    "status": "open",
+    "priority": "soon",
+    "owner": "老王",
+    "due_date": "2026-08-08",
+    "updated_at": "2026-08-05T17:00:00",
+    "note": "两家报价，定老孙那队。"
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "act-xx-strip",
+   "collection": "job-kit-actions",
+   "group": "job-xixi",
+   "fields": {
+    "title": "拆门头",
+    "job_id": "job-xixi",
+    "status": "done",
+    "priority": "today",
+    "owner": "赵姐",
+    "due_date": "2026-08-04",
+    "updated_at": "2026-08-04T15:20:00",
+    "note": ""
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "act-xx-timber",
+   "collection": "job-kit-actions",
+   "group": "job-xixi",
+   "fields": {
+    "title": "换左侧立柱龙骨",
+    "job_id": "job-xixi",
+    "status": "open",
+    "priority": "now",
+    "owner": "赵姐",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T09:20:00",
+    "note": "受潮比投标照片里严重。"
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "act-xx-measure",
+   "collection": "job-kit-actions",
+   "group": "job-xixi",
+   "fields": {
+    "title": "量展示墙板尺寸",
+    "job_id": "job-xixi",
+    "status": "open",
+    "priority": "today",
+    "owner": "小周",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T08:50:00",
+    "note": "下午 2 点前把下料单发给木工厂。"
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "act-xx-return",
+   "collection": "job-kit-actions",
+   "group": "job-xixi",
+   "fields": {
+    "title": "斜切锯送回仓库",
+    "job_id": "job-xixi",
+    "status": "open",
+    "priority": "soon",
+    "owner": "赵姐",
+    "due_date": "2026-08-07",
+    "updated_at": "2026-08-03T07:10:00",
+    "note": ""
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "act-gs-protect",
+   "collection": "job-kit-actions",
+   "group": "job-gongshu",
+   "fields": {
+    "title": "铺地面保护膜",
+    "job_id": "job-gongshu",
+    "status": "done",
+    "priority": "today",
+    "owner": "陈师傅",
+    "due_date": "2026-08-05",
+    "updated_at": "2026-08-05T15:20:00",
+    "note": ""
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "act-gs-island",
+   "collection": "job-kit-actions",
+   "group": "job-gongshu",
+   "fields": {
+    "title": "确认岛台定位",
+    "job_id": "job-gongshu",
+    "status": "open",
+    "priority": "today",
+    "owner": "陈师傅",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-05T17:10:00",
+    "note": "石材公司明早 8 点来量板。"
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "act-lz-tarp",
+   "collection": "job-kit-actions",
+   "group": "job-liangzhu",
+   "fields": {
+    "title": "下雨前盖好龙骨",
+    "job_id": "job-liangzhu",
+    "status": "done",
+    "priority": "now",
+    "owner": "小周",
+    "due_date": "2026-07-31",
+    "updated_at": "2026-07-31T16:40:00",
+    "note": ""
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "act-lz-wood",
+   "collection": "job-kit-actions",
+   "group": "job-liangzhu",
+   "fields": {
+    "title": "催防腐木到货",
+    "job_id": "job-liangzhu",
+    "status": "blocked",
+    "priority": "today",
+    "owner": "阿杰",
+    "due_date": "2026-08-04",
+    "updated_at": "2026-08-04T09:10:00",
+    "note": "供应商 14 公分的板子缺货。"
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "act-sc-tiles",
+   "collection": "job-kit-actions",
+   "group": "job-shangcheng",
+   "fields": {
+    "title": "去市场提瓷砖",
+    "job_id": "job-shangcheng",
+    "status": "open",
+    "priority": "soon",
+    "owner": "陈师傅",
+    "due_date": "2026-08-10",
+    "updated_at": "2026-08-05T12:20:00",
+    "note": ""
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "u01",
+   "collection": "job-kit-updates",
+   "group": "job-xiaoshan",
+   "fields": {
+    "job_id": "job-xiaoshan",
+    "author": "老王",
+    "message": "旧砖全部敲完，渣土车满了，明天换车。",
+    "created_at": "2026-07-06T15:30:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "u02",
+   "collection": "job-kit-updates",
+   "group": "job-xiaoshan",
+   "fields": {
+    "job_id": "job-xiaoshan",
+    "author": "老王",
+    "message": "淋浴区防水刷完，等 24 小时再做闭水试验。",
+    "created_at": "2026-07-10T15:10:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "u03",
+   "collection": "job-kit-updates",
+   "group": "job-xiaoshan",
+   "fields": {
+    "job_id": "job-xiaoshan",
+    "author": "赵姐",
+    "message": "浴室柜到了，台面崩了一个角，厂家周五补发。",
+    "created_at": "2026-07-15T12:00:00",
+    "source": "photo",
+    "kind": "delivery"
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "u04",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "钥匙拿到了，物业登记在我名下，要进场先跟我说一声。",
+    "created_at": "2026-07-20T07:10:00",
+    "source": "text",
+    "kind": "general"
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "u05",
+   "collection": "job-kit-updates",
+   "group": "job-xiaoshan",
+   "fields": {
+    "job_id": "job-xiaoshan",
+    "author": "赵姐",
+    "message": "浴室柜和镜子装好了，水电师傅周二来装龙头。",
+    "created_at": "2026-07-21T13:30:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "u06",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "小李",
+    "message": "移动脚手架搭在南阳台，北侧轮子刹车有点紧。",
+    "created_at": "2026-07-22T09:00:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "u07",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "阿杰",
+    "message": "一楼旧墙面拆完，后门过梁有裂缝，已约结构工程师。",
+    "created_at": "2026-07-22T16:00:00",
+    "source": "photo",
+    "kind": "blocker"
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "u08",
+   "collection": "job-kit-updates",
+   "group": "job-xiaoshan",
+   "fields": {
+    "job_id": "job-xiaoshan",
+    "author": "阿杰",
+    "message": "交付完成。墙体探测仪没回到箱子里，业主帮忙看看浴室柜。",
+    "created_at": "2026-07-24T14:20:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "u09",
+   "collection": "job-kit-updates",
+   "group": "job-liangzhu",
+   "fields": {
+    "job_id": "job-liangzhu",
+    "author": "阿杰",
+    "message": "露台开工，今天上主龙骨。",
+    "created_at": "2026-07-27T07:50:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "u10",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "过梁换好了，工程师签字确认。",
+    "created_at": "2026-07-29T14:00:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "u11",
+   "collection": "job-kit-updates",
+   "group": "job-liangzhu",
+   "fields": {
+    "job_id": "job-liangzhu",
+    "author": "小周",
+    "message": "龙骨做完，下雨前盖好防雨布了。",
+    "created_at": "2026-07-31T16:40:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "u12",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "水电师傅下周三才能来。先做龙骨，挡水墙往后排。",
+    "created_at": "2026-08-01T08:40:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "u13",
+   "collection": "job-kit-updates",
+   "group": "job-liangzhu",
+   "fields": {
+    "job_id": "job-liangzhu",
+    "author": "阿杰",
+    "message": "含水率测定仪我带走了，雨后复测龙骨，在我皮卡上。",
+    "created_at": "2026-08-01T11:10:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "u14",
+   "collection": "job-kit-updates",
+   "group": "job-xixi",
+   "fields": {
+    "job_id": "job-xixi",
+    "author": "赵姐",
+    "message": "斜切锯和支架放在后门卸货区，周四前都在这边。",
+    "created_at": "2026-08-03T07:10:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "u15",
+   "collection": "job-kit-updates",
+   "group": "job-liangzhu",
+   "fields": {
+    "job_id": "job-liangzhu",
+    "author": "阿杰",
+    "message": "防腐木 14 公分的板子缺货，露台先停，最早下周一到。",
+    "created_at": "2026-08-04T09:10:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "u16",
+   "collection": "job-kit-updates",
+   "group": "job-xixi",
+   "fields": {
+    "job_id": "job-xixi",
+    "author": "赵姐",
+    "message": "门头拆到龙骨了。",
+    "created_at": "2026-08-04T15:20:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "u17",
+   "collection": "job-kit-updates",
+   "group": "job-xixi",
+   "fields": {
+    "job_id": "job-xixi",
+    "author": "小周",
+    "message": "电锤夹头打滑，DR-022 已经送回仓库维修台。",
+    "created_at": "2026-08-04T16:20:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "u18",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "钻头套装放在地下车库隔间，先用备用冲击钻。",
+    "created_at": "2026-08-05T07:20:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "u19",
+   "collection": "job-kit-updates",
+   "group": "job-shangcheng",
+   "fields": {
+    "job_id": "job-shangcheng",
+    "author": "陈师傅",
+    "message": "跟业主看过阳台，瓷砖已下单，周一去提。",
+    "created_at": "2026-08-05T12:20:00",
+    "source": "text",
+    "kind": "general"
+   },
+   "position": 19,
+   "version": 1
+  },
+  {
+   "id": "u20",
+   "collection": "job-kit-updates",
+   "group": "job-xixi",
+   "fields": {
+    "job_id": "job-xixi",
+    "author": "小周",
+    "message": "轨道锯导轨放进工具笼了，店里按时开门。",
+    "created_at": "2026-08-05T16:30:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 20,
+   "version": 1
+  },
+  {
+   "id": "u21",
+   "collection": "job-kit-updates",
+   "group": "job-gongshu",
+   "fields": {
+    "job_id": "job-gongshu",
+    "author": "陈师傅",
+    "message": "保护膜铺好，工作灯放在厨房门口，岛台基准线已弹好。",
+    "created_at": "2026-08-05T17:10:00",
+    "source": "photo",
+    "kind": "delivery"
+   },
+   "position": 21,
+   "version": 1
+  },
+  {
+   "id": "u22",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "激光水平仪连箱子带到滨江了，放在一楼楼梯口旁边。",
+    "created_at": "2026-08-06T07:40:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 22,
+   "version": 1
+  },
+  {
+   "id": "u23",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "老王",
+    "message": "备用电池不在箱里，已标缺失，下趟车记得从仓库带。",
+    "created_at": "2026-08-06T08:05:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 23,
+   "version": 1
+  },
+  {
+   "id": "u24",
+   "collection": "job-kit-updates",
+   "group": "job-xixi",
+   "fields": {
+    "job_id": "job-xixi",
+    "author": "赵姐",
+    "message": "左边立柱后面的木龙骨比照片里烂得多，下午还能照常开店。",
+    "created_at": "2026-08-06T09:20:00",
+    "source": "photo",
+    "kind": "blocker"
+   },
+   "position": 24,
+   "version": 1
+  },
+  {
+   "id": "u25",
+   "collection": "job-kit-updates",
+   "group": "job-binjiang",
+   "fields": {
+    "job_id": "job-binjiang",
+    "author": "阿杰",
+    "message": "北墙龙骨做完并复核。挡水墙等水电验收完再砌。",
+    "created_at": "2026-08-06T10:15:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 25,
+   "version": 1
+  }
+ ]
+}

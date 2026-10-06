@@ -62,10 +62,7 @@ function retireRenamedSystemApps(store, log) {
 
 /**
  * Seed the system apps into `store`. Returns [{name, action: "seeded"|"unchanged"|"skipped"|"retired"|"kept"|"conflict"|"error", version?, error?}].
- * Stored bytes are the file's bytes. The kit used to be spliced in HERE, at seed time, through a
- * per-file marker; it is now injected by the engine into every rendered document (src/shell.mjs
- * KIT_CSS), so splicing it in as well would give exactly these three apps two copies.
- * That also means a kit edit no longer needs a re-seed to take effect anywhere.
+ * Stored bytes are the file's bytes: each app carries all of its own CSS.
  */
 export function seedSystemApps(store, { log = () => {} } = {}) {
   const out = retireRenamedSystemApps(store, log);

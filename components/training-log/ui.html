@@ -1,2373 +1,1355 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Training Log</title>
-<meta name="description" content="After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this app itself remains zero-network. Track weekly completion and strength trends.">
+<meta name="description" content="Your main lifts as a staircase that only goes up: every top set plotted, every PR marked, this week's sessions beside it. Log a set in seconds; the AI can set up your weekly plan and review the week.">
 <meta name="oma-category" content="Health & Habits">
-
 <style>
-  /* No body rule. The old private 760px cap is manifest.stage.width: column now; outer padding,
-     ground and centring belong to the kit's stage contract, while colour already comes from the
-     kit for every app. */
-
-  [hidden] {
-    display: none !important;
-  }
-
-  /* `.app` is `.k-stage` now. Its border, radius, surface, shadow and clipping were all outer
-     frame chrome, so nothing app-specific remained in that rule for the app to keep. */
-  /* `.app-bar` is `.k-appbar` now: the row, gaps, padding, mark box, type scale and the chat-only
-     rule underneath all come from the kit. The app keeps only its own minimum bar height and the
-     mark's PAINT — identity is content, and stripping a frame must not strip a face. */
-  .app-bar {
-    min-height: 66px;
-  }
-
-  .app-mark {
-    border: 1px solid color-mix(in oklab, var(--color-ring-primary) 38%, var(--color-border-primary));
-    background: color-mix(in oklab, var(--color-ring-primary) 10%, transparent);
-    color: var(--color-text-info, var(--color-ring-primary));
-  }
-
-  .app-mark svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.55;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .app-actions {
-    margin-left: auto;
-  }
-
-  .app-actions .k-btn {
-    white-space: nowrap;
-  }
-
-  .overview {
-    display: grid;
-    grid-template-columns: minmax(148px, 0.72fr) minmax(0, 1.28fr);
-    gap: 16px;
-    align-items: center;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
-  }
-
-  .overview-main {
-    display: flex;
-    align-items: baseline;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .overview-number {
-    font-size: 34px;
-    font-weight: 720;
-    line-height: 1;
-    color: var(--color-text-primary);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .overview-label {
-    color: var(--color-text-secondary);
-    font-size: 12px;
-    line-height: 1.35;
-  }
-
-  .overview-stats {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 12px;
-  }
-
-  .overview-stat {
-    min-width: 0;
-  }
-
-  .overview-stat strong,
-  .overview-stat span {
-    display: block;
-  }
-
-  .overview-stat strong {
-    overflow: hidden;
-    color: var(--color-text-primary);
-    font-size: 13px;
-    font-weight: 650;
-    line-height: 1.35;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .overview-stat span {
-    margin-top: 2px;
-    color: var(--color-text-tertiary);
-    font-size: 10.5px;
-    line-height: 1.35;
-  }
-
-  .week-band {
-    padding: 12px 16px 14px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .week-head {
-    margin-bottom: 8px;
-  }
-
-  .week-head strong {
-    font-size: 12px;
-    font-weight: 650;
-  }
-
-  .week-grid {
-    display: grid;
-    grid-template-columns: repeat(7, minmax(0, 1fr));
-    gap: 6px;
-  }
-
-  .week-day {
-    position: relative;
-    display: grid;
-    min-width: 0;
-    min-height: 69px;
-    padding: 7px 6px 6px;
-    align-content: space-between;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--color-background-primary);
-  }
-
-  .week-day.training {
-    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 30%, var(--color-border-secondary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 8%, var(--color-background-primary));
-  }
-
-  .week-day.today {
-    box-shadow: inset 0 0 0 2px var(--color-ring-primary);
-  }
-
-  .week-day.done {
-    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 10%, var(--color-background-primary));
-  }
-
-  .day-top,
-  .day-bottom {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 4px;
-    min-width: 0;
-  }
-
-  .day-name {
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    font-weight: 650;
-  }
-
-  .day-date {
-    font-size: 15px;
-    font-weight: 680;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .day-focus {
-    overflow: hidden;
-    color: var(--color-text-secondary);
-    font-size: 10px;
-    line-height: 1.2;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .day-check {
-    display: grid;
-    width: 17px;
-    height: 17px;
-    flex: none;
-    place-items: center;
-    border-radius: var(--border-radius-full, 999px);
-    background: var(--color-background-success);
-    color: var(--color-text-success);
-  }
-
-  .day-check svg {
-    width: 11px;
-    height: 11px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .today-pip {
-    width: 6px;
-    height: 6px;
-    flex: none;
-    border-radius: var(--border-radius-full, 999px);
-    background: var(--color-ring-primary);
-  }
-
-  .status-strip {
-    margin: 12px 16px 0;
-  }
-
-  .status-strip .k-badge {
-    width: 100%;
-    justify-content: flex-start;
-    padding: 7px 9px;
-    white-space: normal;
-  }
-
-  .content-body {
-    padding: 14px 16px 16px;
-  }
-
-  .today-card {
-    overflow: hidden;
-    padding: 0;
-  }
-
-  .today-card-head {
-    display: flex;
-    gap: 12px;
-    align-items: flex-start;
-    padding: 14px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .today-date-block {
-    display: grid;
-    width: 48px;
-    height: 48px;
-    flex: none;
-    place-items: center;
-    border-radius: var(--border-radius-sm, 6px);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 10%, var(--color-background-secondary));
-    color: var(--color-text-info, var(--color-ring-primary));
-  }
-
-  .today-date-block strong,
-  .today-date-block span {
-    display: block;
-    line-height: 1;
-    text-align: center;
-  }
-
-  .today-date-block strong {
-    font-size: 20px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .today-date-block span {
-    margin-top: 3px;
-    font-size: 9px;
-    font-weight: 700;
-  }
-
-  .today-title {
-    margin: 1px 0 3px;
-    font-size: 17px;
-    font-weight: 680;
-    letter-spacing: 0;
-  }
-
-  .exercise-list {
-    padding: 2px 14px;
-  }
-
-  .exercise-row {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: center;
-    min-height: 54px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .exercise-row:last-child {
-    border-bottom: 0;
-  }
-
-  .exercise-name {
-    overflow: hidden;
-    font-size: 13px;
-    font-weight: 620;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .exercise-copy {
-    min-width: 0;
-  }
-
-  .exercise-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 5px;
-    margin-top: 5px;
-  }
-
-  .exercise-meta .k-chip {
-    min-height: 20px;
-    padding: 2px 6px;
-    pointer-events: none;
-    font-size: 9.5px;
-    line-height: 1.25;
-  }
-
-  .set-group {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 31px;
-    gap: 5px;
-  }
-
-  .set-toggle {
-    display: grid;
-    width: 31px;
-    height: 31px;
-    padding: 0;
-    place-items: center;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--color-background-primary);
-    color: var(--color-text-tertiary);
-    cursor: pointer;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .set-toggle.on {
-    border-color: var(--color-text-success, var(--color-ring-primary));
-    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 13%, var(--color-background-primary));
-    color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .set-toggle svg {
-    width: 13px;
-    height: 13px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 2;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .today-card-foot {
-    padding: 12px 14px;
-    border-top: 1px solid var(--color-border-secondary);
-    background: var(--color-background-secondary);
-  }
-
-  .rest-visual {
-    display: grid;
-    min-height: 112px;
-    padding: 18px;
-    grid-template-columns: 92px minmax(0, 1fr);
-    gap: 18px;
-    align-items: center;
-  }
-
-  .rest-glyph {
-    display: grid;
-    width: 92px;
-    height: 72px;
-    place-items: center;
-    border-radius: var(--border-radius-sm, 6px);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 8%, var(--color-background-secondary));
-    color: var(--color-text-info, var(--color-ring-primary));
-  }
-
-  .rest-glyph svg {
-    width: 66px;
-    height: 42px;
-    fill: none;
-    stroke: currentColor;
-    stroke-width: 1.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .record-card {
-    margin-top: 12px;
-    padding: 14px;
-  }
-
-  .record-head {
-    margin-bottom: 12px;
-  }
-
-  .record-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 10px;
-  }
-
-  .field-block {
-    min-width: 0;
-  }
-
-  .field-block.wide {
-    grid-column: 1 / -1;
-  }
-
-  .field-block label {
-    display: block;
-    margin-bottom: 5px;
-    color: var(--color-text-secondary);
-    font-size: 11px;
-    font-weight: 620;
-  }
-
-  .field-block .k-field {
-    width: 100%;
-  }
-
-  textarea.k-field {
-    min-height: 70px;
-    resize: vertical;
-    line-height: 1.45;
-  }
-
-  .form-actions {
-    margin-top: 12px;
-    justify-content: flex-end;
-  }
-
-  .empty-state {
-    min-height: 255px;
-    padding: 24px 18px;
-  }
-
-  .empty-state svg {
-    width: 94px;
-    height: 68px;
-    fill: none;
-    stroke: var(--color-text-info, var(--color-ring-primary));
-    stroke-width: 1.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .empty-state b {
-    font-size: 16px;
-  }
-
-  .empty-state span {
-    max-width: 460px;
-    line-height: 1.55;
-  }
-
-  .empty-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 4px;
-  }
-
-  .batch-card {
-    margin-top: 12px;
-    padding: 14px;
-  }
-
-  .batch-card textarea {
-    width: 100%;
-    min-height: 122px;
-    margin-top: 10px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-  }
-
-  .trend-section {
-    margin-top: 16px;
-  }
-
-  .section-head {
-    margin-bottom: 9px;
-  }
-
-  .section-head h2 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 680;
-    letter-spacing: 0;
-  }
-
-  .section-head .k-badge {
-    flex: none;
-    white-space: nowrap;
-  }
-
-  .spark-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 9px;
-  }
-
-  .lift-card {
-    --lift-color: var(--color-text-info, var(--color-ring-primary));
-    min-width: 0;
-    overflow: hidden;
-    padding: 12px;
-  }
-
-  .lift-card.bench {
-    --lift-color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .lift-card.deadlift {
-    --lift-color: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .lift-name-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-
-  .lift-symbol {
-    width: 7px;
-    height: 20px;
-    flex: none;
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--lift-color);
-  }
-
-  .lift-name-row strong {
-    min-width: 0;
-    font-size: 13px;
-  }
-
-  .lift-value {
-    margin-top: 9px;
-    font-size: 23px;
-    font-weight: 720;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .lift-value small {
-    margin-left: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    font-weight: 600;
-  }
-
-  .spark {
-    display: block;
-    width: 100%;
-    height: 66px;
-    margin-top: 9px;
-    overflow: visible;
-  }
-
-  .spark-guide {
-    stroke: var(--color-border-secondary);
-    stroke-width: 1;
-    stroke-dasharray: 3 4;
-  }
-
-  .spark-line {
-    fill: none;
-    stroke: var(--lift-color);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-  }
-
-  .spark-dot {
-    fill: var(--color-background-primary);
-    stroke: var(--lift-color);
-    stroke-width: 2;
-  }
-
-  .spark-empty {
-    fill: var(--color-text-tertiary);
-    font-family: var(--font-sans);
-    font-size: 10px;
-  }
-
-  .lift-foot {
-    display: flex;
-    min-height: 18px;
-    gap: 7px;
-    align-items: center;
-    justify-content: space-between;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-  }
-
-  .delta.up {
-    color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .delta.down {
-    color: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .pr-section,
-  .history-section {
-    margin-top: 16px;
-  }
-
-  .pr-grid {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 9px;
-  }
-
-  .pr-chip {
-    --lift-color: var(--color-text-info, var(--color-ring-primary));
-    display: grid;
-    min-width: 0;
-    min-height: 58px;
-    padding: 9px 10px;
-    grid-template-columns: 7px minmax(0, 1fr) auto;
-    gap: 8px;
-    align-items: center;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--color-background-primary);
-  }
-
-  .pr-chip.bench {
-    --lift-color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .pr-chip.deadlift {
-    --lift-color: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .pr-mark {
-    width: 7px;
-    height: 30px;
-    border-radius: var(--border-radius-sm, 6px);
-    background: var(--lift-color);
-  }
-
-  .pr-copy {
-    min-width: 0;
-  }
-
-  .pr-copy strong,
-  .pr-copy span {
-    display: block;
-  }
-
-  .pr-copy strong {
-    overflow: hidden;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .pr-copy span {
-    margin-top: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-  }
-
-  .pr-value {
-    color: var(--color-text-primary);
-    font-size: 17px;
-    font-weight: 720;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .pr-value small {
-    margin-left: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9px;
-    font-weight: 600;
-  }
-
-  .history-list {
-    border-top: 1px solid var(--color-border-secondary);
-  }
-
-  .history-row {
-    display: grid;
-    min-height: 64px;
-    padding: 11px 2px;
-    grid-template-columns: 104px minmax(0, 1fr);
-    gap: 12px;
-    align-items: center;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .history-date {
-    min-width: 0;
-  }
-
-  .history-date strong,
-  .history-date time {
-    display: block;
-  }
-
-  .history-date strong {
-    font-size: 12px;
-    line-height: 1.3;
-  }
-
-  .history-date time {
-    margin-top: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .history-main {
-    min-width: 0;
-  }
-
-  .history-topline,
-  .history-meta {
-    display: flex;
-    min-width: 0;
-    gap: 8px;
-    align-items: center;
-  }
-
-  .history-topline {
-    flex-wrap: wrap;
-  }
-
-  .history-day {
-    --lift-color: var(--color-text-info, var(--color-ring-primary));
-    min-height: 22px;
-    padding: 3px 7px;
-    border-color: color-mix(in oklab, var(--lift-color) 32%, var(--color-border-secondary));
-    background: color-mix(in oklab, var(--lift-color) 9%, var(--color-background-primary));
-    color: var(--color-text-primary);
-    pointer-events: none;
-    font-size: 10px;
-    font-weight: 650;
-  }
-
-  .history-day.bench {
-    --lift-color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .history-day.deadlift {
-    --lift-color: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .history-topset {
-    margin-left: auto;
-    font-size: 14px;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    white-space: nowrap;
-  }
-
-  .history-meta {
-    margin-top: 5px;
-    align-items: flex-start;
-    flex-wrap: wrap;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    line-height: 1.35;
-  }
-
-  .history-meta .history-feel {
-    min-width: 0;
-    white-space: normal;
-  }
-
-  .history-empty {
-    padding: 18px 2px;
-    color: var(--color-text-tertiary);
-    font-size: 11px;
-    text-align: center;
-  }
-
-  body[data-density="compact"] .content-body {
-    padding-top: 10px;
-  }
-
-  body[data-density="compact"] .exercise-row {
-    min-height: 48px;
-  }
-
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-s2:8px;--k-s3:12px;--k-t-fast:120ms;--k-t:180ms;--k-t-slow:260ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms;--k-t-slow:0ms}}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-sub{color:var(--color-text-secondary)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-card{position:relative;border:1px solid var(--color-border-primary);border-radius:var(--border-radius-lg,14px);background:var(--color-background-primary);padding:var(--k-s3) 14px;transition:transform var(--k-t) var(--k-ease),box-shadow var(--k-t) var(--k-ease),border-color var(--k-t) var(--k-ease)}
+  .k-card.is-click{cursor:pointer}
+  .k-card.is-click:hover{transform:translateY(-1px);box-shadow:var(--shadow-md,var(--shadow-sm));border-color:color-mix(in oklab,var(--k-accent) 28%,transparent)}
+  .k-card.is-click:active{transform:translateY(0) scale(.985);box-shadow:none}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  @keyframes k-in{from{opacity:0;translate:0 6px}}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
+  /* The signature is THE CLIMB: one lane per main lift, top sets as dots on a shared time axis,
+     and the running best drawn as a staircase that can only step up. A new PR is the one moment:
+     the stair rises to meet the dot, the dot pops, the big number rolls. Everything on the page —
+     lanes, the week strip, the history badges — is painted from ONE model() pass. */
+  .tl {
+    --tl-accent: light-dark(#b35a00, #ffad5c);
+    --tl-on: light-dark(#ffffff, #2b1600);
+    --tl-tint: color-mix(in oklab, var(--tl-accent) 12%, transparent);
+    --tl-soft: color-mix(in oklab, var(--tl-accent) 5%, transparent);
+    --k-accent: var(--tl-accent);
+    --k-accent-bg: var(--tl-tint);
+    --k-accent-brd: color-mix(in oklab, var(--tl-accent) 30%, transparent);
+    --id-w: 156px;
+    --plot-h: 88px;
+  }
+  body[data-density="compact"] .tl { --plot-h: 66px; }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  h2, h3, p { margin: 0; }
+  .ico { width: 15px; height: 15px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* ── app bar ── */
+  .tl-mark { background: var(--tl-tint); color: var(--tl-accent); }
+  .tl-mark svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .acts { display: flex; gap: 8px; flex: none; }
+  .k-btn.primary { background: var(--tl-accent); color: var(--tl-on); }
+  .status { margin: 10px 16px 0; padding: 8px 10px; border-radius: var(--border-radius-md, 10px); font-size: 12.5px; background: var(--k-ink-4); color: var(--color-text-secondary); }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+  .status.bad { color: var(--color-text-danger); background: color-mix(in oklab, var(--color-text-danger) 10%, transparent); }
+
+  /* ── the climb ── */
+  .climb { padding: 14px 16px 8px; }
+  .climb-head { display: flex; align-items: baseline; gap: 6px 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .climb-head h2 { font-size: 13px; font-weight: 650; }
+  .climb-head .span { color: var(--color-text-tertiary); font-size: 12.5px; }
+  .legend { margin-left: auto; display: flex; gap: 12px; align-items: center; color: var(--color-text-tertiary); font-size: 11.5px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .legend svg { width: 16px; height: 10px; overflow: visible; }
+  .lane {
+    display: grid; grid-template-columns: var(--id-w) minmax(0, 1fr); gap: 14px; align-items: center;
+    padding: 10px 0; border-top: 1px solid var(--color-border-secondary);
+  }
+  .lane:first-child { border-top: 0; }
+  .lane-id { display: grid; grid-template-areas: "name" "val" "sub"; align-content: center; min-width: 0; }
+  .lane-name { grid-area: name; font-size: 12.5px; font-weight: 650; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+  .lane-val { grid-area: val; display: flex; align-items: baseline; gap: 4px; font-size: 34px; font-weight: 760; line-height: 1.08; letter-spacing: -.035em; font-variant-numeric: tabular-nums; }
+  .lane-val small { font-size: 12.5px; font-weight: 600; letter-spacing: 0; color: var(--color-text-secondary); white-space: nowrap; }
+  .lane-val.empty { font-size: 15px; font-weight: 600; color: var(--color-text-tertiary); letter-spacing: 0; padding: 4px 0; }
+  .lane-sub { grid-area: sub; font-size: 11.5px; color: var(--color-text-tertiary); }
+  .lane-sub b { color: var(--tl-accent); font-weight: 700; }
+  .plot { position: relative; height: var(--plot-h); min-width: 0; }
+  .plot svg { display: block; width: 100%; height: 100%; overflow: visible; }
+  .plot .grid { stroke: var(--color-border-secondary); stroke-width: 1; }
+  .plot .base { stroke: var(--color-border-primary); stroke-width: 1.5; stroke-dasharray: 3 5; fill: none; }
+  .plot .trace { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.25; stroke-linejoin: round; opacity: .55; }
+  .plot .stair { fill: none; stroke: var(--tl-accent); stroke-width: 2.4; stroke-linejoin: round; stroke-linecap: round; }
+  .plot .dot { fill: var(--color-background-primary); stroke: var(--tl-accent); stroke-width: 1.6; }
+  .plot .dot.pr { fill: var(--tl-accent); }
+  .plot .flag rect { fill: var(--tl-accent); }
+  .plot .flag text { fill: var(--tl-on); font: 700 9.5px var(--font-sans); letter-spacing: .03em; }
+  .plot .note { fill: var(--color-text-tertiary); font: 12px var(--font-sans); }
+  .plot .burst { fill: none; stroke: var(--tl-accent); stroke-width: 2; opacity: 0; }
+  .axis { display: grid; grid-template-columns: var(--id-w) minmax(0, 1fr); gap: 14px; height: 18px; }
+  .ticks { position: relative; }
+  .tick { position: absolute; top: 2px; transform: translateX(-50%); font-size: 10.5px; color: var(--color-text-tertiary); white-space: nowrap; }
+  .tick.now { color: var(--tl-accent); font-weight: 650; }
+
+  /* ── this week ── */
+  .week { padding: 12px 16px 14px; border-top: 1px solid var(--color-border-secondary); }
+  .week-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 10px; margin-bottom: 8px; }
+  .week-head h2 { font-size: 13px; font-weight: 650; }
+  .week-head .done-of { font-size: 12.5px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+  .week-head .next { margin-left: auto; font-size: 12.5px; color: var(--color-text-secondary); }
+  .week-head .next b { color: var(--color-text-primary); font-weight: 650; }
+  .strip { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 6px; }
+  .cell { display: grid; justify-items: center; gap: 3px; padding: 7px 2px 8px; border-radius: var(--border-radius-md, 10px); text-align: center; }
+  .cell.is-today { background: var(--tl-soft); box-shadow: inset 0 0 0 1px var(--k-accent-brd); }
+  .cell .wd { font-size: 11px; color: var(--color-text-tertiary); }
+  .cell .dn { font-size: 14px; font-weight: 650; font-variant-numeric: tabular-nums; }
+  .cell svg { width: 20px; height: 20px; }
+  .cell .fc { font-size: 11px; color: var(--color-text-secondary); line-height: 1.2; overflow-wrap: anywhere; }
+  .cell.st-rest .fc, .cell.st-missed .fc { color: var(--color-text-tertiary); }
+  .g-fill { fill: var(--tl-accent); }
+  .g-on { fill: none; stroke: var(--tl-on); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .g-ring { fill: none; stroke: var(--color-border-primary); stroke-width: 1.6; }
+  .g-acc { fill: none; stroke: var(--tl-accent); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .g-miss { fill: none; stroke: var(--color-text-tertiary); stroke-width: 1.5; stroke-dasharray: 2.4 2.6; }
+  .g-dot { fill: var(--color-text-tertiary); }
+
+  /* ── today's plan ── */
+  .today { margin: 0 16px 14px; padding: 12px 14px; }
+  .today-head { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; margin-bottom: 6px; }
+  .today-head h3 { font-size: 14px; font-weight: 700; }
+  .ex { display: flex; align-items: center; gap: 10px; padding: 6px 0; border-top: 1px solid var(--color-border-secondary); }
+  .ex:first-of-type { border-top: 0; }
+  .ex-name { flex: 1; min-width: 0; font-size: 13px; font-weight: 550; }
+  .ex-name small { display: block; font-size: 11.5px; font-weight: 400; color: var(--color-text-tertiary); }
+  .pips { display: flex; gap: 5px; flex: none; }
+  .pip { width: 26px; height: 26px; border-radius: 50%; border: 1.5px solid var(--color-border-primary); background: transparent; display: grid; place-items: center; font-size: 11px; color: var(--color-text-tertiary); cursor: pointer; padding: 0; }
+  .pip.on { background: var(--tl-accent); border-color: var(--tl-accent); color: var(--tl-on); }
+  .pip svg { width: 13px; height: 13px; }
+  .today-foot { display: flex; align-items: center; gap: 8px; margin-top: 8px; }
+
+  /* ── log form ── */
+  .log { margin: 12px 16px 2px; padding: 14px; border: 1px solid var(--k-accent-brd); border-radius: var(--border-radius-lg, 14px); background: var(--tl-soft); }
+  .log-head { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+  .log-head h2 { flex: 1; font-size: 14px; font-weight: 700; }
+  .lift-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .lift-chips .k-chip { padding: 4px 12px; font-size: 12.5px; }
+  .f-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+  .f { display: grid; gap: 4px; min-width: 0; }
+  .f.w2 { grid-column: span 2; }
+  .f.w4 { grid-column: 1 / -1; }
+  .f > span { font-size: 11.5px; font-weight: 600; color: var(--color-text-secondary); }
+  .f .k-field { width: 100%; min-width: 0; background: var(--color-background-primary); }
+  .stepper { display: flex; align-items: stretch; gap: 4px; }
+  .stepper .k-field { text-align: center; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; padding: 5px 4px; }
+  .stepper input::-webkit-inner-spin-button, .stepper input::-webkit-outer-spin-button { appearance: none; margin: 0; }
+  .stepper input { appearance: textfield; -moz-appearance: textfield; }
+  .stepper button { flex: none; width: 32px; border: 1px solid var(--color-border-primary); border-radius: var(--border-radius-md, 10px); background: var(--color-background-primary); cursor: pointer; font-size: 16px; line-height: 1; }
+  .unit { flex: none; width: 58px !important; font-size: 12.5px !important; font-weight: 600 !important; }
+  .feels { display: flex; flex-wrap: wrap; gap: 6px; }
+  textarea.k-field { min-height: 58px; resize: vertical; }
+  .verdict { margin-top: 10px; font-size: 12.5px; color: var(--color-text-secondary); min-height: 18px; }
+  .verdict.pr { color: var(--tl-accent); font-weight: 700; }
+  .log-foot { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+  /* ── history ── */
+  .hist { padding: 12px 16px 16px; border-top: 1px solid var(--color-border-secondary); }
+  .hist-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+  .hist-head h2 { font-size: 13px; font-weight: 650; }
+  .hist-head .k-mut { flex: 1; }
+  .hist-list { max-height: 330px; overflow-y: auto; overscroll-behavior: contain; }
+  .row { display: grid; grid-template-columns: 86px minmax(0, 1fr); gap: 12px; padding: 9px 0; border-top: 1px solid var(--color-border-secondary); }
+  .row:first-child { border-top: 0; }
+  .row.pending { opacity: .6; }
+  .row-date b { display: block; font-size: 12.5px; font-weight: 650; }
+  .row-date span { font-size: 11.5px; color: var(--color-text-tertiary); white-space: nowrap; }
+  .row-top { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; }
+  .row-top strong { font-size: 13.5px; font-weight: 700; font-variant-numeric: tabular-nums; }
+  .row-top .focus { font-size: 12px; color: var(--color-text-secondary); }
+  .row .k-badge.pr { background: var(--tl-accent); color: var(--tl-on); }
+  .row-note { margin-top: 2px; font-size: 12px; color: var(--color-text-secondary); line-height: 1.4; overflow-wrap: anywhere; }
+  .row-note i { font-style: normal; color: var(--color-text-tertiary); }
+  .batch { margin: 8px 0 4px; display: grid; gap: 8px; }
+  .batch textarea { min-height: 96px; font-family: var(--font-mono); font-size: 12px; }
+
+  /* ── empty ── */
+  .empty { padding: 30px 20px 34px; display: grid; justify-items: center; gap: 10px; text-align: center; }
+  .empty svg { width: 132px; height: 72px; color: var(--tl-accent); fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+  .empty h2 { font-size: 17px; font-weight: 700; }
+  .empty p { max-width: 430px; font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+  .empty .k-row { flex-wrap: wrap; justify-content: center; }
+
+  @media (max-width: 560px) {
+    .lane, .axis { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+    .axis > :first-child { display: none; }
+    .lane-id { grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "name val" "sub val"; column-gap: 10px; }
+    .lane-val { font-size: 28px; align-self: center; }
+    .legend { margin-left: 0; width: 100%; }
+    .cell .fc { display: none; }
+    .f-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .f.w2 { grid-column: 1 / -1; }
+    #reviewBtn .lbl { display: none; }
+    .row { grid-template-columns: 70px minmax(0, 1fr); gap: 10px; }
+  }
+
+  /* The one moment: a new PR. The stair climbs to the dot, the dot pops, the flag drops in. */
   @media (prefers-reduced-motion: no-preference) {
-    .k-btn,
-    .set-toggle,
-    .week-day,
-    .lift-card {
-      transition: transform 180ms cubic-bezier(.2, .8, .3, 1), border-color 180ms cubic-bezier(.2, .8, .3, 1), background 180ms cubic-bezier(.2, .8, .3, 1);
-    }
-
-    .k-btn:hover,
-    .lift-card:hover {
-      transform: translateY(-1px);
-    }
-
-    .k-btn:active,
-    .set-toggle:active {
-      transform: scale(.98);
-    }
-
-    .set-toggle.on {
-      animation: set-pop 220ms cubic-bezier(.34, 1.56, .64, 1);
-    }
-
-    @keyframes set-pop {
-      0% { transform: scale(.86); }
-      100% { transform: scale(1); }
-    }
-  }
-
-  @media (max-width: 620px) {
-    .app-bar {
-      flex-wrap: wrap;
-    }
-
-    .app-actions {
-      display: flex;
-      width: 100%;
-      margin-left: 54px;
-    }
-
-    .overview {
-      grid-template-columns: 1fr;
-      gap: 11px;
-    }
-
-    .overview-main {
-      justify-content: space-between;
-    }
-
-    .spark-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .lift-card {
-      display: grid;
-      grid-template-columns: minmax(104px, .72fr) minmax(0, 1.28fr);
-      column-gap: 12px;
-      align-items: center;
-    }
-
-    .lift-name-row,
-    .lift-value {
-      grid-column: 1;
-    }
-
-    .spark {
-      grid-column: 2;
-      grid-row: 1 / span 2;
-      margin-top: 0;
-    }
-
-    .lift-foot {
-      grid-column: 1 / -1;
-      margin-top: 5px;
-    }
-  }
-
-  @media (max-width: 500px) {
-    .overview,
-    .week-band {
-      padding-inline: 12px;
-    }
-
-    .content-body {
-      padding-inline: 12px;
-    }
-
-    .week-grid {
-      gap: 4px;
-    }
-
-    .week-day {
-      min-height: 62px;
-      padding-inline: 5px;
-    }
-
-    .day-focus {
-      display: none;
-    }
-
-    .overview-stats {
-      gap: 8px;
-    }
-
-    .overview-stat strong {
-      font-size: 12px;
-    }
-
-    .exercise-row {
-      grid-template-columns: 1fr;
-      gap: 5px;
-      padding-block: 9px;
-    }
-
-    .set-group {
-      grid-auto-columns: minmax(30px, 1fr);
-      grid-auto-flow: column;
-    }
-
-    .set-toggle {
-      width: 100%;
-    }
-
-    .rest-visual {
-      grid-template-columns: 1fr;
-    }
-
-    .rest-glyph {
-      width: 100%;
-    }
-
-    .record-grid {
-      grid-template-columns: 1fr;
-    }
-
-    .field-block.wide {
-      grid-column: auto;
-    }
-
-    .pr-chip {
-      min-height: 54px;
-      padding-inline: 8px;
-      gap: 6px;
-      grid-template-columns: 7px minmax(0, 1fr);
-      align-content: center;
-    }
-
-    .pr-value {
-      grid-column: 2;
-      font-size: 15px;
-    }
-
-    .pr-mark {
-      grid-row: 1 / span 2;
-    }
-
-    .history-row {
-      grid-template-columns: 86px minmax(0, 1fr);
-      gap: 9px;
-    }
-  }
-
-  @media (max-width: 390px) {
-    .app-actions {
-      margin-left: 0;
-    }
-
-    .app-actions .k-btn {
-      min-width: 0;
-      min-height: 42px;
-      flex: 1;
-      padding-inline: 8px;
-      font-size: 11.5px;
-      line-height: 1.15;
-      text-align: center;
-      white-space: normal;
-    }
-
-    .overview-stats {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .overview-stat:last-child {
-      grid-column: 1 / -1;
-    }
-
-    .week-day {
-      min-height: 58px;
-      padding-inline: 3px;
-    }
-
-    .day-name {
-      font-size: 9px;
-    }
-
-    .day-date {
-      font-size: 13px;
-    }
-
-    .pr-grid {
-      grid-template-columns: 1fr;
-    }
+    .plot .stair.climb-in { stroke-dasharray: var(--len) var(--len); stroke-dashoffset: var(--len); animation: tl-draw 520ms var(--k-ease) 80ms forwards; }
+    .plot .pop { transform-box: fill-box; transform-origin: center; animation: tl-pop 520ms var(--k-spring) both; }
+    .plot .burst.go { animation: tl-burst 760ms var(--k-ease) 260ms both; transform-box: fill-box; transform-origin: center; }
+    .plot .flag.drop { animation: tl-flag 460ms var(--k-spring) 380ms both; }
+    .lane-val.bump { transform-origin: left center; animation: tl-bump 600ms var(--k-spring); }
+    .row.fresh { animation: k-in var(--k-t-slow) var(--k-ease); }
+    @keyframes tl-draw { to { stroke-dashoffset: 0; } }
+    @keyframes tl-pop { 0% { transform: scale(0); } 60% { transform: scale(1.7); } 100% { transform: scale(1); } }
+    @keyframes tl-burst { 0% { opacity: .9; transform: scale(1); } 100% { opacity: 0; transform: scale(4.2); } }
+    @keyframes tl-flag { 0% { opacity: 0; transform: translateY(-8px); } 100% { opacity: 1; transform: none; } }
+    @keyframes tl-bump { 0% { transform: scale(1); } 35% { transform: scale(1.08); color: var(--tl-accent); } 100% { transform: scale(1); } }
   }
 </style>
 </head>
 <body>
-<div class="app k-stage">
-  <header class="app-bar k-appbar">
-    <div class="app-mark k-appmark" aria-hidden="true">
-      <svg viewBox="0 0 28 28">
-        <path d="M3 11v6M7 8.5v11M10 13h8M21 8.5v11M25 11v6M7 14h14"/>
-        <path d="M12 5.5h4M14 3.5v4" opacity=".55"/>
-      </svg>
+<div class="tl k-stage">
+  <header class="k-appbar">
+    <div class="k-appmark tl-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M2.5 10v4M5.5 7.5v9M18.5 7.5v9M21.5 10v4M5.5 12h13"/></svg>
     </div>
-    <div class="identity k-appcopy">
-      <div class="eyebrow k-eyebrow" data-i18n="eyebrow">Strength rhythm</div>
-      <h1 class="app-name" data-i18n="appName">Training Log</h1>
-    </div>
-    <div class="app-actions k-row">
-      <button class="k-btn sec" id="reviewButton" type="button">
-        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M2.5 12.5V3.5h11v7h-7l-3 2zM5 6h6M5 8.5h4"/>
-        </svg>
-        <span data-i18n="reviewWeek">AI weekly review</span>
+    <div class="k-appcopy"><h1 data-i18n="appName">Training Log</h1></div>
+    <div class="acts">
+      <button class="k-btn sec" id="reviewBtn" type="button" data-i18n-aria="review">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 1.8l1.4 3.6 3.8.3-2.9 2.5.9 3.7L8 9.9l-3.2 2 .9-3.7-2.9-2.5 3.8-.3z"/></svg>
+        <span class="lbl" data-i18n="review">Weekly review</span>
       </button>
-      <button class="k-btn" id="recordButton" type="button">
-        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2.5v11M2.5 8h11"/>
-        </svg>
-        <span data-i18n="recordToday">Log today</span>
+      <button class="k-btn primary" id="logBtn" type="button">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3v10M3 8h10"/></svg>
+        <span data-i18n="logSet">Log a set</span>
       </button>
     </div>
   </header>
 
-  <section class="overview" aria-label="Weekly training overview" data-i18n-aria="overviewAria">
-    <div class="overview-main">
-      <strong class="overview-number" id="weekScore">0/0</strong>
-      <span class="overview-label" data-i18n-html="weekCompletionLabel">Completed this week<br>planned sessions</span>
+  <div class="status" id="status" role="status" hidden></div>
+  <div class="sr" id="live" aria-live="polite"></div>
+
+  <form class="log" id="logPanel" hidden novalidate>
+    <div class="log-head">
+      <h2 data-i18n="formTitle">Log a top set</h2>
+      <button class="k-btn ghost" id="closeLog" type="button" data-i18n-aria="cancel">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg>
+      </button>
     </div>
-    <div class="overview-stats">
-      <div class="overview-stat">
-        <strong id="nextFocus">Awaiting plan</strong>
-        <span id="nextWhen">Next session</span>
+    <div class="lift-chips" id="liftChips" role="radiogroup" data-i18n-aria="lift"></div>
+    <div class="f-grid">
+      <label class="f w4" id="otherWrap" hidden><span data-i18n="exercise">Exercise</span>
+        <input class="k-field" id="fName" maxlength="60" data-i18n-ph="exercisePh"></label>
+      <div class="f w2"><span data-i18n="weight">Weight</span>
+        <div class="stepper">
+          <button type="button" data-step="w:-1" aria-label="−">−</button>
+          <input class="k-field" id="fWeight" type="number" inputmode="decimal" min="0" step="0.5" data-i18n-aria="weight">
+          <button type="button" data-step="w:1" aria-label="+">+</button>
+          <select class="k-field unit" id="fUnit" data-i18n-aria="unit"><option value="kg">kg</option><option value="lb">lb</option></select>
+        </div>
       </div>
-      <div class="overview-stat">
-        <strong id="latestTop">No entries yet</strong>
-        <span data-i18n="latestTopLabel">Latest top set</span>
+      <div class="f"><span data-i18n="reps">Reps</span>
+        <div class="stepper">
+          <button type="button" data-step="r:-1" aria-label="−">−</button>
+          <input class="k-field" id="fReps" type="number" inputmode="numeric" min="1" max="99" step="1" data-i18n-aria="reps">
+          <button type="button" data-step="r:1" aria-label="+">+</button>
+        </div>
       </div>
-      <div class="overview-stat">
-        <strong class="k-num" id="sessionCount">0 sessions</strong>
-        <span data-i18n="historyLabel">Training history</span>
-      </div>
+      <label class="f"><span data-i18n="date">Date</span><input class="k-field" id="fDate" type="date"></label>
+      <label class="f w2"><span data-i18n="focus">Session</span><input class="k-field" id="fFocus" maxlength="80"></label>
+      <div class="f w2"><span data-i18n="feel">Feel</span><div class="feels" id="feels"></div></div>
+      <label class="f w4"><span data-i18n="notes">Notes</span><textarea class="k-field" id="fNotes" maxlength="600" data-i18n-ph="notesPh"></textarea></label>
+    </div>
+    <div class="verdict" id="verdict" aria-live="polite"></div>
+    <div class="log-foot">
+      <button class="k-btn ghost" id="cancelLog" type="button" data-i18n="cancel">Cancel</button>
+      <button class="k-btn primary" id="saveLog" type="submit">
+        <svg class="ico" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 8.5l3 3 7-7"/></svg>
+        <span data-i18n="save">Save set</span>
+      </button>
+    </div>
+  </form>
+
+  <section class="empty" id="empty" hidden>
+    <svg viewBox="0 0 132 72" aria-hidden="true">
+      <path d="M6 64h22V50h22V36h22V22h22V8h32"/>
+      <path d="M100 14v-9M96 8.5h8" opacity=".55"/>
+      <circle cx="28" cy="50" r="3"/><circle cx="50" cy="36" r="3"/><circle cx="72" cy="22" r="3"/><circle cx="94" cy="8" r="3"/>
+    </svg>
+    <h2 data-i18n="emptyTitle">Your lifts will climb here</h2>
+    <p data-i18n="emptyBody">Tell the AI your weekly split and a few recent top sets. Every lift gets a staircase, and every PR is marked on it.</p>
+    <div class="k-row">
+      <button class="k-btn primary" id="askSetup" type="button" data-i18n="askSetup">Ask AI to set it up</button>
+      <button class="k-btn sec" id="emptyLog" type="button" data-i18n="logSet">Log a set</button>
+      <button class="k-btn ghost" id="emptyPaste" type="button" data-i18n="pasteMany">Paste many</button>
     </div>
   </section>
 
-  <section class="week-band" aria-labelledby="weekLabel">
-    <div class="week-head k-row">
-      <strong id="weekLabel" data-i18n="weekRhythm">This week's rhythm</strong>
-      <span class="k-grow"></span>
-      <span class="k-mut k-num" id="weekRange"></span>
+  <section class="climb" id="climb" aria-labelledby="climbTitle">
+    <div class="climb-head">
+      <h2 id="climbTitle" data-i18n="climbTitle">Top sets</h2>
+      <span class="span" id="climbSpan"></span>
+      <span class="k-badge info" id="prCount" hidden></span>
+      <div class="legend" aria-hidden="true">
+        <span><svg viewBox="0 0 16 10"><path d="M1 8h5V3h9" fill="none" stroke="var(--tl-accent)" stroke-width="2" stroke-linejoin="round"/></svg><i data-i18n="legendBest" style="font-style:normal">best so far</i></span>
+        <span><svg viewBox="0 0 16 10"><circle cx="8" cy="5" r="3.2" fill="var(--color-background-primary)" stroke="var(--tl-accent)" stroke-width="1.5"/></svg><i data-i18n="legendSet" style="font-style:normal">top set</i></span>
+        <span><svg viewBox="0 0 16 10"><circle cx="8" cy="5" r="3.4" fill="var(--tl-accent)"/></svg><i data-i18n="legendPr" style="font-style:normal">PR</i></span>
+      </div>
     </div>
-    <div class="week-grid" id="weekGrid"></div>
+    <div id="lanes"></div>
+    <div class="axis"><span></span><div class="ticks" id="ticks"></div></div>
   </section>
 
-  <div class="status-strip" id="statusStrip" hidden>
-    <span class="k-badge" id="statusMessage" role="status"></span>
-  </div>
+  <section class="week" id="week" aria-labelledby="weekTitle">
+    <div class="week-head">
+      <h2 id="weekTitle" data-i18n="thisWeek">This week</h2>
+      <span class="done-of" id="doneOf"></span>
+      <span class="next" id="nextUp"></span>
+    </div>
+    <div class="strip" id="strip"></div>
+  </section>
 
-  <main class="content-body" id="contentBody">
-    <section class="k-empty empty-state" id="emptyState" hidden>
-      <svg viewBox="0 0 96 68" aria-hidden="true">
-        <path d="M9 26v16M17 20v28M23 34h50M79 20v28M87 26v16M17 34h62"/>
-        <path d="M32 13c8 7 24 7 32 0M36 55c7-5 17-5 24 0" opacity=".45"/>
-        <circle cx="32" cy="13" r="2"/>
-        <circle cx="64" cy="13" r="2"/>
-      </svg>
-      <b data-i18n="emptyTitle">Seed your exercise library from ExerciseDB</b>
-      <span data-i18n="emptyBody">After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This app itself stays zero-network. You can also log one session or paste older records.</span>
-      <div class="empty-actions">
-        <button class="k-btn" id="seedButton" type="button" data-i18n="seedButton">Ask AI to seed from ExerciseDB</button>
-        <button class="k-btn sec" id="emptyRecordButton" type="button" data-i18n="addManually">Add manually</button>
-        <button class="k-btn ghost" id="batchButton" type="button" data-i18n="batchPaste">Paste batch</button>
-      </div>
-    </section>
+  <section class="k-card today" id="today" hidden></section>
 
-    <section class="k-card today-card" id="todayCard"></section>
-
-    <section class="k-card record-card" id="recordPanel" hidden aria-labelledby="recordTitle">
-      <div class="record-head k-row">
-        <div>
-          <h2 class="k-h1" id="recordTitle" data-i18n="recordSessionTitle">Log a training session</h2>
-          <div class="k-sub" data-i18n="recordSessionSub">One completed workout becomes one session row</div>
-        </div>
-        <span class="k-grow"></span>
-        <button class="k-btn ghost" id="closeRecordButton" type="button" aria-label="Close session form" data-i18n-aria="closeRecordAria">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8"/>
-          </svg>
-        </button>
+  <section class="hist" id="hist" aria-labelledby="histTitle">
+    <div class="hist-head">
+      <h2 id="histTitle" data-i18n="sessions">Sessions</h2>
+      <span class="k-mut k-num" id="histCount"></span>
+      <button class="k-btn ghost" id="pasteBtn" type="button" data-i18n="pasteMany">Paste many</button>
+    </div>
+    <div class="batch" id="batch" hidden>
+      <span class="k-sub" data-i18n="batchSub">One session per line: date | session | top set | notes | feel</span>
+      <textarea class="k-field" id="batchInput" data-i18n-ph="batchPh"></textarea>
+      <div class="k-row" style="justify-content:flex-end">
+        <button class="k-btn ghost" id="batchCancel" type="button" data-i18n="cancel">Cancel</button>
+        <button class="k-btn primary" id="batchImport" type="button" data-i18n="import">Import</button>
       </div>
-      <form id="recordForm">
-        <div class="record-grid">
-          <div class="field-block">
-            <label for="sessionDate" data-i18n="dateLabel">Date</label>
-            <input class="k-field" id="sessionDate" type="date" required>
-          </div>
-          <div class="field-block">
-            <label for="sessionFeel" data-i18n="feelLabel">Feel</label>
-            <select class="k-field" id="sessionFeel">
-              <option value="Smooth" data-i18n="feelSmooth">Smooth</option>
-              <option value="Steady" selected data-i18n="feelSteady">Steady</option>
-              <option value="Hard" data-i18n="feelHard">Hard</option>
-              <option value="Conservative" data-i18n="feelConservative">Conservative</option>
-            </select>
-          </div>
-          <div class="field-block wide">
-            <label for="sessionFocus" data-i18n="focusLabel">Training focus</label>
-            <input class="k-field" id="sessionFocus" maxlength="80" required placeholder="Example: Squat Day" data-i18n-placeholder="focusPlaceholder">
-          </div>
-          <div class="field-block wide">
-            <label for="sessionTopSet" data-i18n="topSetLabel">Main lift top set</label>
-            <input class="k-field" id="sessionTopSet" maxlength="120" placeholder="Example: Back Squat 77.5kg×5" data-i18n-placeholder="topSetPlaceholder">
-          </div>
-          <div class="field-block wide">
-            <label for="sessionVolume" data-i18n="volumeLabel">Volume and notes</label>
-            <textarea class="k-field" id="sessionVolume" maxlength="600" placeholder="Exercises, sets, completion, and details worth remembering" data-i18n-placeholder="volumePlaceholder"></textarea>
-          </div>
-        </div>
-        <div class="form-actions k-row">
-          <button class="k-btn sec" id="cancelRecordButton" type="button" data-i18n="cancel">Cancel</button>
-          <button class="k-btn" id="saveRecordButton" type="submit">
-            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M3 8.5l3 3 7-7"/>
-            </svg>
-            <span data-i18n="saveTraining">Save training</span>
-          </button>
-        </div>
-      </form>
-    </section>
-
-    <section class="k-card batch-card" id="batchPanel" hidden aria-labelledby="batchTitle">
-      <div class="k-row">
-        <div>
-          <h2 class="k-h1" id="batchTitle" data-i18n="batchTitle">Import training in bulk</h2>
-          <div class="k-sub" data-i18n="batchSub">Each line: date | focus | top set | volume | feel</div>
-        </div>
-        <span class="k-grow"></span>
-        <button class="k-btn ghost" id="closeBatchButton" type="button" aria-label="Close bulk import" data-i18n-aria="closeBatchAria">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8"/>
-          </svg>
-        </button>
-      </div>
-      <textarea class="k-field" id="batchInput" placeholder="2026-07-25 | Deadlift Day | Deadlift 117.5kg×3 | Deadlift 3×3, press 3×5 | Strong" data-i18n-placeholder="batchPlaceholder"></textarea>
-      <div class="form-actions k-row">
-        <button class="k-btn" id="importBatchButton" type="button" data-i18n="importRecords">Import these records</button>
-      </div>
-    </section>
-
-    <section class="trend-section" id="trendSection" aria-labelledby="trendTitle">
-      <div class="section-head k-row">
-        <div>
-          <h2 id="trendTitle" data-i18n="trendTitle">Main lift load trends</h2>
-          <div class="k-sub" data-i18n="trendSub">Latest entries from sessions, up to 8 per lift</div>
-        </div>
-        <span class="k-grow"></span>
-        <span class="k-badge info" id="trendWindow">Latest 8</span>
-      </div>
-      <div class="spark-grid" id="sparkGrid"></div>
-    </section>
-
-    <section class="pr-section" id="prSection" aria-labelledby="prTitle">
-      <div class="section-head k-row">
-        <div>
-          <h2 id="prTitle" data-i18n="prTitle">Current PRs</h2>
-          <div class="k-sub" data-i18n="prSub">Best loads calculated from session top sets</div>
-        </div>
-      </div>
-      <div class="pr-grid" id="prGrid"></div>
-    </section>
-
-    <section class="history-section" id="historySection" aria-labelledby="sessionHistoryTitle">
-      <div class="section-head k-row">
-        <div>
-          <h2 id="sessionHistoryTitle" data-i18n="sessionHistoryTitle">Session history</h2>
-          <div class="k-sub" data-i18n="sessionHistorySub">Latest completed workouts, newest first</div>
-        </div>
-        <span class="k-grow"></span>
-        <span class="k-badge" id="historyTotal">0 total</span>
-      </div>
-      <div class="history-list" id="historyList"></div>
-    </section>
-  </main>
+    </div>
+    <div class="hist-list" id="histList"></div>
+  </section>
 </div>
 
 <script type="module">
-  const DAY_MS = 86400000;
+  const PLAN = "training-plan";
+  const SESS = "training-sessions";
   const DAY_KEYS = ["sun", "mon", "tue", "wed", "thu", "fri", "sat"];
-  const DAY_INDEX = new Map(DAY_KEYS.map((key, index) => [key, index]));
-  const WEEK_START_INDEX = { monday: 1, sunday: 0, saturday: 6 };
-  const SVG_NS = "http://www.w3.org/2000/svg";
+  const WEEK_START = { monday: 1, sunday: 0, saturday: 6 };
+  const LB = 0.45359237;
+  const DAY = 86400000;
+  const NS = "http://www.w3.org/2000/svg";
+
+  // The three lifts every lane starts from. Terms match the lift NAME in a top set as the user
+  // wrote it ("Back Squat", "杠铃后蹲"); rejects keep variants out of the main lane — a goblet
+  // squat is its own lift, not a bad squat day.
+  const LIFTS = [
+    { key: "squat", label: "liftSquat", name: "nameSquat", terms: ["squat", "深蹲", "后蹲"], reject: ["bulgarian", "split", "goblet", "front", "hack", "保加利亚", "分腿", "高脚杯", "前蹲", "哈克"] },
+    { key: "bench", label: "liftBench", name: "nameBench", terms: ["bench", "卧推"], reject: ["incline", "decline", "dumbbell", "close", "上斜", "下斜", "哑铃", "窄距"] },
+    { key: "deadlift", label: "liftDeadlift", name: "nameDeadlift", terms: ["deadlift", "硬拉"], reject: ["romanian", "rdl", "stiff", "罗马尼亚", "直腿"] }
+  ];
+  const FEELS = ["feelSmooth", "feelSteady", "feelHard", "feelConservative"];
+
   const STR = {
     en: {
-      documentTitle: "Training Log",
-      metaDescription: "After installation, ask AI to use the host's network access to fetch the ExerciseDB API exercise catalog (name, target muscle, equipment) and batch-write it into training-plan exercises; this app itself remains zero-network. Track weekly completion and strength trends.",
-      appName: "Training Log",
-      eyebrow: "Strength rhythm",
-      reviewWeek: "AI weekly review",
-      recordToday: "Log today",
-      overviewAria: "Weekly training overview",
-      weekCompletionLabel: "Completed this week<br>planned sessions",
-      latestTopLabel: "Latest top set",
-      historyLabel: "Training history",
-      weekRhythm: "This week's rhythm",
-      emptyTitle: "Seed your exercise library from ExerciseDB",
-      emptyBody: "After installation, ask AI to fetch ExerciseDB through the host's network, then batch-write exercise name, target muscle, and equipment into training-plan exercises. This app itself stays zero-network. You can also log one session or paste older records.",
-      seedButton: "Ask AI to seed from ExerciseDB",
-      addManually: "Add manually",
-      batchPaste: "Paste batch",
-      recordSessionTitle: "Log a training session",
-      recordSessionSub: "One completed workout becomes one session row",
-      closeRecordAria: "Close session form",
-      dateLabel: "Date",
-      feelLabel: "Feel",
-      feelSmooth: "Smooth",
-      feelSteady: "Steady",
-      feelHard: "Hard",
-      feelConservative: "Conservative",
-      focusLabel: "Training focus",
-      focusPlaceholder: "Example: Squat Day",
-      topSetLabel: "Main lift top set",
-      topSetPlaceholder: "Example: Back Squat 77.5kg×5",
-      volumeLabel: "Volume and notes",
-      volumePlaceholder: "Exercises, sets, completion, and details worth remembering",
-      cancel: "Cancel",
-      saveTraining: "Save training",
-      batchTitle: "Import training in bulk",
-      batchSub: "Each line: date | focus | top set | volume | feel",
-      closeBatchAria: "Close bulk import",
-      batchPlaceholder: "2026-07-25 | Deadlift Day | Deadlift 117.5kg×3 | Deadlift 3×3, press 3×5 | Strong",
-      importRecords: "Import these records",
-      trendTitle: "Main lift load trends",
-      trendSub: "Latest entries from sessions, up to 8 per lift",
-      prTitle: "Current PRs",
-      prSub: "Best loads calculated from session top sets",
-      prAchieved: "Achieved {date}",
-      prAwaiting: "No top set yet",
-      prAria: "{lift} current PR: {weight} kg, achieved {date}",
-      prEmptyAria: "No current PR for {lift}",
-      sessionHistoryTitle: "Session history",
-      sessionHistorySub: "Latest completed workouts, newest first",
-      historyTotal: "{count} total",
-      historyEmpty: "Completed sessions will appear here.",
-      squatDay: "Squat Day",
-      benchDay: "Bench Day",
-      deadliftDay: "Deadlift Day",
-      loggedSets: "{count} sets logged",
-      volumeLogged: "Volume logged",
-      liftSquat: "Squat",
-      liftBench: "Bench",
-      liftDeadlift: "Deadlift",
-      today: "Today",
-      tomorrow: "Tomorrow",
-      yesterday: "Yesterday",
-      inDays: "In {count} days",
-      daysAgo: "{count} days ago",
-      readFailed: "Could not read {collection}.",
-      invalidData: "{collection} returned invalid data.",
-      refreshFailed: "Refresh failed: {error}",
-      awaitingPlan: "Awaiting plan",
-      nextSession: "Next session · {when}",
-      tellAiRhythm: "Tell AI your weekly rhythm",
-      noEntries: "No entries yet",
-      sessionCount: "{count} sessions",
-      restDay: "Recovery day",
-      completed: "Completed",
-      rest: "Recovery",
-      noFixedTraining: "No fixed training scheduled today",
-      nextTrainingCopy: "{when}: {focus}. You can still log an extra session today.",
-      noPlanCopy: "Ask AI to build your weekly rhythm, or log today's unplanned session.",
-      logFreeTraining: "Log unplanned session",
-      freeTraining: "Unplanned Training",
-      todayTraining: "Today's training",
-      exerciseSummary: "{count} exercises · {sets} work sets each",
-      muscleChip: "Muscle: {value}",
-      equipmentChip: "Equipment: {value}",
-      workSetsAria: "Work sets for {name}",
-      setDoneAria: "{name}, set {set}, completed",
-      setOpenAria: "{name}, set {set}, not completed",
-      volumeWorkSets: "{name} {count} sets",
-      progressSets: "{done}/{total} sets",
-      directLog: "Log directly",
-      finishAndLog: "Finish and log session",
-      awaitingEntry: "Awaiting entry",
-      sparkAria: "{lift} load trend across the latest {count} entries; latest {weight} kg",
-      sparkNoDataAria: "No load entries for {lift}",
-      sparkEmpty: "Your first top set starts the line",
-      recentSessions: "Last {count} sessions",
-      noBaseline: "No baseline yet",
-      baselineSet: "Baseline set",
-      latestWindow: "Latest {count}",
-      saveFailed: "Training was not saved. Try again.",
-      notSaved: "Not saved: {error}",
-      savedSuccess: "Training saved. Weekly progress and load trends were recalculated from current data.",
-      savedRefreshFailed: "Training saved, but refresh failed: {error}",
-      batchEmpty: "Paste at least one training row first.",
-      batchLimit: "Import up to 30 rows at a time.",
-      batchLineInvalid: "Line {line} is incomplete. Use: date | focus | top set | volume | feel",
-      batchRowSaveFailed: "Row {row} was not saved.",
-      batchPartial: "Saved {count} rows, then failed: {error}{refresh}",
-      batchRefreshSuffix: "; refresh also failed: {error}",
-      batchSavedRefreshFailed: "Saved {count} rows, but refresh failed: {error}",
-      batchSaved: "Imported {count} training rows.",
-      seedPrompt: "Use host-side network access to fetch an exercise catalog from the ExerciseDB API. Build my weekly plan in training-plan with day values mon..sun, a focus, and an exercises array. Write ExerciseDB entries as objects with name, muscle, and equipment fields, mapping ExerciseDB target to muscle, and batch-write suitable plan rows. The Training Log app itself is zero-network, so all API access must happen on the host side. Ask me for goals, experience, available equipment, or training days when needed. Only add training-sessions history we actually discussed; do not invent completed workouts. Tell me exactly what you wrote.",
-      noFixedPlan: "No fixed plan",
-      missingTopSet: "top set not entered",
-      missingVolume: "volume not entered",
-      missingFeel: "not entered",
-      noSessionsThisWeek: "No sessions logged this week",
-      reviewPrompt: "Review my training for this week ({start} to {end}). Fixed plan: {plan}. This week's sessions: {sessions}. Assess completion, fatigue, and the main lift trends, then recommend specific load, reps, and sets for the next session. Do not record recommendations as completed workouts.",
-      askFailed: "Couldn't reach the assistant — try again."
+      appName: "Training Log", review: "Weekly review", logSet: "Log a set",
+      climbTitle: "Top sets", spanWeeks: "last {n} weeks", spanSince: "since {date}",
+      legendBest: "best so far", legendSet: "top set", legendPr: "PR",
+      prCount1: "1 PR in 30 days", prCount: "{n} PRs in 30 days",
+      liftSquat: "Squat", liftBench: "Bench", liftDeadlift: "Deadlift",
+      nameSquat: "Back Squat", nameBench: "Bench Press", nameDeadlift: "Deadlift",
+      noSetYet: "No top set yet", gainSince: "since {date}", prOn: "PR set {date}", newPr: "New PR", repPr: "Rep PR",
+      noneInWindow: "No top set in this window",
+      thisWeek: "This week", doneOf: "{done} of {total} done", noPlan: "No weekly plan yet — ask the AI",
+      nextToday: "Today · <b>{focus}</b>", nextOn: "Next · <b>{focus}</b>, {day}",
+      stDone: "done", stMoved: "done on another day", stMissed: "missed", stToday: "today", stPlanned: "planned", stRest: "rest", stExtra: "extra session",
+      restShort: "Rest",
+      todayTitle: "Today · {focus}", setsProgress: "{done}/{total} sets", logTop: "Log the top set", setAria: "{name}, set {n}",
+      formTitle: "Log a top set", lift: "Lift", other: "Other", exercise: "Exercise", exercisePh: "e.g. Front Squat",
+      weight: "Weight", unit: "Unit", reps: "Reps", date: "Date", focus: "Session", feel: "Feel", notes: "Notes",
+      notesPh: "Sets, reps, anything worth remembering",
+      feelSmooth: "Smooth", feelSteady: "Steady", feelHard: "Hard", feelConservative: "Conservative",
+      cancel: "Cancel", save: "Save set",
+      wouldPr: "New PR — +{gain} over {best}", wouldRepPr: "Rep PR — more reps at your best weight", yourBest: "Best so far: {best}", firstEver: "First top set for this lift — it starts the staircase",
+      needWeight: "Enter a weight and reps.",
+      noSessions: "Nothing logged yet — log a set, or paste older sessions.",
+      sessions: "Sessions", logged: "{n} logged", pasteMany: "Paste many", noTop: "no top set", saving: "Saving…",
+      today: "Today", yesterday: "Yesterday", daysAgo: "{n} days ago",
+      batchSub: "One session per line: date | session | top set | notes | feel",
+      batchPh: "2026-07-25 | Deadlift Day | Deadlift 120kg×3 | 3×3, press 3×5 | Strong",
+      import: "Import", batchEmpty: "Paste at least one line first.", batchLimit: "Up to 30 lines at a time.",
+      batchLine: "Line {n} needs: date | session | top set", batchSaved: "Imported {n} sessions.", batchPartial: "Imported {n}, then stopped: {error}",
+      emptyTitle: "Your lifts will climb here",
+      emptyBody: "Tell the AI your weekly split and a few recent top sets. Every lift gets a staircase, and every PR is marked on it.",
+      askSetup: "Ask AI to set it up",
+      readFailed: "Could not read {c}.", refreshFailed: "Couldn't refresh: {error}", notSaved: "Not saved: {error}", saveFailed: "The set was not saved.",
+      askFailed: "Couldn't reach the assistant — try again.", announcePr: "New PR: {lift} {set}",
+      noPlanTxt: "no fixed plan", noSessionsTxt: "no sessions logged this week", missing: "not entered",
+      seedPrompt: "Set up my Training Log. Ask me for my goal, experience, equipment and which days I train, then write my weekly plan to the training-plan collection: one row per training day with day (mon..sun), focus, and an exercises array of {name, muscle, equipment} (if you have host-side network access you may look exercises up in ExerciseDB; the app itself never goes online). Then ask for my recent top sets and write only sessions we actually discussed to training-sessions as {date, focus, top_set like \"Back Squat 80kg×5\", volume_note, feel}. Never invent completed workouts. Tell me exactly what you wrote.",
+      reviewPrompt: "Review my training week ({start} to {end}). Plan: {plan}. Sessions this week: {sessions}. Current bests: {bests}. Assess completion, fatigue and the main lift trends, then suggest load, reps and sets for my next session. Don't record suggestions as completed workouts."
     },
     zh: {
-      documentTitle: "训练日志",
-      metaDescription: "安装后，让 AI 使用宿主侧网络访问 ExerciseDB API，拉取动作名称、目标肌群与器械，并批量写入 training-plan 的 exercises；组件本身始终零网络。用于追踪周完成度与力量趋势。",
-      appName: "训练日志",
-      eyebrow: "力量节奏",
-      reviewWeek: "让 AI 复盘本周",
-      recordToday: "记录今天",
-      overviewAria: "本周训练概览",
-      weekCompletionLabel: "本周完成<br>计划训练",
-      latestTopLabel: "最近顶组",
-      historyLabel: "历史训练",
-      weekRhythm: "本周节奏",
-      emptyTitle: "从 ExerciseDB 播种动作库",
-      emptyBody: "安装后，让 AI 通过宿主侧网络访问 ExerciseDB，再把动作名称、目标肌群和器械批量写入 training-plan 的 exercises。组件本身始终零网络。你也可以先手动记录一节，或粘贴多条旧记录。",
-      seedButton: "让 AI 从 ExerciseDB 播种",
-      addManually: "手动添加",
-      batchPaste: "批量粘贴",
-      recordSessionTitle: "记录一次训练",
-      recordSessionSub: "整次训练只写入一条训练记录",
-      closeRecordAria: "关闭记录表单",
-      dateLabel: "日期",
-      feelLabel: "体感",
-      feelSmooth: "顺",
-      feelSteady: "稳",
-      feelHard: "吃力",
-      feelConservative: "保守",
-      focusLabel: "训练主题",
-      focusPlaceholder: "例如：深蹲日",
-      topSetLabel: "主项顶组",
-      topSetPlaceholder: "例如：深蹲 77.5kg×5",
-      volumeLabel: "训练量与备注",
-      volumePlaceholder: "动作、组次、完成度，以及今天值得记住的细节",
-      cancel: "取消",
-      saveTraining: "保存训练",
-      batchTitle: "批量导入训练",
-      batchSub: "每行：日期 | 主题 | 顶组 | 训练量 | 体感",
-      closeBatchAria: "关闭批量导入",
-      batchPlaceholder: "2026-07-25 | 硬拉日 | 硬拉 117.5kg×3 | 硬拉 3×3，站姿推举 3×5 | 强",
-      importRecords: "导入这些记录",
-      trendTitle: "三主项重量轨迹",
-      trendSub: "每项从训练记录取最近数据，最多 8 次",
-      prTitle: "当前 PR",
-      prSub: "从训练记录的顶组动态计算出的最高重量",
-      prAchieved: "达成于 {date}",
-      prAwaiting: "暂无顶组",
-      prAria: "{lift}当前 PR：{weight} kg，达成于 {date}",
-      prEmptyAria: "{lift}暂无当前 PR",
-      sessionHistoryTitle: "训练历史",
-      sessionHistorySub: "最近完成的训练，最新在上",
-      historyTotal: "共 {count} 次",
-      historyEmpty: "完成训练后会显示在这里。",
-      squatDay: "深蹲日",
-      benchDay: "卧推日",
-      deadliftDay: "硬拉日",
-      loggedSets: "记录 {count} 组",
-      volumeLogged: "已记录训练量",
-      liftSquat: "深蹲",
-      liftBench: "卧推",
-      liftDeadlift: "硬拉",
-      today: "今天",
-      tomorrow: "明天",
-      yesterday: "昨天",
-      inDays: "{count} 天后",
-      daysAgo: "{count} 天前",
-      readFailed: "无法读取 {collection}。",
-      invalidData: "{collection} 返回了无效数据。",
-      refreshFailed: "刷新失败：{error}",
-      awaitingPlan: "等待计划",
-      nextSession: "下一练 · {when}",
-      tellAiRhythm: "告诉 AI 你的固定节奏",
-      noEntries: "尚无记录",
-      sessionCount: "{count} 次",
-      restDay: "恢复日",
-      completed: "已练",
-      rest: "恢复",
-      noFixedTraining: "今天没有排固定训练",
-      nextTrainingCopy: "{when}练 {focus}。如果今天临时加练，也可以直接记一节。",
-      noPlanCopy: "先让 AI 建立你的训练节奏，或把今天的自由训练记下来。",
-      logFreeTraining: "记录自由训练",
-      freeTraining: "自由训练",
-      todayTraining: "今日训练",
-      exerciseSummary: "{count} 个动作 · 每项 {sets} 个工作组",
-      muscleChip: "肌群：{value}",
-      equipmentChip: "器械：{value}",
-      workSetsAria: "{name} 工作组",
-      setDoneAria: "{name} 第 {set} 组已完成",
-      setOpenAria: "{name} 第 {set} 组未完成",
-      volumeWorkSets: "{name} {count} 组",
-      progressSets: "{done}/{total} 组",
-      directLog: "直接记录",
-      finishAndLog: "完成整次并记录",
-      awaitingEntry: "等待记录",
-      sparkAria: "{lift}最近 {count} 次重量曲线，最新 {weight} kg",
-      sparkNoDataAria: "{lift}暂无重量记录",
-      sparkEmpty: "第一条顶组会从这里起线",
-      recentSessions: "最近 {count} 次训练",
-      noBaseline: "尚无基线",
-      baselineSet: "已建立基线",
-      latestWindow: "最近 {count} 次",
-      saveFailed: "训练没有保存，请稍后重试。",
-      notSaved: "未保存：{error}",
-      savedSuccess: "训练已保存。周进度和重量曲线已从最新数据重算。",
-      savedRefreshFailed: "训练已保存，但刷新失败：{error}",
-      batchEmpty: "请先粘贴至少一行训练记录。",
-      batchLimit: "一次最多导入 30 行，请分批处理。",
-      batchLineInvalid: "第 {line} 行格式不完整，请使用：日期 | 主题 | 顶组 | 训练量 | 体感",
-      batchRowSaveFailed: "第 {row} 条没有保存。",
-      batchPartial: "已保存 {count} 条，随后失败：{error}{refresh}",
-      batchRefreshSuffix: "；刷新也失败：{error}",
-      batchSavedRefreshFailed: "已保存 {count} 条，但刷新失败：{error}",
-      batchSaved: "已提交 {count} 条训练记录。",
-      seedPrompt: "请使用宿主侧网络访问 ExerciseDB API 拉取动作库。在 training-plan 中建立我的固定周计划：day 使用 mon..sun，包含 focus 和 exercises 数组。ExerciseDB 动作写成含 name、muscle、equipment 字段的对象，并把 ExerciseDB 的 target 映射到 muscle，然后批量写入合适的计划行。训练日志组件本身零网络，所有 API 访问必须发生在宿主侧。必要时先询问我的目标、经验、可用器械和训练日。training-sessions 只写入我们确实聊过的历史，不要编造已完成训练。最后明确告诉我写入了什么。",
-      noFixedPlan: "暂无固定计划",
-      missingTopSet: "未填顶组",
-      missingVolume: "未填训练量",
-      missingFeel: "未填",
-      noSessionsThisWeek: "本周还没有 session",
-      reviewPrompt: "请复盘我本周（{start} 至 {end}）的训练。固定计划：{plan}。本周记录：{sessions}。请判断完成度、疲劳和三主项趋势，并给出下一次训练的具体重量、次数和组数建议；不要把建议写成已完成记录。",
-      askFailed: "没能联系上助手，请重试。"
+      appName: "训练日志", review: "本周复盘", logSet: "记一组",
+      climbTitle: "顶组", spanWeeks: "近 {n} 周", spanSince: "自 {date} 起",
+      legendBest: "历史最佳", legendSet: "顶组", legendPr: "PR",
+      prCount1: "近 30 天 1 次 PR", prCount: "近 30 天 {n} 次 PR",
+      liftSquat: "深蹲", liftBench: "卧推", liftDeadlift: "硬拉",
+      nameSquat: "杠铃深蹲", nameBench: "杠铃卧推", nameDeadlift: "杠铃硬拉",
+      noSetYet: "还没有顶组", gainSince: "自 {date}", prOn: "{date} 创下", newPr: "新 PR", repPr: "次数 PR",
+      noneInWindow: "这段时间没有顶组",
+      thisWeek: "本周", doneOf: "完成 {done}/{total}", noPlan: "还没有固定计划，让 AI 帮你排",
+      nextToday: "今天 · <b>{focus}</b>", nextOn: "下一练 · <b>{focus}</b>，{day}",
+      stDone: "已练", stMoved: "改到别的日子练了", stMissed: "漏练", stToday: "今天", stPlanned: "计划中", stRest: "休息", stExtra: "加练",
+      restShort: "休息",
+      todayTitle: "今天 · {focus}", setsProgress: "{done}/{total} 组", logTop: "记下顶组", setAria: "{name} 第 {n} 组",
+      formTitle: "记一组顶组", lift: "动作", other: "其他", exercise: "动作名称", exercisePh: "例如：颈前深蹲",
+      weight: "重量", unit: "单位", reps: "次数", date: "日期", focus: "训练主题", feel: "体感", notes: "备注",
+      notesPh: "组数、次数、值得记住的细节",
+      feelSmooth: "顺", feelSteady: "稳", feelHard: "吃力", feelConservative: "保守",
+      cancel: "取消", save: "保存",
+      wouldPr: "新 PR —— 比 {best} 多 {gain}", wouldRepPr: "次数 PR —— 最佳重量多做了次数", yourBest: "目前最佳：{best}", firstEver: "这个动作的第一组顶组，台阶从这里起步",
+      needWeight: "请填写重量和次数。",
+      noSessions: "还没有记录——记一组，或把以前的训练批量粘贴进来。",
+      sessions: "训练记录", logged: "共 {n} 次", pasteMany: "批量粘贴", noTop: "未记顶组", saving: "保存中…",
+      today: "今天", yesterday: "昨天", daysAgo: "{n} 天前",
+      batchSub: "每行一次训练：日期 | 主题 | 顶组 | 备注 | 体感",
+      batchPh: "2026-07-25 | 硬拉日 | 杠铃硬拉 92.5kg×5 | 硬拉 3×5，推举 3×10 | 稳",
+      import: "导入", batchEmpty: "请先粘贴至少一行。", batchLimit: "一次最多 30 行。",
+      batchLine: "第 {n} 行至少需要：日期 | 主题 | 顶组", batchSaved: "已导入 {n} 次训练。", batchPartial: "导入 {n} 条后停止：{error}",
+      emptyTitle: "你的力量会在这里一级级往上走",
+      emptyBody: "把每周怎么练、最近几次的顶组告诉 AI。每个主项一条台阶，每次 PR 都标在上面。",
+      askSetup: "让 AI 帮我建好",
+      readFailed: "无法读取 {c}。", refreshFailed: "刷新失败：{error}", notSaved: "未保存：{error}", saveFailed: "这组没有保存。",
+      askFailed: "没能联系上助手，请重试。", announcePr: "新 PR：{lift} {set}",
+      noPlanTxt: "暂无固定计划", noSessionsTxt: "本周还没有训练记录", missing: "未填",
+      seedPrompt: "帮我把训练日志建起来。先问我的目标、训练经验、可用器械和每周练哪几天，然后在 training-plan 里写入周计划：每个训练日一行，含 day（mon..sun）、focus，以及 exercises 数组（每项 {name, muscle, equipment}；如果你有宿主侧联网能力，可以参考 ExerciseDB，app 本身从不联网）。再问我最近几次的顶组，只把我们确实聊到的训练写进 training-sessions：{date, focus, top_set 形如「杠铃深蹲 80kg×5」, volume_note, feel}。不要编造已完成的训练。最后告诉我具体写了什么。",
+      reviewPrompt: "请复盘我这一周（{start} 至 {end}）的训练。计划：{plan}。本周记录：{sessions}。目前最佳：{bests}。请判断完成度、疲劳和主项趋势，并给出下一次训练的重量、次数和组数建议；不要把建议写成已完成的训练。"
     }
   };
-  const MAIN_LIFTS = [
-    { key: "squat", labelKey: "liftSquat", terms: ["squat", "深蹲"], reject: ["bulgarian", "保加利亚"] },
-    { key: "bench", labelKey: "liftBench", terms: ["bench press", "bench", "卧推"], reject: ["incline", "dumbbell", "上斜", "哑铃"] },
-    { key: "deadlift", labelKey: "liftDeadlift", terms: ["deadlift", "硬拉"], reject: ["romanian", "罗马尼亚"] }
-  ];
-  const PLAN_COLLECTION = "training-plan";
-  const SESSION_COLLECTION = "training-sessions";
 
-  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
-  const today    = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
-  const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
-  const nextOccurrence = (anchorIso, everyDays) => {
-    const a = dateOnly(anchorIso);
-    const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
-    return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
-  };
-
-  let latestData = { planItems: [], sessionItems: [] };
+  // ── state ──
+  let data = { plan: [], sess: [] };
+  let loaded = false;
+  let pending = [];
+  let pendSeq = 0;
+  let celebrate = null;
+  let M = null;
   let refreshTask = null;
   let refreshQueued = false;
-  let recordOpen = false;
-  let batchOpen = false;
-  let checkKey = "";
-  const completedSets = new Map();
+  const laneEls = new Map();
+  const sigs = {};
+  const ticked = new Set();
+  let form = { lift: "", focusDirty: false, feel: "" };
   let statusTimer = 0;
 
-  function localeValue() {
-    const value = String(oma.pref("locale", "auto") || "auto");
-    return value === "auto" ? (navigator.language || "en") : value;
-  }
+  // ── small helpers ──
+  const $ = (id) => document.getElementById(id);
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const addDays = (d, n) => new Date(d.getFullYear(), d.getMonth(), d.getDate() + n);
+  const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / DAY);
+  const isISO = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
 
-  function language() {
-    return localeValue().toLowerCase().startsWith("zh") ? "zh" : "en";
+  function loc() {
+    const v = String(oma.pref("locale", "auto") || "auto");
+    return v === "auto" ? (navigator.language || "en") : v;
   }
-
-  function t(key, values = {}) {
-    const template = STR[language()][key] ?? STR.en[key] ?? key;
-    return String(template).replace(/\{(\w+)\}/g, (match, name) => values[name] ?? match);
+  const lang = () => (loc().toLowerCase().startsWith("zh") ? "zh" : "en");
+  function t(key, vals = {}) {
+    const s = STR[lang()][key] ?? STR.en[key] ?? key;
+    return String(s).replace(/\{(\w+)\}/g, (m, k) => (vals[k] ?? m));
   }
-
-  function displayFocus(value) {
-    const raw = String(value || "").trim();
-    const normalized = raw.toLowerCase();
-    if (normalized === "squat day" || raw === "深蹲日") return t("squatDay");
-    if (normalized === "bench day" || raw === "卧推日") return t("benchDay");
-    if (normalized === "deadlift day" || raw === "硬拉日") return t("deadliftDay");
-    return raw;
+  const num = (v, d = 1) => new Intl.NumberFormat(loc(), { maximumFractionDigits: d }).format(v);
+  const fmt = (iso, o = { month: "short", day: "numeric" }) => new Intl.DateTimeFormat(loc(), o).format(dateOnly(iso));
+  function fullDate(iso) {
+    const mode = oma.pref("date_format", "auto");
+    const [y, m, d] = String(iso).split("-");
+    if (mode === "yyyy-mm-dd") return iso;
+    if (mode === "dd/mm/yyyy") return `${d}/${m}/${y}`;
+    if (mode === "mm/dd/yyyy") return `${m}/${d}/${y}`;
+    return fmt(iso, { year: "numeric", month: "short", day: "numeric" });
   }
+  function rel(iso) {
+    const n = daysUntil(iso);
+    if (n === 0) return t("today");
+    if (n === -1) return t("yesterday");
+    if (n < -1) return t("daysAgo", { n: num(-n, 0) });
+    return fmt(iso, { weekday: "short" });
+  }
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
+  }
+  function sv(tag, attrs = {}) {
+    const n = document.createElementNS(NS, tag);
+    for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, String(v));
+    return n;
+  }
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+  const conv = (w, from, to) => (from === to ? w : from === "lb" ? w * LB : w / LB);
+  const round = (v, unit) => (unit === "lb" ? Math.round(v) : Math.round(v * 2) / 2);
+  const setText = (w, unit, reps) => `${num(w)} ${unit}${reps ? ` × ${num(reps, 0)}` : ""}`;
 
   function applyI18n() {
-    const lang = language();
-    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
-    document.title = t("documentTitle");
-    document.querySelectorAll("[data-i18n]").forEach((node) => {
-      node.textContent = t(node.dataset.i18n);
-    });
-    document.querySelectorAll("[data-i18n-html]").forEach((node) => {
-      node.innerHTML = t(node.dataset.i18nHtml);
-    });
-    document.querySelectorAll("[data-i18n-placeholder]").forEach((node) => {
-      node.setAttribute("placeholder", t(node.dataset.i18nPlaceholder));
-    });
-    document.querySelectorAll("[data-i18n-aria]").forEach((node) => {
-      node.setAttribute("aria-label", t(node.dataset.i18nAria));
-    });
+    document.documentElement.lang = lang() === "zh" ? "zh-CN" : "en";
+    document.title = t("appName");
+    document.querySelectorAll("[data-i18n]").forEach((n) => { n.textContent = t(n.dataset.i18n); });
+    document.querySelectorAll("[data-i18n-ph]").forEach((n) => n.setAttribute("placeholder", t(n.dataset.i18nPh)));
+    document.querySelectorAll("[data-i18n-aria]").forEach((n) => n.setAttribute("aria-label", t(n.dataset.i18nAria)));
   }
 
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
+  function showStatus(msg, bad = false, stay = false) {
+    const s = $("status");
+    s.textContent = msg;
+    s.className = `status${bad ? " bad" : ""}`;
+    s.hidden = false;
+    clearTimeout(statusTimer);
+    if (!stay) statusTimer = setTimeout(() => { s.hidden = true; }, 4200);
   }
 
-  function svgNode(tag, attributes = {}) {
-    const node = document.createElementNS(SVG_NS, tag);
-    for (const [key, value] of Object.entries(attributes)) node.setAttribute(key, String(value));
-    return node;
+  // ── reading the data (contract unchanged: two collections, top_set is free text) ──
+  function exercises(v) {
+    let list = v;
+    if (typeof v === "string") {
+      try { list = JSON.parse(v); } catch { list = v.split(/[、,，\n]/); }
+    }
+    if (!Array.isArray(list)) return [];
+    return list.map((e) => {
+      if (typeof e === "string") return e.trim() ? { name: e.trim(), muscle: "", equipment: "" } : null;
+      if (!e || typeof e !== "object" || !String(e.name || "").trim()) return null;
+      return { name: String(e.name).trim(), muscle: String(e.muscle || "").trim(), equipment: String(e.equipment || "").trim() };
+    }).filter(Boolean);
+  }
+  const planRows = (items) => items
+    .filter((i) => DAY_KEYS.includes(String(i.fields?.day || "").toLowerCase()) && String(i.fields?.focus || "").trim())
+    .map((i) => ({ id: i.id, day: String(i.fields.day).toLowerCase(), focus: String(i.fields.focus).trim(), exercises: exercises(i.fields.exercises) }));
+
+  // "Back Squat 82.5kg×5" → {name, w, unit, reps}. Accepts kg/lb/公斤/磅, ×/x/*; a bare "100×5" is kg.
+  function parseSet(text) {
+    const s = String(text || "").trim();
+    let m = s.match(/(\d+(?:[.,]\d+)?)\s*(kgs?|lbs?|公斤|千克|磅)/i);
+    let unit = "kg";
+    if (m) unit = /lb|磅/i.test(m[2]) ? "lb" : "kg";
+    else m = s.match(/(\d+(?:[.,]\d+)?)(?=\s*[×xX*]\s*\d)/);
+    if (!m) return null;
+    const w = Number(m[1].replace(",", "."));
+    if (!(w > 0)) return null;
+    const r = s.slice(m.index + m[0].length).match(/^\s*[×xX*]\s*(\d{1,3})/);
+    const name = s.slice(0, m.index).replace(/[\s:：\-–—@·,，]+$/, "").trim();
+    return { name, w, unit, reps: r ? Number(r[1]) : 0 };
+  }
+  function liftOf(text) {
+    const n = String(text || "").toLowerCase();
+    return LIFTS.find((L) => L.terms.some((x) => n.includes(x)) && !L.reject.some((x) => n.includes(x))) || null;
+  }
+  const normFocus = (f) => String(f || "").trim().toLowerCase();
+  const shortFocus = (f) => String(f).replace(/\s*day$/i, "").replace(/日$/, "");
+
+  function startOfWeek(d) {
+    const s = WEEK_START[oma.pref("week_start", "monday")] ?? 1;
+    return addDays(d, -((d.getDay() - s + 7) % 7));
   }
 
-  function checkIcon(className = "k-icon") {
-    const svg = svgNode("svg", { viewBox: "0 0 16 16", "aria-hidden": "true" });
-    svg.setAttribute("class", className);
-    svg.append(svgNode("path", { d: "M2.5 8.5l3.3 3.3 7.7-8" }));
+  function model() {
+    const plans = planRows(data.plan);
+    const real = data.sess.filter((i) => isISO(i.fields?.date) && String(i.fields?.focus || "").trim());
+    // A pending write stands in for its row until the row itself arrives; matched by content, since
+    // an ack does not always carry the id (and an inert preview never returns the row at all).
+    const claimed = new Set();
+    pending = pending.filter((p) => {
+      const hit = real.find((r) => !claimed.has(r.id) && r.fields.date === p.fields.date && r.fields.top_set === p.fields.top_set && r.fields.focus === p.fields.focus && p.saved);
+      if (hit) { claimed.add(hit.id); hit.was = p.id; return false; }
+      return true;
+    });
+    const sessions = real.concat(pending.map((p) => ({ id: p.id, fields: p.fields, position: 1e9, pending: true })))
+      .sort((a, b) => String(a.fields.date).localeCompare(String(b.fields.date)) || (a.position ?? 0) - (b.position ?? 0));
+
+    const groups = new Map();
+    const bySession = new Map();
+    for (const s of sessions) {
+      const p = parseSet(s.fields.top_set);
+      if (!p) continue;
+      const L = p.name ? liftOf(p.name) : liftOf(s.fields.focus);
+      if (!L && !p.name) continue;
+      const key = L ? L.key : `x:${p.name.toLowerCase()}`;
+      let g = groups.get(key);
+      if (!g) groups.set(key, g = { key, main: L, name: p.name, entries: [] });
+      if (p.name) g.name = p.name;
+      const e = { s, id: s.was || s.id, date: s.fields.date, w: p.w, unit: p.unit, reps: p.reps };
+      g.entries.push(e);
+      bySession.set(s.id, e);
+    }
+    for (const g of groups.values()) {
+      g.unit = g.entries.at(-1).unit;
+      let best = null;
+      for (const e of g.entries) {
+        e.v = Math.round(conv(e.w, e.unit, g.unit) * 10) / 10;
+        e.pr = "";
+        if (!best) { best = { v: e.v, reps: e.reps, e }; continue; }
+        if (e.v > best.v) { e.pr = "load"; e.gain = e.v - best.v; e.prev = best; best = { v: e.v, reps: e.reps, e }; }
+        else if (e.v === best.v && e.reps > best.reps) { e.pr = "reps"; e.prev = best; best = { v: e.v, reps: e.reps, e }; }
+      }
+      g.best = best;
+    }
+    // Lanes: the big three that have data, then any other lift logged at least three times.
+    let lanes = LIFTS.map((L) => groups.get(L.key)).filter(Boolean);
+    const extra = [...groups.values()].filter((g) => !g.main).sort((a, b) => b.entries.length - a.entries.length);
+    lanes = lanes.concat(extra.filter((g) => g.entries.length >= 3));
+    if (!lanes.length) lanes = extra.slice(0, 3);
+    if (!lanes.length) lanes = LIFTS.map((L) => ({ key: L.key, main: L, name: "", entries: [], best: null, unit: "kg" }));
+    lanes = lanes.slice(0, 4);
+
+    // The window: chart_weeks back from today, pulled in when history is shorter, never under 3 weeks.
+    const end = today();
+    const weeks = Math.max(4, Math.min(52, Math.round(oma.pref("chart_weeks", 12))));
+    let start = addDays(end, -weeks * 7);
+    const firsts = lanes.map((g) => g.entries[0]).filter(Boolean).map((e) => dateOnly(e.date));
+    const first = firsts.length ? new Date(Math.min(...firsts)) : null;
+    if (first && first > start) start = addDays(first, -4);
+    if (end - start < 21 * DAY) start = addDays(end, -21);
+    const dom = { start, end: addDays(end, 2), today: end, sparse: !!first && first > addDays(end, -weeks * 7) };
+
+    const cutoff = toISO(addDays(end, -30));
+    const recentPrs = lanes.reduce((n, g) => n + g.entries.filter((e) => e.pr && e.date >= cutoff).length, 0);
+    return { plans, sessions, groups, lanes, bySession, dom, recentPrs, week: weekModel(plans, sessions) };
+  }
+
+  // A planned day counts as done when its session happened that week — on the day, or moved to
+  // another day (matched by focus). A past planned day with neither is "missed", not "not yet".
+  function weekModel(plans, sessions) {
+    const now = today();
+    const nowIso = toISO(now);
+    const s0 = startOfWeek(now);
+    const days = Array.from({ length: 7 }, (_, i) => addDays(s0, i));
+    const first = toISO(days[0]);
+    const last = toISO(days[6]);
+    const inWeek = sessions.filter((s) => s.fields.date >= first && s.fields.date <= last);
+    const doneFoci = new Set(inWeek.map((s) => normFocus(s.fields.focus)));
+    const cells = days.map((d) => {
+      const iso = toISO(d);
+      const plan = plans.find((p) => p.day === DAY_KEYS[d.getDay()]) || null;
+      const here = inWeek.filter((s) => s.fields.date === iso);
+      let st;
+      if (plan) {
+        const same = here.some((s) => normFocus(s.fields.focus) === normFocus(plan.focus));
+        if (same) st = "done";
+        else if (doneFoci.has(normFocus(plan.focus))) st = "moved";
+        else if (here.length) st = "done";
+        else st = iso < nowIso ? "missed" : iso === nowIso ? "today" : "planned";
+      } else st = here.length ? "extra" : "rest";
+      return { d, iso, plan, here, st, isToday: iso === nowIso };
+    });
+    const planned = cells.filter((c) => c.plan);
+    const done = planned.filter((c) => c.st === "done" || c.st === "moved").length;
+    let next = cells.find((c) => c.st === "today" || c.st === "planned") || null;
+    if (!next && plans.length) {
+      for (let i = 1; i <= 7 && !next; i++) {
+        const d = addDays(days[6], i);
+        const p = plans.find((x) => x.day === DAY_KEYS[d.getDay()]);
+        if (p) next = { d, iso: toISO(d), plan: p, st: "planned" };
+      }
+    }
+    return { cells, planned: planned.length, done, next, first, last, inWeek };
+  }
+
+  // ── the climb ──
+  function drawLanes() {
+    if (!M) return;
+    const wrap = $("lanes");
+    const keep = new Set();
+    M.lanes.forEach((g, i) => {
+      keep.add(g.key);
+      let L = laneEls.get(g.key);
+      if (!L) {
+        const root = el("div", "lane");
+        const id = el("div", "lane-id");
+        const name = el("div", "lane-name");
+        const val = el("div", "lane-val");
+        const sub = el("div", "lane-sub");
+        const plot = el("div", "plot");
+        id.append(name, val, sub);
+        root.append(id, plot);
+        L = { root, name, val, sub, plot, sig: "", shown: null };
+        laneEls.set(g.key, L);
+      }
+      if (wrap.children[i] !== L.root) wrap.insertBefore(L.root, wrap.children[i] || null);
+      paintLane(g, L);
+    });
+    for (const [k, L] of laneEls) if (!keep.has(k)) { L.root.remove(); laneEls.delete(k); }
+    paintTicks();
+  }
+
+  function paintLane(g, L) {
+    const label = g.main ? t(g.main.label) : g.name;
+    L.name.textContent = label;
+    const cel = celebrate && celebrate.key === g.key && Date.now() < celebrate.until ? celebrate : null;
+    const best = g.best;
+    if (!best) {
+      L.val.className = "lane-val empty";
+      L.val.textContent = "—";
+      L.sub.textContent = "";
+    } else {
+      L.val.className = `lane-val${cel && cel.entry.pr ? " bump" : ""}`;
+      const target = best.v;
+      const html = `${esc(num(target))}<small>${esc(g.unit)}${best.reps ? ` × ${esc(num(best.reps, 0))}` : ""}</small>`;
+      if (cel && cel.fresh && L.shown !== null && L.shown !== target && !matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        rollNumber(L, L.shown, target, html);
+      } else if (!(L.rolling && L.rolling.to === target)) {
+        if (L.rolling) L.rolling = null;
+        L.val.innerHTML = html;
+      }
+      L.shown = target;
+      const inWin = g.entries.filter((e) => dateOnly(e.date) >= M.dom.start);
+      const before = g.entries.filter((e) => dateOnly(e.date) < M.dom.start);
+      const from = before.length ? Math.max(...before.map((e) => e.v)) : inWin[0]?.v;
+      const fromDate = before.length ? toISO(M.dom.start) : inWin[0]?.date;
+      const gain = from !== undefined ? best.v - from : 0;
+      if (cel && cel.subUntil > Date.now()) {
+        const e = cel.entry;
+        L.sub.innerHTML = `<b>${esc(e.pr === "reps" ? t("repPr") : `${t("newPr")} +${num(e.gain)} ${g.unit}`)}</b>`;
+      } else if (gain > 0 && fromDate) {
+        L.sub.innerHTML = `<b>+${esc(num(gain))} ${esc(g.unit)}</b> ${esc(t("gainSince", { date: fmt(fromDate) }))}`;
+      } else {
+        L.sub.textContent = t("prOn", { date: fmt(best.e.date) });
+      }
+    }
+    const W = Math.round(L.plot.clientWidth);
+    const H = Math.round(L.plot.clientHeight);
+    const sig = JSON.stringify([W, H, M.dom.start.getTime(), g.entries.map((e) => [e.date, e.v, e.reps, e.pr]), cel ? cel.id : "", lang()]);
+    if (sig === L.sig || !W) return;
+    L.sig = sig;
+    L.plot.replaceChildren(plotSvg(g, W, H, cel));
+  }
+
+  // The number rolls up to a new PR. A later paint that changes the target (a refused write)
+  // drops this roll and writes its own value; the roll then finds itself stale and stops.
+  function rollNumber(L, from, to, html) {
+    const roll = { to };
+    L.rolling = roll;
+    const tail = html.slice(html.indexOf("<small>"));
+    let t0 = 0;
+    const step = (now) => {
+      if (L.rolling !== roll) return;
+      t0 = t0 || now;
+      const k = Math.min(1, (now - t0) / 520);
+      const v = from + (to - from) * (1 - Math.pow(1 - k, 3));
+      L.val.innerHTML = k < 1 ? `${esc(num(Math.round(v * 2) / 2))}${tail}` : html;
+      if (k < 1) requestAnimationFrame(step);
+      else L.rolling = null;
+    };
+    setTimeout(() => requestAnimationFrame(step), 300);
+  }
+
+  function plotSvg(g, W, H, cel) {
+    const dom = M.dom;
+    const padL = 6;
+    const padR = 10;
+    const top = 22;
+    const bot = 8;
+    const svg = sv("svg", { viewBox: `0 0 ${W} ${H}`, role: "img" });
+    const span = dom.end - dom.start;
+    const x = (iso) => padL + ((dateOnly(iso) - dom.start) / span) * (W - padL - padR);
+    for (const tk of M.ticks || []) svg.append(sv("line", { class: "grid", x1: tk.x, x2: tk.x, y1: 4, y2: H - 2 }));
+    const inW = g.entries.filter((e) => dateOnly(e.date) >= dom.start);
+    const before = g.entries.filter((e) => dateOnly(e.date) < dom.start);
+    const base = before.length ? Math.max(...before.map((e) => e.v)) : null;
+    const label = g.main ? t(g.main.label) : g.name;
+    if (!inW.length) {
+      svg.setAttribute("aria-label", `${label}: ${t(base === null ? "noSetYet" : "noneInWindow")}`);
+      const yMid = H / 2 + 4;
+      svg.append(sv("line", { class: "base", x1: padL, x2: W - padR, y1: yMid, y2: yMid }));
+      const n = sv("text", { class: "note", x: padL + 4, y: yMid - 8 });
+      n.textContent = t(base === null ? "noSetYet" : "noneInWindow");
+      svg.append(n);
+      return svg;
+    }
+    const vals = inW.map((e) => e.v).concat(base === null ? [] : [base]);
+    let hi = Math.max(...vals);
+    let lo = Math.min(...vals);
+    const minSpan = g.unit === "lb" ? 20 : 10;
+    if (hi - lo < minSpan) lo = hi - minSpan;
+    const y = (v) => top + ((hi - v) / (hi - lo)) * (H - top - bot);
+    svg.setAttribute("aria-label", `${label}: ${inW.map((e) => `${fmt(e.date)} ${setText(e.v, g.unit, e.reps)}${e.pr ? " PR" : ""}`).join(", ")}`);
+
+    svg.append(sv("polyline", { class: "trace", points: inW.map((e) => `${x(e.date).toFixed(1)},${y(e.v).toFixed(1)}`).join(" ") }));
+
+    // The staircase: the best-so-far level, stepping up only at a load PR, carried on to today.
+    const celE = cel ? inW.find((e) => e.id === cel.id && e.pr === "load") : null;
+    let lvl = base ?? inW[0].v;
+    let d = `M${base === null ? x(inW[0].date).toFixed(1) : padL},${y(lvl).toFixed(1)}`;
+    let tail = "";
+    for (const e of inW) {
+      if (e.v <= lvl) continue;
+      const seg = ` H${x(e.date).toFixed(1)} V${y(e.v).toFixed(1)}`;
+      if (e === celE) { d += ` H${x(e.date).toFixed(1)}`; tail = `M${x(e.date).toFixed(1)},${y(lvl).toFixed(1)} V${y(e.v).toFixed(1)}`; }
+      else if (tail) tail += seg;
+      else d += seg;
+      lvl = e.v;
+    }
+    const endX = ` H${x(toISO(dom.today)).toFixed(1)}`;
+    if (tail) tail += endX;
+    else d += endX;
+    svg.append(sv("path", { class: "stair", d }));
+    if (tail) {
+      const p = sv("path", { class: "stair climb-in", d: tail });
+      const len = Math.abs(y(lvl) - y(celE.prev.v)) + Math.abs(x(toISO(dom.today)) - x(celE.date)) + 2;
+      p.style.setProperty("--len", len.toFixed(1));
+      svg.append(p);
+    }
+
+    for (const e of inW) {
+      const isBest = g.best && g.best.e === e;
+      const c = sv("circle", { class: `dot${e.pr || isBest ? " pr" : ""}${cel && cel.id === e.id ? " pop" : ""}`, cx: x(e.date).toFixed(1), cy: y(e.v).toFixed(1), r: e.pr || isBest ? 4 : 3.4 });
+      const tt = sv("title");
+      tt.textContent = `${fullDate(e.date)} · ${setText(e.w, e.unit, e.reps)}${e.pr === "load" ? " · PR" : e.pr === "reps" ? ` · ${t("repPr")}` : ""}${e.s.fields.feel ? ` · ${e.s.fields.feel}` : ""}`;
+      c.append(tt);
+      svg.append(c);
+      if (cel && cel.id === e.id && e.pr) svg.append(sv("circle", { class: "burst go", cx: x(e.date).toFixed(1), cy: y(e.v).toFixed(1), r: 4 }));
+    }
+    const be = g.best?.e;
+    if (be && dateOnly(be.date) >= dom.start) {
+      const fx = Math.max(12, Math.min(W - 12, x(be.date)));
+      const fy = y(be.v) - 14;
+      // position on the outer group, motion on the inner one: a CSS transform would replace the attribute
+      const at = sv("g", { transform: `translate(${fx.toFixed(1)},${fy.toFixed(1)})` });
+      const f = sv("g", { class: `flag${cel && cel.id === be.id ? " drop" : ""}` });
+      f.append(sv("rect", { x: -11, y: -7, width: 22, height: 13, rx: 6.5 }));
+      const tx = sv("text", { x: 0, y: 3, "text-anchor": "middle" });
+      tx.textContent = "PR";
+      f.append(tx);
+      at.append(f);
+      svg.append(at);
+    }
     return svg;
   }
 
-  function toISO(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  function locale() {
-    return localeValue();
-  }
-
-  function formatDate(iso, options = { year: "numeric", month: "short", day: "numeric" }) {
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(iso))) return String(iso || "");
-    const mode = oma.pref("date_format", "auto");
-    if (mode === "yyyy-mm-dd") return String(iso);
-    const [year, month, day] = String(iso).split("-");
-    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
-    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
-    return new Intl.DateTimeFormat(locale(), options).format(dateOnly(iso));
-  }
-
-  function formatNumber(value, digits = 1) {
-    return new Intl.NumberFormat(locale(), {
-      maximumFractionDigits: digits
-    }).format(value);
-  }
-
-  function validDayKey(value) {
-    const key = String(value || "").toLowerCase();
-    return DAY_INDEX.has(key) ? key : "";
-  }
-
-  function normalizeExercise(value) {
-    if (typeof value === "string") {
-      const name = value.trim();
-      return name ? { name, muscle: "", equipment: "" } : null;
+  // Ticks are computed once per paint from the first plot's width, and every lane uses the same x.
+  function computeTicks() {
+    const first = laneEls.values().next().value;
+    const W = first ? first.plot.clientWidth : 0;
+    const dom = M.dom;
+    const span = dom.end - dom.start;
+    const x = (d) => 6 + ((d - dom.start) / span) * (W - 16);
+    const out = [];
+    const weekly = span <= 50 * DAY;
+    let d = weekly ? startOfWeek(addDays(dom.start, 6)) : new Date(dom.start.getFullYear(), dom.start.getMonth() + 1, 1);
+    while (d <= dom.end) {
+      out.push({ x: Math.round(x(d) * 10) / 10, label: weekly ? fmt(toISO(d)) : new Intl.DateTimeFormat(loc(), { month: "short" }).format(d) });
+      d = weekly ? addDays(d, 7) : new Date(d.getFullYear(), d.getMonth() + 1, 1);
     }
-    if (!value || typeof value !== "object" || Array.isArray(value)) return null;
-    const name = String(value.name || "").trim();
-    if (!name) return null;
-    return {
-      name,
-      muscle: String(value.muscle || "").trim(),
-      equipment: String(value.equipment || "").trim()
+    return { W, list: out, nowX: x(dom.today) };
+  }
+  function paintTicks() {
+    const box = $("ticks");
+    const tk = computeTicks();
+    box.replaceChildren();
+    let lastX = -99;
+    const nowX = tk.nowX;
+    for (const k of tk.list) {
+      if (k.x < 16 || k.x > tk.W - 16 || k.x - lastX < 46 || Math.abs(nowX - k.x) < 40) continue;
+      const s = el("span", "tick", k.label);
+      s.style.left = `${k.x}px`;
+      box.append(s);
+      lastX = k.x;
+    }
+    const n = el("span", "tick now", t("today"));
+    n.style.left = `${Math.min(nowX, tk.W - 18)}px`;
+    box.append(n);
+  }
+
+  // ── this week ──
+  const GLYPH = {
+    done: '<circle class="g-fill" cx="10" cy="10" r="8"/><path class="g-on" d="M6.4 10.3l2.4 2.4 4.8-5.2"/>',
+    extra: '<circle class="g-fill" cx="10" cy="10" r="8"/><path class="g-on" d="M6.4 10.3l2.4 2.4 4.8-5.2"/>',
+    moved: '<circle class="g-acc" cx="10" cy="10" r="7.5" stroke-dasharray="3 2.4"/><path class="g-acc" d="M6.8 10.3l2.2 2.2 4.2-4.6"/>',
+    missed: '<circle class="g-miss" cx="10" cy="10" r="7.5"/>',
+    today: '<circle class="g-acc" cx="10" cy="10" r="7.5"/><circle class="g-fill" cx="10" cy="10" r="3"/>',
+    planned: '<circle class="g-ring" cx="10" cy="10" r="7.5"/>',
+    rest: '<circle class="g-dot" cx="10" cy="10" r="1.8"/>'
+  };
+  const ST_KEY = { done: "stDone", extra: "stExtra", moved: "stMoved", missed: "stMissed", today: "stToday", planned: "stPlanned", rest: "stRest" };
+
+  function paintWeek() {
+    const w = M.week;
+    const sig = JSON.stringify([lang(), w.cells.map((c) => [c.iso, c.st, c.plan?.focus, c.here.map((s) => s.fields.focus)]), w.next?.iso]);
+    if (sig === sigs.week) return;
+    sigs.week = sig;
+    $("doneOf").textContent = w.planned ? t("doneOf", { done: num(w.done, 0), total: num(w.planned, 0) }) : "";
+    const next = w.next;
+    $("nextUp").innerHTML = !M.plans.length ? esc(t("noPlan"))
+      : next ? t(next.iso === toISO(today()) ? "nextToday" : "nextOn", { focus: esc(next.plan.focus), day: esc(fmt(next.iso, { weekday: "long" })) }) : "";
+    const strip = $("strip");
+    strip.replaceChildren();
+    for (const c of w.cells) {
+      const cell = el("div", `cell st-${c.st}${c.isToday ? " is-today" : ""}`);
+      const focus = c.st === "moved" ? c.plan.focus : (c.here[0]?.fields.focus || c.plan?.focus || "");
+      const said = [fullDate(c.iso), focus, t(ST_KEY[c.st])].filter(Boolean).join(" · ");
+      cell.title = said;
+      cell.setAttribute("aria-label", said);
+      cell.append(el("span", "wd", new Intl.DateTimeFormat(loc(), { weekday: "short" }).format(c.d)));
+      cell.append(el("span", "dn", num(c.d.getDate(), 0)));
+      const g = sv("svg", { viewBox: "0 0 20 20", "aria-hidden": "true" });
+      g.innerHTML = GLYPH[c.st];
+      cell.append(g);
+      cell.append(el("span", "fc", focus ? shortFocus(focus) : t("restShort")));
+      strip.append(cell);
+    }
+  }
+
+  // ── today's plan: tick sets off (kept on this screen only), then log the top set ──
+  function paintToday() {
+    const box = $("today");
+    const c = M.week.cells.find((x) => x.isToday);
+    const plan = c && c.st === "today" ? c.plan : null;
+    const sets = Math.max(1, Math.min(6, Math.round(oma.pref("work_sets", 3))));
+    const sig = JSON.stringify([lang(), plan?.id, plan?.exercises, sets, [...ticked]]);
+    if (sig === sigs.today) return;
+    sigs.today = sig;
+    box.hidden = !plan || !plan.exercises.length;
+    if (box.hidden) return;
+    box.replaceChildren();
+    const k = (i, j) => `${toISO(today())}:${plan.id}:${i}:${j}`;
+    const total = plan.exercises.length * sets;
+    const done = plan.exercises.reduce((n, _, i) => n + Array.from({ length: sets }, (_, j) => ticked.has(k(i, j))).filter(Boolean).length, 0);
+    const head = el("div", "today-head");
+    head.append(el("h3", "", t("todayTitle", { focus: plan.focus })), el("span", "k-mut k-num", t("setsProgress", { done: num(done, 0), total: num(total, 0) })));
+    box.append(head);
+    plan.exercises.forEach((ex, i) => {
+      const row = el("div", "ex");
+      const name = el("div", "ex-name", ex.name);
+      if (ex.muscle || ex.equipment) name.append(el("small", "", [ex.muscle, ex.equipment].filter(Boolean).join(" · ")));
+      const pips = el("div", "pips");
+      for (let j = 0; j < sets; j++) {
+        const on = ticked.has(k(i, j));
+        const b = el("button", `pip${on ? " on" : ""}`);
+        b.type = "button";
+        b.setAttribute("aria-pressed", String(on));
+        b.setAttribute("aria-label", t("setAria", { name: ex.name, n: j + 1 }));
+        if (on) b.innerHTML = '<svg viewBox="0 0 16 16" aria-hidden="true"><path class="g-on" d="M3 8.5l3 3 7-7"/></svg>';
+        else b.textContent = num(j + 1, 0);
+        b.onclick = () => { if (ticked.has(k(i, j))) ticked.delete(k(i, j)); else ticked.add(k(i, j)); paintToday(); };
+        pips.append(b);
+      }
+      row.append(name, pips);
+      box.append(row);
+    });
+    const foot = el("div", "today-foot");
+    foot.append(el("span", "k-grow"));
+    const go = el("button", "k-btn primary", t("logTop"));
+    go.type = "button";
+    go.onclick = () => {
+      const lines = plan.exercises.map((ex, i) => {
+        const n = Array.from({ length: sets }, (_, j) => ticked.has(k(i, j))).filter(Boolean).length;
+        return n ? `${ex.name} ${n} ${lang() === "zh" ? "组" : n === 1 ? "set" : "sets"}` : "";
+      }).filter(Boolean);
+      openLog({ lift: liftKeyForPlan(plan), focus: plan.focus, notes: lines.join(lang() === "zh" ? "；" : "; ") });
     };
+    foot.append(go);
+    box.append(foot);
   }
 
-  function safeExercises(value) {
-    let entries = value;
-    if (!Array.isArray(entries) && typeof value !== "string") return [];
-    if (typeof value === "string") {
-      entries = [];
+  // ── history ──
+  function paintHistory() {
+    const list = $("histList");
+    const rows = M.sessions.slice().reverse();
+    $("histCount").textContent = t("logged", { n: num(M.sessions.filter((s) => !s.pending).length, 0) });
+    const sig = JSON.stringify([lang(), oma.pref("date_format", "auto"), toISO(today()), rows.map((s) => [s.id, s.fields, !!s.pending, M.bySession.get(s.id)?.pr])]);
+    if (sig === sigs.hist) return;
+    const had = new Set([...list.children].map((n) => n.dataset.id));
+    sigs.hist = sig;
+    list.replaceChildren();
+    if (!rows.length) list.append(el("p", "k-mut", t("noSessions")));
+    for (const s of rows) {
+      const f = s.fields;
+      const e = M.bySession.get(s.id);
+      const row = el("article", `row${s.pending ? " pending" : ""}${loaded && had.size && !had.has(s.id) && !had.has(s.was) ? " fresh" : ""}`);
+      row.dataset.id = s.id;
+      const dc = el("div", "row-date");
+      dc.append(el("b", "", fmt(f.date)), el("span", "", rel(f.date)));
+      dc.title = fullDate(f.date);
+      const main = el("div", "row-main");
+      const top = el("div", "row-top");
+      top.append(el("strong", "", e ? topLabel(f.top_set, e) : String(f.top_set || "").trim() || t("noTop")));
+      top.append(el("span", "focus", String(f.focus)));
+      if (e?.pr) top.append(el("span", "k-badge pr", e.pr === "reps" ? t("repPr") : "PR"));
+      if (s.pending) top.append(el("span", "k-badge", t("saving")));
+      main.append(top);
+      const note = [f.feel, f.volume_note].filter((x) => String(x || "").trim());
+      if (note.length) {
+        const n = el("p", "row-note");
+        if (f.feel) n.append(el("i", "", `${f.feel}${f.volume_note ? " · " : ""}`));
+        if (f.volume_note) n.append(document.createTextNode(String(f.volume_note)));
+        main.append(n);
+      }
+      row.append(dc, main);
+      list.append(row);
+    }
+  }
+  const topLabel = (raw, e) => `${parseSet(raw).name || ""} ${setText(e.w, e.unit, e.reps)}`.trim();
+
+  // ── render: one model, painted in place ──
+  function render() {
+    applyI18n();
+    document.body.dataset.density = oma.pref("density", "comfortable");
+    M = model();
+    const empty = loaded && !M.plans.length && !M.sessions.length;
+    // Empty: the invitation — unless they opened the paste box, which lives in the history section.
+    const pasting = !$("batch").hidden;
+    $("empty").hidden = !empty || pasting;
+    $("climb").hidden = empty;
+    $("week").hidden = empty;
+    $("hist").hidden = empty && !pasting;
+    if (empty) { $("today").hidden = true; $("histList").replaceChildren(); sigs.hist = ""; $("histCount").textContent = ""; return; }
+    const weeks = Math.round((M.dom.today - M.dom.start) / (7 * DAY));
+    $("climbSpan").textContent = M.dom.sparse ? t("spanSince", { date: fmt(toISO(addDays(M.dom.start, 4))) }) : t("spanWeeks", { n: num(weeks, 0) });
+    const pc = $("prCount");
+    pc.hidden = !M.recentPrs;
+    pc.textContent = M.recentPrs === 1 ? t("prCount1") : t("prCount", { n: num(M.recentPrs, 0) });
+    drawLanes();
+    // ticks depend on the plot width, which exists only after the lanes are in the DOM
+    const tk = computeTicks();
+    const tsig = JSON.stringify(tk);
+    if (tsig !== sigs.ticks) {
+      sigs.ticks = tsig;
+      M.ticks = tk.list;
+      for (const L of laneEls.values()) L.sig = "";
+      drawLanes();
+    } else M.ticks = tk.list;
+    paintWeek();
+    paintToday();
+    paintHistory();
+    if (!$("logPanel").hidden) verdict();
+  }
+
+  // ── refresh (two declared collections ⇒ we fetch what we render and own the staleness) ──
+  async function readAll(c) {
+    if (typeof oma.readCollection === "function") {
       try {
-        const parsed = JSON.parse(value);
-        if (Array.isArray(parsed)) entries = parsed;
-      } catch {
-        entries = value.split(/[、,，\n]/);
-      }
+        const r = await oma.readCollection(c);
+        if (Array.isArray(r?.items)) return r.items;
+      } catch { /* fall back to one page */ }
     }
-    return entries.map(normalizeExercise).filter(Boolean);
-  }
-
-  function exerciseStateKey(exercise, exerciseIndex, setIndex) {
-    return `${exerciseIndex}:${exercise.name}:${exercise.muscle}:${exercise.equipment}:${setIndex}`;
-  }
-
-  function exercisePromptText(exercise) {
-    const details = [exercise.muscle, exercise.equipment].filter(Boolean).join(", ");
-    return details ? `${exercise.name} (${details})` : exercise.name;
-  }
-
-  function exerciseListText(exercises) {
-    return exercises.map(exercisePromptText).join(language() === "zh" ? "、" : ", ");
-  }
-
-  function planRows(items) {
-    return items.filter((item) => validDayKey(item.fields?.day) && String(item.fields?.focus || "").trim())
-      .map((item) => ({
-        item,
-        day: validDayKey(item.fields.day),
-        focus: String(item.fields.focus).trim(),
-        exercises: safeExercises(item.fields.exercises)
-      }));
-  }
-
-  function sessionRows(items) {
-    return items.filter((item) => /^\d{4}-\d{2}-\d{2}$/.test(String(item.fields?.date || "")) && String(item.fields?.focus || "").trim())
-      .sort((a, b) => String(a.fields.date).localeCompare(String(b.fields.date)) || a.position - b.position);
-  }
-
-  function startOfWeek(base) {
-    const startKey = oma.pref("week_start", "monday");
-    const startIndex = WEEK_START_INDEX[startKey] ?? 1;
-    const delta = (base.getDay() - startIndex + 7) % 7;
-    return new Date(base.getFullYear(), base.getMonth(), base.getDate() - delta);
-  }
-
-  function datesOfWeek(base) {
-    const start = startOfWeek(base);
-    return Array.from({ length: 7 }, (_, index) => new Date(start.getFullYear(), start.getMonth(), start.getDate() + index));
-  }
-
-  function planForDate(date, plans) {
-    const key = DAY_KEYS[date.getDay()];
-    return plans.find((plan) => plan.day === key) || null;
-  }
-
-  function nextPlanOccurrence(plans, sessions) {
-    const now = today();
-    const doneDates = new Set(sessions.map((item) => String(item.fields.date)));
-    const candidates = [];
-    for (const plan of plans) {
-      const targetIndex = DAY_INDEX.get(plan.day);
-      const offset = targetIndex - now.getDay();
-      const anchor = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset);
-      let occurrence = nextOccurrence(toISO(anchor), 7);
-      if (toISO(occurrence) === toISO(now) && doneDates.has(toISO(now))) {
-        occurrence = new Date(occurrence.getFullYear(), occurrence.getMonth(), occurrence.getDate() + 7);
-      }
-      candidates.push({ plan, date: occurrence });
-    }
-    candidates.sort((a, b) => a.date - b.date);
-    return candidates[0] || null;
-  }
-
-  function relativeTrainingDay(iso) {
-    const days = daysUntil(iso);
-    if (days === 0) return t("today");
-    if (days === 1) return t("tomorrow");
-    return t("inDays", { count: formatNumber(days, 0) });
-  }
-
-  function relativeSessionDate(iso) {
-    const days = daysUntil(iso);
-    if (days === 0) return t("today");
-    if (days === -1) return t("yesterday");
-    if (days < -1) return t("daysAgo", { count: formatNumber(Math.abs(days), 0) });
-    if (days === 1) return t("tomorrow");
-    return t("inDays", { count: formatNumber(days, 0) });
-  }
-
-  function extractLiftWeight(session, lift) {
-    const text = String(session.fields.top_set || "").toLowerCase();
-    if (!lift.terms.some((term) => text.includes(term.toLowerCase()))) return null;
-    if (lift.reject.some((word) => text.includes(word.toLowerCase()))) return null;
-    const match = text.match(/(\d+(?:\.\d+)?)\s*kg/i);
-    if (!match) return null;
-    const weight = Number(match[1]);
-    return Number.isFinite(weight) ? weight : null;
-  }
-
-  function liftSeries(sessions, lift, limit) {
-    return sessions.map((session) => ({
-      session,
-      weight: extractLiftWeight(session, lift)
-    })).filter((entry) => entry.weight !== null).slice(-limit);
-  }
-
-  function sessionLift(session) {
-    const weighted = MAIN_LIFTS.find((lift) => extractLiftWeight(session, lift) !== null);
-    if (weighted) return weighted;
-    const focus = String(session.fields.focus || "").toLowerCase();
-    return MAIN_LIFTS.find((lift) => lift.terms.some((term) => focus.includes(term.toLowerCase()))) || null;
-  }
-
-  function personalRecord(sessions, lift) {
-    let best = null;
-    for (const session of sessions) {
-      const weight = extractLiftWeight(session, lift);
-      if (weight === null || (best && weight <= best.weight)) continue;
-      best = { session, weight };
-    }
-    return best;
-  }
-
-  function topSetSummary(session) {
-    const text = String(session.fields.top_set || "").trim();
-    const set = text.match(/(\d+(?:\.\d+)?)\s*kg\s*[×x]\s*(\d+)/i);
-    if (set) return `${formatNumber(Number(set[1]))} kg × ${formatNumber(Number(set[2]), 0)}`;
-    const weight = text.match(/(\d+(?:\.\d+)?)\s*kg/i);
-    if (weight) return `${formatNumber(Number(weight[1]))} kg`;
-    return text || t("missingTopSet");
-  }
-
-  function loggedSetCount(note) {
-    const text = String(note || "");
-    let total = 0;
-    for (const match of text.matchAll(/\b(\d+)\s*[×x]\s*\d+\b/gi)) total += Number(match[1]);
-    const wordValues = { one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10 };
-    for (const match of text.matchAll(/\b(one|two|three|four|five|six|seven|eight|nine|ten)\b(?:\s+[\w-]+){0,3}\s+sets?\b/gi)) {
-      total += wordValues[match[1].toLowerCase()] || 0;
-    }
-    return total;
-  }
-
-  function showStatus(message, tone = "ok", persistent = false) {
-    const strip = document.getElementById("statusStrip");
-    const badge = document.getElementById("statusMessage");
-    badge.className = `k-badge ${tone}`;
-    badge.textContent = message;
-    strip.hidden = false;
-    clearTimeout(statusTimer);
-    if (!persistent) {
-      statusTimer = setTimeout(() => {
-        strip.hidden = true;
-      }, 3200);
-    }
-  }
-
-  function clearError() {
-    clearTimeout(statusTimer);
-    document.getElementById("statusStrip").hidden = true;
-  }
-
-  function toolFailure(response, fallback) {
-    const structured = response?.structuredContent;
-    if (!response || response.ok === false || response.isError || structured?.ok === false) {
-      const text = response?.note || structured?.note || response?.reason || structured?.reason || response?.content?.[0]?.text || fallback;
-      throw new Error(text);
-    }
-  }
-
-  async function readCollectionItems(collection) {
-    const reply = await oma.callTool("data_list", { collection, limit: 500 });
-    toolFailure(reply, t("readFailed", { collection }));
+    const reply = await oma.callTool("data_list", { collection: c, limit: 500 });
     const items = reply?.structuredContent?.items;
-    if (!Array.isArray(items)) throw new Error(t("invalidData", { collection }));
+    if (reply?.isError || !Array.isArray(items)) throw new Error(t("readFailed", { c }));
     return items;
   }
-
-  function refreshCollections() {
+  function refresh() {
     refreshQueued = true;
     if (refreshTask) return refreshTask;
     refreshTask = (async () => {
       while (refreshQueued) {
         refreshQueued = false;
-        const [planItems, sessionItems] = await Promise.all([
-          readCollectionItems(PLAN_COLLECTION),
-          readCollectionItems(SESSION_COLLECTION)
-        ]);
-        latestData = { planItems, sessionItems };
+        const [plan, sess] = await Promise.all([readAll(PLAN), readAll(SESS)]);
+        data = { plan, sess };
+        loaded = true;
         render();
       }
-    })().finally(() => {
-      refreshTask = null;
-    });
+    })().finally(() => { refreshTask = null; });
     return refreshTask;
   }
+  const pull = () => { refresh().catch((e) => showStatus(t("refreshFailed", { error: String(e?.message || e) }), true, true)); };
 
-  function requestRefresh() {
-    void refreshCollections().catch((error) => {
-      showStatus(t("refreshFailed", { error: String(error?.message || error) }), "bad", true);
-    });
+  // ── writing (contract unchanged: data_add_item into training-sessions, group "session") ──
+  function writeFailure(r) {
+    const sc = r?.structuredContent;
+    if (!r || r.ok === false || r.isError || sc?.ok === false) return r?.note || sc?.note || r?.reason || sc?.reason || r?.content?.[0]?.text || t("saveFailed");
+    return "";
   }
+  // randomUUID needs a secure context; a sandboxed preview is not always one.
+  const uuid = () => (crypto.randomUUID ? crypto.randomUUID() : "10000000-1000-4000-8000-100000000000".replace(/[018]/g, (c) => (c ^ (crypto.getRandomValues(new Uint8Array(1))[0] & (15 >> (c / 4)))).toString(16)));
+  const addSession = (fields) => oma.callTool("data_add_item", { command_id: uuid(), collection: SESS, group: "session", fields, actor: "human" });
 
-  function renderOverview(plans, sessions) {
-    const week = datesOfWeek(today());
-    const weekStart = toISO(week[0]);
-    const weekEnd = toISO(week[6]);
-    const sessionDates = new Set(sessions.filter((item) => item.fields.date >= weekStart && item.fields.date <= weekEnd)
-      .map((item) => String(item.fields.date)));
-    const plannedDates = week.filter((date) => planForDate(date, plans));
-    const done = plannedDates.filter((date) => sessionDates.has(toISO(date))).length;
-    document.getElementById("weekScore").textContent = `${done}/${plannedDates.length}`;
-
-    const next = nextPlanOccurrence(plans, sessions);
-    document.getElementById("nextFocus").textContent = next ? displayFocus(next.plan.focus) : t("awaitingPlan");
-    document.getElementById("nextWhen").textContent = next
-      ? t("nextSession", { when: relativeTrainingDay(toISO(next.date)) })
-      : t("tellAiRhythm");
-
-    const latest = sessions.at(-1);
-    document.getElementById("latestTop").textContent = latest?.fields.top_set || displayFocus(latest?.fields.focus) || t("noEntries");
-    document.getElementById("sessionCount").textContent = t("sessionCount", { count: formatNumber(sessions.length, 0) });
-  }
-
-  function renderWeek(plans, sessions) {
-    const root = document.getElementById("weekGrid");
-    root.innerHTML = "";
-    const now = today();
-    const todayIso = toISO(now);
-    const week = datesOfWeek(now);
-    const sessionDates = new Set(sessions.map((item) => String(item.fields.date)));
-
-    document.getElementById("weekRange").textContent = `${formatDate(toISO(week[0]), { month: "short", day: "numeric" })} – ${formatDate(toISO(week[6]), { month: "short", day: "numeric" })}`;
-
-    for (const date of week) {
-      const iso = toISO(date);
-      const plan = planForDate(date, plans);
-      const done = Boolean(plan && sessionDates.has(iso));
-      const isToday = iso === todayIso;
-      const cell = el("div", `week-day${plan ? " training" : ""}${done ? " done" : ""}${isToday ? " today" : ""}`);
-      cell.title = [formatDate(iso), plan ? displayFocus(plan.focus) : t("restDay"), done ? t("completed") : ""].filter(Boolean).join(" · ");
-
-      const top = el("div", "day-top");
-      top.append(el("span", "day-name", new Intl.DateTimeFormat(locale(), { weekday: "narrow" }).format(date)));
-      if (done) {
-        const mark = el("span", "day-check");
-        mark.append(checkIcon(""));
-        top.append(mark);
-      } else if (isToday) {
-        top.append(el("span", "today-pip"));
+  async function logSession(fields) {
+    const p = { id: `pending-${++pendSeq}`, fields, saved: false };
+    pending.push(p);
+    M = model();
+    const e = M.bySession.get(p.id);
+    if (e) {
+      const lane = M.lanes.find((g) => g.entries.includes(e));
+      if (lane) {
+        celebrate = { id: p.id, key: lane.key, entry: e, fresh: !!e.pr, until: Date.now() + 1600, subUntil: e.pr ? Date.now() + 9000 : 0 };
+        if (e.pr) {
+          $("live").textContent = t("announcePr", { lift: lane.main ? t(lane.main.label) : lane.name, set: setText(e.w, e.unit, e.reps) });
+          setTimeout(render, 9100);
+        }
       }
-
-      const bottom = el("div", "day-bottom");
-      bottom.append(el("span", "day-date", formatNumber(date.getDate(), 0)));
-      bottom.append(el("span", "day-focus", plan ? displayFocus(plan.focus) : t("rest")));
-      cell.append(top, bottom);
-      root.append(cell);
     }
-  }
-
-  function resetChecksIfNeeded(plan) {
-    const nextKey = `${toISO(today())}:${plan?.item.id || plan?.focus || "rest"}`;
-    if (nextKey === checkKey) return;
-    checkKey = nextKey;
-    completedSets.clear();
-  }
-
-  function setDone(exercise, exerciseIndex, setIndex) {
-    const key = exerciseStateKey(exercise, exerciseIndex, setIndex);
-    if (completedSets.has(key)) completedSets.delete(key);
-    else completedSets.set(key, true);
-    renderToday(planRows(latestData.planItems), sessionRows(latestData.sessionItems));
-  }
-
-  function completedVolume(plan, workSets) {
-    const separator = language() === "zh" ? "；" : "; ";
-    return plan.exercises.map((exercise) => t("volumeWorkSets", {
-      name: exercise.name,
-      count: formatNumber(workSets, 0)
-    })).join(separator);
-  }
-
-  function allSetsDone(plan, workSets) {
-    if (!plan.exercises.length) return false;
-    return plan.exercises.every((exercise, exerciseIndex) => Array.from(
-      { length: workSets },
-      (_, setIndex) => completedSets.has(exerciseStateKey(exercise, exerciseIndex, setIndex))
-    ).every(Boolean));
-  }
-
-  function renderToday(plans, sessions) {
-    const root = document.getElementById("todayCard");
-    root.innerHTML = "";
-    const now = today();
-    const plan = planForDate(now, plans);
-    resetChecksIfNeeded(plan);
-
-    if (!plan) {
-      root.className = "k-card today-card";
-      const next = nextPlanOccurrence(plans, sessions);
-      const visual = el("div", "rest-visual");
-      const glyph = el("div", "rest-glyph");
-      glyph.innerHTML = '<svg viewBox="0 0 72 44" aria-hidden="true"><path d="M7 22h58M12 16v12M17 13v18M55 13v18M60 16v12"/><path d="M28 8c5 5 11 5 16 0M29 36c4-4 10-4 14 0" opacity=".45"/></svg>';
-      const copy = el("div");
-      copy.append(el("span", "k-badge info", t("restDay")));
-      copy.append(el("h2", "today-title", t("noFixedTraining")));
-      copy.append(el("p", "k-sub", next
-        ? t("nextTrainingCopy", { when: relativeTrainingDay(toISO(next.date)), focus: displayFocus(next.plan.focus) })
-        : t("noPlanCopy")));
-      const action = el("button", "k-btn sec", t("logFreeTraining"));
-      action.type = "button";
-      action.onclick = () => openRecord({ focus: t("freeTraining"), volume: "" });
-      copy.append(action);
-      visual.append(glyph, copy);
-      root.append(visual);
-      return;
-    }
-
-    const workSets = Math.max(1, Math.min(6, Math.round(oma.pref("work_sets", 3))));
-    const head = el("div", "today-card-head");
-    const dateBlock = el("div", "today-date-block");
-    dateBlock.append(el("strong", "", formatNumber(now.getDate(), 0)));
-    dateBlock.append(el("span", "", new Intl.DateTimeFormat(locale(), { weekday: "short" }).format(now)));
-    const title = el("div", "k-grow");
-    title.append(el("span", "k-badge info", t("todayTraining")));
-    title.append(el("h2", "today-title", displayFocus(plan.focus)));
-    title.append(el("div", "k-sub", t("exerciseSummary", {
-      count: formatNumber(plan.exercises.length, 0),
-      sets: formatNumber(workSets, 0)
-    })));
-    head.append(dateBlock, title);
-
-    const list = el("div", "exercise-list");
-    plan.exercises.forEach((exercise, exerciseIndex) => {
-      const row = el("div", "exercise-row");
-      const copy = el("div", "exercise-copy");
-      copy.append(el("div", "exercise-name", exercise.name));
-      if (exercise.muscle || exercise.equipment) {
-        const meta = el("div", "exercise-meta");
-        if (exercise.muscle) meta.append(el("span", "k-chip static", t("muscleChip", { value: exercise.muscle })));
-        if (exercise.equipment) meta.append(el("span", "k-chip static", t("equipmentChip", { value: exercise.equipment })));
-        copy.append(meta);
-      }
-      row.append(copy);
-      const sets = el("div", "set-group");
-      sets.setAttribute("aria-label", t("workSetsAria", { name: exercise.name }));
-      for (let setIndex = 0; setIndex < workSets; setIndex++) {
-        const checked = completedSets.has(exerciseStateKey(exercise, exerciseIndex, setIndex));
-        const button = el("button", `set-toggle${checked ? " on" : ""}`);
-        button.type = "button";
-        button.setAttribute("aria-pressed", String(checked));
-        button.setAttribute("aria-label", t(checked ? "setDoneAria" : "setOpenAria", {
-          name: exercise.name,
-          set: formatNumber(setIndex + 1, 0)
-        }));
-        if (checked) button.append(checkIcon(""));
-        else button.textContent = formatNumber(setIndex + 1, 0);
-        button.onclick = () => setDone(exercise, exerciseIndex, setIndex);
-        sets.append(button);
-      }
-      row.append(sets);
-      list.append(row);
-    });
-
-    const foot = el("div", "today-card-foot k-row");
-    const progress = plan.exercises.reduce((count, exercise, exerciseIndex) => count + Array.from(
-      { length: workSets },
-      (_, setIndex) => completedSets.has(exerciseStateKey(exercise, exerciseIndex, setIndex))
-    ).filter(Boolean).length, 0);
-    foot.append(el("span", "k-mut k-num", t("progressSets", {
-      done: formatNumber(progress, 0),
-      total: formatNumber(plan.exercises.length * workSets, 0)
-    })));
-    foot.append(el("span", "k-grow"));
-    const direct = el("button", "k-btn ghost", t("directLog"));
-    direct.type = "button";
-    direct.onclick = () => openRecord({ focus: plan.focus, volume: "" });
-    const finish = el("button", "k-btn", t("finishAndLog"));
-    finish.type = "button";
-    finish.disabled = !allSetsDone(plan, workSets);
-    finish.onclick = () => openRecord({ focus: plan.focus, volume: completedVolume(plan, workSets) });
-    foot.append(direct, finish);
-    root.append(head, list, foot);
-  }
-
-  function sparkGeometry(entries) {
-    const width = 220;
-    const height = 66;
-    const padX = 7;
-    const padY = 8;
-    const values = entries.map((entry) => entry.weight);
-    const low = Math.min(...values);
-    const high = Math.max(...values);
-    const span = Math.max(2, high - low);
-    return entries.map((entry, index) => ({
-      x: entries.length === 1 ? width / 2 : padX + index * ((width - padX * 2) / (entries.length - 1)),
-      y: padY + ((high - entry.weight) / span) * (height - padY * 2),
-      entry
-    }));
-  }
-
-  function renderSparkCard(lift, entries, index, limit) {
-    const card = el("article", `k-card lift-card ${lift.key} k-stagger`);
-    card.style.setProperty("--i", index);
-    const liftLabel = t(lift.labelKey);
-    const nameRow = el("div", "lift-name-row");
-    nameRow.append(el("span", "lift-symbol"), el("strong", "", liftLabel));
-    card.append(nameRow);
-
-    const last = entries.at(-1);
-    const value = el("div", "lift-value");
-    value.textContent = last ? formatNumber(last.weight) : "—";
-    value.append(el("small", "", last ? "kg" : t("awaitingEntry")));
-    card.append(value);
-
-    const svg = svgNode("svg", {
-      class: "spark",
-      viewBox: "0 0 220 66",
-      role: "img",
-      "aria-label": last
-        ? t("sparkAria", { lift: liftLabel, count: formatNumber(entries.length, 0), weight: formatNumber(last.weight) })
-        : t("sparkNoDataAria", { lift: liftLabel })
-    });
-    svg.append(svgNode("line", { class: "spark-guide", x1: 6, y1: 55, x2: 214, y2: 55 }));
-    svg.append(svgNode("line", { class: "spark-guide", x1: 6, y1: 12, x2: 214, y2: 12 }));
-    if (entries.length) {
-      const points = sparkGeometry(entries);
-      svg.append(svgNode("polyline", {
-        class: "spark-line",
-        points: points.map((point) => `${point.x},${point.y}`).join(" ")
-      }));
-      for (const point of points) {
-        const dot = svgNode("circle", {
-          class: "spark-dot",
-          cx: point.x,
-          cy: point.y,
-          r: 3.2
-        });
-        const title = svgNode("title");
-        title.textContent = `${formatDate(point.entry.session.fields.date)} · ${formatNumber(point.entry.weight)} kg`;
-        dot.append(title);
-        svg.append(dot);
-      }
-    } else {
-      const label = svgNode("text", { class: "spark-empty", x: 110, y: 37, "text-anchor": "middle" });
-      label.textContent = t("sparkEmpty");
-      svg.append(label);
-    }
-    card.append(svg);
-
-    const foot = el("div", "lift-foot");
-    const count = el("span", "k-num", t("recentSessions", { count: formatNumber(entries.length, 0) }));
-    let deltaText = t("noBaseline");
-    let deltaClass = "delta";
-    if (entries.length === 1) deltaText = t("baselineSet");
-    if (entries.length > 1) {
-      const delta = entries.at(-1).weight - entries[0].weight;
-      deltaText = `${delta > 0 ? "+" : ""}${formatNumber(delta)} kg`;
-      deltaClass += delta > 0 ? " up" : delta < 0 ? " down" : "";
-    }
-    foot.append(count, el("span", deltaClass, deltaText));
-    card.append(foot);
-    return card;
-  }
-
-  function renderSparks(sessions) {
-    const root = document.getElementById("sparkGrid");
-    root.innerHTML = "";
-    const limit = Math.max(3, Math.min(8, Math.round(oma.pref("spark_points", 8))));
-    document.getElementById("trendWindow").textContent = t("latestWindow", { count: formatNumber(limit, 0) });
-    MAIN_LIFTS.forEach((lift, index) => root.append(renderSparkCard(lift, liftSeries(sessions, lift, limit), index, limit)));
-  }
-
-  function renderPersonalRecords(sessions) {
-    const root = document.getElementById("prGrid");
-    root.innerHTML = "";
-    MAIN_LIFTS.forEach((lift) => {
-      const record = personalRecord(sessions, lift);
-      const liftLabel = t(lift.labelKey);
-      const chip = el("div", `pr-chip ${lift.key}`);
-      chip.setAttribute("role", "group");
-      chip.setAttribute("aria-label", record
-        ? t("prAria", {
-          lift: liftLabel,
-          weight: formatNumber(record.weight),
-          date: formatDate(record.session.fields.date)
-        })
-        : t("prEmptyAria", { lift: liftLabel }));
-      chip.append(el("span", "pr-mark"));
-      const copy = el("div", "pr-copy");
-      copy.append(el("strong", "", liftLabel));
-      copy.append(el("span", "", record
-        ? t("prAchieved", { date: formatDate(record.session.fields.date, { month: "short", day: "numeric" }) })
-        : t("prAwaiting")));
-      const value = el("span", "pr-value", record ? formatNumber(record.weight) : "—");
-      value.append(el("small", "", record ? "kg" : ""));
-      chip.append(copy, value);
-      root.append(chip);
-    });
-  }
-
-  function renderHistory(sessions) {
-    const root = document.getElementById("historyList");
-    root.innerHTML = "";
-    document.getElementById("historyTotal").textContent = t("historyTotal", {
-      count: formatNumber(sessions.length, 0)
-    });
-    if (!sessions.length) {
-      root.append(el("div", "history-empty", t("historyEmpty")));
-      return;
-    }
-
-    sessions.slice().reverse().forEach((session) => {
-      const iso = String(session.fields.date);
-      const lift = sessionLift(session);
-      const row = el("article", "history-row");
-      const date = el("div", "history-date");
-      date.append(el("strong", "", relativeSessionDate(iso)));
-      const time = el("time", "", formatDate(iso));
-      time.dateTime = iso;
-      date.append(time);
-
-      const main = el("div", "history-main");
-      const top = el("div", "history-topline");
-      const dayLabel = lift ? t(`${lift.key}Day`) : String(session.fields.focus);
-      top.append(el("span", `k-chip static history-day ${lift?.key || ""}`, dayLabel));
-      top.append(el("strong", "history-topset", topSetSummary(session)));
-
-      const meta = el("div", "history-meta");
-      const setCount = loggedSetCount(session.fields.volume_note);
-      meta.append(el("span", "k-num", setCount
-        ? t("loggedSets", { count: formatNumber(setCount, 0) })
-        : session.fields.volume_note ? t("volumeLogged") : t("missingVolume")));
-      if (session.fields.feel) {
-        meta.append(el("span", "history-separator", "·"));
-        const feel = el("span", "history-feel", String(session.fields.feel));
-        feel.title = String(session.fields.volume_note || session.fields.feel);
-        meta.append(feel);
-      }
-      main.append(top, meta);
-      row.append(date, main);
-      root.append(row);
-    });
-  }
-
-  function renderEmpty(plans, sessions) {
-    const empty = plans.length === 0 && sessions.length === 0;
-    document.getElementById("emptyState").hidden = !empty;
-    document.getElementById("todayCard").hidden = empty;
-    document.getElementById("trendSection").hidden = empty;
-    document.getElementById("prSection").hidden = empty;
-    document.getElementById("historySection").hidden = empty;
-  }
-
-  function render() {
-    applyI18n();
-    document.body.dataset.density = oma.pref("density", "comfortable");
-    const plans = planRows(latestData.planItems);
-    const sessions = sessionRows(latestData.sessionItems);
-    renderOverview(plans, sessions);
-    renderWeek(plans, sessions);
-    renderEmpty(plans, sessions);
-    if (plans.length || sessions.length) {
-      renderToday(plans, sessions);
-      renderSparks(sessions);
-      renderPersonalRecords(sessions);
-      renderHistory(sessions);
-    }
-    document.getElementById("recordPanel").hidden = !recordOpen;
-    document.getElementById("batchPanel").hidden = !batchOpen;
-  }
-
-  function openRecord(defaults = {}) {
-    recordOpen = true;
-    batchOpen = false;
-    document.getElementById("recordPanel").hidden = false;
-    document.getElementById("batchPanel").hidden = true;
-    document.getElementById("sessionDate").value = defaults.date || toISO(today());
-    document.getElementById("sessionFocus").value = defaults.focus || planForDate(today(), planRows(latestData.planItems))?.focus || t("freeTraining");
-    document.getElementById("sessionTopSet").value = defaults.topSet || "";
-    document.getElementById("sessionVolume").value = defaults.volume || "";
-    document.getElementById("sessionFeel").value = defaults.feel || "Steady";
-    requestAnimationFrame(() => {
-      document.getElementById("recordPanel").scrollIntoView({ block: "nearest" });
-      document.getElementById("sessionTopSet").focus({ preventScroll: true });
-    });
-  }
-
-  function closeRecord() {
-    recordOpen = false;
-    document.getElementById("recordPanel").hidden = true;
-  }
-
-  function setBatch(open) {
-    batchOpen = open;
-    if (open) recordOpen = false;
-    document.getElementById("batchPanel").hidden = !open;
-    document.getElementById("recordPanel").hidden = !recordOpen;
-    if (open) requestAnimationFrame(() => document.getElementById("batchInput").focus());
-  }
-
-  function addSessionItem(fields) {
-    return oma.callTool("data_add_item", {
-      command_id: crypto.randomUUID(),
-      collection: SESSION_COLLECTION,
-      group: "session",
-      fields,
-      actor: "human"
-    });
-  }
-
-  async function saveSession(fields) {
-    try {
-      const response = await addSessionItem(fields);
-      toolFailure(response, t("saveFailed"));
-    } catch (error) {
-      showStatus(t("notSaved", { error: String(error?.message || error) }), "bad", true);
+    render();
+    if (celebrate) celebrate.fresh = false;
+    let err = "";
+    try { err = writeFailure(await addSession(fields)); } catch (x) { err = String(x?.message || x); }
+    if (err) {
+      pending = pending.filter((x) => x !== p);
+      celebrate = null;
+      render();
+      showStatus(t("notSaved", { error: err }), true, true);
       return false;
     }
-    try {
-      await refreshCollections();
-      showStatus(t("savedSuccess"), "ok");
-    } catch (error) {
-      showStatus(t("savedRefreshFailed", { error: String(error?.message || error) }), "warn", true);
-    }
+    p.saved = true;
+    pull();
     return true;
   }
 
-  async function importBatch() {
-    const button = document.getElementById("importBatchButton");
-    const lines = document.getElementById("batchInput").value.split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
-    if (!lines.length) {
-      showStatus(t("batchEmpty"), "warn", true);
+  // ── the log form ──
+  function liftKeyForPlan(plan) {
+    const L = liftOf(plan.focus) || plan.exercises.map((x) => liftOf(x.name)).find(Boolean);
+    return L ? L.key : (M.lanes[0]?.key || "squat");
+  }
+  function liftChoices() {
+    const keys = M.lanes.map((g) => g.key);
+    for (const L of LIFTS) if (!keys.includes(L.key)) keys.push(L.key);
+    return keys;
+  }
+  const groupOf = (key) => M.groups.get(key) || null;
+  const labelOf = (key) => { const L = LIFTS.find((x) => x.key === key); return L ? t(L.label) : (groupOf(key)?.name || key); };
+
+  function focusFor(key) {
+    const L = LIFTS.find((x) => x.key === key);
+    const plans = M.plans;
+    const todays = M.week.cells.find((c) => c.isToday)?.plan;
+    const hit = (p) => L && (liftOf(p.focus) === L || p.exercises.some((x) => liftOf(x.name) === L));
+    if (todays && (hit(todays) || !L)) return todays.focus;
+    const p = plans.find(hit);
+    if (p) return p.focus;
+    const g = groupOf(key);
+    return g?.entries.at(-1)?.s.fields.focus || (L ? t(L.label) : t("other"));
+  }
+  function exerciseNameFor(key) {
+    const g = groupOf(key);
+    if (g?.name) return g.name;
+    const L = LIFTS.find((x) => x.key === key);
+    if (!L) return "";
+    for (const p of M.plans) for (const x of p.exercises) if (liftOf(x.name) === L) return x.name;
+    return t(L.name);
+  }
+
+  function paintChips() {
+    const box = $("liftChips");
+    box.replaceChildren();
+    for (const key of liftChoices().concat("other")) {
+      const b = el("button", `k-chip${form.lift === key ? " on" : ""}`, key === "other" ? t("other") : labelOf(key));
+      b.type = "button";
+      b.setAttribute("role", "radio");
+      b.setAttribute("aria-checked", String(form.lift === key));
+      b.onclick = () => pickLift(key);
+      box.append(b);
+    }
+    const feels = $("feels");
+    feels.replaceChildren();
+    for (const k of FEELS) {
+      const v = t(k);
+      const b = el("button", `k-chip${form.feel === v ? " on" : ""}`, v);
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(form.feel === v));
+      b.onclick = () => { form.feel = form.feel === v ? "" : v; paintChips(); };
+      feels.append(b);
+    }
+  }
+  function pickLift(key) {
+    form.lift = key;
+    $("otherWrap").hidden = key !== "other";
+    const g = key === "other" ? null : groupOf(key);
+    const last = g?.entries.at(-1);
+    $("fUnit").value = g?.unit || (last?.unit) || $("fUnit").value || "kg";
+    $("fWeight").value = last ? String(round(last.v, g.unit)) : "";
+    $("fReps").value = String(last?.reps || 5);
+    if (!form.focusDirty) $("fFocus").value = key === "other" ? (M.week.cells.find((c) => c.isToday)?.plan?.focus || "") : focusFor(key);
+    paintChips();
+    verdict();
+    if (key === "other") $("fName").focus();
+  }
+  function formEntry() {
+    const w = Number(String($("fWeight").value).replace(",", "."));
+    const reps = Math.round(Number($("fReps").value));
+    const unit = $("fUnit").value;
+    const key = form.lift === "other" ? (() => { const n = $("fName").value.trim(); const L = liftOf(n); return L ? L.key : `x:${n.toLowerCase()}`; })() : form.lift;
+    return { w, reps, unit, key };
+  }
+  function verdict() {
+    const v = $("verdict");
+    const f = formEntry();
+    v.className = "verdict";
+    if (!(f.w > 0) || !(f.reps > 0)) { v.textContent = ""; return; }
+    const g = groupOf(f.key);
+    if (!g?.best) { v.textContent = t("firstEver"); return; }
+    const cur = Math.round(conv(f.w, f.unit, g.unit) * 10) / 10;
+    const b = g.best;
+    if (cur > b.v) { v.className = "verdict pr"; v.textContent = t("wouldPr", { gain: `${num(cur - b.v)} ${g.unit}`, best: setText(b.v, g.unit, b.reps) }); }
+    else if (cur === b.v && f.reps > b.reps) { v.className = "verdict pr"; v.textContent = t("wouldRepPr"); }
+    else v.textContent = t("yourBest", { best: setText(b.v, g.unit, b.reps) });
+  }
+  function openLog(pre = {}) {
+    if (!M) return;
+    form = { lift: "", focusDirty: false, feel: "" };
+    $("batch").hidden = true;
+    $("logPanel").hidden = false;
+    $("fDate").value = toISO(today());
+    $("fNotes").value = pre.notes || "";
+    $("fName").value = "";
+    const todays = M.week.cells.find((c) => c.isToday)?.plan;
+    const recent = M.sessions.filter((s) => !s.pending).map((s) => M.bySession.get(s.id)).filter(Boolean).at(-1);
+    const key = pre.lift || (todays ? liftKeyForPlan(todays) : null) || (recent ? M.lanes.find((g) => g.entries.includes(recent))?.key : null) || M.lanes[0]?.key || "squat";
+    pickLift(key);
+    if (pre.focus) { $("fFocus").value = pre.focus; form.focusDirty = true; }
+    requestAnimationFrame(() => {
+      $("logPanel").scrollIntoView({ block: "nearest" });
+      $("fWeight").focus({ preventScroll: true });
+    });
+  }
+  const closeLog = () => { $("logPanel").hidden = true; };
+
+  $("logPanel").addEventListener("click", (ev) => {
+    const b = ev.target.closest("[data-step]");
+    if (!b) return;
+    const [what, dir] = b.dataset.step.split(":");
+    if (what === "w") {
+      const inc = $("fUnit").value === "lb" ? 5 : 2.5;
+      const cur = Number($("fWeight").value) || 0;
+      $("fWeight").value = String(Math.max(0, Math.round((cur + Number(dir) * inc) / inc) * inc));
+    } else {
+      $("fReps").value = String(Math.max(1, (Number($("fReps").value) || 0) + Number(dir)));
+    }
+    verdict();
+  });
+  for (const id of ["fWeight", "fReps", "fUnit", "fName"]) $(id).addEventListener("input", verdict);
+  $("fFocus").addEventListener("input", () => { form.focusDirty = true; });
+  $("logPanel").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const f = formEntry();
+    const name = form.lift === "other" ? $("fName").value.trim() : exerciseNameFor(form.lift);
+    const date = $("fDate").value;
+    if (!(f.w > 0) || !(f.reps > 0) || !name || !isISO(date)) {
+      $("verdict").className = "verdict";
+      $("verdict").textContent = t("needWeight");
       return;
     }
-    if (lines.length > 30) {
-      showStatus(t("batchLimit"), "warn", true);
-      return;
-    }
-
-    const rows = [];
-    for (let index = 0; index < lines.length; index++) {
-      const parts = lines[index].split("|").map((part) => part.trim());
-      if (parts.length < 3 || !/^\d{4}-\d{2}-\d{2}$/.test(parts[0]) || !parts[1]) {
-        showStatus(t("batchLineInvalid", { line: formatNumber(index + 1, 0) }), "bad", true);
-        return;
-      }
-      rows.push({
-        date: parts[0],
-        focus: parts[1],
-        top_set: parts[2] || "",
-        volume_note: parts[3] || "",
-        feel: parts[4] || ""
-      });
-    }
-
-    button.disabled = true;
-    let saved = 0;
-    let writeError = null;
-    try {
-      for (const fields of rows) {
-        const response = await addSessionItem(fields);
-        toolFailure(response, t("batchRowSaveFailed", { row: formatNumber(saved + 1, 0) }));
-        saved++;
-      }
-    } catch (error) {
-      writeError = error;
-    }
-
-    let refreshError = null;
-    if (saved) {
-      try {
-        await refreshCollections();
-      } catch (error) {
-        refreshError = error;
-      }
-    }
-
-    try {
-      if (writeError) {
-        const refreshNote = refreshError
-          ? t("batchRefreshSuffix", { error: String(refreshError?.message || refreshError) })
-          : "";
-        showStatus(t("batchPartial", {
-          count: formatNumber(saved, 0),
-          error: String(writeError?.message || writeError),
-          refresh: refreshNote
-        }), "bad", true);
-        return;
-      }
-      document.getElementById("batchInput").value = "";
-      setBatch(false);
-      if (refreshError) showStatus(t("batchSavedRefreshFailed", {
-        count: formatNumber(saved, 0),
-        error: String(refreshError?.message || refreshError)
-      }), "warn", true);
-      else showStatus(t("batchSaved", { count: formatNumber(saved, 0) }), "ok");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  // Both assistant hand-offs await the bridge and stop accepting clicks while it is in flight,
-  // so one slow request cannot queue duplicates. Clipboard fallback is degraded delivery, not a
-  // failure: the runtime has already copied the prompt and told the user by the time it returns.
-  async function requestMemorySeed() {
-    const button = document.getElementById("seedButton");
-    clearError();
-    button.disabled = true;
-    try {
-      const result = await oma.sendMessage(t("seedPrompt"));
-      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
-    } catch (error) {
-      showStatus(String(error?.message || error || t("askFailed")), "bad");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  async function requestWeeklyReview() {
-    const plans = planRows(latestData.planItems);
-    const sessions = sessionRows(latestData.sessionItems);
-    const week = datesOfWeek(today());
-    const start = toISO(week[0]);
-    const end = toISO(week[6]);
-    const thisWeek = sessions.filter((item) => item.fields.date >= start && item.fields.date <= end);
-    const separator = language() === "zh" ? "；" : "; ";
-    const planText = plans.map((plan) => `${plan.day} ${plan.focus}: ${exerciseListText(plan.exercises)}`).join(separator) || t("noFixedPlan");
-    const sessionText = thisWeek.map((item) => [
-      `${item.fields.date} ${item.fields.focus}`,
-      item.fields.top_set || t("missingTopSet"),
-      item.fields.volume_note || t("missingVolume"),
-      `${t("feelLabel")}: ${item.fields.feel || t("missingFeel")}`
-    ].join(", ")).join(separator) || t("noSessionsThisWeek");
-    const button = document.getElementById("reviewButton");
-    clearError();
-    button.disabled = true;
-    try {
-      const result = await oma.sendMessage(t("reviewPrompt", { start, end, plan: planText, sessions: sessionText }));
-      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
-    } catch (error) {
-      showStatus(String(error?.message || error || t("askFailed")), "bad");
-    } finally {
-      button.disabled = false;
-    }
-  }
-
-  document.getElementById("recordButton").onclick = () => openRecord();
-  document.getElementById("emptyRecordButton").onclick = () => openRecord();
-  document.getElementById("closeRecordButton").onclick = closeRecord;
-  document.getElementById("cancelRecordButton").onclick = closeRecord;
-  document.getElementById("batchButton").onclick = () => setBatch(true);
-  document.getElementById("closeBatchButton").onclick = () => setBatch(false);
-  document.getElementById("importBatchButton").onclick = importBatch;
-  document.getElementById("seedButton").onclick = requestMemorySeed;
-  document.getElementById("reviewButton").onclick = requestWeeklyReview;
-
-  document.getElementById("recordForm").onsubmit = async (event) => {
-    event.preventDefault();
-    const saveButton = document.getElementById("saveRecordButton");
     const fields = {
-      date: document.getElementById("sessionDate").value,
-      focus: document.getElementById("sessionFocus").value.trim(),
-      top_set: document.getElementById("sessionTopSet").value.trim(),
-      volume_note: document.getElementById("sessionVolume").value.trim(),
-      feel: document.getElementById("sessionFeel").value
+      date,
+      focus: $("fFocus").value.trim() || (form.lift === "other" ? name : focusFor(form.lift)),
+      top_set: `${name} ${String(f.w)}${f.unit}×${f.reps}`,
+      volume_note: $("fNotes").value.trim(),
+      feel: form.feel
     };
-    if (!fields.date || !fields.focus) {
-      event.currentTarget.reportValidity();
-      return;
+    if (!fields.volume_note) delete fields.volume_note;
+    if (!fields.feel) delete fields.feel;
+    closeLog();
+    const ok = await logSession(fields);
+    if (ok) ticked.clear();
+  };
+  $("closeLog").onclick = closeLog;
+  $("cancelLog").onclick = closeLog;
+  $("logBtn").onclick = () => ($("logPanel").hidden ? openLog() : closeLog());
+  $("emptyLog").onclick = () => openLog();
+
+  // ── paste many ──
+  function openBatch() {
+    closeLog();
+    $("batch").hidden = false;
+    if (M) render();
+    requestAnimationFrame(() => $("batchInput").focus());
+  }
+  const closeBatch = () => { $("batch").hidden = true; if (M) render(); };
+  $("pasteBtn").onclick = () => ($("batch").hidden ? openBatch() : closeBatch());
+  $("emptyPaste").onclick = openBatch;
+  $("batchCancel").onclick = closeBatch;
+  $("batchImport").onclick = async () => {
+    const lines = $("batchInput").value.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+    if (!lines.length) return showStatus(t("batchEmpty"), true);
+    if (lines.length > 30) return showStatus(t("batchLimit"), true);
+    const rows = [];
+    for (let i = 0; i < lines.length; i++) {
+      const p = lines[i].split("|").map((x) => x.trim());
+      if (p.length < 3 || !isISO(p[0]) || !p[1]) return showStatus(t("batchLine", { n: i + 1 }), true, true);
+      const f = { date: p[0], focus: p[1], top_set: p[2] };
+      if (p[3]) f.volume_note = p[3];
+      if (p[4]) f.feel = p[4];
+      rows.push(f);
     }
-    saveButton.disabled = true;
-    const ok = await saveSession(fields);
-    saveButton.disabled = false;
-    if (ok) {
-      closeRecord();
-      completedSets.clear();
+    const btn = $("batchImport");
+    btn.disabled = true;
+    let n = 0;
+    let err = "";
+    for (const f of rows) {
+      try { err = writeFailure(await addSession(f)); } catch (x) { err = String(x?.message || x); }
+      if (err) break;
+      n++;
     }
+    btn.disabled = false;
+    if (n) pull();
+    if (err) return showStatus(t("batchPartial", { n, error: err }), true, true);
+    $("batchInput").value = "";
+    closeBatch();
+    showStatus(t("batchSaved", { n }));
   };
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means
-  // the viewer or panel host already framed the page, so the kit must not draw a second card.
-  if (oma.standalone) document.body.classList.add("standalone");
+  // ── hand-offs to the AI (proposals, on a click only) ──
+  async function propose(btn, text) {
+    btn.disabled = true;
+    try {
+      const r = await oma.sendMessage(text);
+      if (r && r.isError === true && !r.degraded) showStatus(t("askFailed"), true);
+    } catch (e) {
+      showStatus(String(e?.message || t("askFailed")), true);
+    } finally {
+      btn.disabled = false;
+    }
+  }
+  $("askSetup").onclick = () => propose($("askSetup"), t("seedPrompt"));
+  $("reviewBtn").onclick = () => {
+    if (!M) return;
+    const w = M.week;
+    const sep = lang() === "zh" ? "；" : "; ";
+    const plan = M.plans.map((p) => `${p.day} ${p.focus}: ${p.exercises.map((x) => x.name).join(", ")}`).join(sep) || t("noPlanTxt");
+    const sessions = w.inWeek.filter((s) => !s.pending).map((s) => [`${s.fields.date} ${s.fields.focus}`, s.fields.top_set || t("noTop"), s.fields.volume_note || t("missing"), `${t("feel")}: ${s.fields.feel || t("missing")}`].join(", ")).join(sep) || t("noSessionsTxt");
+    const bests = M.lanes.filter((g) => g.best).map((g) => `${g.main ? t(g.main.label) : g.name} ${setText(g.best.v, g.unit, g.best.reps)} (${g.best.e.date})`).join(sep) || t("missing");
+    propose($("reviewBtn"), t("reviewPrompt", { start: w.first, end: w.last, plan, sessions, bests }));
+  };
 
-  oma.ready(requestRefresh);
-  oma.onChange(requestRefresh);
-  oma.onPrefChange(render);
-  setInterval(requestRefresh, 30000);
+  // ── mount ──
+  if (oma.standalone) document.body.classList.add("standalone");
+  applyI18n();
+  let lanesW = 0;
+  new ResizeObserver(() => {
+    const w = $("lanes").clientWidth;
+    if (w !== lanesW) { lanesW = w; if (M) render(); }
+  }).observe($("lanes"));
+  oma.ready(pull);
+  oma.onChange(pull);
+  oma.onPrefChange(() => { for (const k in sigs) sigs[k] = ""; for (const L of laneEls.values()) L.sig = ""; if (M) render(); });
+  setInterval(() => { if (!document.hidden) pull(); }, 30000);
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) pull(); });
 </script>
 </body>
 </html>

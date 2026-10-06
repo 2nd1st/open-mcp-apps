@@ -9,7 +9,10 @@
 // browser bundle where no test could reach them — runtime-core.mjs exists so this file can.
 //
 // Run: node test/runtime-core.mjs
-import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, childPreviewSnapshot, THEME_KEY_PREFIX, MAX_PAGES } from "../src/runtime-core.mjs";
+import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, ackPosition, childPreviewSnapshot, THEME_KEY_PREFIX, MAX_PAGES, createAppTools, serveAppTools, appToolText, MAX_APP_TOOLS, APP_READER_META, READER_META_KEY } from "../src/runtime-core.mjs";
+import { App } from "@modelcontextprotocol/ext-apps";
+import { AppBridge } from "@modelcontextprotocol/ext-apps/app-bridge";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 
 let pass = 0, fail = 0;
 const ok = (name, cond, note) => (cond
@@ -326,6 +329,215 @@ console.log("\n1d. ackOf — the ONE shape a write resolves to, whatever the lay
   const standalone = new Function("return (" + ackOf.toString() + ")")();
   ok("it survives toString() transport into the bridge (no closure, no imports)",
     standalone({ content: [], structuredContent: ACK }).seq === 7);
+}
+
+console.log("\n12. app tools — the page's own tools (oma.tools), the registry both roads read");
+{
+  const t = createAppTools();
+  let changes = 0;
+  t.onChange(() => changes++);
+  const ran = [];
+  const off = t.register({
+    name: "show_day", description: "Open one day.",
+    inputSchema: { properties: { day: { type: "string", description: "YYYY-MM-DD" }, wide: { type: "boolean" } }, required: ["day"] },
+    annotations: { readOnlyHint: true },
+    run: (a) => { ran.push(a); return "day " + a.day; },
+  });
+  const [listed] = t.list();
+  ok("register → listed in the tools/list shape (name, description, an OBJECT inputSchema, annotations)",
+    t.list().length === 1 && listed.name === "show_day" && listed.description === "Open one day."
+      && listed.inputSchema.type === "object" && listed.inputSchema.required[0] === "day" && listed.annotations.readOnlyHint === true,
+    JSON.stringify(t.list()));
+  ok("…and no `run` leaks into what a host is handed", !("run" in listed));
+  ok("a tool with no schema still lists an object schema (MCP Tool requires one)",
+    (t.register({ name: "ping", run: () => "pong" }), t.list().find((x) => x.name === "ping").inputSchema.type === "object"));
+  ok("every change to the list is heard (register ×2 so far)", changes === 2, `changes=${changes}`);
+
+  // round trip: input → run → CallToolResult
+  const r1 = await t.call("show_day", { day: "2026-10-03" });
+  ok("call runs it with the input and a string becomes the text", r1.content[0].text === "day 2026-10-03" && !r1.isError && ran.length === 1, JSON.stringify(r1));
+  t.register({ name: "obj", run: () => ({ n: 2 }) });
+  const r2 = await t.call("obj");
+  ok("a JSON value comes back as its JSON text AND structuredContent", r2.content[0].text === '{"n":2}' && r2.structuredContent.n === 2, JSON.stringify(r2));
+  t.register({ name: "mcp", run: async () => ({ content: [{ type: "text", text: "as-is" }], isError: true }) });
+  ok("an MCP CallToolResult passes through untouched (async run too)", (await t.call("mcp")).content[0].text === "as-is");
+  t.register({ name: "nothing", run: () => {} });
+  ok("nothing returned is \"Done.\"", (await t.call("nothing")).content[0].text === "Done.");
+
+  // errors are ANSWERS the model can correct from — never a throw out of call()
+  const before = ran.length;
+  const miss = await t.call("show_day", {});
+  ok("missing a required key → isError naming it, and run never sees the call",
+    miss.isError === true && /missing day/.test(miss.content[0].text) && ran.length === before, JSON.stringify(miss));
+  const typ = await t.call("show_day", { day: 3 });
+  ok("a wrong primitive type → isError naming the key", typ.isError === true && /day must be a string/.test(typ.content[0].text), JSON.stringify(typ));
+  t.register({ name: "kind", inputSchema: { properties: { k: { type: "string", enum: ["eat", "see"] } } }, run: (a) => a.k });
+  ok("an enum is held", (await t.call("kind", { k: "fly" })).isError === true && (await t.call("kind", { k: "eat" })).content[0].text === "eat");
+  t.register({ name: "boom", run: () => { throw new Error("no trip yet"); } });
+  const boom = await t.call("boom");
+  ok("a throw → isError carrying the app's message", boom.isError === true && /boom failed: no trip yet/.test(boom.content[0].text), JSON.stringify(boom));
+  const unk = await t.call("nope");
+  ok("an unknown name → isError listing what the app DOES have", unk.isError === true && /no tool "nope"/.test(unk.content[0].text) && /show_day/.test(unk.content[0].text), JSON.stringify(unk));
+
+  // the relay's listing
+  const d = t.describe().split("\n");
+  ok("describe(): one line per tool — name, typed args with ? for optional, enum values, what it does",
+    d.includes('- show_day(day: string (YYYY-MM-DD), wide?: boolean) — Open one day.') && d.includes('- kind(k?: "eat"|"see")'), t.describe());
+  ok("…and \"\" for an app that registered none (screen_read then adds no section)", createAppTools().describe() === "");
+  ok("appToolText: the text blocks, joined; another block is named, not dropped",
+    appToolText({ content: [{ type: "text", text: "a" }, { type: "image", data: "" }] }) === "a\n[image]" && appToolText({}) === "Done.");
+
+  // lifecycle: replace by name; the replaced handle no longer owns it; unregister removes
+  const n = t.list().length;
+  const offNew = t.register({ name: "show_day", description: "v2", run: () => "v2" });
+  ok("registering a name again REPLACES it (no duplicate, no throw — an app may register in render)",
+    t.list().length === n && t.list().find((x) => x.name === "show_day").description === "v2");
+  off();
+  ok("…and the OLD handle's unregister is now a no-op (it no longer owns the name)", t.has("show_day"));
+  const c0 = changes;
+  offNew();
+  ok("unregister removes it, and is heard", !t.has("show_day") && t.list().length === n - 1 && changes === c0 + 1);
+  ok("…a removed tool answers like an unknown one", (await t.call("show_day", { day: "x" })).isError === true);
+
+  // registration is checked where the author can see it
+  const throws = (f) => { try { f(); return false; } catch { return true; } };
+  ok("a bad name throws (MCP tool-name charset)", throws(() => t.register({ name: "has space", run() {} })) && throws(() => t.register({ name: "", run() {} })));
+  ok("no run() throws", throws(() => t.register({ name: "x" })));
+  const many = createAppTools();
+  for (let i = 0; i < MAX_APP_TOOLS; i++) many.register({ name: "t" + i, run() {} });
+  ok(`the ${MAX_APP_TOOLS + 1}st tool throws (the draft's recommended limit), replacing one does not`,
+    throws(() => many.register({ name: "one-more", run() {} })) && !throws(() => many.register({ name: "t0", run() {} })));
+}
+
+console.log("\n13. the NATIVE road — a host that sends tools/list / tools/call to the view (real ext-apps App, simulated host)");
+{
+  // A real SDK App over an in-memory transport; this test plays the host. What is under test is
+  // serveAppTools' wiring against the SDK as installed: the handlers are accepted (the SDK refuses
+  // them without the tools capability), the answers go out on the request's own id, and
+  // list_changed waits for the host to have listed.
+  const fromApp = [];
+  const toApp = (m) => transport.onmessage(m);   // the host speaking; onmessage is wired by connect()
+  const transport = {
+    async start() {}, async close() {},
+    async send(msg) {
+      fromApp.push(msg);
+      if (msg.method === "ui/initialize") queueMicrotask(() => toApp({ jsonrpc: "2.0", id: msg.id, result: { protocolVersion: msg.params.protocolVersion, hostInfo: { name: "sim-host", version: "0" }, hostCapabilities: {}, hostContext: {} } }));
+    },
+  };
+  const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, { tools: { listChanged: true } }, { autoResize: false });
+  const tools = createAppTools();
+  tools.register({ name: "add_stop", description: "Add a stop.", inputSchema: { properties: { title: { type: "string" } }, required: ["title"] }, run: (a) => "added " + a.title });
+  const served = serveAppTools(app, tools);
+  await app.connect(transport);
+  const init = fromApp.find((m) => m.method === "ui/initialize");
+  ok("ui/initialize carries appCapabilities.tools.listChanged — the declaration a host reads", init && init.params.appCapabilities.tools && init.params.appCapabilities.tools.listChanged === true, JSON.stringify(init && init.params));
+  const reply = async (id, method, params) => {
+    toApp({ jsonrpc: "2.0", id, method, params });
+    for (let i = 0; i < 50; i++) { const r = fromApp.find((m) => m.id === id && !m.method); if (r) return r; await new Promise((ok) => setTimeout(ok, 2)); }
+    return null;
+  };
+  // Before the host has listed, a change sends NOTHING: that host has not shown it speaks app tools.
+  tools.register({ name: "early", run: () => "x" });
+  await new Promise((ok) => setTimeout(ok, 5));
+  ok("before any tools/list, a registration sends no list_changed (no host has asked)",
+    !fromApp.some((m) => m.method === "notifications/tools/list_changed") && served.listed === false);
+  const list = await reply(101, "tools/list", {});
+  ok("host tools/list → the registered tools, answered on the same id",
+    list && list.result && list.result.tools.map((x) => x.name).join(",") === "add_stop,early" && served.listed === true, JSON.stringify(list));
+  const call = await reply(102, "tools/call", { name: "add_stop", arguments: { title: "Kinkaku-ji" } });
+  ok("host tools/call → run(input) → the result back on the same id",
+    call && call.result && call.result.content[0].text === "added Kinkaku-ji" && !call.result.isError, JSON.stringify(call));
+  const bad = await reply(103, "tools/call", { name: "add_stop", arguments: {} });
+  ok("…bad arguments come back as a tool error (isError) the model can correct", bad && bad.result && bad.result.isError === true, JSON.stringify(bad));
+  const unk = await reply(104, "tools/call", { name: "nope", arguments: {} });
+  ok("…an unknown name is a protocol error (MCP \"Unknown tool\")", unk && unk.error && /Unknown tool: nope/.test(unk.error.message), JSON.stringify(unk));
+  // After listing: one notification per burst.
+  const offA = tools.register({ name: "a", run() {} });
+  tools.register({ name: "b", run() {} });
+  await new Promise((ok) => setTimeout(ok, 5));
+  ok("after the host listed, a burst of changes sends ONE notifications/tools/list_changed",
+    fromApp.filter((m) => m.method === "notifications/tools/list_changed").length === 1);
+  offA();
+  await new Promise((ok) => setTimeout(ok, 5));
+  ok("…and an unregister sends the next one", fromApp.filter((m) => m.method === "notifications/tools/list_changed").length === 2);
+  const list2 = await reply(105, "tools/list", {});
+  ok("…which a re-list reflects", list2 && list2.result.tools.map((x) => x.name).join(",") === "add_stop,early,b", JSON.stringify(list2 && list2.result));
+}
+
+console.log("\n14. the reader `_meta` survives the MCP Apps stack (real ext-apps App → real AppBridge → upstream)");
+{
+  // The runtime tells the engine the APP is reading through the request's `_meta`
+  // (READER_META_KEY), not an argument — so whether it arrives is a fact about the bridge between
+  // them. This is the reference host stack as installed: the view's App.callServerTool, over a
+  // transport, into the ext-apps AppBridge, whose default oncalltool forwards to the host's MCP
+  // client. The client here is a recorder. A host with its OWN bridge (claude.ai, ChatGPT) is not
+  // covered by this and may strip `_meta`; then the read falls back to the model's page budget.
+  const upstream = [];
+  const client = {
+    getServerCapabilities: () => ({ tools: {} }),
+    setNotificationHandler() {},
+    async request(req) { upstream.push(req); return { content: [{ type: "text", text: "ok" }], structuredContent: { items: [] } }; },
+  };
+  const [viewSide, hostSide] = InMemoryTransport.createLinkedPair();
+  const bridge = new AppBridge(client, { name: "sim-host", version: "0" }, { serverTools: {} }, { hostContext: {} });
+  await bridge.connect(hostSide);
+  const app = new App({ name: "open-mcp-apps", version: "0.1.0" }, {}, { autoResize: false });
+  await app.connect(viewSide);
+  await app.callServerTool({ name: "data_list", arguments: { collection: "c" }, _meta: APP_READER_META }, { timeout: 2000 });
+  const got = upstream.find((r) => r.method === "tools/call");
+  ok("the reader key reaches the upstream tools/call verbatim, beside the SDK's own progressToken",
+    got && got.params._meta && got.params._meta[READER_META_KEY] === "app" && "progressToken" in got.params._meta,
+    JSON.stringify(got && got.params));
+  ok("…and the arguments are untouched (the signal never becomes an argument)",
+    got && JSON.stringify(got.params.arguments) === JSON.stringify({ collection: "c" }));
+  await app.close(); await bridge.close();
+}
+
+console.log("\nafterAppScripts — the data-or-page decision waits for the app's own scripts");
+{
+  const { afterAppScripts } = await import("../src/runtime-core.mjs");
+  const fakeDoc = (readyState) => {
+    const on = {};
+    return { readyState, on, addEventListener: (t, fn) => { (on[t] ||= []).push(fn); },
+             fire: (t) => { for (const fn of on[t] || []) fn(); } };
+  };
+  const sync = (f) => f();
+  // The measured case: the runtime's module ran when parsing had ended (interactive) but before
+  // DOMContentLoaded; the app's module subscribes in between.
+  const doc = fakeDoc("interactive"), win = fakeDoc();
+  const when = afterAppScripts(doc, win, sync);
+  let subscribedAtDecision = null, appSubscribed = false;
+  when(() => { subscribedAtDecision = appSubscribed; });
+  appSubscribed = true;                 // the app's <script type="module"> runs now
+  ok("at readyState \"interactive\" nothing is decided yet", subscribedAtDecision === null);
+  doc.fire("DOMContentLoaded");
+  ok("…the decision comes at DOMContentLoaded and sees the app's subscription", subscribedAtDecision === true);
+  let late = 0;
+  win.fire("load");
+  when(() => { late++; });
+  ok("…fires each waiter once (load after it does not fire again) and a later ask runs at once", late === 1);
+  const doc2 = fakeDoc("interactive"), win2 = fakeDoc();
+  let viaLoad = false;
+  afterAppScripts(doc2, win2, sync)(() => { viaLoad = true; });
+  win2.fire("load");
+  ok("a runtime that arrived after DOMContentLoaded still decides, at load", viaLoad);
+  let now = false;
+  afterAppScripts(fakeDoc("complete"), fakeDoc(), sync)(() => { now = true; });
+  ok("a finished document decides without waiting", now);
+}
+
+console.log("\nfitFrame — fullscreen gives the frame's height back to the app");
+{
+  const { fitFrame } = await import("../src/runtime-core.mjs");
+  const el = () => { const m = new Map(); return { style: {
+    setProperty: (k, v) => m.set(k, v), removeProperty: (k) => m.delete(k), get: (k) => m.get(k) } }; };
+  const root = el(), body = el();
+  const unpin = () => { for (const e of [root, body]) { e.style.setProperty("height", "auto"); e.style.setProperty("min-height", "0"); e.style.setProperty("overflow-y", "visible"); } };
+  ok("inline: unpinned, so the host can measure the card from its content",
+    fitFrame("inline", [root, body], unpin) === "content" && root.style.get("height") === "auto" && body.style.get("height") === "auto");
+  ok("fullscreen: the unpin comes off html AND body, so height:100% fills the host's frame",
+    fitFrame("fullscreen", [root, body], unpin) === "app" && [root, body].every((e) => ["height", "min-height", "overflow-y"].every((k) => e.style.get(k) === undefined)));
+  ok("back to inline: unpinned again", fitFrame("inline", [root, body], unpin) === "content" && body.style.get("min-height") === "0");
 }
 
 console.log(`\nruntime-core: ${pass} passed, ${fail} failed`);

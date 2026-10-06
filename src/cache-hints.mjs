@@ -40,18 +40,18 @@ function dropRedundantDialect(schema) {
  * lets a client, gateway or proxy serve one caller's cached response to another — explicitly
  * including across authorization contexts ("different access tokens can leverage the same cache").
  *
- *   · dynamic tools OFF (the default): every tenant sees the identical tool list. Nothing in it
- *     is user-specific, so "public" is true and lets shared infrastructure cache it once.
- *   · dynamic tools ON: the list contains one open_<name> per app, i.e. THIS tenant's app names.
- *     Declaring that "public" would leak them through a shared cache. "private" confines reuse
- *     to the same authorization context.
+ *   · pinning OFF (`dynamicTools: false`): every tenant sees the identical tool list. Nothing in
+ *     it is user-specific, so "public" is true and lets shared infrastructure cache it once.
+ *   · pinning ON (the default): the list carries one open_<name> per app the user pinned, i.e.
+ *     THIS tenant's app names, and it moves when they pin or unpin. Declaring that "public" would
+ *     leak them through a shared cache. "private" confines reuse to the same authorization context.
  *
  * Derived from the flag rather than written down as a literal, because getting it wrong is a
  * cross-tenant disclosure.
  */
 export function listCacheHints({ dynamicTools }) {
   return dynamicTools
-    ? { ttlMs: 10_000, cacheScope: "private" }   // changes whenever an app is saved
+    ? { ttlMs: 10_000, cacheScope: "private" }   // changes when the user pins/unpins an app
     : { ttlMs: 300_000, cacheScope: "public" }; // fixed for the life of the process
 }
 

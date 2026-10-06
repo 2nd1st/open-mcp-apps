@@ -2,9 +2,9 @@
   {
     "_meta": {
       "ui": {
-        "resourceUri": "ui://open-mcp-apps/app.html"
+        "resourceUri": "ui://open-mcp-apps/app.<build>.html"
       },
-      "ui/resourceUri": "ui://open-mcp-apps/app.html"
+      "ui/resourceUri": "ui://open-mcp-apps/app.<build>.html"
     },
     "annotations": {
       "destructiveHint": false,
@@ -158,6 +158,12 @@
               },
               "type": "array"
             },
+            "collections": {
+              "items": {
+                "type": "string"
+              },
+              "type": "array"
+            },
             "cross_collection_read": {
               "type": "boolean"
             },
@@ -248,7 +254,8 @@
         "tier": {
           "enum": [
             "local",
-            "unreviewed"
+            "unreviewed",
+            "shared"
           ],
           "type": "string"
         },
@@ -308,19 +315,9 @@
       "readOnlyHint": true,
       "title": "List apps"
     },
-    "description": "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with kind/visibility.",
+    "description": "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with visibility.",
     "inputSchema": {
       "properties": {
-        "kind": {
-          "description": "default app: what a person opens and reuses",
-          "enum": [
-            "app",
-            "visual",
-            "primitive",
-            "any"
-          ],
-          "type": "string"
-        },
         "name": {
           "description": "exact app name — the fastest way to answer \"open my X\"",
           "type": "string"
@@ -448,10 +445,34 @@
       "destructiveHint": false,
       "idempotentHint": true,
       "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "How to use an app"
+    },
+    "description": "How to USE an app — its workflow, what to write where, how to run it on a schedule — as its author wrote it. Read it before working on an app's data.",
+    "inputSchema": {
+      "properties": {
+        "app": {
+          "description": "app name (see list_apps)",
+          "type": "string"
+        }
+      },
+      "required": [
+        "app"
+      ],
+      "type": "object"
+    },
+    "name": "get_app_skill",
+    "title": "How to use an app"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "idempotentHint": true,
+      "openWorldHint": false,
       "readOnlyHint": false,
       "title": "Save app"
     },
-    "description": "Create or update a UI app in the persistent registry. Two slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block) — and manifest, the app's declaration as a JSON object (kind, collections, settings, scene; keys in get_app_guide). manifest: null clears the declaration. Creating needs ui. Every save snapshots both slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
+    "description": "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -484,6 +505,17 @@
         "name": {
           "description": "app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')",
           "type": "string"
+        },
+        "skill": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "SKILL.md text (whole-value replace), null to clear, omit to keep"
         },
         "ui": {
           "description": "complete self-contained HTML document using window.oma; omit on update to keep the current one",
@@ -677,67 +709,6 @@
       "type": "object"
     },
     "title": "Edit app source"
-  },
-  {
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Promote visual to app"
-    },
-    "description": "Upgrade a kind:\"visual\" app to a full app in ONE atomic step: the engine flips `kind` in the stored manifest, keeping every other declared key, and saves a new version (OCC-guarded, history kept). Already an app is a no-op; downgrades are refused — demoting is an author edit (save_app with the manifest), not a lifecycle verb.",
-    "inputSchema": {
-      "properties": {
-        "command_id": {
-          "description": "idempotency key (uuid); auto-generated if omitted",
-          "type": "string"
-        },
-        "name": {
-          "description": "an existing app with kind \"visual\" (list_apps {kind:\"visual\"} shows them)",
-          "type": "string"
-        }
-      },
-      "required": [
-        "name"
-      ],
-      "type": "object"
-    },
-    "name": "promote_app",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "eot": {
-          "type": "string"
-        },
-        "kind": {
-          "type": "string"
-        },
-        "name": {
-          "type": "string"
-        },
-        "note": {
-          "type": "string"
-        },
-        "ok": {
-          "type": "boolean"
-        },
-        "reason": {
-          "type": "string"
-        },
-        "version": {
-          "type": "number"
-        },
-        "was": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "ok"
-      ],
-      "type": "object"
-    },
-    "title": "Promote visual to app"
   },
   {
     "_meta": {
@@ -1173,7 +1144,12 @@
   },
   {
     "_meta": {
-      "openai/widgetAccessible": true
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
     },
     "annotations": {
       "destructiveHint": false,
@@ -1182,9 +1158,14 @@
       "readOnlyHint": true,
       "title": "Data change probe"
     },
-    "description": "The cheapest possible change check: returns the store's global change counter (seq) plus settings/files sub-counters. An unchanged counter means nothing in the store changed. Widgets read it for adaptive polling.",
+    "description": "Internal: the widget runtime's change probe — the store's global change counter (seq) plus settings/files sub-counters, polled to decide whether to refetch. Not for the model.",
     "inputSchema": {
-      "properties": {},
+      "properties": {
+        "collection": {
+          "description": "narrow seq to this collection",
+          "type": "string"
+        }
+      },
       "type": "object"
     },
     "name": "get_data_version",
@@ -1253,6 +1234,22 @@
                     "type": "null"
                   }
                 ]
+              },
+              "shared": {
+                "additionalProperties": false,
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "role": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "from",
+                  "role"
+                ],
+                "type": "object"
               }
             },
             "required": [
@@ -1427,6 +1424,10 @@
           ],
           "type": "string"
         },
+        "collection": {
+          "description": "the item's collection, if known — the write is refused unless the row is in it",
+          "type": "string"
+        },
         "command_id": {
           "description": "idempotency key — generate a fresh uuid per action",
           "type": "string"
@@ -1555,6 +1556,10 @@
           ],
           "type": "string"
         },
+        "collection": {
+          "description": "the item's collection, if known — the write is refused unless the row is in it",
+          "type": "string"
+        },
         "command_id": {
           "description": "idempotency key — generate a fresh uuid per action",
           "type": "string"
@@ -1678,6 +1683,10 @@
             "human",
             "agent"
           ],
+          "type": "string"
+        },
+        "collection": {
+          "description": "the item's collection, if known — the write is refused unless the row is in it",
           "type": "string"
         },
         "command_id": {
@@ -2369,7 +2378,7 @@
       "readOnlyHint": true,
       "title": "App history (checkpoints)"
     },
-    "description": "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots BOTH slots (ui + manifest); restore brings back the pair.",
+    "description": "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots every slot (ui, manifest, skill); restore brings them back together.",
     "inputSchema": {
       "properties": {
         "name": {
@@ -2598,6 +2607,14 @@
     "description": "Internal: returns an App Store entry's ui and manifest plus its mock-data fixtures, so the App Store app can render a LIVE sandboxed preview card (srcdoc + stub oma + mock snapshot). Read-only; nothing is installed. Not useful to call directly.",
     "inputSchema": {
       "properties": {
+        "locale": {
+          "description": "sample data language (default en)",
+          "enum": [
+            "en",
+            "zh"
+          ],
+          "type": "string"
+        },
         "name": {
           "description": "App Store entry name (see app_store_list)",
           "type": "string"
@@ -2740,6 +2757,9 @@
       "additionalProperties": false,
       "properties": {
         "name": {
+          "type": "string"
+        },
+        "note": {
           "type": "string"
         },
         "outcome": {
@@ -3005,5 +3025,143 @@
       "type": "object"
     },
     "title": "Set a security policy key"
+  },
+  {
+    "annotations": {
+      "openWorldHint": false,
+      "readOnlyHint": true,
+      "title": "Read the app on screen"
+    },
+    "description": "What the user is looking at in the app they have open: its text, every control they could press or fill (each with a ref like r3), and the app's own tools if it has any. Use it when the user talks about what is on screen (\"what's on Thursday?\", \"that one\").",
+    "inputSchema": {
+      "properties": {
+        "app": {
+          "description": "which open app (default: the one the user is on)",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "screen_read",
+    "title": "Read the app on screen"
+  },
+  {
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Use the app on screen"
+    },
+    "description": "Do what the user would do in the app they have open: press a control, or fill/select a value (ref from screen_read, or the control's visible label) — or call one of the app's own tools that screen_read lists (tool + input). The user watches it happen; returns the screen after a press, the tool's answer after a call. \"Show me Thursday\" is an action in the app, not a data query.",
+    "inputSchema": {
+      "properties": {
+        "action": {
+          "description": "default: fill for text inputs, select for dropdowns, press otherwise",
+          "enum": [
+            "press",
+            "fill",
+            "select"
+          ],
+          "type": "string"
+        },
+        "app": {
+          "description": "which open app (default: the one the user is on)",
+          "type": "string"
+        },
+        "input": {
+          "additionalProperties": {},
+          "description": "the tool's arguments",
+          "propertyNames": {
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "label": {
+          "description": "the control's visible label, if you have no ref",
+          "type": "string"
+        },
+        "ref": {
+          "description": "control ref from screen_read, e.g. r3",
+          "type": "string"
+        },
+        "tool": {
+          "description": "one of the app's own tools, from screen_read",
+          "type": "string"
+        },
+        "value": {
+          "description": "for fill / select",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "name": "screen_act",
+    "title": "Use the app on screen"
+  },
+  {
+    "_meta": {
+      "openai/widgetAccessible": true,
+      "ui": {
+        "visibility": [
+          "app"
+        ]
+      }
+    },
+    "annotations": {
+      "destructiveHint": false,
+      "openWorldHint": false,
+      "readOnlyHint": false,
+      "title": "Screen relay (internal)"
+    },
+    "description": "Internal (app-only): the open app's long poll for screen jobs.",
+    "inputSchema": {
+      "properties": {
+        "app": {
+          "type": "string"
+        },
+        "born": {
+          "type": "number"
+        },
+        "display": {
+          "type": "string"
+        },
+        "done": {
+          "properties": {
+            "id": {
+              "type": "string"
+            },
+            "isError": {
+              "type": "boolean"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "id",
+            "text"
+          ],
+          "type": "object"
+        },
+        "ping": {
+          "type": "boolean"
+        },
+        "session": {
+          "type": "string"
+        },
+        "touched": {
+          "type": "number"
+        },
+        "visible": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "session"
+      ],
+      "type": "object"
+    },
+    "name": "screen_poll",
+    "title": "Screen relay (internal)"
   }
 ]

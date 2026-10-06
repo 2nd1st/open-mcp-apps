@@ -20,7 +20,10 @@
 import { promises as fsp } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES } from "./store.mjs";
+import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES, CONFIRM_ALWAYS, SHARED_WRITE, SHARED_UPLOADS_PER_ACCOUNT, SHARED_UPLOADS_TOTAL, principalScope } from "./store.mjs";
+
+// The account a call runs as (store.mjs principalScope), or null outside any — every local install.
+const principalNow = () => principalScope.getStore()?.principal || null;
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const sha256hex = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -197,7 +200,8 @@ export class LocalFileBackend {
 export function makeFileChannel({ store, backend }) {
   // put: durable blob FIRST, then the ref (idempotent + OCC + quota) in the store's sync tx, then GC any
   // sha the overwrite freed. If the ref write fails, a freshly-written blob is an orphan → left for sweep.
-  async function put(app, path, data, { mime = "application/octet-stream", command_id, expected_version } = {}) {
+  // `shared` is the sharing facade's: a collaborator's write, which meets the per-app ceilings too.
+  async function put(app, path, data, { mime = "application/octet-stream", command_id, expected_version, shared = false } = {}) {
     if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
     if (String(path).includes("..") || !FILE_PATH_RE.test(String(path))) return { ok: false, error: "bad_path" };
     const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
@@ -208,6 +212,7 @@ export function makeFileChannel({ store, backend }) {
     const r = store.execute({
       type: "write_file", command_id: command_id || randomUUID(),
       app, path, sha256: sha, size: bytes.length, mime, expected_version,
+      ...(shared ? { [SHARED_WRITE]: true } : {}),
     });
     if (!r.ok) {
       // The store rejected (quota / OCC / bad input): a blob WE just wrote is now an unreferenced orphan.
@@ -249,8 +254,10 @@ export function makeFileChannel({ store, backend }) {
   // store and reads all three. Dropping them here is what made delete_file "classified but not
   // protected": the table said a file delete needs the user's yes, and the only channel to the
   // store could not express who was asking (codex review).
-  async function del(app, path, { command_id, expected_version, actor, via, request_state } = {}) {
-    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), app, path, expected_version, actor, via, request_state });
+  // `confirmAlways` is the sharing facade's: a delete through a share asks whatever actor it claims.
+  async function del(app, path, { command_id, expected_version, actor, via, request_state, confirmAlways = false } = {}) {
+    const r = store.execute({ type: "delete_file", command_id: command_id || randomUUID(), app, path, expected_version, actor, via, request_state,
+      ...(confirmAlways ? { [CONFIRM_ALWAYS]: true } : {}) });
     if (r.ok && r.freed_sha && store.blobRefcount(app, r.freed_sha) === 0) await backend.deleteBlob(app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS });
     return r;
   }
@@ -266,20 +273,32 @@ export function makeFileChannel({ store, backend }) {
   const uploads = new Map();              // upload_id → {app, stagingId, bytes, hash, touched, busy}
 
   function dropUpload(u, id) { uploads.delete(id); backend.dropStaging(u.stagingId).catch(() => {}); }
+  // An upload belongs to the ACCOUNT that began it. The id is a capability only to that account:
+  // two editors of one shared app write into the same owner channel, and without this a disclosed
+  // id let one append to, or commit, the other's staged bytes (S4 audit T7). Another account's id
+  // is answered exactly like an unknown one.
   function liveUpload(id) {
     const u = uploads.get(String(id));
-    if (!u) return null;
+    if (!u || u.principal !== principalNow()) return null;
     if (Date.now() - u.touched > UPLOAD_TTL_MS) { dropUpload(u, String(id)); return null; }
     return u;
   }
 
-  async function beginUpload(app) {
+  // `shared`: begun through a share (the facade). Collaborators hold at most SHARED_UPLOADS_TOTAL of
+  // the slots between them, SHARED_UPLOADS_PER_ACCOUNT each, so the owner always has slots left; the
+  // mark rides the upload, and its commit meets the per-app ceilings like a shared put.
+  async function beginUpload(app, { shared = false } = {}) {
     if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
     for (const [id, u] of uploads) if (Date.now() - u.touched > UPLOAD_TTL_MS) dropUpload(u, id); // lazy expiry
     if (uploads.size >= MAX_ACTIVE_UPLOADS) return { ok: false, error: "too_many_uploads" };
+    if (shared) {
+      const held = [...uploads.values()].filter((u) => u.shared);
+      if (held.length >= SHARED_UPLOADS_TOTAL || held.filter((u) => u.principal === principalNow()).length >= SHARED_UPLOADS_PER_ACCOUNT)
+        return { ok: false, error: "too_many_uploads" };
+    }
     const stagingId = await backend.openStaging();
     const upload_id = randomUUID();
-    uploads.set(upload_id, { app: String(app), stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
+    uploads.set(upload_id, { app: String(app), principal: principalNow(), shared: !!shared, stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
     return { ok: true, upload_id, bytes: 0 };
   }
 
@@ -326,7 +345,7 @@ export function makeFileChannel({ store, backend }) {
     } finally { u.busy = false; }
   }
 
-  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version } = {}) {
+  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version, shared = false } = {}) {
     // Idempotency FIRST, before the upload is even looked up. A successful commit CONSUMES its
     // upload, so the retry that arrives after a lost response finds no upload — and used to be told
     // "start again with file_write_begin", inducing a full re-upload of a file that was already
@@ -335,13 +354,14 @@ export function makeFileChannel({ store, backend }) {
     if (command_id) {
       const prior = store.priorReceipt(command_id);
       if (prior) {
-        if (prior.event_type !== "file_written") return { ok: false, error: "command_id_reused" };
+        // Another account's commit is not this call's receipt (same rule as store core()'s replay).
+        if (prior.event_type !== "file_written" || prior.principal !== principalNow()) return { ok: false, error: "command_id_reused" };
         const p = prior.payload || {};
         if (p.path !== String(path)) return { ok: false, error: "command_id_reused" };
         // If a LIVE upload is being aimed at this old command_id, its app must match the
         // original commit's — otherwise this is a reused id, and answering "success" would leave
         // the new upload silently uncommitted.
-        const uLive = uploads.get(String(upload_id));
+        const uLive = liveUpload(upload_id);
         if (uLive && uLive.app !== p.app) return { ok: false, error: "command_id_reused" };
         // The ORIGINAL receipt, from the event that made this command idempotent — never from the
         // current file row, which a later overwrite (or delete) may have moved on.
@@ -364,6 +384,7 @@ export function makeFileChannel({ store, backend }) {
       const r = store.execute({
         type: "write_file", command_id: command_id || randomUUID(),
         app: u.app, path, sha256: sha, size: u.bytes, mime, expected_version,
+        ...(shared || u.shared ? { [SHARED_WRITE]: true } : {}),
       });
       if (!r.ok) {
         if (!had && store.blobRefcount(u.app, sha) === 0) await backend.deleteBlob(u.app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
@@ -405,7 +426,11 @@ export function makeFileChannel({ store, backend }) {
     return { swept };
   }
 
-  return { put, get, stat, list, usage, del, sweepOrphans, beginUpload, appendUpload, commitUpload };
+  // Which app a live upload was opened for, or null — so a reader allowed only some apps can be
+  // refused an upload id minted for another (store.mjs scopeStore) without guessing.
+  function uploadApp(upload_id) { return liveUpload(upload_id)?.app ?? null; }
+
+  return { put, get, stat, list, usage, del, sweepOrphans, beginUpload, appendUpload, commitUpload, uploadApp };
 }
 
 // Convenience wiring for the engine: pick the backend from the store's own data dir + build the channel.

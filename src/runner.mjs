@@ -25,7 +25,7 @@
 // out-of-repo mirror has to exist.
 
 import { isControlPlaneTool, canonicalToolName, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
-import { viaOf, sansRequestState, withConfirmation, ackOf, RUNTIME_CONTRACT } from "./runtime-core.mjs";
+import { viaOf, sansRequestState, withConfirmation, ackOf } from "./runtime-core.mjs";
 
 // CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
 // script/img/font sources) — that closes fetch/XHR/img/font/frame egress on every host, incl.
@@ -378,13 +378,12 @@ export const TOKEN_NAMES = [
   "--border-width-regular", "--shadow-hairline", "--shadow-xs", "--shadow-sm", "--shadow-md", "--shadow-lg",
 ];
 
-/** The system UI kit as a head <style>. ONE definition of the tag, shared by every composer
- *  (this file's two, plus shell.mjs's wrapApp/wrapLoader) so the data-oma marker that
- *  identifies it — and that shell-runtime reads it back by — cannot drift between them.
- *  The CSS text itself is supplied by the caller: it lives in components/_system.css (MIT)
- *  and only a node-side reader (shell.mjs KIT_CSS) can reach the file. */
-export function kitStyle(css) {
-  return css ? '<style data-oma="kit">' + css + "</style>" : "";
+/** The page base (shell.mjs BASE_CSS) as a head <style>. ONE definition of the tag, shared by
+ *  every composer (this file's two, plus shell.mjs's wrapApp/wrapLoader) so the data-oma marker
+ *  that identifies it — and that shell-runtime reads it back by, to hand it to a child — cannot
+ *  drift between them. The CSS text is supplied by the caller. */
+export function baseStyle(css) {
+  return css ? '<style data-oma="base">' + css + "</style>" : "";
 }
 
 /** :root token style computed from a live document (browser-only caller).
@@ -414,7 +413,7 @@ export function tokenCSS(doc, substitute) {
 // one definition. The closing tag is split so this file can travel inside HTML safely.
 export const BRIDGE = [
   "<script>(function(){",
-  'var S={collection:null,items:[],version:0,app:null,host:null},TI={};',
+  'var S={collection:null,items:[],version:0,app:null,host:null};',
   'var readyCbs=[],changeCbs=[],prefCbs=[],isReady=false,seq=0,pending={},P=null,urlCache={},TA=[];',
   // ackOf is the REAL function, injected by toString() the way the height helpers travel — the
   // shape a write resolves to must not be a second opinion, and the child sits behind a
@@ -436,7 +435,6 @@ export const BRIDGE = [
   'window.addEventListener("message",function(ev){if(ev.source!==parent)return;var d=ev.data||{};',
   'if(d.omaRunResult&&pending[d.id]){var p=pending[d.id];delete pending[d.id];d.error?p[1](new Error(d.error)):p[0](d.result);}',
   'if(d.omaRunSnapshot&&d.snapshot){',
-  'if(d.toolInput)TI=d.toolInput;',
   // User theme layer, already merged and charset-checked by the parent (runtime-core themeVars):
   // apply verbatim as inline custom properties, and restore anything dropped since the last push
   // to the token <style> underneath. No rule is re-implemented here — only the assignment.
@@ -483,20 +481,17 @@ export const BRIDGE = [
   // Rides the generic callTool door so the guard's shaping (callee/via/actor forced to SELF)
   // fires exactly as it does for a hand-rolled call — the typed verb adds no second policy path.
   'callFunction:function(f,a){var q={function:String(f)};if(a!=null)q.args=a;return req("callTool",{name:"call_function",args:q}).then(function(r){return (r&&r.structuredContent)||null;})},',
-  // Same contract number the direct runtime reports — the whole point of oma.contract is that an
-  // app cannot tell which runtime it landed in by reading it, only which VOCABULARY it may use.
-  'get contract(){return ' + RUNTIME_CONTRACT + '},',
   // THE PARENT'S CONTEXT, INHERITED. An app reads `oma.standalone` to answer one question — am I
   // a card in someone's conversation, or do I own a screen — and the answer for a child is the
   // answer for the document it was mounted into: a wall at /view is a screen, and the app the
   // `@live` brick hangs there owns every pixel of its region. Hard-coded `false` said "you are in
-  // a chat" to an app standing on a display, so the kit drew it the card the stage contract exists
-  // to prevent (components/_system.css `body:not(.standalone)`). Read LAZILY off the global rather
+  // a chat" to an app standing on a display, and an app that styles itself by context (a card in
+  // chat, edge to edge on a screen) drew the wrong one. Read LAZILY off the global rather
   // than captured into a local: the flag script and this one then have no ordering contract at all.
   // The name is deliberately NOT `__OMA_STANDALONE__` — that global means "a shell frames me,
   // don't unpin my height" (SELF_HEIGHT_UNPIN_SOURCE), and a runner child IS measured by its
   // parent (omaRunHeight), so borrowing that name would silently freeze every child's height.
-  'get toolInput(){return TI}, get standalone(){return !!window.__OMA_CHILD_SA__} };',
+  'get standalone(){return !!window.__OMA_CHILD_SA__} };',
   HEIGHT_BROADCAST_SOURCE,
   "omaWatchHeight(omaSendHeight);",
   "})();</scr" + "ipt>",
@@ -522,13 +517,13 @@ export const BRIDGE = [
  *  document's CSP, and the two intersect. So this only reaches the network where the parent is
  *  permissive too — our /view page (whose header is built from the same declaration) — and never
  *  inside a host, where the host's own iframe CSP is the outer wall. */
-export function composeChildDoc(html, { tokenCss = "", kitCss = "", fallbackCss = "", bridge = BRIDGE, standalone = false, csp } = {}) {
+export function composeChildDoc(html, { tokenCss = "", baseCss = "", fallbackCss = "", bridge = BRIDGE, standalone = false, csp } = {}) {
   // Layer order is the cascade: neutral fallbacks, then the embedder's (substituted) tokens, then
-  // the kit, then the app's own markup and <style>. The child's THEME arrives at runtime as
+  // the page base, then the app's own markup and <style>. The child's THEME arrives at runtime as
   // inline custom properties on its <html>, which outrank all of these — same as in the parent.
   return "<!doctype html><html><head>" + (csp ? cspMeta(runnerCspFor(csp)) : RUNNER_CSP) + '<meta charset="utf-8">' +
     (fallbackCss ? '<style data-oma="token-fallback">' + fallbackCss + "</style>" : "") +
-    tokenCss + kitStyle(kitCss) +
+    tokenCss + baseStyle(baseCss) +
     (standalone ? '<scr' + 'ipt data-oma="child-context">window.__OMA_CHILD_SA__=1;</scr' + "ipt>" : "") +
     bridge + "</head><body>" + html + "</body></html>";
 }
@@ -609,6 +604,30 @@ export function makeGuard(cfg) {
   };
 
   const inScope = (id) => (snap().items || []).some((i) => i.id === id);
+
+  // A SHARED app (another account's — the engine's contracts.mjs sharedCaps) reaches a SET of
+  // collections, the `@owner/…` handles it was shared over, instead of one bound collection. Every
+  // collection argument it sends is pinned into that set: a handle in it passes; the bare name the
+  // owner's code was written with maps to its handle; anything else becomes the bound collection.
+  // So the code can never name the viewer's own collections, and its writes always say which
+  // shared collection they mean — the engine routes and re-checks by that.
+  const shared = Array.isArray(caps.collections) ? caps.collections.map(String) : null;
+  const handlePrefix = shared && String(coll).charAt(0) === "@" ? String(coll).slice(0, String(coll).indexOf("/") + 1) : "";
+  const pin = (c) => {
+    const s = c == null ? "" : String(c);
+    if (shared.includes(s)) return s;
+    if (handlePrefix && shared.includes(handlePrefix + s)) return handlePrefix + s;
+    return coll;
+  };
+  // The rows a shared app has been SHOWN, by id → collection: the only rows it may address by id.
+  // (The bound collection's rows are the snapshot's; a second shared collection's arrive through a
+  // read this guard forwarded.)
+  const seen = new Map();
+  const remember = (sc) => {
+    if (shared && sc && Array.isArray(sc.items) && shared.includes(String(sc.collection)))
+      for (const it of sc.items) if (it && it.id != null) seen.set(String(it.id), String(sc.collection));
+    return sc;
+  };
   // NO expected_version on the typed writes — LAST-WRITE-WINS, the same policy direct mode chose
   // and for the same reason (shell-runtime's long note: a widget write is the user rapid-clicking
   // their OWN UI, and sending the version they were last SHOWN made the second click carry a
@@ -699,7 +718,8 @@ export function makeGuard(cfg) {
     // and it is the RICHEST of the three — full events, fields and item ids for any collection
     // the child names (the "one missing line = cross-app escape" shape, again).
     if (tn === "data_list" || tn === "data_changes") {
-      if (caps.cross_collection_read !== true) ta.collection = coll;   // force the bound collection
+      if (shared) ta.collection = pin(ta.collection);                  // into the shared set
+      else if (caps.cross_collection_read !== true) ta.collection = coll;   // force the bound collection
     }
     // A batch is the model's bulk verb, not a widget's: forwarding it would need every
     // per-command rule above re-implemented inside the batch — one missed line is a
@@ -717,6 +737,7 @@ export function makeGuard(cfg) {
     }
     if (DATA_WRITE_TOOLS.has(tn)) return dataWrite(tn, ta, { bound: false });
     const r = await io.callTool(tn, ta);
+    if (tn === "data_list") remember(r && r.structuredContent);
     // Upload-id bookkeeping rides the RESULT, because the id is minted server-side. A commit
     // consumes the upload either way (files.mjs contract), so the id is retired with it.
     if (tn === "file_write_begin") { const id = r && r.structuredContent && r.structuredContent.upload_id; if (id) myUploads.add(String(id)); }
@@ -736,6 +757,19 @@ export function makeGuard(cfg) {
   async function dataWrite(tn, ta, { bound }) {
     ta.actor = "human";   // runner-stamped provenance
     ta.via = via();       // shadow edge — forced, never child-supplied
+    if (shared) {
+      // A shared app: the add lands in the shared set; an id write names the shared collection the
+      // row was SHOWN in, or is refused — never left for the engine to find by id alone, where it
+      // could match a row of the viewer's own.
+      if (tn === "data_add_item") ta.collection = pin(bound ? coll : ta.collection);
+      else {
+        const at = seen.get(String(ta.id)) || (inScope(ta.id) ? coll : null);
+        if (!at) throw new Error("out of scope");
+        ta.collection = at;
+      }
+      if (tn === "data_delete_item") { deleteGate(ta); return confirmable(tn, ta); }
+      return io.callTool(tn, ta);
+    }
     if (tn === "data_add_item") {
       if (bound || caps.cross_collection_write !== true) ta.collection = coll;
       settingsGuard(ta.collection);
@@ -761,8 +795,9 @@ export function makeGuard(cfg) {
       case "deleteItem":
         return dataWrite("data_delete_item", { command_id: uuid(), id: a.id }, { bound: true });
       case "refresh":
-        return io.readCollection(coll);
+        return remember(await io.readCollection(coll));
       case "readCollection": {
+        if (shared) return remember(await io.readCollection(pin(a.collection ?? coll)));
         const c = caps.cross_collection_read === true ? String(a.collection || coll) : coll;
         return io.readCollection(c);
       }
@@ -956,7 +991,7 @@ export function stubOmaScript(name, items, apps, prefs) {
     ":{content:[],structuredContent:{}})}," +
     "readCollection:function(c){return Promise.resolve(R(c))}," +
     "files:{list:function(){return Promise.resolve({files:[]})},read:function(){return Promise.reject(new Error(\"not available in this preview\"))},url:function(){return Promise.reject(new Error(\"not available in this preview\"))}}," +
-    "sendMessage:function(){return ok},toolInput:{app:S.app,collection:S.collection},standalone:true};})();</scr" +
+    "sendMessage:function(){return ok},standalone:true};})();</scr" +
     "ipt>";
 }
 
@@ -975,10 +1010,14 @@ const HEIGHT_BROADCAST =
   "<scr" + "ipt>(function(){" + HEIGHT_BROADCAST_SOURCE +
   "omaWatchHeight(omaSendHeight);})();</scr" + "ipt>";
 
-export function composePreviewDoc(html, { name, items = [], apps = [], prefs = {}, tokenCss = "", kitCss = "" } = {}) {
-  return "<!doctype html><html><head>" + RUNNER_CSP +
+// `csp` is what the previewed app may load from — the same merged declaration composeChildDoc takes
+// (for every app at least the platform base: the CDN script hosts and Google Fonts). Without it the
+// preview sits on the floor, and an app written the way the guide now teaches — React or Tailwind
+// from a CDN, a Google font — previews as a blank page. Omitted ⇒ the floor, byte-identical to before.
+export function composePreviewDoc(html, { name, items = [], apps = [], prefs = {}, tokenCss = "", baseCss = "", csp } = {}) {
+  return "<!doctype html><html><head>" + (csp ? cspMeta(runnerCspFor(csp)) : RUNNER_CSP) +
     '<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">' +
-    tokenCss + kitStyle(kitCss) + stubOmaScript(String(name || ""), items, apps, prefs) + "</head><body>" + html +
+    tokenCss + baseStyle(baseCss) + stubOmaScript(String(name || ""), items, apps, prefs) + "</head><body>" + html +
     HEIGHT_BROADCAST + "</body></html>";
 }
 

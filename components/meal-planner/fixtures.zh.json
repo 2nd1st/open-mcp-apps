@@ -1,0 +1,1123 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "mp-zh-2026-06-22-dinner",
+      "group": "dinner",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-22",
+        "meal_type": "dinner",
+        "dish": "酸菜鱼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-23-dinner",
+      "group": "dinner",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-23",
+        "meal_type": "dinner",
+        "dish": "麻婆豆腐 · 清炒菜心",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-24-lunch",
+      "group": "lunch",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-24",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-24-dinner",
+      "group": "dinner",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-24",
+        "meal_type": "dinner",
+        "dish": "麻婆豆腐 · 清炒菜心",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-25-lunch",
+      "group": "lunch",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-25",
+        "meal_type": "lunch",
+        "dish": "番茄鸡蛋面",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-25-dinner",
+      "group": "dinner",
+      "position": 4,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-25",
+        "meal_type": "dinner",
+        "dish": "土豆炖牛腩",
+        "servings": 4,
+        "ingredients_note": "多炖一点，明天带饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-26-lunch",
+      "group": "lunch",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-26",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-26-dinner",
+      "group": "dinner",
+      "position": 5,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-26",
+        "meal_type": "dinner",
+        "dish": "外卖 · 周五不做饭",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-27-breakfast",
+      "group": "breakfast",
+      "position": 1,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-27",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-27-dinner",
+      "group": "dinner",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-27",
+        "meal_type": "dinner",
+        "dish": "土豆炖牛腩",
+        "servings": 4,
+        "ingredients_note": "多炖一点，明天带饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-28-breakfast",
+      "group": "breakfast",
+      "position": 2,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-28",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-28-lunch",
+      "group": "lunch",
+      "position": 4,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-28",
+        "meal_type": "lunch",
+        "dish": "带饭 · 土豆炖牛腩",
+        "servings": 2,
+        "ingredients_note": "昨晚剩的"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-28-dinner",
+      "group": "dinner",
+      "position": 7,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-28",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-29-lunch",
+      "group": "lunch",
+      "position": 5,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-29",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-30-lunch",
+      "group": "lunch",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-30",
+        "meal_type": "lunch",
+        "dish": "带饭 · 咖喱鸡饭",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-06-30-dinner",
+      "group": "dinner",
+      "position": 8,
+      "version": 1,
+      "fields": {
+        "date": "2026-06-30",
+        "meal_type": "dinner",
+        "dish": "咖喱鸡饭",
+        "servings": 3,
+        "ingredients_note": "少放辣"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-01-dinner",
+      "group": "dinner",
+      "position": 9,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-01",
+        "meal_type": "dinner",
+        "dish": "麻婆豆腐 · 清炒菜心",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-02-dinner",
+      "group": "dinner",
+      "position": 10,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-02",
+        "meal_type": "dinner",
+        "dish": "香菇滑鸡 · 炒豆苗",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-03-dinner",
+      "group": "dinner",
+      "position": 11,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-03",
+        "meal_type": "dinner",
+        "dish": "楼下吃面",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-04-breakfast",
+      "group": "breakfast",
+      "position": 3,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-04",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-05-breakfast",
+      "group": "breakfast",
+      "position": 4,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-05",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-05-dinner",
+      "group": "dinner",
+      "position": 12,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-05",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-06-dinner",
+      "group": "dinner",
+      "position": 13,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-06",
+        "meal_type": "dinner",
+        "dish": "清蒸鲈鱼 · 番茄炒蛋",
+        "servings": 3,
+        "ingredients_note": "鱼早上去菜场买"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-07-lunch",
+      "group": "lunch",
+      "position": 7,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-07",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-07-dinner",
+      "group": "dinner",
+      "position": 14,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-07",
+        "meal_type": "dinner",
+        "dish": "红烧排骨 · 蒜蓉西兰花",
+        "servings": 3,
+        "ingredients_note": "排骨周日买好了"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-08-breakfast",
+      "group": "breakfast",
+      "position": 5,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-08",
+        "meal_type": "breakfast",
+        "dish": "鸡蛋饼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-08-dinner",
+      "group": "dinner",
+      "position": 15,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-08",
+        "meal_type": "dinner",
+        "dish": "红烧排骨 · 蒜蓉西兰花",
+        "servings": 3,
+        "ingredients_note": "排骨周日买好了"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-09-breakfast",
+      "group": "breakfast",
+      "position": 6,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-09",
+        "meal_type": "breakfast",
+        "dish": "鸡蛋饼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-11-breakfast",
+      "group": "breakfast",
+      "position": 7,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-11",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-12-breakfast",
+      "group": "breakfast",
+      "position": 8,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-12",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-12-dinner",
+      "group": "dinner",
+      "position": 16,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-12",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-13-dinner",
+      "group": "dinner",
+      "position": 17,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-13",
+        "meal_type": "dinner",
+        "dish": "香菇滑鸡 · 炒豆苗",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-14-lunch",
+      "group": "lunch",
+      "position": 8,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-14",
+        "meal_type": "lunch",
+        "dish": "番茄鸡蛋面",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-14-dinner",
+      "group": "dinner",
+      "position": 18,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-14",
+        "meal_type": "dinner",
+        "dish": "糖醋里脊 · 紫菜蛋花汤",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-15-breakfast",
+      "group": "breakfast",
+      "position": 9,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-15",
+        "meal_type": "breakfast",
+        "dish": "燕麦牛奶 · 水煮蛋",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-15-dinner",
+      "group": "dinner",
+      "position": 19,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-15",
+        "meal_type": "dinner",
+        "dish": "香菇滑鸡 · 炒豆苗",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-16-dinner",
+      "group": "dinner",
+      "position": 20,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-16",
+        "meal_type": "dinner",
+        "dish": "咖喱鸡饭",
+        "servings": 3,
+        "ingredients_note": "少放辣"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-17-breakfast",
+      "group": "breakfast",
+      "position": 10,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-17",
+        "meal_type": "breakfast",
+        "dish": "小米粥 · 肉包",
+        "servings": 3,
+        "ingredients_note": "包子前一晚拿出来解冻"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-17-lunch",
+      "group": "lunch",
+      "position": 9,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-17",
+        "meal_type": "lunch",
+        "dish": "番茄鸡蛋面",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-17-dinner",
+      "group": "dinner",
+      "position": 21,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-17",
+        "meal_type": "dinner",
+        "dish": "楼下吃面",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-18-breakfast",
+      "group": "breakfast",
+      "position": 11,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-18",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-18-dinner",
+      "group": "dinner",
+      "position": 22,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-18",
+        "meal_type": "dinner",
+        "dish": "酸菜鱼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-19-breakfast",
+      "group": "breakfast",
+      "position": 12,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-19",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-19-dinner",
+      "group": "dinner",
+      "position": 23,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-19",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-20-lunch",
+      "group": "lunch",
+      "position": 10,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-20",
+        "meal_type": "lunch",
+        "dish": "带饭 · 土豆炖牛腩",
+        "servings": 2,
+        "ingredients_note": "昨晚剩的"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-20-dinner",
+      "group": "dinner",
+      "position": 24,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-20",
+        "meal_type": "dinner",
+        "dish": "麻婆豆腐 · 清炒菜心",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-21-breakfast",
+      "group": "breakfast",
+      "position": 13,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-21",
+        "meal_type": "breakfast",
+        "dish": "燕麦牛奶 · 水煮蛋",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-21-dinner",
+      "group": "dinner",
+      "position": 25,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-21",
+        "meal_type": "dinner",
+        "dish": "红烧排骨 · 蒜蓉西兰花",
+        "servings": 3,
+        "ingredients_note": "排骨周日买好了"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-22-lunch",
+      "group": "lunch",
+      "position": 11,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-22",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-22-dinner",
+      "group": "dinner",
+      "position": 26,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-22",
+        "meal_type": "dinner",
+        "dish": "香菇滑鸡 · 炒豆苗",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-23-breakfast",
+      "group": "breakfast",
+      "position": 14,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-23",
+        "meal_type": "breakfast",
+        "dish": "鸡蛋饼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-23-dinner",
+      "group": "dinner",
+      "position": 27,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-23",
+        "meal_type": "dinner",
+        "dish": "糖醋里脊 · 紫菜蛋花汤",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-24-dinner",
+      "group": "dinner",
+      "position": 28,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-24",
+        "meal_type": "dinner",
+        "dish": "外卖 · 周五不做饭",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-25-breakfast",
+      "group": "breakfast",
+      "position": 15,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-25",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-26-breakfast",
+      "group": "breakfast",
+      "position": 16,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-26",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-26-dinner",
+      "group": "dinner",
+      "position": 29,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-26",
+        "meal_type": "dinner",
+        "dish": "腌笃鲜",
+        "servings": 4,
+        "ingredients_note": "春笋换成冬笋"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-27-dinner",
+      "group": "dinner",
+      "position": 30,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-27",
+        "meal_type": "dinner",
+        "dish": "清蒸鲈鱼 · 番茄炒蛋",
+        "servings": 3,
+        "ingredients_note": "鱼早上去菜场买"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-28-breakfast",
+      "group": "breakfast",
+      "position": 17,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-28",
+        "meal_type": "breakfast",
+        "dish": "燕麦牛奶 · 水煮蛋",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-28-dinner",
+      "group": "dinner",
+      "position": 31,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-28",
+        "meal_type": "dinner",
+        "dish": "清蒸鲈鱼 · 番茄炒蛋",
+        "servings": 3,
+        "ingredients_note": "鱼早上去菜场买"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-29-breakfast",
+      "group": "breakfast",
+      "position": 18,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-29",
+        "meal_type": "breakfast",
+        "dish": "燕麦牛奶 · 水煮蛋",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-29-dinner",
+      "group": "dinner",
+      "position": 32,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-29",
+        "meal_type": "dinner",
+        "dish": "酸菜鱼",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-30-dinner",
+      "group": "dinner",
+      "position": 33,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-30",
+        "meal_type": "dinner",
+        "dish": "咖喱鸡饭",
+        "servings": 3,
+        "ingredients_note": "少放辣"
+      }
+    },
+    {
+      "id": "mp-zh-2026-07-31-dinner",
+      "group": "dinner",
+      "position": 34,
+      "version": 1,
+      "fields": {
+        "date": "2026-07-31",
+        "meal_type": "dinner",
+        "dish": "楼下吃面",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-01-breakfast",
+      "group": "breakfast",
+      "position": 19,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-01",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-01-dinner",
+      "group": "dinner",
+      "position": 35,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-01",
+        "meal_type": "dinner",
+        "dish": "虾仁炒蛋 · 冬瓜排骨汤",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-02-breakfast",
+      "group": "breakfast",
+      "position": 20,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-02",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-02-dinner",
+      "group": "dinner",
+      "position": 36,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-02",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-03-lunch",
+      "group": "lunch",
+      "position": 12,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-03",
+        "meal_type": "lunch",
+        "dish": "带饭 · 红烧排骨",
+        "servings": 2,
+        "ingredients_note": "昨天剩的"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-03-dinner",
+      "group": "dinner",
+      "position": 37,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-03",
+        "meal_type": "dinner",
+        "dish": "土豆炖牛腩",
+        "servings": 4,
+        "ingredients_note": "多炖一点，明天带饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-04-breakfast",
+      "group": "breakfast",
+      "position": 21,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-04",
+        "meal_type": "breakfast",
+        "dish": "小米粥 · 肉包",
+        "servings": 3,
+        "ingredients_note": "包子前一晚拿出来解冻"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-04-lunch",
+      "group": "lunch",
+      "position": 13,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-04",
+        "meal_type": "lunch",
+        "dish": "带饭 · 土豆炖牛腩",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-04-dinner",
+      "group": "dinner",
+      "position": 38,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-04",
+        "meal_type": "dinner",
+        "dish": "清蒸鲈鱼 · 番茄炒蛋",
+        "servings": 3,
+        "ingredients_note": "鱼早上去菜场买"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-05-lunch",
+      "group": "lunch",
+      "position": 14,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-05",
+        "meal_type": "lunch",
+        "dish": "番茄鸡蛋面",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-05-dinner",
+      "group": "dinner",
+      "position": 39,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-05",
+        "meal_type": "dinner",
+        "dish": "可乐鸡翅 · 凉拌黄瓜",
+        "servings": 3,
+        "ingredients_note": "朵朵点的"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-06-breakfast",
+      "group": "breakfast",
+      "position": 22,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-06",
+        "meal_type": "breakfast",
+        "dish": "燕麦牛奶 · 水煮蛋",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-06-lunch",
+      "group": "lunch",
+      "position": 15,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-06",
+        "meal_type": "lunch",
+        "dish": "小馄饨",
+        "servings": 2,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-06-dinner",
+      "group": "dinner",
+      "position": 40,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-06",
+        "meal_type": "dinner",
+        "dish": "香菇滑鸡 · 炒豆苗",
+        "servings": 3,
+        "ingredients_note": "鸡腿早上从冷冻室拿出来"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-07-dinner",
+      "group": "dinner",
+      "position": 41,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-07",
+        "meal_type": "dinner",
+        "dish": "外卖 · 周五不做饭",
+        "servings": 3,
+        "ingredients_note": "朵朵的同学来家里玩"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-08-breakfast",
+      "group": "breakfast",
+      "position": 23,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-08",
+        "meal_type": "breakfast",
+        "dish": "豆浆油条",
+        "servings": 3,
+        "ingredients_note": "楼下早餐店"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-08-dinner",
+      "group": "dinner",
+      "position": 42,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-08",
+        "meal_type": "dinner",
+        "dish": "饺子 · 一半香菇韭菜馅",
+        "servings": 5,
+        "ingredients_note": "给客人准备一半素馅"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-09-breakfast",
+      "group": "breakfast",
+      "position": 24,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-09",
+        "meal_type": "breakfast",
+        "dish": "生煎 · 豆腐花",
+        "servings": 3,
+        "ingredients_note": "周末去老街吃"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-09-dinner",
+      "group": "dinner",
+      "position": 43,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-09",
+        "meal_type": "dinner",
+        "dish": "火锅",
+        "servings": 5,
+        "ingredients_note": "爸妈过来吃，多买点羊肉卷"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-10-lunch",
+      "group": "lunch",
+      "position": 16,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-10",
+        "meal_type": "lunch",
+        "dish": "扬州炒饭",
+        "servings": 2,
+        "ingredients_note": "用掉剩米饭"
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-10-dinner",
+      "group": "dinner",
+      "position": 44,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-10",
+        "meal_type": "dinner",
+        "dish": "麻婆豆腐 · 清炒菜心",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-12-dinner",
+      "group": "dinner",
+      "position": 45,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-12",
+        "meal_type": "dinner",
+        "dish": "糖醋里脊 · 紫菜蛋花汤",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    },
+    {
+      "id": "mp-zh-2026-08-14-dinner",
+      "group": "dinner",
+      "position": 46,
+      "version": 1,
+      "fields": {
+        "date": "2026-08-14",
+        "meal_type": "dinner",
+        "dish": "楼下吃面",
+        "servings": 3,
+        "ingredients_note": ""
+      }
+    }
+  ]
+}

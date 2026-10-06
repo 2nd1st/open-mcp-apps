@@ -9,8 +9,63 @@
 
 <!-- gpt-image production seed spec: square 1:1, photorealistic, generated in one batch per topic. Store fixture images are AI-generated preview references and are labeled as such in media_source/media_credit. -->
 <style>
-  /* No body rule. The private 760px column that used to live here is manifest.stage.width now;
-     the ground, outer padding and chat frame belong to the kit's stage contract. */
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-ink-7:color-mix(in oklab,var(--color-text-primary) 7%,transparent);--k-s2:8px;--k-s3:12px;--k-t-fast:120ms;--k-t:180ms;--k-t-slow:260ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms;--k-t-slow:0ms}.k-stagger>*,.k-pop,.k-skel{animation:none!important}}
+  .k-h1{margin:0;font-size:var(--font-heading-sm-size,18px);font-weight:650;letter-spacing:-.01em}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+  .k-card{position:relative;border:1px solid var(--color-border-primary);border-radius:var(--border-radius-lg,14px);background:var(--color-background-primary);padding:var(--k-s3) 14px;transition:transform var(--k-t) var(--k-ease),box-shadow var(--k-t) var(--k-ease),border-color var(--k-t) var(--k-ease)}
+  .k-card.is-click{cursor:pointer}
+  .k-card.is-click:hover{transform:translateY(-1px);box-shadow:var(--shadow-md,var(--shadow-sm));border-color:color-mix(in oklab,var(--k-accent) 28%,transparent)}
+  .k-card.is-click:active{transform:translateY(0) scale(.985);box-shadow:none}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-tabs{display:inline-flex;gap:2px;padding:3px;background:var(--color-background-secondary);border-radius:var(--border-radius-md,10px)}
+  .k-tab{display:inline-flex;align-items:center;gap:6px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:550;padding:5px 12px;border-radius:var(--border-radius-sm,7px);transition:background var(--k-t) var(--k-ease),color var(--k-t)}
+  .k-tab.on{background:var(--color-background-primary);color:var(--color-text-primary);box-shadow:var(--shadow-sm)}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-skel{color:transparent;border-radius:var(--border-radius-sm,7px);background:linear-gradient(100deg,var(--k-ink-4) 40%,var(--k-ink-7) 50%,var(--k-ink-4) 60%) 0 0/300% 100%;animation:k-shimmer 1.4s linear infinite}
+  .k-stagger>*{animation:k-in var(--k-t-slow) var(--k-ease) backwards;animation-delay:calc(min(var(--i,0),9)*35ms)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  @keyframes k-shimmer{to{background-position:-300% 0}}
+  @keyframes k-in{from{opacity:0;translate:0 6px}}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
 
   button,
   input,
@@ -18,22 +73,39 @@
     letter-spacing: 0;
   }
 
-  /* `.app` is `.k-stage` now. There was no self-drawn card frame to strip; position is
-     load-bearing because the detail overlay is absolute against this root, and min-width keeps
-     its gallery and editor children shrinkable. */
+  /* `.app` is the `.k-stage` root. Position is load-bearing because the detail overlay is
+     absolute against this root, and min-width keeps its gallery and editor children shrinkable. */
   .app {
+    /* One identity colour: graphite ink — the colour of a pencilled note in a margin. It marks
+       the mark, the ask button, the selected filter and the topic tag. The photos are the colour
+       of this app; everything structural stays on host tokens. */
+    --kc-accent: light-dark(#3d4450, #c9d0da);
+    --kc-on-accent: light-dark(#ffffff, #15181d);
+    --kc-tint: color-mix(in oklab, var(--kc-accent) 9%, transparent);
+    --k-accent: var(--kc-accent);
+    --topic-color: var(--kc-accent);
     position: relative;
     min-width: 0;
   }
 
-  /* `.app-bar` is `.k-appbar` now: row, gaps, padding, mark box and type scale come from the kit,
-     along with the chat-only rule under the bar. The mark keeps its paint below — identity is
-     content, and the stage contract strips frames, never faces. */
+  .app .k-chip.on {
+    background: var(--kc-tint);
+    border-color: color-mix(in oklab, var(--kc-accent) 40%, transparent);
+    color: var(--kc-accent);
+  }
+
+  #summary {
+    margin: 1px 0 0;
+    color: var(--color-text-secondary);
+    font-size: var(--font-text-sm-size, 12px);
+  }
+
+  /* `.app-bar` is a `.k-appbar` (rules above), including the chat-only rule under the bar. The
+     mark's paint below is this app's own. */
 
   .brand-mark {
-    border: 1px solid var(--color-border-primary);
-    color: var(--color-text-info, var(--color-ring-primary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, transparent);
+    color: var(--kc-accent);
+    background: var(--kc-tint);
   }
 
   .identity .k-h1 {
@@ -54,12 +126,12 @@
     align-items: center;
     gap: var(--k-s2);
     /* Pull this edge over the app bar's chat-only rule: the functional strip stays attached to
-       the hero without turning its own top border plus the kit's rule into a two-line seam. */
+       the hero without turning its own top border plus the bar's rule into a two-line seam. */
     margin: -1px 15px 8px;
     padding: 8px;
     border: 1px solid var(--color-border-primary);
     border-radius: var(--border-radius-md);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
+    background: var(--color-background-primary);
     box-shadow: var(--shadow-sm);
   }
 
@@ -69,7 +141,7 @@
     flex: none;
     display: grid;
     place-items: center;
-    color: var(--color-text-info, var(--color-ring-primary));
+    color: var(--kc-accent);
   }
 
   .ask-mark .k-icon {
@@ -89,52 +161,28 @@
     flex: none;
   }
 
-  #askSubmit .k-icon {
+  .app .k-btn:not(.sec):not(.ghost):not(.danger) {
+    background: var(--kc-accent);
+    color: var(--kc-on-accent);
+  }
+
+  /* `.k-empty > svg` is sized as an illustration; a button icon inside is not one. */
+  .k-empty .k-btn svg {
+    width: 16px;
+    height: 16px;
     margin-right: 5px;
   }
 
-  .overview {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    min-width: 0;
-    padding: 6px 15px;
-    border-block: 1px solid var(--color-border-secondary);
+  .app.is-empty .controls {
+    display: none;
   }
 
-  .overview-main,
-  .stat {
-    display: flex;
-    align-items: baseline;
-    gap: 4px;
-    min-width: max-content;
+  .detail-grid.no-media {
+    grid-template-columns: 1fr;
   }
 
-  .overview-number {
-    font-size: 13px;
-    font-weight: 720;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .overview-label,
-  .stat-label {
-    color: var(--color-text-tertiary);
-    font-size: 10.5px;
-    line-height: 1.2;
-  }
-
-  .stat {
-    padding-left: 12px;
-    border-left: 1px solid var(--color-border-secondary);
-  }
-
-  .stat-value {
-    font-size: 12px;
-    font-weight: 680;
-    line-height: 1.1;
-    font-variant-numeric: tabular-nums;
+  #askSubmit .k-icon {
+    margin-right: 5px;
   }
 
   .controls {
@@ -253,8 +301,11 @@
     display: none;
   }
 
+  /* The wall scrolls inside its own frame, so the ask box and filters stay on the first screen. */
   .gallery-scroll {
-    overflow: visible;
+    max-height: 820px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 5px 15px 17px;
   }
 
@@ -264,14 +315,12 @@
   }
 
   .knowledge-card {
-    --topic-color: var(--color-text-info, var(--color-ring-primary));
     position: relative;
     display: inline-block;
     width: 100%;
     margin: 0 0 var(--k-s3);
     padding: 0;
     overflow: hidden;
-    border-top: 2px solid var(--topic-color);
     break-inside: avoid;
     cursor: pointer;
   }
@@ -282,37 +331,17 @@
   }
 
   .knowledge-card.is-text-only {
-    min-height: 198px;
-    background:
-      radial-gradient(circle at 100% 0%, color-mix(in oklab, var(--topic-color) 13%, transparent), transparent 46%),
-      var(--color-background-primary);
-  }
-
-  .knowledge-card.is-text-only::after {
-    position: absolute;
-    top: 13px;
-    right: 16px;
-    color: color-mix(in oklab, var(--topic-color) 12%, transparent);
-    font-size: 56px;
-    font-weight: 780;
-    line-height: 1;
-    content: attr(data-glyph);
-    pointer-events: none;
+    min-height: 150px;
   }
 
   .knowledge-card.is-text-only .card-body {
     position: relative;
     z-index: 1;
-    min-height: 196px;
+    min-height: 148px;
     padding: 17px 17px 18px;
   }
 
-  .knowledge-card.is-text-only .card-kicker {
-    padding-right: 42px;
-  }
-
   .knowledge-card.is-text-only .card-title {
-    max-width: 19ch;
     font-size: 18px;
   }
 
@@ -341,15 +370,8 @@
     display: grid;
     place-items: center;
     overflow: hidden;
-    color: var(--topic-color);
-    background-color: color-mix(in oklab, var(--topic-color) 9%, var(--color-background-secondary));
-    background-image: repeating-linear-gradient(
-      135deg,
-      color-mix(in oklab, var(--topic-color) 7%, transparent) 0,
-      color-mix(in oklab, var(--topic-color) 7%, transparent) 1px,
-      transparent 1px,
-      transparent 12px
-    );
+    color: var(--color-text-tertiary);
+    background: var(--color-background-secondary);
   }
 
   .placeholder-letter {
@@ -365,11 +387,8 @@
     bottom: 8px;
     max-width: calc(100% - 18px);
     color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 600;
   }
 
   .media-loading {
@@ -390,7 +409,7 @@
   }
 
   .media-origin {
-    --origin-color: var(--color-text-info, var(--color-ring-primary));
+    --origin-color: var(--color-text-info, var(--color-text-secondary));
     position: absolute;
     top: 9px;
     left: 9px;
@@ -406,12 +425,10 @@
     color: var(--color-text-primary);
     background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
     box-shadow: var(--shadow-sm);
-    font-size: 9.5px;
-    font-weight: 720;
+    font-size: 10.5px;
+    font-weight: 700;
     line-height: 1;
     white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
     backdrop-filter: blur(10px);
   }
 
@@ -424,12 +441,14 @@
     content: "";
   }
 
+  /* Provenance is meaning, so it keeps host status colour: your own photo is the real thing
+     (success), a web copy is a reference (info), generated art is plainly marked as such. */
   .media-origin[data-source="user"] {
-    --origin-color: var(--color-text-success, var(--k-hue-3));
+    --origin-color: var(--color-text-success, var(--kc-accent));
   }
 
   .media-origin[data-source="ai"] {
-    --origin-color: var(--k-hue-4, var(--color-text-info, var(--color-ring-primary)));
+    --origin-color: var(--color-text-tertiary);
   }
 
   .card-body {
@@ -444,7 +463,6 @@
   }
 
   .topic-chip {
-    --topic-color: var(--color-text-info, var(--color-ring-primary));
     color: var(--topic-color);
     border-color: color-mix(in oklab, var(--topic-color) 34%, var(--color-border-secondary));
     background: color-mix(in oklab, var(--topic-color) 9%, transparent);
@@ -473,15 +491,13 @@
     overflow-wrap: anywhere;
   }
 
+  /* The card shows a preview cut at a word by the script (never a CSS clip); the whole answer is
+     one tap away in the detail. */
   .card-answer {
-    display: -webkit-box;
     margin: 9px 0 0;
-    overflow: hidden;
     color: var(--color-text-secondary);
     font-size: 13.5px;
     line-height: 1.58;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 4;
   }
 
   .empty-shell {
@@ -514,14 +530,14 @@
     left: 18px;
     top: 8px;
     rotate: -7deg;
-    color: var(--k-hue-2, var(--color-text-info, var(--color-ring-primary)));
+    color: var(--color-text-tertiary);
   }
 
   .sketch-card.front {
     right: 12px;
     top: 1px;
     rotate: 6deg;
-    color: var(--k-hue-4, var(--color-text-success));
+    color: var(--kc-accent);
   }
 
   .sketch-card svg {
@@ -575,12 +591,11 @@
   }
 
   .detail-panel {
-    --topic-color: var(--color-text-info, var(--color-ring-primary));
     width: min(680px, 100%);
     max-height: none;
     padding: 0;
     overflow: visible;
-    border-top: 4px solid var(--topic-color);
+    border-top: 3px solid var(--kc-accent);
     background: var(--color-background-primary);
     box-shadow: var(--shadow-lg, var(--shadow-sm));
   }
@@ -720,6 +735,34 @@
       animation: sketch-breathe 3.4s var(--k-ease) infinite alternate;
     }
 
+    /* A card saved while you watch (by the AI, or harvested from the chat) is pinned onto the
+       wall — the one moment this app has. Existing cards never replay an entrance. */
+    .knowledge-card.arrived {
+      animation: pin-in 620ms var(--k-spring) both;
+    }
+
+    .knowledge-card.saved-flash .topic-chip {
+      animation: chip-set 520ms var(--k-spring);
+    }
+
+    @keyframes pin-in {
+      0% {
+        opacity: 0;
+        translate: 0 -14px;
+        rotate: -2.5deg;
+        scale: .96;
+      }
+      100% {
+        opacity: 1;
+      }
+    }
+
+    @keyframes chip-set {
+      0% {
+        scale: .8;
+      }
+    }
+
     @keyframes detail-in {
       from {
         opacity: 0;
@@ -794,9 +837,6 @@
       display: none;
     }
 
-    .eyebrow {
-      display: none;
-    }
 
     .ask-strip {
       min-height: 52px;
@@ -824,14 +864,6 @@
       display: none;
     }
 
-    .overview {
-      gap: 8px;
-      padding-inline: 10px;
-    }
-
-    .stat {
-      padding-left: 8px;
-    }
 
     .controls {
       padding-inline: 10px;
@@ -928,19 +960,6 @@
       min-width: 0;
     }
 
-    .overview {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px 12px;
-      align-items: start;
-    }
-
-    .overview-main,
-    .stat {
-      min-width: 0;
-      padding-left: 0;
-      border-left: 0;
-    }
   }
 </style>
 </head>
@@ -955,8 +974,8 @@
         </svg>
       </div>
       <div class="identity k-appcopy">
-        <p class="eyebrow k-eyebrow" data-i18n="eyebrow">Visual knowledge index</p>
         <h1 class="k-h1" data-i18n="app_title">Knowledge Cards</h1>
+        <p id="summary"></p>
       </div>
       <button class="k-btn sec bar-action" id="harvestButton" type="button">
         <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
@@ -980,25 +999,6 @@
         <span class="ask-label" data-i18n="ask_button">Ask &amp; keep</span>
       </button>
     </form>
-
-    <section class="overview" data-i18n-aria-label="overview_aria" aria-label="Knowledge card overview">
-      <div class="overview-main">
-        <span class="overview-number k-num" id="totalCount">0</span>
-        <div class="overview-label" data-i18n="answers_saved">answers saved</div>
-      </div>
-      <div class="stat">
-        <span class="stat-value k-num" id="topicCount">0</span>
-        <span class="stat-label" data-i18n="topics">topics</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value k-num" id="imageCount">0</span>
-        <span class="stat-label" data-i18n="with_images">with images</span>
-      </div>
-      <div class="stat">
-        <span class="stat-value k-num" id="weekCount">0</span>
-        <span class="stat-label" data-i18n="last_seven_days">last 7 days</span>
-      </div>
-    </section>
 
     <section class="controls" data-i18n-aria-label="filters_aria" aria-label="Filter knowledge cards">
       <div class="search-row">
@@ -1048,26 +1048,22 @@
   <script type="module">
     const oma = window.oma;
 
-    // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-    // browser viewer or a panel host, both already framed, so the kit draws no card; absent = a
-    // widget in someone's conversation, where the card is ours to draw.
+    // `standalone` = the browser viewer or a panel host, which frame the page already; absent = a
+    // widget in someone's conversation. The `body:not(.standalone) .k-appbar` rule above reads it.
     if (oma.standalone) document.body.classList.add("standalone");
 
     const STR = {
       en: {
         page_title: "Knowledge Cards - Keep useful answers in a visual library",
         meta_description: "Keep useful AI answers in a searchable visual library. After installing, seed it with the AI: it can generate/attach images for each card.",
-        eyebrow: "Visual knowledge index",
         app_title: "Knowledge Cards",
         harvest: "Harvest chat",
         ask_placeholder: "Photograph or ask anything...",
         ask_aria: "Ask a question to answer and keep",
         ask_button: "Ask & keep",
-        overview_aria: "Knowledge card overview",
-        answers_saved: "answers saved",
-        topics: "topics",
-        with_images: "with images",
-        last_seven_days: "last 7 days",
+        summary: "{count} answers kept · {topics} topics",
+        summary_one: "1 answer kept",
+        summary_empty: "Answers worth keeping, with their pictures",
         filters_aria: "Filter knowledge cards",
         search_placeholder: "Search cards",
         search_aria: "Search knowledge cards",
@@ -1123,17 +1119,14 @@
       zh: {
         page_title: "知识卡片 - 把有用答案留在可搜索的视觉图库里",
         meta_description: "把有用的 AI 答案留在可搜索的视觉图库里。安装后可让 AI 播种：它能为每张卡生成或附加图片。",
-        eyebrow: "视觉知识索引",
         app_title: "知识卡片",
         harvest: "整理聊天",
         ask_placeholder: "拍照或问任何问题...",
         ask_aria: "提问并把答案保存下来",
         ask_button: "提问并保存",
-        overview_aria: "知识卡片概览",
-        answers_saved: "条已保存答案",
-        topics: "个分类",
-        with_images: "张含图片",
-        last_seven_days: "条近 7 天",
+        summary: "留下了 {count} 个答案 · {topics} 个分类",
+        summary_one: "留下了 1 个答案",
+        summary_empty: "值得留下的答案，连同图片一起",
         filters_aria: "筛选知识卡片",
         search_placeholder: "搜索卡片",
         search_aria: "搜索知识卡片",
@@ -1289,17 +1282,9 @@
       return hash;
     };
 
-    const topicColor = (topic) => {
-      if (String(topic).trim().toLowerCase() === "study") {
-        return "color-mix(in oklab, var(--k-hue-2, var(--color-text-secondary)) 82%, var(--k-hue-3, var(--color-text-secondary)))";
-      }
-      const index = hashText(topic) % 6;
-      return `var(--k-hue-${index}, var(--color-text-info, var(--color-ring-primary)))`;
-    };
-
-    const applyTopicColor = (node, topic) => {
-      node.style.setProperty("--topic-color", topicColor(topic));
-    };
+    // Topics used to take one of six kit hues each; the wall is colourful enough with its photos,
+    // so every topic tag now wears the app's one ink. Kept as a function so call sites stay put.
+    const applyTopicColor = () => {};
 
     const explicitMediaRatio = (item) => ({
       "4:3": "4 / 3",
@@ -1448,10 +1433,7 @@
       row.innerHTML = "";
       row.append(makeTopicChip(t("all"), "", items.length));
       for (const [topic, count] of [...counts].sort((a, b) => a[0].localeCompare(b[0], locale()))) {
-        const chip = makeTopicChip(topic, topic, count);
-        applyTopicColor(chip, topic);
-        chip.classList.add("topic-chip");
-        row.append(chip);
+        row.append(makeTopicChip(topic, topic, count));
       }
     };
 
@@ -1545,34 +1527,45 @@
       return root;
     };
 
-    const makeCard = (item, index) => {
+    // A preview cut at a word boundary — the full answer lives in the detail view.
+    const previewOf = (text, limit = 190) => {
+      const chars = Array.from(text);
+      if (chars.length <= limit) return text;
+      const cut = chars.slice(0, limit).join("");
+      const space = cut.lastIndexOf(" ");
+      return `${(space > limit * .6 ? cut.slice(0, space) : cut).replace(/[\s,.;:，。；：、]+$/u, "")}…`;
+    };
+
+    const mediaKeyOf = (item) => {
+      const image = imageOf(item);
+      return `${image.length}:${image.slice(0, 48)}:${image.slice(-32)}:${item.fields.media_ratio || ""}:${item.fields.media_source || ""}`;
+    };
+
+    const textKeyOf = (item) => JSON.stringify([titleOf(item), answerOf(item), topicOf(item), item.fields.asked_at || "", language()]);
+
+    const fillCardBody = (card, item) => {
       const topic = topicOf(item);
+      card.setAttribute("aria-label", t("open_card", { title: titleOf(item) }));
+      const body = element("div", "card-body");
+      const kicker = element("div", "card-kicker");
+      const topicChip = element("span", "k-chip static topic-chip", topic);
+      const time = element("span", "card-time k-num", relativeDate(item.fields.asked_at));
+      kicker.append(topicChip, time);
+      body.append(kicker, element("h2", "card-title", titleOf(item)), element("p", "card-answer", previewOf(answerOf(item))));
+      const old = card.querySelector(":scope > .card-body");
+      if (old) old.replaceWith(body);
+      else card.append(body);
+    };
+
+    const makeCard = (item) => {
       const card = element("article", "k-card is-click knowledge-card");
       card.dataset.id = item.id;
       card.tabIndex = 0;
       card.setAttribute("role", "button");
-      card.setAttribute("aria-label", t("open_card", { title: titleOf(item) }));
-      card.style.setProperty("--i", String(index));
-      applyTopicColor(card, topic);
       const hasImage = Boolean(imageOf(item));
-      if (!hasImage) {
-        card.classList.add("is-text-only");
-        card.dataset.glyph = firstGlyph(item);
-      }
-
-      const body = element("div", "card-body");
-      const kicker = element("div", "card-kicker");
-      const topicChip = element("span", "k-chip static topic-chip", topic);
-      applyTopicColor(topicChip, topic);
-      const time = element("span", "card-time k-num", relativeDate(item.fields.asked_at));
-      kicker.append(topicChip, time);
-
-      const title = element("h2", "card-title k-ellip2", titleOf(item));
-      const answer = element("p", "card-answer", answerOf(item));
-      body.append(kicker, title, answer);
-      if (hasImage) card.append(buildMedia(item), body);
-      else card.append(body);
-
+      if (hasImage) card.append(buildMedia(item));
+      else card.classList.add("is-text-only");
+      fillCardBody(card, item);
       const open = () => openDetail(item.id, card);
       card.onclick = (event) => {
         if (!event.target.closest("button")) open();
@@ -1655,35 +1648,95 @@
       }));
     };
 
+    // Cards are kept by id across renders: a refresh, a search keystroke or someone else's edit
+    // re-orders and re-fills them in place, so photos never reload and nothing replays. Only a
+    // card that did not exist a moment ago gets the pin-in.
+    const cardCache = new Map();
+    let knownIds = null;
+    let gallery = null;
+
     const renderGallery = (items) => {
       const scroll = document.getElementById("galleryScroll");
-      scroll.innerHTML = "";
+      const firstPaint = knownIds === null;
+      const arrived = new Set(firstPaint ? [] : items.map((item) => item.id).filter((id) => !knownIds.has(id)));
+      knownIds = new Set(items.map((item) => item.id));
+      for (const id of [...cardCache.keys()]) if (!knownIds.has(id)) cardCache.delete(id);
       if (!items.length) {
-        scroll.append(makeEmptyState());
+        gallery = null;
+        scroll.replaceChildren(makeEmptyState());
         return;
       }
       const visible = filteredItems(items);
       if (!visible.length) {
-        scroll.append(makeNoMatchState());
+        gallery = null;
+        scroll.replaceChildren(makeNoMatchState());
         return;
       }
-      const gallery = element("div", "gallery k-stagger");
-      visible.forEach((item, index) => gallery.append(makeCard(item, index)));
-      scroll.append(gallery);
+      const cards = visible.map((item, index) => {
+        let entry = cardCache.get(item.id);
+        const mediaKey = mediaKeyOf(item);
+        if (!entry || entry.mediaKey !== mediaKey) {
+          entry = { card: makeCard(item), mediaKey, textKey: textKeyOf(item) };
+          cardCache.set(item.id, entry);
+        } else if (entry.textKey !== textKeyOf(item)) {
+          entry.textKey = textKeyOf(item);
+          fillCardBody(entry.card, item);
+        }
+        entry.card.style.setProperty("--i", String(index));
+        if (arrived.has(item.id)) {
+          entry.card.classList.remove("arrived");
+          void entry.card.offsetWidth;
+          entry.card.classList.add("arrived");
+          setTimeout(() => entry.card.classList.remove("arrived"), 900);
+        }
+        return entry.card;
+      });
+      if (!gallery || !gallery.isConnected) {
+        gallery = element("div", firstPaint ? "gallery k-stagger" : "gallery");
+        scroll.replaceChildren(gallery);
+        // The staggered entrance belongs to the first paint only; re-inserting a node restarts its
+        // animation, so the class must be gone before anything is ever re-ordered.
+        if (firstPaint) setTimeout(() => gallery?.classList.remove("k-stagger"), 1400);
+      }
+      const same = gallery.children.length === cards.length && cards.every((card, index) => gallery.children[index] === card);
+      if (!same) gallery.replaceChildren(...cards);
     };
 
-    const renderStats = (items) => {
-      const topics = new Set(items.map(topicOf));
-      const withImages = items.filter((item) => imageOf(item)).length;
-      const recent = items.filter((item) => {
-        const delta = daysUntil(item.fields.asked_at);
-        return Number.isFinite(delta) && delta <= 0 && delta >= -6;
-      }).length;
-      document.getElementById("totalCount").textContent = numberText(items.length);
-      document.getElementById("topicCount").textContent = numberText(topics.size);
-      document.getElementById("imageCount").textContent = numberText(withImages);
-      document.getElementById("weekCount").textContent = numberText(recent);
+    const renderSummary = (items) => {
+      const topics = new Set(items.map(topicOf)).size;
+      document.getElementById("summary").textContent = !items.length
+        ? t("summary_empty")
+        : items.length === 1 ? t("summary_one") : t("summary", { count: numberText(items.length), topics: numberText(topics) });
     };
+
+    // Optimistic writes: a saved topic/note shows at once and a deleted card leaves at once; the
+    // ack (or the next onChange) settles it, and a refusal puts the old version back.
+    const overrides = new Map();
+    const removing = new Set();
+    let flashId = "";
+    const viewItems = (state) => {
+      const stored = Array.isArray(state?.items) ? state.items : [];
+      const ids = new Set(stored.map((item) => item.id));
+      for (const id of [...removing]) if (!ids.has(id)) removing.delete(id);
+      const out = [];
+      for (const item of stored) {
+        if (removing.has(item.id)) continue;
+        const patch = overrides.get(item.id);
+        if (patch && Object.entries(patch).every(([key, value]) => (item.fields[key] ?? null) === value)) overrides.delete(item.id);
+        if (!overrides.has(item.id)) {
+          out.push(item);
+          continue;
+        }
+        const fields = { ...item.fields };
+        for (const [key, value] of Object.entries(patch)) {
+          if (value === null) delete fields[key];
+          else fields[key] = value;
+        }
+        out.push({ ...item, fields });
+      }
+      return out;
+    };
+    let currentItems = [];
 
     const closeDetail = () => {
       openId = null;
@@ -1700,7 +1753,7 @@
     };
 
     const openDetail = (id, trigger) => {
-      const item = oma.state.items.find((entry) => entry.id === id);
+      const item = currentItems.find((entry) => entry.id === id);
       if (!item) return;
       openId = id;
       detailTrigger = trigger || document.querySelector(`[data-id="${CSS.escape(id)}"]`);
@@ -1751,8 +1804,9 @@
       close.onclick = closeDetail;
       head.append(headTopic, headTime, element("span", "k-grow"), close);
 
-      const grid = element("div", "detail-grid");
-      grid.append(buildMedia(item, true));
+      // A text-only answer opens as text; a big placeholder letter in a picture frame said nothing.
+      const grid = element("div", imageOf(item) ? "detail-grid" : "detail-grid no-media");
+      if (imageOf(item)) grid.append(buildMedia(item, true));
 
       const content = element("div", "detail-content");
       const meta = element("div", "detail-meta");
@@ -1783,7 +1837,7 @@
 
       const suggestions = element("datalist");
       suggestions.id = "topicSuggestions";
-      const topics = [...new Set(oma.state.items.map(topicOf))].filter((value) => value !== t("untagged"));
+      const topics = [...new Set(currentItems.map(topicOf))].filter((value) => value !== t("untagged"));
       for (const value of topics) {
         const option = document.createElement("option");
         option.value = value;
@@ -1811,22 +1865,25 @@
 
       form.onsubmit = async (event) => {
         event.preventDefault();
-        save.disabled = true;
         hideError();
+        const nextTopic = topicInput.value.trim();
+        const nextNote = noteInput.value.trim();
+        const patch = { topic: nextTopic || null, source_note: nextNote || null };
+        const before = overrides.get(item.id);
+        overrides.set(item.id, patch);
+        detailDraft.topic = nextTopic;
+        detailDraft.note = nextNote;
+        detailDraft.dirty = false;
+        flashId = item.id;
+        render(oma.state);
         try {
-          const nextTopic = topicInput.value.trim();
-          const nextNote = noteInput.value.trim();
-          const result = await oma.updateItem(item.id, {
-            topic: nextTopic || null,
-            source_note: nextNote || null
-          });
+          const result = await oma.updateItem(item.id, patch);
           requireSuccess(result, t("save_error"));
-          detailDraft.topic = nextTopic;
-          detailDraft.note = nextNote;
-          detailDraft.dirty = false;
         } catch (error) {
+          if (before) overrides.set(item.id, before);
+          else overrides.delete(item.id);
+          render(oma.state);
           showError(errorMessage(error, t("save_error")));
-          save.disabled = false;
         }
       };
       form.append(topicLabel, suggestions, noteLabel, save);
@@ -1852,15 +1909,21 @@
       remove.type = "button";
       remove.prepend(icon("trash"));
       remove.onclick = async () => {
-        remove.disabled = true;
         hideError();
+        removing.add(item.id);
+        closeDetail();
+        render(oma.state);
+        let result = null;
         try {
-          const result = await oma.deleteItem(item.id);
-          requireSuccess(result, t("delete_error"));
-          closeDetail();
+          result = await oma.deleteItem(item.id);
         } catch (error) {
-          showError(errorMessage(error, t("delete_error")));
-          remove.disabled = false;
+          result = { ok: false, note: errorMessage(error, t("delete_error")) };
+        }
+        if (!result || result.ok === false || result.isError) {
+          removing.delete(item.id);
+          render(oma.state);
+          // Saying no to the engine's own confirm is an answer, not a failure.
+          if (!/cancel/i.test(String(result?.reason || ""))) showError(result?.note || t("delete_error"));
         }
       };
       actions.append(followUp, remove);
@@ -1882,12 +1945,24 @@
     };
 
     const render = (state) => {
-      const items = Array.isArray(state.items) ? state.items : [];
+      const items = viewItems(state);
+      currentItems = items;
+      document.getElementById("appRoot").classList.toggle("is-empty", !items.length);
       applyStaticI18n();
-      renderStats(items);
+      renderSummary(items);
       renderTopics(items);
       renderSort();
       renderGallery(items);
+      if (flashId) {
+        const card = cardCache.get(flashId)?.card;
+        if (card) {
+          card.classList.remove("saved-flash");
+          void card.offsetWidth;
+          card.classList.add("saved-flash");
+          setTimeout(() => card.classList.remove("saved-flash"), 700);
+        }
+        flashId = "";
+      }
       document.getElementById("clearSearch").hidden = !query;
       if (openId) {
         const item = items.find((entry) => entry.id === openId);

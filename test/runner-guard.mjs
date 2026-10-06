@@ -340,6 +340,18 @@ console.log("5c2. …and it counts collections in a container that has no inheri
     JSON.stringify(viaGuard));
 }
 
+console.log("5c2b. the preview document admits what the app may load from");
+// An app written the way the guide teaches (React/Tailwind from a CDN, a Google font) previewed as a
+// blank page: the preview sat on the floor policy while the app in a host gets the platform base.
+{
+  const floor = composePreviewDoc("<div>hi</div>", { name: "a" });
+  ok("without csp the preview keeps the floor, byte-for-byte", floor.startsWith("<!doctype html><html><head>" + RUNNER_CSP));
+  const wide = composePreviewDoc("<div>hi</div>", { name: "a", csp: { resourceDomains: ["https://cdnjs.cloudflare.com", "https://fonts.gstatic.com"] } });
+  ok("with csp its scripts and fonts may come from those hosts",
+    /script-src 'unsafe-inline' https:\/\/cdnjs\.cloudflare\.com/.test(wide) && /font-src data: [^;]*https:\/\/fonts\.gstatic\.com/.test(wide));
+  ok("…and it still talks to no server", /connect-src 'none'/.test(wide));
+}
+
 console.log("5c3. the preview document TELLS its embedder how tall it is");
 // A preview iframe is sandbox="allow-scripts" with NO allow-same-origin — on purpose, so the
 // embedder cannot read contentDocument.scrollHeight and must be told. The live runner has
@@ -582,12 +594,12 @@ console.log("7. the child document + bridge surface");
     BRIDGE.includes("d.snapshot.items.length!==S.items.length"));
   ok("bridge never claims embed (depth 1 — an embedded child cannot embed further)",
     !/embed\s*:/.test(BRIDGE));
-  const kitted = composeChildDoc("<h1>x</h1>", { tokenCss: "<style>:root{}</style>", kitCss: ".k-btn{color:red}" });
-  ok("the kit travels into the child (a separate document inherits no CSS)",
-    kitted.includes('<style data-oma="kit">.k-btn{color:red}</style>'));
+  const based = composeChildDoc("<h1>x</h1>", { tokenCss: "<style>:root{}</style>", baseCss: "body{margin:0}" });
+  ok("the page base travels into the child (a separate document inherits no CSS)",
+    based.includes('<style data-oma="base">body{margin:0}</style>'));
   ok("…after the tokens it reads, and before the app's own markup",
-    kitted.indexOf("data-oma=\"kit\"") > kitted.indexOf("<style>:root{}") && kitted.indexOf("data-oma=\"kit\"") < kitted.indexOf("<h1>"));
-  ok("no kit supplied ⇒ no empty tag emitted", !composeChildDoc("<p>x</p>").includes("data-oma=\"kit\""));
+    based.indexOf("data-oma=\"base\"") > based.indexOf("<style>:root{}") && based.indexOf("data-oma=\"base\"") < based.indexOf("<h1>"));
+  ok("no base supplied ⇒ no empty tag emitted", !composeChildDoc("<p>x</p>").includes("data-oma=\"base\""));
   ok("bridge treats an explicit `changed` as a change, even at an unmoved version",
     /d\.changed===true\|\|d\.snapshot\.version!==S\.version/.test(BRIDGE),
     "an apply-refresh push keeps childSnap.version, so an UPDATE would otherwise fire no onChange " +

@@ -1,0 +1,381 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "3a125f0e-e9a6-5793-80e4-1b8c667c2b5f",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 1,
+      "fields": {
+        "handle": "@阿澈的桌面",
+        "name": "阿澈",
+        "note": "小红书 · 桌面改造和效率工具测评，和我抢同一批读者",
+        "status": "active"
+      },
+      "version": 1
+    },
+    {
+      "id": "44ec7ddf-234a-51ab-8c52-4ab6b3bdd525",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 2,
+      "fields": {
+        "handle": "@Kevin做产品",
+        "name": "Kevin",
+        "note": "B站 · 独立开发长视频复盘，更新慢但每条都爆",
+        "status": "active"
+      },
+      "version": 1
+    },
+    {
+      "id": "899e7812-0d90-5c0d-8861-fdeb74849422",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 3,
+      "fields": {
+        "handle": "@一只橘子效率",
+        "name": "橘子",
+        "note": "小红书 · 卖 Notion 模板，图文清单做得最好",
+        "status": "active"
+      },
+      "version": 1
+    },
+    {
+      "id": "c7b7a818-65b0-5ee8-87fe-907486c3d0e5",
+      "collection": "competitor-watchlist",
+      "group": "",
+      "position": 4,
+      "fields": {
+        "handle": "@林间笔记",
+        "name": "林间",
+        "note": "手帐转慢生活，七月下旬起不太相关了",
+        "status": "paused"
+      },
+      "version": 1
+    },
+    {
+      "id": "4938e2da-b8e6-514f-a414-8a83388f46d1",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 1,
+      "fields": {
+        "week_start": "2026-06-29",
+        "handle": "@阿澈的桌面",
+        "posts_count": 9,
+        "engagement": "1.4万赞 · 3200收藏",
+        "top_post": "月薪五千的桌面改造，全部清单放评论区",
+        "top_post_stats": "6200赞 · 1800收藏 · 430评论",
+        "themes": "桌面改造, 好物清单",
+        "formats": "7篇图文 · 2条视频",
+        "change_note": "每周固定的改造图文，评论区挂清单。"
+      },
+      "version": 1
+    },
+    {
+      "id": "83aa27a8-7698-5ac6-8c5f-440b3b1f4440",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 2,
+      "fields": {
+        "week_start": "2026-06-29",
+        "handle": "@Kevin做产品",
+        "posts_count": 1,
+        "engagement": "9600点赞 · 2100投币 · 3800收藏",
+        "top_post": "做了三个月的 App，上线第一天只有 12 个用户",
+        "top_post_stats": "9600点赞 · 2100投币 · 3800收藏",
+        "themes": "独立开发, 复盘",
+        "formats": "1条长视频",
+        "change_note": "两周一更的长视频，节奏没变。"
+      },
+      "version": 1
+    },
+    {
+      "id": "1fae8ebc-6586-5762-b053-20e322348a72",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 3,
+      "fields": {
+        "week_start": "2026-06-29",
+        "handle": "@一只橘子效率",
+        "posts_count": 4,
+        "engagement": "8200赞 · 5100收藏",
+        "top_post": "我用 Notion 管了一年钱，这张表救了我",
+        "top_post_stats": "4100赞 · 3300收藏 · 260评论",
+        "themes": "Notion 模板, 理财",
+        "formats": "4篇图文清单",
+        "change_note": "收藏远高于赞，典型的「先存再说」内容。"
+      },
+      "version": 1
+    },
+    {
+      "id": "75f2ad1e-9d02-5582-9958-708aba8ae9fa",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 4,
+      "fields": {
+        "week_start": "2026-06-29",
+        "handle": "@林间笔记",
+        "posts_count": 3,
+        "engagement": "5300赞 · 1200收藏",
+        "top_post": "六月手帐拼贴，雨季的颜色",
+        "top_post_stats": "2600赞 · 700收藏 · 150评论",
+        "themes": "手帐, 生活记录",
+        "formats": "3篇图文",
+        "change_note": "内容越来越偏生活记录。"
+      },
+      "version": 1
+    },
+    {
+      "id": "adb81aaa-607e-591d-bbc4-6660f68a4bc6",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 5,
+      "fields": {
+        "week_start": "2026-07-06",
+        "handle": "@阿澈的桌面",
+        "posts_count": 10,
+        "engagement": "1.5万赞 · 3000收藏",
+        "top_post": "这 5 个 Mac 小工具，我每天打开 100 次",
+        "top_post_stats": "5800赞 · 1500收藏 · 390评论",
+        "themes": "效率工具, 好物清单",
+        "formats": "8篇图文 · 2条视频",
+        "change_note": "加了一条工具合集视频，表现一般。"
+      },
+      "version": 1
+    },
+    {
+      "id": "e20ee117-d128-5855-a637-efcfb9a4e186",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 6,
+      "fields": {
+        "week_start": "2026-07-06",
+        "handle": "@一只橘子效率",
+        "posts_count": 5,
+        "engagement": "1.1万赞 · 6800收藏",
+        "top_post": "周计划模板第三版：删掉了一半格子之后反而用下去了",
+        "top_post_stats": "5200赞 · 4100收藏 · 380评论",
+        "themes": "Notion 模板, 周计划",
+        "formats": "5篇图文清单",
+        "change_note": "开始在图文里放「改版前后」对比。"
+      },
+      "version": 1
+    },
+    {
+      "id": "fb47368d-a0a4-525b-a60f-231529533df6",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 7,
+      "fields": {
+        "week_start": "2026-07-06",
+        "handle": "@林间笔记",
+        "posts_count": 2,
+        "engagement": "3100赞 · 600收藏",
+        "top_post": "最近不太想做手帐了，聊聊为什么",
+        "top_post_stats": "2000赞 · 380收藏 · 290评论",
+        "themes": "生活记录",
+        "formats": "2篇图文",
+        "change_note": "坦白想转型，评论区很多老粉挽留。"
+      },
+      "version": 1
+    },
+    {
+      "id": "327792b0-3e52-52e1-a27e-39e2177b966f",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 8,
+      "fields": {
+        "week_start": "2026-07-13",
+        "handle": "@阿澈的桌面",
+        "posts_count": 11,
+        "engagement": "1.3万赞 · 2800收藏",
+        "top_post": "出租屋 3 平米角落，也能有一张好桌子",
+        "top_post_stats": "4900赞 · 1300收藏 · 310评论",
+        "themes": "桌面改造, 租房",
+        "formats": "9篇图文 · 2条视频",
+        "change_note": "发得更多了，但单篇反馈在下降。"
+      },
+      "version": 1
+    },
+    {
+      "id": "bcc6c377-293b-5b82-af1f-72e4ee61d358",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 9,
+      "fields": {
+        "week_start": "2026-07-13",
+        "handle": "@Kevin做产品",
+        "posts_count": 1,
+        "engagement": "2.1万点赞 · 4600投币 · 7900收藏",
+        "top_post": "独立开发第 100 天：我把收入截图放出来了",
+        "top_post_stats": "2.1万点赞 · 4600投币 · 7900收藏",
+        "themes": "独立开发, 收入公开",
+        "formats": "1条长视频",
+        "change_note": "第一次公开收入截图，播放和互动翻倍。"
+      },
+      "version": 1
+    },
+    {
+      "id": "b320b73b-fdd4-524c-9fdb-d1e355161d69",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 10,
+      "fields": {
+        "week_start": "2026-07-13",
+        "handle": "@一只橘子效率",
+        "posts_count": 4,
+        "engagement": "9400赞 · 5900收藏",
+        "top_post": "把读书笔记做成数据库之后，我终于记得读过什么了",
+        "top_post_stats": "4400赞 · 3600收藏 · 270评论",
+        "themes": "Notion 模板, 读书",
+        "formats": "4篇图文清单",
+        "change_note": "换了读书题材，收藏依旧稳。"
+      },
+      "version": 1
+    },
+    {
+      "id": "22b983ff-7de5-59e1-a544-aca692235c13",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 11,
+      "fields": {
+        "week_start": "2026-07-20",
+        "handle": "@阿澈的桌面",
+        "posts_count": 12,
+        "engagement": "1.2万赞 · 2600收藏",
+        "top_post": "我把显示器支架换了，颈椎真的会谢谢你",
+        "top_post_stats": "4300赞 · 1100收藏 · 280评论",
+        "themes": "桌面改造, 好物清单",
+        "formats": "10篇图文 · 2条视频",
+        "change_note": "又加量，但爆款没出现。"
+      },
+      "version": 1
+    },
+    {
+      "id": "9ebdf043-4a21-5d68-86a1-1cf11a13213b",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 12,
+      "fields": {
+        "week_start": "2026-07-20",
+        "handle": "@一只橘子效率",
+        "posts_count": 4,
+        "engagement": "1.3万赞 · 7400收藏",
+        "top_post": "一个模板管住全家开销：老公终于肯记账了",
+        "top_post_stats": "6100赞 · 4700收藏 · 520评论",
+        "themes": "Notion 模板, 家庭记账",
+        "formats": "4篇图文清单",
+        "change_note": "第一次讲「家里人怎么用」，评论翻倍。"
+      },
+      "version": 1
+    },
+    {
+      "id": "a8430a93-f72b-5784-9681-6321488a51fb",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 13,
+      "fields": {
+        "week_start": "2026-07-20",
+        "handle": "@林间笔记",
+        "posts_count": 1,
+        "engagement": "1800赞 · 300收藏",
+        "top_post": "暂停更新一段时间，谢谢大家",
+        "top_post_stats": "1800赞 · 300收藏 · 410评论",
+        "themes": "公告",
+        "formats": "1篇图文",
+        "change_note": "宣布暂停。之后不再跟踪。"
+      },
+      "version": 1
+    },
+    {
+      "id": "18bf45ce-ba82-5dac-8fd6-b4882497e030",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 14,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@阿澈的桌面",
+        "posts_count": 12,
+        "engagement": "1.1万赞 · 2500收藏",
+        "top_post": "打工人桌面 vs 自由职业桌面，差在哪",
+        "top_post_stats": "3900赞 · 900收藏 · 350评论",
+        "themes": "桌面改造, 对比",
+        "formats": "10篇图文 · 2条视频",
+        "change_note": "数量不变，互动继续往下走。"
+      },
+      "version": 1
+    },
+    {
+      "id": "e8161ce6-72e4-5669-8b49-d773b9aba864",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 15,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@Kevin做产品",
+        "posts_count": 1,
+        "engagement": "1.6万点赞 · 3100投币 · 5200收藏",
+        "top_post": "我砍掉了 App 里最贵的那个功能，留存反而涨了",
+        "top_post_stats": "1.6万点赞 · 3100投币 · 5200收藏",
+        "themes": "独立开发, 产品决策",
+        "formats": "1条长视频",
+        "change_note": "回到常规复盘，热度比上期回落。"
+      },
+      "version": 1
+    },
+    {
+      "id": "9518b489-12c6-5277-acd8-d0332ec1497f",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 16,
+      "fields": {
+        "week_start": "2026-07-27",
+        "handle": "@一只橘子效率",
+        "posts_count": 3,
+        "engagement": "1.4万赞 · 8100收藏",
+        "top_post": "30 天习惯打卡模板：只有一个按钮",
+        "top_post_stats": "6800赞 · 5200收藏 · 470评论",
+        "themes": "Notion 模板, 习惯",
+        "formats": "3篇图文清单",
+        "change_note": "少发了一篇，单篇收藏创新高。"
+      },
+      "version": 1
+    },
+    {
+      "id": "65a1ed2f-cfaa-5f2c-a5d9-f152890cf6bc",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 17,
+      "fields": {
+        "week_start": "2026-08-03",
+        "handle": "@阿澈的桌面",
+        "posts_count": 13,
+        "engagement": "1.2万赞 · 2700收藏",
+        "top_post": "这张 199 元的桌子，比我 2000 元那张好用",
+        "top_post_stats": "4200赞 · 1000收藏 · 520评论",
+        "themes": "桌面改造, 平替",
+        "formats": "10篇图文 · 3条视频",
+        "change_note": "发文量本月最高，只有一篇平替对比有讨论。"
+      },
+      "version": 1
+    },
+    {
+      "id": "36ae9f8f-05e6-5e68-a209-16f79c97a476",
+      "collection": "competitor-reports",
+      "group": "",
+      "position": 18,
+      "fields": {
+        "week_start": "2026-08-03",
+        "handle": "@一只橘子效率",
+        "posts_count": 3,
+        "engagement": "2.2万赞 · 1.3万收藏",
+        "top_post": "把模板拆成三步教你自己搭，不卖了",
+        "top_post_stats": "1.1万赞 · 8600收藏 · 940评论",
+        "themes": "Notion 模板, 教程",
+        "formats": "3篇图文清单",
+        "change_note": "不再直接卖模板，改成手把手搭建教程，收藏暴涨。"
+      },
+      "version": 1
+    }
+  ]
+}

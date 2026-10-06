@@ -3,2267 +3,746 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Study Cards · Spaced Repetition Desk</title>
+<title>Study Cards</title>
 <meta name="oma-category" content="Learning">
-<meta name="description" content="A focused spaced-repetition study desk with honest due dates, a ten-week review heatmap, deck mastery covers, inline card creation, and AI-assisted batch card making.">
-
+<meta name="description" content="Flashcards on your desk: flip today's next card, grade how well you remembered it, and spaced repetition schedules the rest — with the next two weeks of reviews and how every deck is holding up.">
 <style>
-  /* No body rule. The width is a declaration now (manifest.stage.width: column), while the
-     ground and outer padding belong to the kit's stage contract; colour already comes from the
-     kit for every app. */
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-s2:8px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
 
-  [hidden] {
-    display: none !important;
+  /* The signature is THE CARD: today's next due card, big, on top of the pile of what is left.
+     Flip it, grade it, and it is sent away while the next one rises from the pile. Every number on
+     the page (the big due count, the pips, the 14-day bars, the deck bars) comes from one model()
+     pass over the same rows, with in-flight grades overlaid, so nothing can disagree with the pile. */
+  .sc {
+    --sc: light-dark(#4447b8, #a9abff);
+    --sc-on: light-dark(#ffffff, #16173d);
+    --k-accent: var(--sc);
+    --k-accent-bg: color-mix(in oklab, var(--sc) 10%, transparent);
+    --k-accent-brd: color-mix(in oklab, var(--sc) 30%, transparent);
+    --sc-mid: color-mix(in oklab, var(--sc) 50%, var(--color-background-primary));
+    --sc-r: 16px;
   }
+  .sc [hidden] { display: none !important; }
+  .sc button { font: inherit; color: inherit; }
 
-  button,
-  input {
-    font: inherit;
-  }
+  /* ── app bar ── */
+  .sc-mark { color: var(--sc); border: 1px solid var(--k-accent-brd); background: var(--k-accent-bg); }
+  .sc-mark svg, .sc-ico { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linejoin: round; stroke-linecap: round; }
+  .sc-bar .k-btn.sec { margin-left: auto; flex: none; }
+  .sc-bar .k-btn svg { width: 15px; height: 15px; }
 
-  button:focus-visible,
-  input:focus-visible {
-    outline: 2px solid var(--color-ring-primary);
-    outline-offset: 2px;
-  }
-
-  /* `.app` is `.k-stage` now: the kit draws one card in a chat and no card when this app owns the
-     screen. Its old border, radius, fill, shadow and hidden overflow were only a private frame;
-     nothing else in the app positions against this root, so no app-owned rule remains. */
-  /* `.app-bar` is `.k-appbar` now: row, gap, padding, the mark's box, title/eyebrow scale and the
-     chat-only rule under the bar all come from the kit. The minimum height keeps this desk's
-     established header rhythm without redrawing any chrome. */
-  .app-bar {
-    min-height: 68px;
-  }
-
-  /* The mark keeps its PAINT and loses its box: identity is content, and the stage contract
-     strips frames, never faces. */
-  .app-mark {
-    border: 1px solid color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 35%, var(--color-border-primary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, var(--color-background-primary));
-    color: var(--color-text-info, var(--color-ring-primary));
-  }
-
-  .app-mark svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.45;
-  }
-
-  .brand-summary {
-    margin-top: 3px;
-    color: var(--color-text-secondary);
-    font-size: 10.5px;
-    line-height: 1.35;
-  }
-
-  .bar-actions {
-    margin-left: auto;
-  }
-
-  .bar-actions .k-btn {
-    min-height: 36px;
-    white-space: nowrap;
-  }
-
-  .overview {
-    position: relative;
-    display: grid;
-    grid-template-columns: 118px minmax(0, 1fr);
-    gap: 16px;
-    align-items: center;
-    padding: 17px 16px 15px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 7%, var(--color-background-primary));
-    background-image: linear-gradient(to bottom, transparent 23px, color-mix(in oklab, var(--color-border-secondary) 58%, transparent) 24px);
-    background-size: 100% 24px;
-  }
-
-  .due-ring {
-    position: relative;
-    z-index: 1;
-    width: 112px;
-    height: 112px;
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-background-primary) 92%, transparent);
-    box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-background-primary) 70%, transparent);
-  }
-
-  .due-ring svg {
-    display: block;
-    width: 112px;
-    height: 112px;
-    transform: rotate(-90deg);
-  }
-
-  .ring-base,
-  .ring-value {
-    fill: none;
-    stroke-width: 8;
-  }
-
-  .ring-base {
-    stroke: var(--color-border-secondary);
-  }
-
-  .ring-value {
-    stroke: var(--color-text-info, var(--color-ring-primary));
-    stroke-dasharray: 295.31;
-    stroke-dashoffset: 295.31;
-    stroke-linecap: round;
-  }
-
-  .ring-copy {
-    position: absolute;
-    inset: 0;
-    display: grid;
-    place-content: center;
-    text-align: center;
-  }
-
-  .ring-copy strong {
-    font-size: 33px;
-    font-weight: 760;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-
-  .ring-copy span {
-    margin-top: 5px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-    font-weight: 680;
-  }
-
-  .review-summary {
-    position: relative;
-    z-index: 1;
-    min-width: 0;
-  }
-
-  .review-title-line {
-    align-items: flex-start;
-  }
-
-  .review-summary h2 {
-    margin: 7px 0 4px;
-    font-size: 23px;
-    font-weight: 740;
-    letter-spacing: 0;
-    line-height: 1.16;
-  }
-
-  .review-summary p {
-    margin: 0;
-    max-width: 440px;
-    color: var(--color-text-secondary);
-    font-size: 11.5px;
-    line-height: 1.45;
-  }
-
-  .start-button {
-    min-width: 148px;
-    min-height: 42px;
-    justify-content: center;
-  }
-
-  .live-stats {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 1px;
-    margin-top: 2px;
-    border: 1px solid var(--color-border-secondary);
-    background: var(--color-border-secondary);
-  }
-
-  .live-stat {
-    display: grid;
-    min-width: 0;
-    grid-template-columns: auto minmax(0, 1fr);
-    gap: 9px;
-    align-items: center;
-    padding: 9px 11px;
-    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
-  }
-
-  .stat-glyph {
-    display: grid;
-    width: 27px;
-    height: 27px;
-    place-items: center;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-sm, 8px);
-    color: var(--color-text-secondary);
-  }
-
-  .stat-glyph svg {
-    width: 15px;
-    height: 15px;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.5;
-  }
-
-  .live-stat span,
-  .live-stat strong {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .live-stat span {
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-  }
-
-  .live-stat strong {
-    margin-top: 1px;
-    font-size: 16px;
-    font-weight: 720;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .create-studio {
-    display: grid;
-    grid-template-columns: minmax(190px, .72fr) minmax(0, 1.8fr);
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: var(--color-background-primary);
-  }
-
-  .ai-create {
-    position: relative;
-    padding: 14px 15px;
-    border-right: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 7%, var(--color-background-primary));
-  }
-
-  .ai-create::after {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 18px;
-    height: 18px;
-    background: color-mix(in oklab, var(--color-text-warning, var(--color-text-secondary)) 24%, var(--color-background-primary));
-    clip-path: polygon(0 0, 100% 0, 100% 100%);
-    content: "";
-  }
-
-  .create-kicker {
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .ai-create h2,
-  .manual-create h2 {
-    margin: 4px 0 4px;
-    font-size: 14px;
-    font-weight: 700;
-    letter-spacing: 0;
-    line-height: 1.25;
-  }
-
-  .ai-create p {
-    margin: 0 0 10px;
-    color: var(--color-text-secondary);
-    font-size: 10.5px;
-    line-height: 1.45;
-  }
-
-  .ai-create .k-btn {
-    width: 100%;
-    min-height: 38px;
-    justify-content: center;
-  }
-
-  .manual-create {
-    padding: 12px 14px 14px;
-  }
-
-  .manual-head {
-    margin-bottom: 8px;
-    align-items: end;
-  }
-
-  .manual-head .k-sub {
-    font-size: 10px;
-  }
-
-  .manual-fields {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(112px, .6fr) auto;
-    gap: 7px;
-    align-items: end;
-  }
-
-  .field-wrap {
-    display: grid;
-    min-width: 0;
-    gap: 4px;
-  }
-
-  .field-wrap span {
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .field-wrap .k-field {
-    width: 100%;
-    min-width: 0;
-    height: 37px;
-    font-size: 11px;
-  }
-
-  .manual-submit {
-    width: 38px;
-    min-width: 38px;
-    height: 37px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .status-strip {
-    margin: 10px 14px 0;
-  }
-
-  .status-strip .k-badge {
-    width: 100%;
-    justify-content: flex-start;
+  .err {
+    margin: 10px 20px 0;
     padding: 8px 10px;
-    white-space: normal;
+    border: 1px solid color-mix(in oklab, var(--color-text-danger) 32%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 10px);
+    background: color-mix(in oklab, var(--color-text-danger) 8%, transparent);
+    color: var(--color-text-danger);
+    font-size: var(--font-text-sm-size, 12px);
   }
 
-  .content-body {
-    padding: 14px 16px 18px;
+  .sc .sc-go {
+    min-height: 44px;
+    justify-content: center;
+    padding: 8px 18px;
+    border: 0;
+    background: var(--sc);
+    color: var(--sc-on);
+    font-size: var(--font-text-md-size, 14px);
   }
+  .sc .sc-go:hover { background: color-mix(in oklab, var(--sc) 88%, var(--color-text-primary)); opacity: 1; }
 
-  .section-head {
-    margin-bottom: 9px;
-    align-items: end;
-  }
-
-  .section-head h2 {
-    margin: 0;
-    font-size: 14px;
-    font-weight: 710;
-    letter-spacing: 0;
-  }
-
-  .section-head .k-sub {
-    margin-top: 2px;
-    font-size: 10px;
-  }
-
-  .activity-board {
+  /* ── the desk: tally on the left, the card pile on the right ── */
+  .desk {
     display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(190px, .75fr);
-    gap: 14px;
-    padding-bottom: 15px;
-    border-bottom: 1px solid var(--color-border-secondary);
+    grid-template-columns: 150px minmax(0, 1fr);
+    grid-template-areas: "tally chips" "tally pile" "tally act" "tally foot";
+    column-gap: 30px;
+    padding: 20px 28px 8px 24px;
   }
+  .desk.bare { grid-template-areas: "tally pile" "tally act" "tally foot"; }
+  .desk.empty { grid-template-columns: minmax(0, 1fr); grid-template-areas: "pile" "act"; padding-bottom: 22px; }
 
-  .heatmap-panel {
-    min-width: 0;
-  }
+  .tally { grid-area: tally; align-self: start; padding-top: 2px; min-width: 0; }
+  .kicker { margin: 0; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); font-weight: 600; overflow-wrap: anywhere; }
+  .big { margin: 6px 0 0; display: flex; align-items: baseline; gap: 6px; line-height: .9; }
+  .big b { font-size: 72px; font-weight: 720; letter-spacing: -.05em; font-variant-numeric: tabular-nums; }
+  .big span { color: var(--color-text-secondary); font-size: 16px; font-weight: 600; }
+  .tsub { margin: 10px 0 0; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
+  .pips { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 10px; max-width: 150px; }
+  .pip { width: 8px; height: 11px; border-radius: 2px; border: 1.5px solid var(--color-border-primary); }
+  .pip.on { border-color: var(--sc); background: var(--sc); }
+  .pipbar { height: 6px; border-radius: 3px; background: var(--color-border-secondary); overflow: hidden; margin-top: 12px; }
+  .pipbar i { display: block; height: 100%; background: var(--sc); border-radius: 3px; }
+  .tnext { margin: 12px 0 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
 
-  .heatmap-shell {
-    display: grid;
-    grid-template-columns: 31px minmax(0, 1fr);
-    gap: 7px;
-    align-items: end;
-  }
+  .chips { grid-area: chips; display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+  .chips .k-chip { cursor: pointer; font-size: var(--font-text-sm-size, 12px); padding: 3px 10px; }
+  .chips .k-chip b { font-weight: 650; font-variant-numeric: tabular-nums; }
 
-  .weekday-labels {
-    display: grid;
-    grid-template-rows: repeat(7, 12px);
-    gap: 3px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    line-height: 12px;
-  }
-
-  .weekday-labels span:nth-child(even) {
-    visibility: hidden;
-  }
-
-  .heatmap-main {
-    min-width: 0;
-  }
-
-  .heatmap-months,
-  .heatmap-weeks {
-    display: grid;
-    grid-template-columns: repeat(10, 18px);
-    justify-content: space-between;
-  }
-
-  .heatmap-months {
-    min-height: 14px;
-    margin-bottom: 4px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    line-height: 1;
-  }
-
-  .heatmap-months span {
-    overflow: visible;
-    white-space: nowrap;
-  }
-
-  .heatmap-week {
-    display: grid;
-    grid-template-rows: repeat(7, 12px);
-    gap: 3px;
-  }
-
-  .heat-cell {
-    width: 18px;
-    height: 12px;
-    border: 1px solid color-mix(in oklab, var(--color-border-primary) 60%, var(--color-border-secondary));
-    border-radius: 2px;
-    background: color-mix(in oklab, var(--color-text-tertiary) 6%, var(--color-background-primary));
-  }
-
-  .heat-cell.level-1 {
-    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 36%, var(--color-border-secondary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 19%, var(--color-background-primary));
-  }
-
-  .heat-cell.level-2 {
-    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 50%, var(--color-border-secondary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 38%, var(--color-background-primary));
-  }
-
-  .heat-cell.level-3 {
-    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 68%, var(--color-border-secondary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 62%, var(--color-background-primary));
-  }
-
-  .heat-cell.level-4 {
-    border-color: var(--color-text-info, var(--color-ring-primary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 84%, var(--color-background-primary));
-  }
-
-  .heat-cell.future {
-    border-style: dashed;
-    opacity: .28;
-  }
-
-  .heatmap-foot {
-    margin-top: 8px;
-    align-items: center;
-    color: var(--color-text-tertiary);
-    font-size: 9px;
-  }
-
-  .heat-legend {
-    display: flex;
-    gap: 3px;
-    align-items: center;
-  }
-
-  .heat-legend .heat-cell {
-    width: 13px;
-    height: 9px;
-  }
-
-  .spectrum-panel {
-    min-width: 0;
-    padding-left: 14px;
-    border-left: 1px solid var(--color-border-secondary);
-  }
-
-  .spectrum-ribbon {
-    display: flex;
-    min-height: 50px;
-    gap: 4px;
-    align-items: end;
-    padding: 7px 0 5px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    transform: translateX(calc(var(--spectrum-shift, 0) * 1%));
-  }
-
-  .spectrum-segment {
-    --segment-color: var(--color-text-info, var(--color-ring-primary));
-    min-width: 4px;
-    flex: 1;
-    height: calc(12px + var(--mastery, 0) * 29px);
-    border: 1px solid color-mix(in oklab, var(--segment-color) 50%, var(--color-border-primary));
-    border-radius: 2px 2px 0 0;
-    background: color-mix(in oklab, var(--segment-color) 55%, var(--color-background-primary));
-  }
-
-  .spectrum-segment.new {
-    --segment-color: var(--color-text-danger, var(--color-text-secondary));
-  }
-
-  .spectrum-segment.growing {
-    --segment-color: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .spectrum-segment.strong {
-    --segment-color: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .spectrum-segment.is-due {
-    box-shadow: inset 0 -3px 0 var(--color-text-danger, var(--color-text-primary));
-  }
-
-  .spectrum-empty {
-    width: 100%;
-    height: 24px;
-    border: 1px dashed var(--color-border-primary);
-    background: color-mix(in oklab, var(--color-text-tertiary) 6%, transparent);
-  }
-
-  .spectrum-axis {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 5px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 8.5px;
-    font-weight: 650;
-  }
-
-  .deck-section {
-    margin-top: 16px;
-  }
-
-  .deck-wall {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 9px;
-  }
-
-  .deck-cover {
-    --deck-accent: var(--color-text-info, var(--color-ring-primary));
-    position: relative;
-    display: grid;
-    min-width: 0;
-    min-height: 154px;
-    padding: 13px 12px 11px;
-    align-content: space-between;
-    overflow: hidden;
-    border: 1px solid color-mix(in oklab, var(--deck-accent) 34%, var(--color-border-primary));
-    border-radius: var(--border-radius-sm, 8px);
-    background: color-mix(in oklab, var(--deck-accent) 8%, var(--color-background-primary));
-    clip-path: polygon(0 0, calc(100% - 15px) 0, 100% 15px, 100% 100%, 0 100%);
-  }
-
-  .deck-cover::before {
+  /* the pile: two paper edges under the card, one per remaining card beyond the top one */
+  .pile { grid-area: pile; position: relative; perspective: 1600px; padding-bottom: 18px; min-width: 0; }
+  .under {
     position: absolute;
-    top: 0;
-    bottom: 0;
-    left: 0;
-    width: 4px;
-    background: var(--deck-accent);
-    content: "";
-  }
-
-  .deck-cover::after {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 15px;
-    height: 15px;
-    border-bottom: 1px solid color-mix(in oklab, var(--deck-accent) 34%, var(--color-border-primary));
-    border-left: 1px solid color-mix(in oklab, var(--deck-accent) 34%, var(--color-border-primary));
-    background: color-mix(in oklab, var(--deck-accent) 18%, var(--color-background-primary));
-    content: "";
-  }
-
-  .deck-cover.tone-1 {
-    --deck-accent: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .deck-cover.tone-2 {
-    --deck-accent: var(--color-text-warning, var(--color-text-secondary));
-  }
-
-  .deck-cover.tone-3 {
-    --deck-accent: var(--color-text-success, var(--color-ring-primary));
-  }
-
-  .deck-cover.tone-4 {
-    --deck-accent: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 48%, var(--color-text-success, var(--color-ring-primary)));
-  }
-
-  .deck-index {
-    color: var(--deck-accent);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-  }
-
-  .deck-cover h3 {
-    display: -webkit-box;
-    min-height: 43px;
-    margin: 11px 0 7px;
-    overflow: hidden;
-    font-size: 14px;
-    font-weight: 720;
-    letter-spacing: 0;
-    line-height: 1.35;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .deck-counts {
-    color: var(--color-text-secondary);
-    font-size: 9.5px;
-  }
-
-  .mastery-track {
-    height: 5px;
-    margin: 11px 0 6px;
-    overflow: hidden;
-    border: 1px solid var(--color-border-secondary);
+    inset: 0 0 18px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--sc-r);
     background: var(--color-background-primary);
   }
+  .under.u1 { transform: translateY(9px) scale(.96); z-index: 1; }
+  .under.u2 { transform: translateY(18px) scale(.92); z-index: 0; }
 
-  .mastery-fill {
-    width: calc(var(--progress, 0) * 1%);
-    height: 100%;
-    background: var(--deck-accent);
+  .card { position: relative; z-index: 2; cursor: pointer; border-radius: var(--sc-r); outline: none; }
+  .card:focus-visible .face { outline: 2px solid var(--color-ring-primary, var(--sc)); outline-offset: 2px; }
+  .inner { display: grid; transform-style: preserve-3d; }
+  .card.flipped .inner { transform: rotateY(180deg); }
+  .face {
+    grid-area: 1 / 1;
+    display: flex;
+    flex-direction: column;
+    min-height: 232px;
+    padding: 18px 22px 16px;
+    border: 1px solid var(--color-border-primary);
+    border-radius: var(--sc-r);
+    background: var(--color-background-primary);
+    box-shadow: var(--shadow-md, var(--shadow-sm));
+    backface-visibility: hidden;
+    -webkit-backface-visibility: hidden;
+    min-width: 0;
   }
-
-  .deck-footer {
-    align-items: center;
+  .back {
+    transform: rotateY(180deg);
+    background: color-mix(in oklab, var(--sc) 6%, var(--color-background-primary));
+    border-color: var(--k-accent-brd);
   }
+  .ftop { display: flex; align-items: center; gap: 8px; min-width: 0; }
+  .dtag { display: inline-flex; align-items: center; gap: 6px; min-width: 0; color: var(--sc); font-size: var(--font-text-sm-size, 12px); font-weight: 650; overflow-wrap: anywhere; }
+  .dtag::before { content: ""; width: 6px; height: 6px; flex: none; border-radius: 50%; background: currentColor; }
+  .ftop .k-badge { margin-left: auto; flex: none; }
+  .prompt, .answer { flex: 1; display: grid; align-content: center; margin: 14px 0; overflow-wrap: anywhere; }
+  .prompt { font-size: 26px; line-height: 1.22; font-weight: 660; letter-spacing: -.02em; text-align: center; text-wrap: balance; }
+  .prompt[data-len="m"] { font-size: 21px; }
+  .prompt[data-len="l"] { font-size: 18px; }
+  .hint { margin: 0; text-align: center; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); }
+  .recap { margin: 12px 0 0; padding-bottom: 10px; border-bottom: 1px solid var(--k-accent-brd); color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); line-height: 1.4; overflow-wrap: anywhere; }
+  .answer { margin: 12px 0 4px; font-size: 21px; line-height: 1.35; font-weight: 600; letter-spacing: -.01em; }
+  .answer[data-len="m"] { font-size: 17px; }
+  .answer[data-len="l"] { font-size: 15px; font-weight: 550; }
 
-  .deck-progress-label {
-    color: var(--color-text-tertiary);
-    font-size: 9px;
+  /* the flying copy of a graded card, and its stamp */
+  .card.fly { position: absolute; top: 0; left: 0; z-index: 6; pointer-events: none; }
+  .stamp {
+    position: absolute;
+    top: 16px;
+    right: 18px;
+    z-index: 3;
+    padding: 4px 10px;
+    border: 2px solid var(--sc);
+    border-radius: 8px;
+    color: var(--sc);
+    background: var(--color-background-primary);
+    font-size: 15px;
+    font-weight: 750;
     font-variant-numeric: tabular-nums;
+    transform: rotate(-7deg);
   }
+  .stamp.again { border-color: var(--color-text-danger); color: var(--color-text-danger); }
 
-  .deck-review {
-    min-width: 34px;
-    height: 30px;
-    padding: 0;
-    justify-content: center;
-  }
-
-  .queue-section {
-    margin-top: 17px;
-  }
-
-  .queue-list {
-    overflow: hidden;
-    border-top: 1px solid var(--color-border-secondary);
-  }
-
-  .queue-row {
+  /* empty and caught-up desks */
+  .blank {
     display: grid;
-    min-height: 61px;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: center;
-    padding: 7px 0;
-  }
-
-  .queue-copy {
-    min-width: 0;
-  }
-
-  .queue-copy strong,
-  .queue-copy span {
-    display: block;
-  }
-
-  .queue-copy strong {
-    display: -webkit-box;
-    overflow: hidden;
-    font-size: 12px;
-    font-weight: 650;
-    line-height: 1.35;
-    white-space: normal;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 2;
-  }
-
-  .queue-copy span {
-    margin-top: 2px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-  }
-
-  .urgency {
-    font-size: 9px;
-    white-space: nowrap;
-  }
-
-  .empty-state {
-    min-height: 360px;
-    padding: 28px 18px;
-  }
-
-  .empty-stack {
-    position: relative;
-    width: min(100%, 430px);
-    height: 138px;
-    margin-bottom: 14px;
-  }
-
-  .empty-card {
-    position: absolute;
-    width: 64%;
-    min-height: 112px;
-    padding: 12px;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-sm, 8px);
-    background: var(--color-background-primary);
-    box-shadow: var(--shadow-sm);
-    text-align: left;
-  }
-
-  .empty-card:nth-child(1) {
-    top: 8px;
-    left: 0;
-    transform: rotate(-2deg);
-  }
-
-  .empty-card:nth-child(2) {
-    top: 18px;
-    left: 18%;
-    transform: rotate(1deg);
-  }
-
-  .empty-card:nth-child(3) {
-    top: 2px;
-    right: 0;
-    transform: rotate(2deg);
-  }
-
-  .empty-card span,
-  .empty-card strong,
-  .empty-card em {
-    display: block;
-  }
-
-  .empty-card span {
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    font-weight: 700;
-    text-transform: uppercase;
-  }
-
-  .empty-card strong {
-    margin-top: 14px;
-    overflow: hidden;
-    font-size: 12px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .empty-card em {
-    overflow: hidden;
-    margin-top: 13px;
-    padding-top: 8px;
-    border-top: 1px dashed var(--color-border-secondary);
-    color: var(--color-text-secondary);
-    font-size: 9.5px;
-    font-style: normal;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .empty-state > b {
-    font-size: 17px;
-    letter-spacing: 0;
-  }
-
-  .empty-state > span {
-    max-width: 500px;
-    line-height: 1.5;
-  }
-
-  .empty-actions {
-    display: flex;
-    flex-wrap: wrap;
-    justify-content: center;
-    gap: 8px;
-    margin-top: 7px;
-  }
-
-  .review-toolbar {
-    margin-bottom: 10px;
-  }
-
-  .review-progress {
-    min-width: 0;
-  }
-
-  .review-progress strong,
-  .review-progress span {
-    display: block;
-  }
-
-  .review-progress strong {
-    font-size: 13px;
-  }
-
-  .review-progress span {
-    margin-top: 2px;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-  }
-
-  .study-card {
-    position: relative;
-    min-height: 320px;
-    overflow: hidden;
-    padding: 0;
-    clip-path: polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 0 100%);
-  }
-
-  .study-card::after {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 18px;
-    height: 18px;
-    border-bottom: 1px solid var(--color-border-primary);
-    border-left: 1px solid var(--color-border-primary);
-    background: var(--color-background-secondary);
-    content: "";
-  }
-
-  .study-card-head {
-    padding: 11px 14px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 6%, transparent);
-  }
-
-  .card-face {
-    display: grid;
-    min-height: 178px;
-    padding: 26px 22px;
+    justify-items: center;
     align-content: center;
-    background-image: linear-gradient(to bottom, transparent 25px, color-mix(in oklab, var(--color-border-secondary) 56%, transparent) 26px);
-    background-size: 100% 26px;
+    gap: 8px;
+    min-height: 232px;
+    padding: 24px 22px;
+    border-radius: var(--sc-r);
     text-align: center;
   }
+  .blank.dashed { border: 1.5px dashed var(--color-border-primary); }
+  .blank.solid { border: 1px solid var(--color-border-primary); box-shadow: var(--shadow-sm); position: relative; z-index: 2; background: var(--color-background-primary); }
+  .blank svg { width: 64px; height: 64px; color: var(--sc); }
+  .blank h2 { margin: 4px 0 0; font-size: 20px; font-weight: 680; letter-spacing: -.015em; }
+  .blank p { margin: 0; max-width: 420px; color: var(--color-text-secondary); font-size: var(--font-text-md-size, 14px); line-height: 1.45; }
+  .blank .say { color: var(--color-text-primary); font-weight: 550; }
+  .blank .k-btn { margin-top: 8px; }
 
-  .face-label {
-    margin-bottom: 12px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    font-weight: 700;
-    text-transform: uppercase;
-  }
-
-  .front-text,
-  .back-text {
-    max-width: 620px;
-    margin: 0 auto;
-    overflow-wrap: anywhere;
-    font-size: 24px;
-    font-weight: 690;
-    letter-spacing: 0;
-    line-height: 1.3;
-  }
-
-  .back-text {
-    font-size: 19px;
-    font-weight: 580;
-  }
-
-  .answer-face {
-    min-height: 136px;
-    border-top: 1px dashed var(--color-border-primary);
-    background-color: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 5%, var(--color-background-primary));
-  }
-
-  .reveal-row {
-    padding: 0 14px 14px;
-  }
-
-  .reveal-row .k-btn {
-    width: 100%;
-    min-height: 46px;
-    justify-content: center;
-  }
-
-  .rating-area {
-    padding: 13px 14px 14px;
-    border-top: 1px solid var(--color-border-secondary);
-    background: var(--color-background-secondary);
-  }
-
-  .rating-label {
-    margin-bottom: 8px;
-    color: var(--color-text-secondary);
-    font-size: 10.5px;
-    font-weight: 650;
-    text-align: center;
-  }
-
-  .rating-grid {
+  /* actions under the card: one row for the front, one for the back, same slot */
+  .act { grid-area: act; display: grid; margin-top: 4px; min-width: 0; }
+  .act > div { grid-area: 1 / 1; min-width: 0; }
+  .act .hide { visibility: hidden; }
+  .row1 { display: flex; gap: 8px; }
+  .row1 .sc-go { flex: 1; }
+  .grades { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+  .gb {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 7px;
-  }
-
-  .rating-button {
-    display: grid;
-    min-width: 0;
-    min-height: 59px;
-    padding: 8px 6px;
-    place-content: center;
+    justify-items: center;
+    align-content: center;
+    gap: 1px;
+    min-height: 44px;
+    padding: 4px 6px;
     border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-sm, 8px);
-    background: var(--color-background-primary);
-    color: var(--color-text-primary);
+    border-radius: var(--border-radius-md, 10px);
+    background: transparent;
     cursor: pointer;
   }
+  .gb b { font-size: var(--font-text-md-size, 14px); font-weight: 650; }
+  .gb small { font-size: 11px; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; }
+  .gb:hover { background: color-mix(in oklab, var(--color-text-primary) 5%, transparent); }
+  .gb:focus-visible { outline: 2px solid var(--color-ring-primary, var(--sc)); outline-offset: 1px; }
+  .gb.again { color: var(--color-text-danger); border-color: color-mix(in oklab, var(--color-text-danger) 35%, var(--color-border-primary)); }
+  .gb.again small { color: inherit; opacity: .8; }
+  .gb.good { border-color: var(--sc); background: var(--sc); color: var(--sc-on); }
+  .gb.good small { color: inherit; opacity: .85; }
+  .gb.good:hover { background: color-mix(in oklab, var(--sc) 88%, var(--color-text-primary)); }
+  .gb.easy { border-color: var(--k-accent-brd); background: var(--k-accent-bg); color: var(--sc); }
+  .gb.easy small { color: inherit; opacity: .85; }
 
-  .rating-button strong,
-  .rating-button span {
-    display: block;
-    text-align: center;
-  }
+  .foot { grid-area: foot; min-height: 34px; display: flex; align-items: center; gap: 8px; color: var(--color-text-secondary); font-size: var(--font-text-sm-size, 12px); min-width: 0; }
+  .foot .k-btn { padding: 3px 8px; color: var(--sc); }
+  .foot .sc-ico { width: 14px; height: 14px; flex: none; color: var(--sc); }
+  .foot span { min-width: 0; overflow-wrap: anywhere; }
 
-  .rating-button strong {
-    font-size: 12px;
-  }
-
-  .rating-button span {
-    margin-top: 3px;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 9.5px;
-  }
-
-  .rating-button.again {
-    border-color: color-mix(in oklab, var(--color-text-danger, var(--color-text-primary)) 48%, var(--color-border-primary));
-  }
-
-  .rating-button.hard {
-    border-color: color-mix(in oklab, var(--color-text-warning, var(--color-text-primary)) 48%, var(--color-border-primary));
-  }
-
-  .rating-button.good {
-    border-color: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 48%, var(--color-border-primary));
-  }
-
-  .rating-button.easy {
-    border-color: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 48%, var(--color-border-primary));
-  }
-
-  .rating-button:disabled {
-    cursor: wait;
-    opacity: .55;
-  }
-
-  .explain-row {
-    margin-top: 9px;
-    justify-content: center;
-  }
-
-  .complete-state {
-    min-height: 310px;
-    padding: 26px 18px;
-  }
-
-  .complete-mark {
+  /* ── below the desk: the next two weeks, and the decks ── */
+  .below {
     display: grid;
-    width: 72px;
-    height: 72px;
-    margin-inline: auto;
-    place-items: center;
-    border: 1px solid color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 42%, var(--color-border-primary));
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 10%, transparent);
-    color: var(--color-text-success, var(--color-ring-primary));
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr);
+    gap: 30px;
+    padding: 18px 24px 20px;
+    border-top: 1px solid var(--color-border-secondary);
   }
+  .sech { margin: 0 0 12px; display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .sech h2 { margin: 0; font-size: var(--font-text-sm-size, 12px); font-weight: 650; }
+  .sech p { margin: 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
 
-  .complete-mark svg {
-    width: 34px;
-    height: 34px;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.8;
-  }
+  .bars { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; align-items: end; height: 96px; }
+  .bcol { display: flex; flex-direction: column; align-items: center; justify-content: flex-end; height: 100%; min-width: 0; }
+  .bcol em { font-style: normal; font-size: 10.5px; font-weight: 600; color: var(--color-text-secondary); font-variant-numeric: tabular-nums; margin-bottom: 3px; min-height: 13px; }
+  .bcol i { display: block; width: 100%; max-width: 20px; min-height: 2px; border-radius: 4px 4px 1px 1px; background: var(--sc-mid); }
+  .bcol.zero i { background: var(--color-border-secondary); }
+  .bcol.today i { background: var(--sc); }
+  .bcol.today em { color: var(--sc); }
+  .blbl { display: grid; grid-template-columns: repeat(14, minmax(0, 1fr)); gap: 4px; margin-top: 5px; border-top: 1px solid var(--color-border-secondary); padding-top: 5px; }
+  .blbl span { text-align: center; font-size: 10.5px; color: var(--color-text-tertiary); }
+  .blbl span.today { color: var(--sc); font-weight: 700; }
+  .blbl span.wk { color: var(--color-text-secondary); }
+  .later { margin: 10px 0 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
 
-  .complete-state h2 {
-    margin: 14px 0 5px;
-    font-size: 20px;
-    letter-spacing: 0;
-  }
-
-  .complete-state > p {
-    margin: 0;
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-
-  .complete-grid {
+  .shelf { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .deck {
     display: grid;
-    width: min(100%, 430px);
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 7px;
-    margin: 16px auto;
+    gap: 6px;
+    width: 100%;
+    padding: 8px 10px;
+    border: 0;
+    border-radius: var(--border-radius-md, 10px);
+    background: transparent;
+    text-align: left;
+    cursor: pointer;
   }
+  .deck:hover { background: color-mix(in oklab, var(--color-text-primary) 4%, transparent); }
+  .deck.on { background: var(--k-accent-bg); }
+  .deck:focus-visible { outline: 2px solid var(--color-ring-primary, var(--sc)); outline-offset: 1px; }
+  .dhead { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .dhead strong { font-size: var(--font-text-md-size, 14px); font-weight: 620; min-width: 0; overflow-wrap: anywhere; }
+  .dhead .k-badge { margin-left: auto; flex: none; }
+  .stack { display: flex; gap: 2px; height: 6px; }
+  .stack i { display: block; height: 100%; border-radius: 2px; }
+  .s-new { background: var(--color-border-primary); }
+  .s-grow { background: var(--sc-mid); }
+  .s-done { background: var(--sc); }
+  .dmeta { color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); font-variant-numeric: tabular-nums; }
+  .legend { display: flex; flex-wrap: wrap; gap: 12px; margin: 10px 10px 0; color: var(--color-text-tertiary); font-size: 11px; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .legend em { font-style: normal; }
+  .legend i { width: 9px; height: 9px; border-radius: 2px; }
 
-  .complete-stat {
-    padding: 10px 6px;
-    border-top: 2px solid var(--color-border-primary);
-    background: var(--color-background-secondary);
-  }
+  /* ── add by hand ── */
+  .add { padding: 12px 24px 20px; border-top: 1px solid var(--color-border-secondary); }
+  .add > .k-btn svg { width: 14px; height: 14px; }
+  .addf { display: grid; gap: 8px; margin-top: 10px; }
+  .addf textarea { width: 100%; min-height: 96px; resize: vertical; font: inherit; line-height: 1.45; }
+  .addf .k-row { flex-wrap: wrap; }
+  .addf .k-field.k-grow { min-width: 160px; }
+  .addf .help { margin: 0; color: var(--color-text-tertiary); font-size: var(--font-text-sm-size, 12px); }
 
-  .complete-stat strong,
-  .complete-stat span {
-    display: block;
-    text-align: center;
-  }
-
-  .complete-stat strong {
-    font-size: 19px;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .complete-stat span {
-    margin-top: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9.5px;
-  }
-
-  body[data-density="compact"] .content-body {
-    padding-top: 10px;
-  }
-
-  body[data-reviewing="true"] .overview,
-  body[data-reviewing="true"] .create-studio {
-    display: none;
-  }
-
-  body[data-reviewing="true"] .content-body {
-    padding-top: 14px;
-  }
-
-  body[data-density="compact"] .deck-cover {
-    min-height: 142px;
+  @media (max-width: 560px) {
+    .desk {
+      grid-template-columns: minmax(0, 1fr);
+      grid-template-areas: "tally" "chips" "pile" "act" "foot";
+      padding: 16px 16px 6px;
+    }
+    .desk.bare { grid-template-areas: "tally" "pile" "act" "foot"; }
+    .desk.empty { padding-bottom: 18px; }
+    .tally { display: grid; grid-template-columns: auto minmax(0, 1fr); column-gap: 16px; align-items: end; margin-bottom: 14px; }
+    .tally .kicker { grid-column: 1 / -1; }
+    .big { grid-row: 2 / span 3; }
+    .big b { font-size: 60px; }
+    .pips { max-width: none; }
+    .tsub, .tnext { margin-top: 6px; }
+    .face, .blank { min-height: 210px; }
+    .face { padding: 16px 16px 14px; }
+    .prompt { font-size: 23px; }
+    .prompt[data-len="m"] { font-size: 19px; }
+    .prompt[data-len="l"] { font-size: 17px; }
+    .grades { gap: 6px; }
+    .below { grid-template-columns: minmax(0, 1fr); gap: 22px; padding: 16px 16px 18px; }
+    .add { padding: 12px 16px 18px; }
   }
 
   @media (prefers-reduced-motion: no-preference) {
-    .ring-value,
-    .spectrum-ribbon,
-    .spectrum-segment,
-    .heat-cell,
-    .deck-cover,
-    .study-card,
-    .rating-button,
-    .k-btn {
-      transition: transform 190ms cubic-bezier(.2, .8, .3, 1), opacity 190ms cubic-bezier(.2, .8, .3, 1), stroke-dashoffset 420ms cubic-bezier(.2, .8, .3, 1), background 190ms cubic-bezier(.2, .8, .3, 1), border-color 190ms cubic-bezier(.2, .8, .3, 1);
-    }
-
-    .k-btn:hover,
-    .rating-button:hover,
-    .deck-cover:hover {
-      transform: translateY(-1px);
-    }
-
-    .k-btn:active,
-    .rating-button:active {
-      transform: scale(.98);
-    }
-
-    .answer-face:not([hidden]) {
-      animation: answer-in 240ms cubic-bezier(.2, .8, .3, 1);
-    }
-
-    .rating-button:active {
-      animation: rating-pop 220ms cubic-bezier(.34, 1.56, .64, 1);
-    }
-
-    @keyframes answer-in {
-      from { opacity: 0; transform: translateY(5px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
-
-    @keyframes rating-pop {
-      0% { transform: scale(.9); }
-      100% { transform: scale(1); }
-    }
+    .inner { transition: transform 480ms var(--k-ease); }
+    .under { transition: opacity 200ms var(--k-ease); }
+    .bcol i { transition: height 420ms var(--k-ease); }
+    .card.arrive { animation: sc-arrive 460ms var(--k-spring); }
+    .card.fly { animation: sc-away 620ms cubic-bezier(.55, 0, .8, .25) 140ms forwards; }
+    .card.fly.again { animation-name: sc-sink; }
+    .card.fly.hard { animation-duration: 720ms; }
+    .stamp { animation: sc-stamp 220ms var(--k-spring) both; }
+    .pip.pop { animation: sc-pip 420ms var(--k-spring); }
+    .blank.pop svg { animation: sc-pip 520ms var(--k-spring); }
+    .blank.pop .tick { stroke-dasharray: 30; animation: sc-draw 420ms var(--k-ease) 160ms both; }
   }
-
-  @media (max-width: 650px) {
-    .bar-actions {
-      display: flex;
-      width: 100%;
-      margin-left: 54px;
-    }
-
-    .bar-actions .k-btn {
-      width: 100%;
-      justify-content: center;
-    }
-
-    .review-title-line {
-      display: block;
-    }
-
-    .review-title-line .start-button {
-      width: 100%;
-      margin-top: 10px;
-    }
-
-    .manual-fields {
-      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    }
-
-    .manual-submit {
-      width: 100%;
-      grid-column: span 1;
-    }
-
-    .activity-board {
-      grid-template-columns: 1fr;
-    }
-
-    .spectrum-panel {
-      padding: 13px 0 0;
-      border-top: 1px solid var(--color-border-secondary);
-      border-left: 0;
-    }
-
-    .deck-wall {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 500px) {
-    .overview {
-      padding-inline: 12px;
-    }
-
-    .overview {
-      grid-template-columns: 96px minmax(0, 1fr);
-      gap: 12px;
-    }
-
-    .due-ring,
-    .due-ring svg {
-      width: 92px;
-      height: 92px;
-    }
-
-    .ring-copy strong {
-      font-size: 27px;
-    }
-
-    .review-summary h2 {
-      font-size: 19px;
-    }
-
-    .live-stat {
-      display: block;
-      padding: 8px;
-    }
-
-    .stat-glyph {
-      display: none;
-    }
-
-    .create-studio {
-      grid-template-columns: 1fr;
-    }
-
-    .ai-create {
-      border-right: 0;
-      border-bottom: 1px solid var(--color-border-secondary);
-    }
-
-    .manual-fields {
-      grid-template-columns: 1fr;
-    }
-
-    .manual-submit {
-      width: 100%;
-      min-width: 0;
-    }
-
-    .manual-submit::after {
-      margin-left: 5px;
-      content: attr(data-label);
-    }
-
-    .content-body {
-      padding-inline: 12px;
-    }
-
-    .heatmap-months,
-    .heatmap-weeks {
-      grid-template-columns: repeat(10, 14px);
-    }
-
-    .heat-cell {
-      width: 14px;
-    }
-
-    .deck-wall {
-      grid-template-columns: 1fr;
-    }
-
-    .deck-cover {
-      min-height: 134px;
-    }
-
-    .deck-cover h3 {
-      min-height: 0;
-    }
-
-    .empty-card {
-      width: 74%;
-    }
-
-    .empty-card:nth-child(2) {
-      left: 12%;
-    }
-
-    .front-text {
-      font-size: 21px;
-    }
-
-    .back-text {
-      font-size: 17px;
-    }
-
-    .rating-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .rating-button {
-      min-height: 62px;
-    }
-
-    .complete-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-  }
-
-  @media (max-width: 390px) {
-    .bar-actions {
-      margin-left: 0;
-    }
-
-    .overview {
-      grid-template-columns: 1fr;
-    }
-
-    .due-ring {
-      margin-inline: auto;
-    }
-
-    .review-summary {
-      text-align: center;
-    }
-
-    .review-summary p {
-      margin-inline: auto;
-    }
-
-    .live-stats {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .live-stat:last-child {
-      grid-column: 1 / -1;
-    }
-
-    .heatmap-shell {
-      grid-template-columns: 25px minmax(0, 1fr);
-      gap: 4px;
-    }
-
-    .heatmap-foot {
-      align-items: flex-start;
-      flex-direction: column;
-      gap: 6px;
-    }
-
-    .heatmap-foot > .k-grow {
-      display: none;
-    }
-
-    .heat-legend {
-      width: 100%;
-      justify-content: flex-end;
-    }
-
-  }
-
-  @media (max-width: 370px) {
-    .heatmap-panel .section-head {
-      align-items: flex-start;
-      flex-wrap: wrap;
-    }
-
-    .heatmap-panel .section-head > div {
-      width: 100%;
-    }
-
-    .heatmap-panel .section-head > .k-grow {
-      display: none;
-    }
-
-    #heatmapRange {
-      margin-top: 6px;
-      white-space: nowrap;
-    }
-  }
+  @keyframes sc-arrive { from { transform: translateY(10px) scale(.965); } to { transform: none; } }
+  @keyframes sc-away { 65% { opacity: 1; } to { transform: translate(var(--dx, 115%), var(--dy, -18px)) rotate(var(--rot, 9deg)); opacity: 0; } }
+  @keyframes sc-sink { 50% { opacity: 1; } to { transform: translateY(26px) scale(.9); opacity: 0; } }
+  @keyframes sc-stamp { from { transform: rotate(-7deg) scale(1.6); opacity: 0; } to { transform: rotate(-7deg) scale(1); opacity: 1; } }
+  @keyframes sc-pip { 0% { transform: scale(.4); } 60% { transform: scale(1.35); } 100% { transform: none; } }
+  @keyframes sc-draw { from { stroke-dashoffset: 30; } to { stroke-dashoffset: 0; } }
 </style>
 </head>
 <body>
-<div class="app k-stage">
-  <header class="app-bar k-appbar">
-    <div class="app-mark k-appmark" aria-hidden="true">
-      <svg viewBox="0 0 28 28">
-        <path d="M5 6.5h13.5a2 2 0 0 1 2 2v13H7a2 2 0 0 1-2-2z"/>
-        <path d="M8.5 3.5H22a2 2 0 0 1 2 2v13.5M9 11h7M9 15h5"/>
-        <path d="M18.5 4.5v5l1.8-1.2 1.7 1.2v-5"/>
-      </svg>
-    </div>
-    <div class="identity k-appcopy">
-      <div class="eyebrow k-eyebrow" data-t="eyebrow">Daily recall desk</div>
-      <h1 class="app-name" data-t="appName">Study Cards</h1>
-      <div class="brand-summary" data-t="metaDescription">A focused spaced-repetition study desk with honest due dates, a ten-week review heatmap, deck mastery covers, inline card creation, and AI-assisted batch card making.</div>
-    </div>
+<main class="sc k-stage">
+  <header class="sc-bar k-appbar">
+    <span class="sc-mark k-appmark" aria-hidden="true">
+      <svg viewBox="0 0 18 18"><rect x="4.5" y="2.5" width="11" height="8.5" rx="1.6"/><path d="M2.5 6.2v7.3a2 2 0 0 0 2 2h8.8"/></svg>
+    </span>
+    <div class="k-appcopy"><h1 data-t="name">Study cards</h1></div>
+    <button id="aiBtn" class="k-btn sec" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 .8 3.2A6.5 6.5 0 0 0 17.5 11l3.2.8-3.2.8a6.5 6.5 0 0 0-4.7 4.7L12 20.5l-.8-3.2a6.5 6.5 0 0 0-4.7-4.7l-3.2-.8 3.2-.8a6.5 6.5 0 0 0 4.7-4.8L12 3Z"/></svg>
+      <span data-t="makeAi">Make cards with AI</span>
+    </button>
   </header>
 
-  <section class="overview" aria-labelledby="todayReviewLabel">
-    <div class="due-ring" id="dueRing">
-      <svg viewBox="0 0 116 116" aria-hidden="true">
-        <circle class="ring-base" cx="58" cy="58" r="47"/>
-        <circle class="ring-value" id="ringValue" cx="58" cy="58" r="47"/>
-      </svg>
-      <div class="ring-copy">
-        <strong id="dueCount">0</strong>
-        <span data-t="dueNow">due now</span>
+  <div class="err" id="err" role="status" aria-live="polite" hidden></div>
+
+  <section class="desk" id="desk">
+    <div class="tally" id="tally">
+      <p class="kicker" id="scopeLbl"></p>
+      <p class="big"><b id="dueNum">0</b><span id="dueUnit"></span></p>
+      <p class="tsub" id="tsub"></p>
+      <div class="pips" id="pips" aria-hidden="true"></div>
+      <p class="tnext" id="tnext"></p>
+    </div>
+
+    <div class="chips" id="chips" role="group"></div>
+
+    <div class="pile" id="pile">
+      <div class="under u2" id="u2"></div>
+      <div class="under u1" id="u1"></div>
+      <div class="card" id="card" role="button" tabindex="0" aria-pressed="false">
+        <div class="inner">
+          <div class="face front">
+            <div class="ftop"><span class="dtag" id="fDeck"></span><span class="k-badge" id="fDue"></span></div>
+            <p class="prompt" id="fText"></p>
+            <p class="hint" data-t="flipHint">Tap the card to flip it</p>
+          </div>
+          <div class="face back" aria-live="polite">
+            <div class="ftop"><span class="dtag" data-t="answer">Answer</span></div>
+            <p class="recap" id="bFront"></p>
+            <p class="answer" id="bText"></p>
+          </div>
+        </div>
+      </div>
+      <div class="blank solid" id="doneCard" hidden>
+        <svg viewBox="0 0 64 64" aria-hidden="true" class="sc-ico"><rect x="10" y="14" width="44" height="34" rx="5"/><path d="M16 54h32"/><path class="tick" d="m24 31 6 6 11-12" stroke-width="2.4"/></svg>
+        <h2 id="doneTitle"></h2>
+        <p id="doneBody"></p>
+        <button id="doneAll" class="k-btn sec" type="button" hidden></button>
+      </div>
+      <div class="blank dashed" id="emptyCard" hidden>
+        <svg viewBox="0 0 64 64" aria-hidden="true" class="sc-ico"><rect x="18" y="12" width="36" height="26" rx="4"/><path d="M12 20v26a4 4 0 0 0 4 4h30"/><path d="M29 25h14M29 31h9"/></svg>
+        <h2 data-t="emptyTitle">Your first card goes here</h2>
+        <p data-t="emptyBody">Ask the AI for a batch from your notes or a topic — for example:</p>
+        <p class="say" data-t="emptySay">“Make 12 cards from my notes on the French Revolution.”</p>
+        <button id="emptyAi" class="k-btn sc-go" type="button" data-t="makeAi">Make cards with AI</button>
       </div>
     </div>
-    <div class="review-summary">
-      <span class="k-badge info" id="todayReviewLabel" data-t="todayReview">Today's review</span>
-      <div class="review-title-line k-row">
-        <div class="k-grow">
-          <h2 id="reviewHeadline">You're caught up</h2>
-          <p id="reviewSub">New cards and scheduled reviews will appear here.</p>
-        </div>
-        <button class="k-btn start-button" id="startButton" type="button">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M5.5 3.5v9L13 8z"/>
-          </svg>
-          <span id="startButtonLabel">Start review</span>
-        </button>
+
+    <div class="act" id="act">
+      <div class="row1" id="actFront">
+        <button id="flipBtn" class="k-btn sc-go" type="button" data-t="show">Show answer</button>
+        <button id="explainBtn" class="k-btn sec" type="button" data-t="explain">Explain</button>
       </div>
+      <div class="grades" id="actBack"></div>
     </div>
-    <div class="live-stats" aria-label="Study statistics" data-aria="statisticsAria">
-      <div class="live-stat">
-        <div class="stat-glyph" aria-hidden="true">
-          <svg viewBox="0 0 16 16"><path d="M8 2.5v5l3 2M3 2.5h10v11H3z"/></svg>
-        </div>
-        <div>
-          <span data-t="dueTodayStat">Due today</span>
-          <strong id="dueStat">0</strong>
-        </div>
-      </div>
-      <div class="live-stat">
-        <div class="stat-glyph" aria-hidden="true">
-          <svg viewBox="0 0 16 16"><path d="M3 8.5l3 3 7-7M3 2.5h10v11H3z"/></svg>
-        </div>
-        <div>
-          <span data-t="learnedStat">Learned</span>
-          <strong id="learnedStat">0</strong>
-        </div>
-      </div>
-      <div class="live-stat">
-        <div class="stat-glyph" aria-hidden="true">
-          <svg viewBox="0 0 16 16"><path d="M8 2.5c2 2 3.5 3.4 3.5 5.8A3.5 3.5 0 0 1 8 12a3.5 3.5 0 0 1-3.5-3.7C4.5 6.4 5.6 5 7 3.8c.1 1 .5 1.7 1 2.2.8-.8.9-2 .9-3.5"/></svg>
-        </div>
-        <div>
-          <span data-t="streakStat">Study streak</span>
-          <strong id="streakStat">0 days</strong>
-        </div>
+
+    <div class="foot" id="foot" aria-live="polite"></div>
+  </section>
+
+  <section class="below" id="below">
+    <div>
+      <div class="sech"><h2 data-t="comingUp">Coming up</h2><p id="fcRange"></p></div>
+      <div class="bars" id="bars" role="img"></div>
+      <div class="blbl" id="blbl" aria-hidden="true"></div>
+      <p class="later" id="later"></p>
+    </div>
+    <div>
+      <div class="sech"><h2 data-t="decks">Decks</h2><p id="deckSum"></p></div>
+      <ul class="shelf" id="shelf"></ul>
+      <div class="legend" aria-hidden="true">
+        <span><i class="s-new"></i><em data-t="lgNew">New</em></span>
+        <span><i class="s-grow"></i><em data-t="lgGrow">Learning</em></span>
+        <span><i class="s-done"></i><em data-t="lgDone">Learned · 21d+</em></span>
       </div>
     </div>
   </section>
 
-  <section class="create-studio" aria-labelledby="createStudioTitle">
-    <div class="ai-create">
-      <div class="create-kicker" data-t="aiBatchKicker">Batch from source</div>
-      <h2 id="createStudioTitle" data-t="aiBatchTitle">Build a deck with AI</h2>
-      <p data-t="aiBatchBody">Paste notes in chat or name a topic; the AI will make a focused batch.</p>
-      <button class="k-btn sec" id="studioAiButton" type="button">
-        <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-          <path d="M8 2.5l1 2.4L11.5 6 9 7.1 8 9.5 7 7.1 4.5 6 7 4.9zM12.5 10l.6 1.4 1.4.6-1.4.6-.6 1.4-.6-1.4-1.4-.6 1.4-.6z"/>
-        </svg>
-        <span data-t="askAi">Ask the AI to make cards</span>
-      </button>
-    </div>
-    <form class="manual-create" id="manualForm">
-      <div class="manual-head k-row">
-        <div>
-          <div class="create-kicker" data-t="manualKicker">One card now</div>
-          <h2 data-t="manualTitle">Add manually</h2>
-        </div>
-        <span class="k-grow"></span>
-        <span class="k-sub" data-t="manualHint">New cards enter today's queue</span>
-      </div>
-      <div class="manual-fields">
-        <label class="field-wrap">
-          <span data-t="frontField">Front</span>
-          <input class="k-field" id="frontInput" maxlength="400" autocomplete="off" data-ph="frontPlaceholder" placeholder="Atomic prompt">
-        </label>
-        <label class="field-wrap">
-          <span data-t="backField">Back</span>
-          <input class="k-field" id="backInput" maxlength="900" autocomplete="off" data-ph="backPlaceholder" placeholder="Concise answer">
-        </label>
-        <label class="field-wrap">
-          <span data-t="deckField">Deck</span>
-          <input class="k-field" id="deckInput" maxlength="120" autocomplete="off" data-ph="deckPlaceholder" placeholder="General">
-        </label>
-        <button class="k-btn manual-submit" id="manualSubmit" type="submit" data-label="Add card" aria-label="Add card">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M8 3v10M3 8h10"/>
-          </svg>
-        </button>
+  <section class="add" id="addSec">
+    <button id="addToggle" class="k-btn ghost" type="button" aria-expanded="false">
+      <svg viewBox="0 0 16 16" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"><path d="M8 3v10M3 8h10"/></svg>
+      <span data-t="addToggle">Add cards by hand</span>
+    </button>
+    <form class="addf" id="addForm" hidden>
+      <textarea id="addLines" class="k-field" data-ph="addPh" aria-label="Cards"></textarea>
+      <p class="help" data-t="addHelp">One card per line: front — back. A dash, a tab or a | all work.</p>
+      <div class="k-row">
+        <input id="addDeck" class="k-field k-grow" list="deckList" data-ph="deckPh" autocomplete="off">
+        <datalist id="deckList"></datalist>
+        <button id="addBtn" class="k-btn sc-go" type="submit" data-t="addBtn">Add cards</button>
       </div>
     </form>
   </section>
-
-  <div class="status-strip" id="statusStrip" hidden>
-    <span class="k-badge" id="statusMessage" role="status"></span>
-  </div>
-
-  <main class="content-body" id="contentBody">
-    <section class="k-empty empty-state" id="emptyState" hidden>
-      <div class="empty-stack" aria-hidden="true">
-        <div class="empty-card">
-          <span data-t="exampleFront">Front</span>
-          <strong data-t="exampleOneFront">One sharp question</strong>
-          <em data-t="exampleOneBack">One answer worth retrieving</em>
-        </div>
-        <div class="empty-card">
-          <span data-t="exampleFront">Front</span>
-          <strong data-t="exampleTwoFront">A process step</strong>
-          <em data-t="exampleTwoBack">The detail exams punish you for missing</em>
-        </div>
-        <div class="empty-card">
-          <span data-t="exampleFront">Front</span>
-          <strong data-t="exampleThreeFront">A useful phrase</strong>
-          <em data-t="exampleThreeBack">Recall before reveal</em>
-        </div>
-      </div>
-      <b data-t="emptyTitle">Give tomorrow's memory a first card</b>
-      <span data-t="emptyBody">Use the visible AI batch path or add one card by hand above.</span>
-      <div class="empty-actions">
-        <button class="k-btn" id="emptyAiButton" type="button" data-t="askAi">Ask the AI to make cards</button>
-        <button class="k-btn sec" id="emptyManualButton" type="button" data-t="addOneManually">Add one manually</button>
-      </div>
-    </section>
-
-    <section id="dashboard" hidden>
-      <section class="activity-board" aria-label="Review activity and mastery" data-aria="activityAria">
-        <div class="heatmap-panel">
-          <div class="section-head k-row">
-            <div>
-              <h2 data-t="heatmapTitle">Review heatmap</h2>
-              <div class="k-sub" data-t="heatmapSource">Latest recorded review per card · 10 weeks</div>
-            </div>
-            <span class="k-grow"></span>
-            <span class="k-badge" id="heatmapRange">—</span>
-          </div>
-          <div class="heatmap-shell">
-            <div class="weekday-labels" id="weekdayLabels" aria-hidden="true"></div>
-            <div class="heatmap-main">
-              <div class="heatmap-months" id="heatmapMonths" aria-hidden="true"></div>
-              <div class="heatmap-weeks" id="heatmapWeeks"></div>
-            </div>
-          </div>
-          <div class="heatmap-foot k-row">
-            <span id="reviewTouchpointSummary">0 review touchpoints</span>
-            <span class="k-grow"></span>
-            <div class="heat-legend" aria-hidden="true">
-              <span data-t="less">Less</span>
-              <span class="heat-cell"></span>
-              <span class="heat-cell level-1"></span>
-              <span class="heat-cell level-2"></span>
-              <span class="heat-cell level-4"></span>
-              <span data-t="more">More</span>
-            </div>
-          </div>
-        </div>
-
-        <div class="spectrum-panel">
-          <div class="section-head">
-            <h2 data-t="masterySpectrum">Mastery spectrum</h2>
-            <div class="k-sub" data-t="spectrumHint">Interval strength with due pressure</div>
-          </div>
-          <div class="spectrum-ribbon" id="spectrumRibbon"></div>
-          <div class="spectrum-axis">
-            <span data-t="newMemory">New</span>
-            <span data-t="longTerm">Long-term</span>
-          </div>
-        </div>
-      </section>
-
-      <section class="deck-section" aria-labelledby="decksTitle">
-        <div class="section-head k-row">
-          <div>
-            <h2 id="decksTitle" data-t="decksTitle">Deck shelf</h2>
-            <div class="k-sub" id="deckSummary">0 decks</div>
-          </div>
-        </div>
-        <div class="deck-wall" id="deckWall"></div>
-      </section>
-
-      <section class="queue-section" aria-labelledby="queueTitle">
-        <div class="section-head k-row">
-          <div>
-            <h2 id="queueTitle" data-t="upNext">Up next</h2>
-            <div class="k-sub" id="queueSummary">Cards waiting today</div>
-          </div>
-        </div>
-        <div class="queue-list" id="queueList"></div>
-      </section>
-    </section>
-
-    <section id="reviewPanel" hidden>
-      <div class="review-toolbar k-row">
-        <div class="review-progress">
-          <strong id="reviewProgressLabel">Card 1 of 5</strong>
-          <span id="reviewDeckLabel">All decks</span>
-        </div>
-        <span class="k-grow"></span>
-        <button class="k-btn ghost" id="stopReviewButton" type="button">
-          <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-            <path d="M4 4l8 8M12 4l-8 8"/>
-          </svg>
-          <span data-t="stopReview">Stop</span>
-        </button>
-      </div>
-
-      <article class="k-card study-card" id="studyCard">
-        <div class="study-card-head k-row">
-          <span class="k-badge info" id="cardDeck">Deck</span>
-          <span class="k-grow"></span>
-          <span class="k-badge" id="cardUrgency">Due today</span>
-        </div>
-        <div class="card-face">
-          <div class="face-label" data-t="frontLabel">Prompt</div>
-          <div class="front-text" id="frontText"></div>
-        </div>
-        <div class="reveal-row" id="revealRow">
-          <button class="k-btn" id="revealButton" type="button">
-            <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-              <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4zM8 6.2A1.8 1.8 0 1 1 8 9.8 1.8 1.8 0 0 1 8 6.2z"/>
-            </svg>
-            <span data-t="revealAnswer">Reveal answer</span>
-          </button>
-        </div>
-        <div class="card-face answer-face" id="answerFace" hidden>
-          <div class="face-label" data-t="answerLabel">Answer</div>
-          <div class="back-text" id="backText"></div>
-        </div>
-        <div class="rating-area" id="ratingArea" hidden>
-          <div class="rating-label" data-t="rateRecall">How well did you recall it?</div>
-          <div class="rating-grid" id="ratingGrid"></div>
-          <div class="explain-row k-row">
-            <button class="k-btn ghost" id="explainButton" type="button">
-              <svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true">
-                <path d="M3 13V3h10v7H7l-4 3zM6 6h4M6 8.5h2.5"/>
-              </svg>
-              <span data-t="askExplain">Ask AI to explain</span>
-            </button>
-          </div>
-        </div>
-      </article>
-
-      <section class="k-empty complete-state" id="completeState" hidden>
-        <div class="complete-mark" aria-hidden="true">
-          <svg viewBox="0 0 40 40">
-            <path d="M8 20.5l7.5 7.5L32 11"/>
-            <circle cx="20" cy="20" r="17" opacity=".35"/>
-          </svg>
-        </div>
-        <h2 data-t="sessionDone">Review complete</h2>
-        <p id="sessionDoneBody">Your schedule has been updated from every rating.</p>
-        <div class="complete-grid" id="completeGrid"></div>
-        <button class="k-btn" id="backToDecksButton" type="button" data-t="backToDecks">Back to decks</button>
-      </section>
-    </section>
-  </main>
-</div>
+</main>
 
 <script type="module">
   const oma = window.oma;
-  const CIRCUMFERENCE = 295.31;
-  const HEATMAP_WEEKS = 10;
-  const LEARNED_INTERVAL = 21;
+  const LEARNED = 21;
+  const DAYS = 14;
 
   const STR = {
     en: {
-      documentTitle: "Study Cards · Spaced Repetition Desk",
-      metaDescription: "A focused spaced-repetition study desk with honest due dates, a ten-week review heatmap, deck mastery covers, inline card creation, and AI-assisted batch card making.",
-      eyebrow: "Daily recall desk",
-      appName: "Study Cards",
-      askAi: "Ask the AI to make cards",
-      todayReview: "Today's review",
-      dueNow: "due now",
-      dueTodayStat: "Due today",
-      learnedStat: "Learned",
-      streakStat: "Study streak",
-      statisticsAria: "Study statistics",
-      activityAria: "Review activity and mastery",
-      caughtUpHeadline: "You're caught up",
-      caughtUpBody: "New cards and scheduled reviews will appear here.",
-      dueHeadlineOne: "1 card is ready",
-      dueHeadline: "{count} cards are ready",
-      dueBody: "Clear today's queue in one focused pass.",
-      startReview: "Start review",
-      allCaughtUp: "All caught up",
-      dayOne: "{count} day",
-      days: "{count} days",
-      aiBatchKicker: "Batch from source",
-      aiBatchTitle: "Build a deck with AI",
-      aiBatchBody: "Paste notes in chat or name a topic; the AI will make a focused batch.",
-      manualKicker: "One card now",
-      manualTitle: "Add manually",
-      manualHint: "New cards enter today's queue",
-      frontField: "Front",
-      backField: "Back",
-      deckField: "Deck",
-      frontPlaceholder: "Atomic prompt",
-      backPlaceholder: "Concise answer",
-      deckPlaceholder: "General",
-      addCard: "Add card",
-      addingCard: "Adding…",
-      manualMissing: "Add both a front and a back.",
-      manualSuccess: "Card added to {deck} and queued for review.",
-      manualFailed: "The card was not added: {error}",
-      exampleFront: "Front",
-      exampleOneFront: "One sharp question",
-      exampleOneBack: "One answer worth retrieving",
-      exampleTwoFront: "A process step",
-      exampleTwoBack: "The detail exams punish you for missing",
-      exampleThreeFront: "A useful phrase",
-      exampleThreeBack: "Recall before reveal",
-      emptyTitle: "Give tomorrow's memory a first card",
-      emptyBody: "Use the visible AI batch path or add one card by hand above.",
-      addOneManually: "Add one manually",
-      heatmapTitle: "Review heatmap",
-      heatmapSource: "Latest recorded review per card · 10 weeks",
-      reviewTouchpointOne: "1 review touchpoint in this window",
-      reviewTouchpoints: "{count} review touchpoints in this window",
-      reviewCountOne: "{date}: 1 latest recorded review",
-      reviewCounts: "{date}: {count} latest recorded reviews",
-      noReviewsOnDate: "{date}: no latest recorded reviews",
-      futureDate: "{date}: future date",
-      less: "Less",
-      more: "More",
-      masterySpectrum: "Mastery spectrum",
-      spectrumHint: "Interval strength with due pressure",
-      newMemory: "New",
-      longTerm: "Long-term",
-      decksTitle: "Deck shelf",
-      deckSummary: "{decks} · {cards} · {due}",
-      cardsAndDue: "{cards} · {due}",
-      cardUnitOne: "card",
-      cardUnitMany: "cards",
-      deckUnitOne: "deck",
-      deckUnitMany: "decks",
-      dueUnit: "due",
-      mastered: "{count}% mastered",
-      reviewDeck: "Review {deck}",
-      upNext: "Up next",
-      queueSummaryOne: "1 card waiting today",
-      queueSummary: "{count} cards waiting today",
-      noDueTitle: "Nothing due right now",
-      noDueBody: "The next scheduled card is {when}.",
-      dueToday: "Due today",
-      overdueDays: "Overdue {count}d",
-      inDays: "In {count}d",
-      newCard: "New card",
-      frontLabel: "Prompt",
-      answerLabel: "Answer",
-      revealAnswer: "Reveal answer",
-      rateRecall: "How well did you recall it?",
+      name: "Study cards",
+      makeAi: "Make cards with AI",
+      dueUnit: "cards",
+      dueUnitOne: "card",
+      scopeAll: "Due today",
+      scopeDeck: "Due today · {deck}",
+      doneToday: "{n} reviewed today",
+      tomorrow: "Tomorrow: {n}",
+      nothingSoon: "Nothing due tomorrow",
+      all: "All",
+      flipHint: "Tap the card to flip it",
+      answer: "Answer",
+      show: "Show answer",
+      explain: "Explain",
       again: "Again",
       hard: "Hard",
       good: "Good",
       easy: "Easy",
-      daysShort: "{count}d",
-      askExplain: "Ask AI to explain",
-      stopReview: "Stop",
-      cardProgress: "Card {current} of {total}",
-      allDecks: "All decks",
-      sessionDone: "Review complete",
-      sessionDoneBodyOne: "1 card reviewed. That rating is now part of the schedule.",
-      sessionDoneBody: "{count} cards reviewed. Every rating is now part of the schedule.",
-      backToDecks: "Back to decks",
-      saveFailed: "That rating was not saved: {error}",
-      explainUnavailable: "Open a card before asking for an explanation.",
-      generalDeck: "General",
-      intervalLabel: "{count}-day interval",
-      noCards: "No cards",
+      dShort: "{n}d",
+      newCard: "New",
+      dueToday: "Due today",
+      overdue: "{n}d overdue",
+      rateHint: "How well did you remember it?  Keys 1–4",
+      backTomorrow: "back tomorrow",
+      backIn: "back in {n} days · {date}",
+      undo: "Undo",
+      caughtUp: "All caught up",
+      deckClear: "{deck} is clear",
+      nextUp: "Next up: {n} tomorrow.",
+      nextOn: "Next up: {n} on {date}.",
+      nothingScheduled: "Nothing is scheduled yet.",
+      reviewedToday: "You reviewed {n} today.",
+      reviewAll: "Review the other decks · {n}",
+      emptyTitle: "Your first card goes here",
+      emptyBody: "Ask the AI for a batch from your notes or a topic — for example:",
+      emptySay: "“Make 12 cards from my notes on the French Revolution.”",
+      comingUp: "Coming up",
+      fcRange: "next 14 days",
+      later: "{n} more after {date}",
+      noLater: "Nothing further out yet",
+      barTitle: "{date}: {n}",
+      barsAria: "Cards coming due over the next 14 days",
+      today: "Today",
+      decks: "Decks",
+      deckSum: "{cards} cards · {learned} learned",
+      deckMeta: "{cards} cards · {learned} learned · {fresh} new",
+      dueBadge: "{n} due",
+      lgNew: "New",
+      lgGrow: "Learning",
+      lgDone: "Learned · 21d+",
+      addToggle: "Add cards by hand",
+      addPh: "por si acaso — just in case\nWhere does glycolysis happen? — In the cytosol.",
+      addHelp: "One card per line: front — back. A dash, a tab or a | all work.",
+      deckPh: "Deck",
+      addBtn: "Add cards",
+      general: "General",
+      addNeed: "Line {n} needs a front and a back, like: front — back",
+      addEmpty: "Type at least one card: front — back",
+      added: "Added {n} to {deck}.",
+      addedOne: "Added 1 card to {deck}.",
+      saveFailed: "That grade was not saved ({why}). The card is back on top.",
+      addFailed: "Stopped after {n}: {why}",
+      askFailed: "Couldn't reach the assistant — try again.",
+      cardAria: "{deck}. {front}. Press to flip.",
       aiMakePrompt: "Help me create a source-grounded spaced-repetition deck. Ask me to paste study material or name a topic if I have not provided one. Then make 8–15 atomic cards in a sensible deck, using only the supplied material for factual claims and flagging any necessary inference. Prefer prompts that require recall, not recognition; keep each back concise but sufficient; split multi-part ideas. When the batch is ready, use apply_data_writes to add every item to collection study-cards. Every command must include collection: study-cards, group set to the deck name, and fields {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}. Finish with a compact list of the decks and cards added.",
-      aiExplainPrompt: "Explain this study card in a way that makes it easier to remember. Deck: {deck}. Prompt: {front}. Stored answer: {back}. Give one compact explanation, one memory hook, and one quick check question. Do not change the card unless I ask.",
-      askFailed: "Couldn't reach the assistant — try again."
+      aiExplainPrompt: "Explain this study card in a way that makes it easier to remember. Deck: {deck}. Prompt: {front}. Stored answer: {back}. Give one compact explanation, one memory hook, and one quick check question. Do not change the card unless I ask."
     },
     zh: {
-      documentTitle: "学习卡片 · 间隔复习桌",
-      metaDescription: "一张专注的间隔复习桌：真实到期日期、十周复习热力图、卡组掌握度、手动加卡，以及 AI 批量制卡。",
-      eyebrow: "每日回想桌",
-      appName: "学习卡片",
-      askAi: "让 AI 制作卡片",
-      todayReview: "今日复习",
-      dueNow: "当前到期",
-      dueTodayStat: "今天到期",
-      learnedStat: "已学会",
-      streakStat: "学习连续天数",
-      statisticsAria: "学习统计",
-      activityAria: "复习活动与掌握度",
-      caughtUpHeadline: "今天已经清空",
-      caughtUpBody: "新卡和后续排程会在到期时出现在这里。",
-      dueHeadlineOne: "有 1 张卡可以复习",
-      dueHeadline: "有 {count} 张卡可以复习",
-      dueBody: "用一次专注复习清掉今天的队列。",
-      startReview: "开始复习",
-      allCaughtUp: "今日已完成",
-      dayOne: "{count} 天",
-      days: "{count} 天",
-      aiBatchKicker: "从材料批量生成",
-      aiBatchTitle: "用 AI 建一个卡组",
-      aiBatchBody: "在聊天中粘贴笔记或给出主题，AI 会整理成一批聚焦卡片。",
-      manualKicker: "现在加一张",
-      manualTitle: "手动添加",
-      manualHint: "新卡会进入今天的队列",
-      frontField: "正面",
-      backField: "背面",
-      deckField: "卡组",
-      frontPlaceholder: "只问一个知识点",
-      backPlaceholder: "简洁而完整的答案",
-      deckPlaceholder: "通用",
-      addCard: "添加卡片",
-      addingCard: "正在添加…",
-      manualMissing: "请同时填写正面和背面。",
-      manualSuccess: "卡片已加入“{deck}”并进入复习队列。",
-      manualFailed: "卡片未能添加：{error}",
-      exampleFront: "正面",
-      exampleOneFront: "一个尖锐问题",
-      exampleOneBack: "一个值得主动提取的答案",
-      exampleTwoFront: "一个流程步骤",
-      exampleTwoBack: "考试最容易因遗漏而扣分的细节",
-      exampleThreeFront: "一句实用表达",
-      exampleThreeBack: "先回想，再揭晓",
-      emptyTitle: "先给明天的记忆一张卡",
-      emptyBody: "使用上方清晰可见的 AI 批量入口，或手动添加一张。",
-      addOneManually: "手动添加一张",
-      heatmapTitle: "复习热力图",
-      heatmapSource: "每张卡最近一次已记录复习 · 10 周",
-      reviewTouchpointOne: "这个窗口内有 1 个复习触点",
-      reviewTouchpoints: "这个窗口内有 {count} 个复习触点",
-      reviewCountOne: "{date}：1 次最近已记录复习",
-      reviewCounts: "{date}：{count} 次最近已记录复习",
-      noReviewsOnDate: "{date}：没有最近已记录复习",
-      futureDate: "{date}：未来日期",
-      less: "少",
-      more: "多",
-      masterySpectrum: "掌握度光谱",
-      spectrumHint: "间隔强度与到期压力",
-      newMemory: "新记忆",
-      longTerm: "长期记忆",
-      decksTitle: "卡组书架",
-      deckSummary: "{decks} · {cards} · {due}",
-      cardsAndDue: "{cards} · {due}",
-      cardUnitOne: "张卡",
-      cardUnitMany: "张卡",
-      deckUnitOne: "个卡组",
-      deckUnitMany: "个卡组",
-      dueUnit: "张到期",
-      mastered: "掌握 {count}%",
-      reviewDeck: "复习 {deck}",
-      upNext: "接下来",
-      queueSummaryOne: "今天有 1 张卡等待复习",
-      queueSummary: "今天有 {count} 张卡等待复习",
-      noDueTitle: "当前没有到期卡",
-      noDueBody: "下一张计划在 {when} 到期。",
-      dueToday: "今天到期",
-      overdueDays: "已逾期 {count} 天",
-      inDays: "{count} 天后",
-      newCard: "新卡",
-      frontLabel: "题面",
-      answerLabel: "答案",
-      revealAnswer: "显示答案",
-      rateRecall: "你刚才回想得怎么样？",
+      name: "学习卡片",
+      makeAi: "让 AI 制卡",
+      dueUnit: "张",
+      dueUnitOne: "张",
+      scopeAll: "今天到期",
+      scopeDeck: "今天到期 · {deck}",
+      doneToday: "今天已复习 {n} 张",
+      tomorrow: "明天：{n} 张",
+      nothingSoon: "明天没有到期",
+      all: "全部",
+      flipHint: "点一下卡片翻面",
+      answer: "答案",
+      show: "显示答案",
+      explain: "讲解",
       again: "重来",
       hard: "困难",
-      good: "良好",
+      good: "记得",
       easy: "轻松",
-      daysShort: "{count}天",
-      askExplain: "让 AI 讲解",
-      stopReview: "停止",
-      cardProgress: "第 {current} / {total} 张",
-      allDecks: "全部卡组",
-      sessionDone: "复习完成",
-      sessionDoneBodyOne: "已复习 1 张卡，这次评分已进入新的排程。",
-      sessionDoneBody: "已复习 {count} 张卡，每次评分都已进入新的排程。",
-      backToDecks: "返回卡组",
-      saveFailed: "这次评分没有保存：{error}",
-      explainUnavailable: "请先打开一张卡片再请求讲解。",
-      generalDeck: "通用",
-      intervalLabel: "{count} 天间隔",
-      noCards: "没有卡片",
+      dShort: "{n} 天",
+      newCard: "新卡",
+      dueToday: "今天到期",
+      overdue: "逾期 {n} 天",
+      rateHint: "你记得怎么样？也可按 1–4",
+      backTomorrow: "明天再见",
+      backIn: "{n} 天后再见 · {date}",
+      undo: "撤销",
+      caughtUp: "今天复习完了",
+      deckClear: "「{deck}」已清空",
+      nextUp: "下一批：明天 {n} 张。",
+      nextOn: "下一批：{date} {n} 张。",
+      nothingScheduled: "还没有排程。",
+      reviewedToday: "今天复习了 {n} 张。",
+      reviewAll: "复习其他卡组 · {n} 张",
+      emptyTitle: "第一张卡放这里",
+      emptyBody: "让 AI 从你的笔记或一个主题批量制卡，比如：",
+      emptySay: "「把我这份《内科学》笔记做成 12 张卡。」",
+      comingUp: "接下来",
+      fcRange: "未来 14 天",
+      later: "{date} 之后还有 {n} 张",
+      noLater: "更远的还没有",
+      barTitle: "{date}：{n} 张",
+      barsAria: "未来 14 天每天到期的卡片数",
+      today: "今天",
+      decks: "卡组",
+      deckSum: "{cards} 张 · 已掌握 {learned}",
+      deckMeta: "{cards} 张 · 已掌握 {learned} · 新卡 {fresh}",
+      dueBadge: "{n} 张到期",
+      lgNew: "新卡",
+      lgGrow: "学习中",
+      lgDone: "已掌握 · 21 天+",
+      addToggle: "手动加卡",
+      addPh: "～ものの — 虽然……但是……\n胃酸由哪种细胞分泌？ — 壁细胞",
+      addHelp: "每行一张：正面 — 背面。破折号、Tab 或 | 都可以。",
+      deckPh: "卡组",
+      addBtn: "添加",
+      general: "通用",
+      addNeed: "第 {n} 行需要正面和背面，例如：正面 — 背面",
+      addEmpty: "至少写一张：正面 — 背面",
+      added: "已向「{deck}」添加 {n} 张。",
+      addedOne: "已向「{deck}」添加 1 张。",
+      saveFailed: "这次评分没有保存（{why}），卡片已放回最上面。",
+      addFailed: "添加了 {n} 张后中断：{why}",
+      askFailed: "没能联系上助手，请重试。",
+      cardAria: "{deck}。{front}。按下翻面。",
       aiMakePrompt: "请帮我制作一套有材料依据的间隔复习卡组。如果我还没有提供材料，请先让我粘贴学习材料或给出主题。然后基于材料制作 8–15 张原子化卡片，事实只使用我提供的内容，必要推断要明确标注。题面优先要求主动回想而不是识别；背面简洁但足够；多部分知识点拆开。批次准备好后，使用 apply_data_writes 把每一项写入 study-cards 集合。每条命令都必须包含 collection: study-cards，group 设为卡组名，fields 为 {front, back, deck, ease: 2.5, interval_days: 0, last_review: '', lapses: 0}。完成后用精炼清单告诉我新增了哪些卡组和卡片。",
-      aiExplainPrompt: "请用更容易记住的方式讲解这张学习卡。卡组：{deck}。题面：{front}。已存答案：{back}。给出一段精炼解释、一个记忆钩子和一道快速自测题；除非我要求，否则不要修改卡片。",
-      askFailed: "没能联系上助手，请重试。"
+      aiExplainPrompt: "请用更容易记住的方式讲解这张学习卡。卡组：{deck}。题面：{front}。已存答案：{back}。给出一段精炼解释、一个记忆钩子和一道快速自测题；除非我要求，否则不要修改卡片。"
     }
   };
 
   const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
-  const today    = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
   const daysUntil = (iso) => Math.round((dateOnly(iso) - today()) / 86400000);
-  const nextOccurrence = (anchorIso, everyDays) => {
-    const a = dateOnly(anchorIso);
-    const k = Math.max(0, Math.ceil((today() - a) / (everyDays * 86400000)));
-    return new Date(a.getFullYear(), a.getMonth(), a.getDate() + k * everyDays);
-  };
+  const addDays = (date, n) => new Date(date.getFullYear(), date.getMonth(), date.getDate() + n);
+  const toISO = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  const validISO = (v) => /^\d{4}-\d{2}-\d{2}$/.test(String(v || ""));
+  const $ = (id) => document.getElementById(id);
+  const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-  let latestState = { items: [] };
-  let reviewIds = [];
-  let reviewIndex = 0;
-  let reviewDeck = "";
-  let revealed = false;
-  let writePending = false;
-  let manualPending = false;
-  let statusTimer = 0;
-  let sessionRatings = { again: 0, hard: 0, good: 0, easy: 0 };
+  // ── transient UI state (lives outside render; a re-render can arrive at any time) ──
+  let latest = { items: [] };
+  let scope = "";            // "" = all decks, else a deck name
+  let flippedId = "";        // the card currently showing its back
+  let shownId = null;        // the card on top at the last render (null = never rendered)
+  let pinFirst = "";         // a card put back on top (failed save, undo)
+  let receipt = null;        // the last grade, with its undo
+  let notice = null;         // a short confirmation {text, until}
+  let lastPips = null;       // {key, done} — to pop only the pip that just filled
+  let lastQueue = -1;
+  let addOpen = false;
+  let addPending = false;
+  let errTimer = 0;
+  // In-flight grades: id → {fields, acked, timer}. Laid over the snapshot until the store has
+  // the same values, so the tally, the bars and the pile all move the moment you grade.
+  const overlay = new Map();
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-  // card; absent = a widget in someone's conversation, where the card is ours to draw.
-  if (oma.standalone) document.body.classList.add("standalone");
-
+  function lang() {
+    const v = oma.pref("locale", "auto");
+    const l = v === "auto" ? (navigator.language || "en") : v;
+    return String(l).toLowerCase().startsWith("zh") ? "zh" : "en";
+  }
   function localeCode() {
-    const value = oma.pref("locale", "auto");
-    return value === "auto" ? navigator.language : value;
+    const v = oma.pref("locale", "auto");
+    return v === "auto" ? navigator.language : v;
+  }
+  function t(key, vals = {}) {
+    const s = STR[lang()][key] ?? STR.en[key] ?? key;
+    return s.replace(/\{(\w+)\}/g, (_, k) => (vals[k] === undefined ? `{${k}}` : String(vals[k])));
+  }
+  const num = (n) => new Intl.NumberFormat(localeCode()).format(n);
+  const shortDate = (d) => new Intl.DateTimeFormat(localeCode(), { month: "short", day: "numeric" }).format(d);
+  const weekday = (d) => new Intl.DateTimeFormat(localeCode(), { weekday: "narrow" }).format(d);
+  const shortDeck = (name) => String(name).split(" · ")[0];
+
+  function el(tag, cls, text) {
+    const n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (text !== undefined) n.textContent = text;
+    return n;
   }
 
-  function language() {
-    const value = oma.pref("locale", "auto");
-    const locale = value === "auto" ? (navigator.language || "en") : value;
-    return String(locale).toLowerCase().startsWith("zh") ? "zh" : "en";
+  function applyStatic() {
+    document.documentElement.lang = lang() === "zh" ? "zh-CN" : "en";
+    for (const n of document.querySelectorAll("[data-t]")) n.textContent = t(n.dataset.t);
+    for (const n of document.querySelectorAll("[data-ph]")) n.placeholder = t(n.dataset.ph);
   }
 
-  function t(key, values = {}) {
-    const source = STR[language()][key] || STR.en[key] || key;
-    return source.replace(/\{(\w+)\}/g, (_, name) => values[name] === undefined ? `{${name}}` : String(values[name]));
-  }
-
-  function el(tag, className, text) {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-  }
-
-  function addDays(date, count) {
-    return new Date(date.getFullYear(), date.getMonth(), date.getDate() + count);
-  }
-
-  function toISO(date) {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  function validISO(value) {
-    return /^\d{4}-\d{2}-\d{2}$/.test(String(value || ""));
-  }
-
-  function formatNumber(value, digits = 0) {
-    return new Intl.NumberFormat(localeCode(), { maximumFractionDigits: digits }).format(value);
-  }
-
-  function formatDate(iso) {
-    if (!validISO(iso)) return String(iso || "");
-    const mode = oma.pref("date_format", "auto");
-    if (mode === "yyyy-mm-dd") return iso;
-    const [year, month, day] = iso.split("-");
-    if (mode === "dd/mm/yyyy") return `${day}/${month}/${year}`;
-    if (mode === "mm/dd/yyyy") return `${month}/${day}/${year}`;
-    return new Intl.DateTimeFormat(localeCode(), { year: "numeric", month: "short", day: "numeric" }).format(dateOnly(iso));
-  }
-
-  function formatShortDate(date) {
-    return new Intl.DateTimeFormat(localeCode(), { month: "short", day: "numeric" }).format(date);
-  }
-
-  function countUnit(count, oneKey, manyKey) {
-    return `${formatNumber(count)} ${t(count === 1 ? oneKey : manyKey)}`;
-  }
-
-  function cardCountText(count) {
-    return countUnit(count, "cardUnitOne", "cardUnitMany");
-  }
-
-  function deckCountText(count) {
-    return countUnit(count, "deckUnitOne", "deckUnitMany");
-  }
-
-  function dueCountText(count) {
-    return `${formatNumber(count)} ${t("dueUnit")}`;
-  }
-
-  function dueHeadlineText(count) {
-    return t(count === 1 ? "dueHeadlineOne" : "dueHeadline", { count: formatNumber(count) });
-  }
-
-  function dayCountText(count) {
-    return t(count === 1 ? "dayOne" : "days", { count: formatNumber(count) });
-  }
-
-  function applyStaticText() {
-    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
-    document.title = t("documentTitle");
-    for (const node of document.querySelectorAll("[data-t]")) node.textContent = t(node.dataset.t);
-    for (const input of document.querySelectorAll("[data-ph]")) input.placeholder = t(input.dataset.ph);
-    for (const node of document.querySelectorAll("[data-aria]")) node.setAttribute("aria-label", t(node.dataset.aria));
-    const submit = document.getElementById("manualSubmit");
-    submit.dataset.label = t("addCard");
-    submit.setAttribute("aria-label", manualPending ? t("addingCard") : t("addCard"));
-  }
-
-  function normalizeCard(item) {
-    const fields = item && item.fields ? item.fields : {};
-    const front = String(fields.front || "").trim();
-    const back = String(fields.back || "").trim();
+  // ── the data: one card per row; group = deck name (fields.deck wins when present) ──
+  function normalize(item) {
+    const o = overlay.get(item.id);
+    const f = o ? { ...(item.fields || {}), ...o.fields } : (item.fields || {});
+    const front = String(f.front || "").trim();
+    const back = String(f.back || "").trim();
     if (!front || !back) return null;
-    const interval = Number(fields.interval_days);
-    const ease = Number(fields.ease);
-    const lapses = Number(fields.lapses);
+    const iv = Number(f.interval_days);
+    const ease = Number(f.ease);
+    const lapses = Number(f.lapses);
     return {
       item,
       id: item.id,
       front,
       back,
-      deck: String(fields.deck || item.group || t("generalDeck")).trim() || t("generalDeck"),
+      deck: String(f.deck || item.group || "").trim() || t("general"),
       ease: Number.isFinite(ease) ? Math.max(1.3, ease) : 2.5,
-      interval: Number.isFinite(interval) ? Math.max(0, Math.round(interval)) : 0,
-      lastReview: validISO(fields.last_review) ? String(fields.last_review) : "",
+      interval: Number.isFinite(iv) ? Math.max(0, Math.round(iv)) : 0,
+      lastReview: validISO(f.last_review) ? String(f.last_review) : "",
       lapses: Number.isFinite(lapses) ? Math.max(0, Math.round(lapses)) : 0,
-      position: Number.isFinite(Number(item.position)) ? Number(item.position) : 0
+      position: Number(item.position) || 0
     };
   }
 
-  function cardsFrom(state) {
-    return (state.items || []).map(normalizeCard).filter(Boolean);
+  // Due is DERIVED: last_review + interval_days, judged against today's clock. A never-reviewed
+  // card is due now. Nothing about "due" is ever stored.
+  function delta(c) {
+    if (!c.lastReview) return 0;
+    return daysUntil(toISO(addDays(dateOnly(c.lastReview), c.interval)));
   }
 
-  function cardDueDate(card) {
-    if (!card.lastReview) return today();
-    const anchor = dateOnly(card.lastReview);
-    return new Date(anchor.getFullYear(), anchor.getMonth(), anchor.getDate() + card.interval);
-  }
-
-  function dueDelta(card) {
-    return card.lastReview ? daysUntil(toISO(cardDueDate(card))) : 0;
-  }
-
-  function isDue(card) {
-    return dueDelta(card) <= 0;
-  }
-
-  function dueLabel(card) {
-    if (!card.lastReview) return t("newCard");
-    const delta = dueDelta(card);
-    if (delta === 0) return t("dueToday");
-    if (delta < 0) return t("overdueDays", { count: formatNumber(Math.abs(delta)) });
-    return t("inDays", { count: formatNumber(delta) });
-  }
-
-  function sortedDue(cards) {
-    return cards.filter(isDue).sort((a, b) => dueDelta(a) - dueDelta(b) || a.interval - b.interval || a.position - b.position);
-  }
-
-  function masteryScore(card) {
-    return Math.min(1, Math.log2(card.interval + 1) / Math.log2(61));
-  }
-
-  function deckRows(cards) {
-    const decks = new Map();
-    for (const card of cards) {
-      if (!decks.has(card.deck)) decks.set(card.deck, []);
-      decks.get(card.deck).push(card);
+  function model(state) {
+    const cards = (state.items || []).map(normalize).filter(Boolean);
+    const names = [...new Set(cards.map((c) => c.deck))];
+    if (scope && !names.includes(scope)) scope = "";
+    const inScope = (c) => !scope || c.deck === scope;
+    const todayIso = toISO(today());
+    const due = cards
+      .filter((c) => delta(c) <= 0)
+      .sort((a, b) => delta(a) - delta(b) || a.interval - b.interval || a.position - b.position);
+    const pin = due.findIndex((c) => c.id === pinFirst);
+    if (pin > 0) due.unshift(due.splice(pin, 1)[0]);
+    const queue = due.filter(inScope);
+    const scoped = cards.filter(inScope);
+    const forecast = new Array(DAYS).fill(0);
+    let later = 0;
+    for (const c of scoped) {
+      const d = Math.max(0, delta(c));
+      if (d < DAYS) forecast[d] += 1;
+      else later += 1;
     }
-    return [...decks.entries()].map(([name, deckCards]) => ({
-      name,
-      cards: deckCards,
-      due: sortedDue(deckCards),
-      progress: deckCards.length ? Math.round(deckCards.reduce((sum, card) => sum + masteryScore(card), 0) / deckCards.length * 100) : 0
-    })).sort((a, b) => b.due.length - a.due.length || a.name.localeCompare(b.name, localeCode()));
+    const decks = names.map((name) => {
+      const list = cards.filter((c) => c.deck === name);
+      return {
+        name,
+        total: list.length,
+        due: list.filter((c) => delta(c) <= 0).length,
+        fresh: list.filter((c) => !c.lastReview).length,
+        learned: list.filter((c) => c.lastReview && c.interval >= LEARNED).length
+      };
+    }).sort((a, b) => b.due - a.due || a.name.localeCompare(b.name, localeCode()));
+    return {
+      cards,
+      decks,
+      due,
+      queue,
+      forecast,
+      later,
+      done: scoped.filter((c) => c.lastReview === todayIso).length,
+      learned: cards.filter((c) => c.lastReview && c.interval >= LEARNED).length
+    };
   }
 
-  function showStatus(message, tone = "bad", persistent = false) {
-    const strip = document.getElementById("statusStrip");
-    const badge = document.getElementById("statusMessage");
-    badge.className = `k-badge ${tone}`;
-    badge.textContent = message;
-    strip.hidden = false;
-    clearTimeout(statusTimer);
-    if (!persistent) statusTimer = setTimeout(() => { strip.hidden = true; }, 3800);
-  }
-
-  function clearStatus() {
-    clearTimeout(statusTimer);
-    document.getElementById("statusStrip").hidden = true;
-  }
-
-  function activityDates(cards) {
-    return cards.filter((card) => card.lastReview).map((card) => card.lastReview);
-  }
-
-  function studyStreak(cards) {
-    const dates = new Set(activityDates(cards));
-    let cursor = today();
-    if (!dates.has(toISO(cursor))) {
-      cursor = addDays(cursor, -1);
-      if (!dates.has(toISO(cursor))) return 0;
-    }
-    let streak = 0;
-    while (dates.has(toISO(cursor))) {
-      streak += 1;
-      cursor = addDays(cursor, -1);
-    }
-    return streak;
-  }
-
-  function renderOverview(cards, dueCards) {
-    const total = cards.length;
-    const due = dueCards.length;
-    const learned = cards.filter((card) => card.interval >= LEARNED_INTERVAL).length;
-    const streak = studyStreak(cards);
-    const ratio = total ? Math.min(1, due / total) : 0;
-    document.getElementById("dueCount").textContent = formatNumber(due);
-    document.getElementById("dueStat").textContent = formatNumber(due);
-    document.getElementById("learnedStat").textContent = `${formatNumber(learned)} / ${formatNumber(total)}`;
-    document.getElementById("streakStat").textContent = dayCountText(streak);
-    document.getElementById("ringValue").style.strokeDashoffset = String(CIRCUMFERENCE * (1 - ratio));
-    document.getElementById("dueRing").setAttribute("aria-label", dueHeadlineText(due));
-
-    const startButton = document.getElementById("startButton");
-    startButton.disabled = due === 0;
-    document.getElementById("reviewHeadline").textContent = due ? dueHeadlineText(due) : t("caughtUpHeadline");
-    document.getElementById("reviewSub").textContent = due ? t("dueBody") : t("caughtUpBody");
-    document.getElementById("startButtonLabel").textContent = due ? t("startReview") : t("allCaughtUp");
-  }
-
-  function weekStartsOn() {
-    const value = oma.pref("week_start", "monday");
-    if (value === "sunday") return 0;
-    if (value === "saturday") return 6;
-    return 1;
-  }
-
-  function startOfWeek(date) {
-    const start = weekStartsOn();
-    const delta = (date.getDay() - start + 7) % 7;
-    return addDays(date, -delta);
-  }
-
-  function heatLevel(count, max) {
-    if (!count || !max) return 0;
-    if (count === max && max > 2) return 4;
-    const ratio = count / max;
-    if (ratio <= .25) return 1;
-    if (ratio <= .5) return 2;
-    if (ratio <= .75) return 3;
-    return 4;
-  }
-
-  function renderHeatmap(cards) {
-    const end = today();
-    const firstWeek = addDays(startOfWeek(end), -(HEATMAP_WEEKS - 1) * 7);
-    const counts = new Map();
-    for (const iso of activityDates(cards)) counts.set(iso, (counts.get(iso) || 0) + 1);
-    const visibleCounts = [];
-    for (let day = firstWeek; day <= end; day = addDays(day, 1)) visibleCounts.push(counts.get(toISO(day)) || 0);
-    const max = Math.max(0, ...visibleCounts);
-    const total = visibleCounts.reduce((sum, count) => sum + count, 0);
-
-    document.getElementById("heatmapRange").textContent = `${formatShortDate(firstWeek)} – ${formatShortDate(end)}`;
-    document.getElementById("reviewTouchpointSummary").textContent = t(total === 1 ? "reviewTouchpointOne" : "reviewTouchpoints", { count: formatNumber(total) });
-
-    const weekdays = document.getElementById("weekdayLabels");
-    weekdays.innerHTML = "";
-    for (let offset = 0; offset < 7; offset++) {
-      const sample = addDays(firstWeek, offset);
-      weekdays.append(el("span", "", new Intl.DateTimeFormat(localeCode(), { weekday: "narrow" }).format(sample)));
-    }
-
-    const months = document.getElementById("heatmapMonths");
-    const weeks = document.getElementById("heatmapWeeks");
-    months.innerHTML = "";
-    weeks.innerHTML = "";
-    let previousMonth = -1;
-    for (let week = 0; week < HEATMAP_WEEKS; week++) {
-      const weekStart = addDays(firstWeek, week * 7);
-      const monthLabel = el("span");
-      if (weekStart.getMonth() !== previousMonth) {
-        monthLabel.textContent = new Intl.DateTimeFormat(localeCode(), { month: "short" }).format(weekStart);
-        previousMonth = weekStart.getMonth();
+  // Drop an in-flight grade once the store says the same thing (or it has been long enough that
+  // whatever the store says is the truth).
+  function settleOverlay(state) {
+    for (const [id, o] of overlay) {
+      if (!o.acked) continue;
+      const item = (state.items || []).find((x) => x.id === id);
+      const f = item && item.fields;
+      if (!item || (String(f.last_review || "") === o.fields.last_review && Number(f.interval_days) === o.fields.interval_days)) {
+        clearTimeout(o.timer);
+        overlay.delete(id);
       }
-      months.append(monthLabel);
-
-      const column = el("div", "heatmap-week");
-      for (let offset = 0; offset < 7; offset++) {
-        const date = addDays(weekStart, offset);
-        const iso = toISO(date);
-        const future = date > end;
-        const count = future ? 0 : counts.get(iso) || 0;
-        const level = heatLevel(count, max);
-        const cell = el("span", `heat-cell${level ? ` level-${level}` : ""}${future ? " future" : ""}`);
-        const displayDate = formatDate(iso);
-        if (future) cell.title = t("futureDate", { date: displayDate });
-        else if (count === 1) cell.title = t("reviewCountOne", { date: displayDate });
-        else if (count > 1) cell.title = t("reviewCounts", { date: displayDate, count: formatNumber(count) });
-        else cell.title = t("noReviewsOnDate", { date: displayDate });
-        cell.setAttribute("aria-label", cell.title);
-        column.append(cell);
-      }
-      weeks.append(column);
     }
-  }
-
-  function masteryBucket(interval) {
-    if (interval <= 2) return "new";
-    if (interval <= 14) return "growing";
-    return "strong";
-  }
-
-  function renderSpectrum(cards) {
-    const ribbon = document.getElementById("spectrumRibbon");
-    ribbon.innerHTML = "";
-    if (!cards.length) {
-      ribbon.style.setProperty("--spectrum-shift", "0");
-      ribbon.append(el("div", "spectrum-empty"));
-      return;
-    }
-
-    const ordered = [...cards].sort((a, b) => a.interval - b.interval || dueDelta(a) - dueDelta(b));
-    const averageDelta = ordered.reduce((sum, card) => sum + dueDelta(card), 0) / ordered.length;
-    const shift = Math.max(-8, Math.min(5, averageDelta / 5));
-    ribbon.style.setProperty("--spectrum-shift", shift.toFixed(2));
-
-    for (const card of ordered) {
-      const segment = el("span", `spectrum-segment ${masteryBucket(card.interval)}${isDue(card) ? " is-due" : ""}`);
-      segment.style.setProperty("--mastery", masteryScore(card).toFixed(3));
-      segment.title = `${card.deck} · ${card.front} · ${t("intervalLabel", { count: formatNumber(card.interval) })} · ${dueLabel(card)}`;
-      ribbon.append(segment);
-    }
-  }
-
-  function deckTone(name) {
-    let hash = 0;
-    for (const char of name) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-    return hash % 5;
-  }
-
-  function renderDecks(cards, dueCards, decks) {
-    document.getElementById("deckSummary").textContent = t("deckSummary", {
-      decks: deckCountText(decks.length),
-      cards: cardCountText(cards.length),
-      due: dueCountText(dueCards.length)
-    });
-    const wall = document.getElementById("deckWall");
-    wall.innerHTML = "";
-    decks.forEach((deck, index) => {
-      const cover = el("article", `deck-cover tone-${deckTone(deck.name)} k-stagger`);
-      cover.style.setProperty("--i", String(index));
-      const top = el("div");
-      top.append(el("div", "deck-index", `${String(index + 1).padStart(2, "0")} / ${String(decks.length).padStart(2, "0")}`));
-      top.append(el("h3", "", deck.name));
-      top.append(el("div", "deck-counts", t("cardsAndDue", { cards: cardCountText(deck.cards.length), due: dueCountText(deck.due.length) })));
-
-      const bottom = el("div");
-      const track = el("div", "mastery-track");
-      const fill = el("div", "mastery-fill");
-      fill.style.setProperty("--progress", String(deck.progress));
-      track.append(fill);
-      const footer = el("div", "deck-footer k-row");
-      footer.append(el("span", "deck-progress-label", t("mastered", { count: formatNumber(deck.progress) })));
-      footer.append(el("span", "k-grow"));
-      const button = el("button", "k-btn sec deck-review");
-      button.type = "button";
-      button.disabled = deck.due.length === 0;
-      button.setAttribute("aria-label", t("reviewDeck", { deck: deck.name }));
-      button.innerHTML = '<svg class="k-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M5.5 3.5v9L13 8z"/></svg>';
-      button.onclick = () => startReview(deck.name);
-      footer.append(button);
-      bottom.append(track, footer);
-      cover.append(top, bottom);
-      wall.append(cover);
-    });
-
-    const queueList = document.getElementById("queueList");
-    queueList.innerHTML = "";
-    document.getElementById("queueSummary").textContent = t(dueCards.length === 1 ? "queueSummaryOne" : "queueSummary", { count: formatNumber(dueCards.length) });
-    if (!dueCards.length) {
-      const row = el("div", "k-li queue-row");
-      const copy = el("div", "queue-copy");
-      copy.append(el("strong", "", t("noDueTitle")));
-      if (cards.length) {
-        const next = [...cards].sort((a, b) => dueDelta(a) - dueDelta(b))[0];
-        copy.append(el("span", "", t("noDueBody", { when: formatDate(toISO(cardDueDate(next))) })));
-      }
-      row.append(copy);
-      queueList.append(row);
-      return;
-    }
-
-    for (const card of dueCards.slice(0, 7)) {
-      const row = el("div", "k-li queue-row");
-      const copy = el("div", "queue-copy");
-      copy.append(el("strong", "", card.front));
-      copy.append(el("span", "", card.deck));
-      const urgency = el("span", `k-badge urgency ${dueDelta(card) < 0 ? "bad" : "info"}`, dueLabel(card));
-      row.append(copy, urgency);
-      queueList.append(row);
-    }
-  }
-
-  function currentReviewCard(cards) {
-    const byId = new Map(cards.map((card) => [card.id, card]));
-    while (reviewIndex < reviewIds.length && !byId.has(reviewIds[reviewIndex])) reviewIndex += 1;
-    return reviewIndex < reviewIds.length ? byId.get(reviewIds[reviewIndex]) : null;
   }
 
   function ratingResult(card, rating) {
-    const current = Math.max(0, card.interval);
-    let interval = current;
+    const cur = Math.max(0, card.interval);
+    let interval = cur;
     let ease = card.ease;
     let lapses = card.lapses;
     if (rating === "again") {
@@ -2272,265 +751,533 @@
       lapses += 1;
     }
     if (rating === "hard") {
-      interval = Math.max(2, Math.ceil(Math.max(1, current) * 1.2));
+      interval = Math.max(2, Math.ceil(Math.max(1, cur) * 1.2));
       ease = Math.max(1.3, ease - .15);
     }
     if (rating === "good") {
-      interval = current <= 1 ? 3 : Math.ceil(current * ease);
+      interval = cur <= 1 ? 3 : Math.ceil(cur * ease);
       ease = Math.min(3.2, ease + .05);
     }
     if (rating === "easy") {
-      interval = current <= 1 ? 5 : Math.ceil(current * ease * 1.3);
+      interval = cur <= 1 ? 5 : Math.ceil(cur * ease * 1.3);
       ease = Math.min(3.2, ease + .15);
     }
     return { interval, ease: Math.round(ease * 100) / 100, lapses };
   }
 
-  function renderRatingButtons(card) {
-    const grid = document.getElementById("ratingGrid");
-    grid.innerHTML = "";
-    for (const rating of ["again", "hard", "good", "easy"]) {
-      const result = ratingResult(card, rating);
-      const button = el("button", `rating-button ${rating}`);
-      button.type = "button";
-      button.disabled = writePending;
-      button.append(el("strong", "", t(rating)));
-      button.append(el("span", "", t("daysShort", { count: formatNumber(result.interval) })));
-      button.onclick = () => rateCard(rating);
-      grid.append(button);
-    }
-  }
-
-  function renderComplete() {
-    document.getElementById("studyCard").hidden = true;
-    document.getElementById("completeState").hidden = false;
-    document.getElementById("reviewProgressLabel").textContent = t("sessionDone");
-    document.getElementById("reviewDeckLabel").textContent = reviewDeck || t("allDecks");
-    const reviewed = Object.values(sessionRatings).reduce((sum, count) => sum + count, 0);
-    document.getElementById("sessionDoneBody").textContent = t(reviewed === 1 ? "sessionDoneBodyOne" : "sessionDoneBody", { count: formatNumber(reviewed) });
-    const grid = document.getElementById("completeGrid");
-    grid.innerHTML = "";
-    for (const rating of ["again", "hard", "good", "easy"]) {
-      const stat = el("div", "complete-stat");
-      stat.append(el("strong", "", formatNumber(sessionRatings[rating])));
-      stat.append(el("span", "", t(rating)));
-      grid.append(stat);
-    }
-  }
-
-  function renderReview(cards) {
-    const card = currentReviewCard(cards);
-    if (!card) {
-      renderComplete();
-      return;
-    }
-
-    document.getElementById("studyCard").hidden = false;
-    document.getElementById("completeState").hidden = true;
-    document.getElementById("reviewProgressLabel").textContent = t("cardProgress", { current: formatNumber(reviewIndex + 1), total: formatNumber(reviewIds.length) });
-    document.getElementById("reviewDeckLabel").textContent = reviewDeck || t("allDecks");
-    document.getElementById("cardDeck").textContent = card.deck;
-    document.getElementById("cardUrgency").textContent = dueLabel(card);
-    document.getElementById("cardUrgency").className = `k-badge ${dueDelta(card) < 0 ? "bad" : "info"}`;
-    document.getElementById("frontText").textContent = card.front;
-    document.getElementById("backText").textContent = card.back;
-    document.getElementById("revealRow").hidden = revealed;
-    document.getElementById("answerFace").hidden = !revealed;
-    document.getElementById("ratingArea").hidden = !revealed;
-    if (revealed) renderRatingButtons(card);
-  }
-
+  // ── render ──
   function render(state) {
-    latestState = state;
-    applyStaticText();
-    document.body.dataset.density = oma.pref("density", "comfortable");
-    const cards = cardsFrom(state);
-    const dueCards = sortedDue(cards);
-    const decks = deckRows(cards);
-    renderOverview(cards, dueCards);
-    renderHeatmap(cards);
-    renderSpectrum(cards);
-
-    const empty = cards.length === 0;
-    const reviewing = reviewIds.length > 0;
-    document.body.dataset.reviewing = String(reviewing);
-    document.getElementById("emptyState").hidden = !empty;
-    document.getElementById("dashboard").hidden = empty || reviewing;
-    document.getElementById("reviewPanel").hidden = !reviewing;
-    if (!empty && !reviewing) renderDecks(cards, dueCards, decks);
-    if (reviewing) renderReview(cards);
+    latest = state;
+    settleOverlay(state);
+    applyStatic();
+    const m = model(state);
+    const empty = m.cards.length === 0;
+    const desk = $("desk");
+    desk.classList.toggle("empty", empty);
+    desk.classList.toggle("bare", !empty && (m.decks.length < 2 || (!scope && m.due.length === 0)));
+    $("tally").hidden = empty;
+    $("chips").hidden = empty || m.decks.length < 2 || (!scope && m.due.length === 0);
+    $("foot").hidden = empty;
+    $("below").hidden = empty;
+    if (empty) addOpen = true;
+    renderTally(m);
+    renderChips(m);
+    renderPile(m, empty);
+    renderFoot(m);
+    if (!empty) {
+      renderForecast(m);
+      renderShelf(m);
+    }
+    renderAdd(m);
   }
 
-  function startReview(deck = "") {
-    const cards = cardsFrom(latestState);
-    const dueCards = sortedDue(cards).filter((card) => !deck || card.deck === deck);
-    if (!dueCards.length) return;
-    reviewIds = dueCards.map((card) => card.id);
-    reviewIndex = 0;
-    reviewDeck = deck;
-    revealed = false;
-    writePending = false;
-    sessionRatings = { again: 0, hard: 0, good: 0, easy: 0 };
-    render(latestState);
-    requestAnimationFrame(() => document.getElementById("reviewPanel").scrollIntoView({ block: "start" }));
+  function renderTally(m) {
+    const left = m.queue.length;
+    $("scopeLbl").textContent = scope ? t("scopeDeck", { deck: shortDeck(scope) }) : t("scopeAll");
+    $("dueNum").textContent = num(left);
+    $("dueUnit").textContent = t(left === 1 ? "dueUnitOne" : "dueUnit");
+    $("tsub").textContent = t("doneToday", { n: num(m.done) });
+    $("tnext").textContent = m.forecast[1] ? t("tomorrow", { n: num(m.forecast[1]) }) : t("nothingSoon");
+    const pips = $("pips");
+    const key = scope;
+    const total = m.done + left;
+    pips.textContent = "";
+    if (total > 48) {
+      const bar = el("div", "pipbar");
+      const fill = el("i");
+      fill.style.width = `${Math.round(m.done / total * 100)}%`;
+      bar.append(fill);
+      pips.append(bar);
+    } else {
+      for (let i = 0; i < total; i++) pips.append(el("span", i < m.done ? "pip on" : "pip"));
+      if (lastPips && lastPips.key === key && m.done === lastPips.done + 1 && !reduced()) {
+        pips.children[m.done - 1]?.classList.add("pop");
+      }
+    }
+    lastPips = { key, done: m.done };
   }
 
-  function stopReview() {
-    reviewIds = [];
-    reviewIndex = 0;
-    reviewDeck = "";
-    revealed = false;
-    writePending = false;
-    render(latestState);
+  function renderChips(m) {
+    const box = $("chips");
+    box.textContent = "";
+    const add = (label, count, value, title) => {
+      const b = el("button", value === scope ? "k-chip on" : "k-chip");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(value === scope));
+      if (title) b.title = title;
+      b.append(document.createTextNode(label + " "), el("b", "", num(count)));
+      b.onclick = () => setScope(value);
+      box.append(b);
+    };
+    add(t("all"), m.due.length, "", "");
+    for (const d of m.decks) {
+      if (d.due > 0 || d.name === scope) add(shortDeck(d.name), d.due, d.name, d.name);
+    }
   }
 
-  async function rateCard(rating) {
-    if (writePending) return;
-    const card = currentReviewCard(cardsFrom(latestState));
-    if (!card) return;
-    const next = ratingResult(card, rating);
-    writePending = true;
-    render(latestState);
-    try {
-      await oma.updateItem(card.id, {
-        ease: next.ease,
-        interval_days: next.interval,
-        last_review: toISO(today()),
-        lapses: next.lapses
+  function lenClass(s, m, l) {
+    const n = [...s].length * (lang() === "zh" ? 1.8 : 1);
+    return n > l ? "l" : n > m ? "m" : "s";
+  }
+
+  function renderPile(m, empty) {
+    const card = $("card");
+    const top = m.queue[0];
+    const left = m.queue.length;
+    $("emptyCard").hidden = !empty;
+    card.hidden = empty || !top;
+    $("u1").hidden = left < 2;
+    $("u2").hidden = left < 3;
+    $("act").hidden = empty || !top;
+    const done = $("doneCard");
+    done.hidden = empty || !!top;
+    if (!empty && !top) {
+      const others = m.due.length;
+      $("doneTitle").textContent = scope && others ? t("deckClear", { deck: shortDeck(scope) }) : t("caughtUp");
+      $("doneBody").textContent = scope && others ? t("reviewedToday", { n: num(m.done) }) : nextLine(m);
+      const all = $("doneAll");
+      all.hidden = !(scope && others);
+      all.textContent = t("reviewAll", { n: num(others) });
+      if (lastQueue > 0 && !reduced()) {
+        done.classList.remove("pop");
+        void done.offsetWidth;
+        done.classList.add("pop");
+      }
+    }
+    lastQueue = empty ? -1 : left;
+    if (empty || !top) {
+      shownId = empty ? null : "";
+      return;
+    }
+    if (flippedId && flippedId !== top.id) flippedId = "";
+    const flipped = flippedId === top.id;
+    $("fDeck").textContent = top.deck;
+    const badge = $("fDue");
+    const d = delta(top);
+    badge.textContent = !top.lastReview ? t("newCard") : d < 0 ? t("overdue", { n: num(-d) }) : t("dueToday");
+    badge.className = `k-badge ${d < 0 ? "bad" : "info"}`;
+    const f = $("fText");
+    f.textContent = top.front;
+    f.dataset.len = lenClass(top.front, 60, 110);
+    $("bFront").textContent = top.front;
+    const b = $("bText");
+    b.textContent = top.back;
+    b.dataset.len = lenClass(top.back, 70, 130);
+    card.classList.toggle("flipped", flipped);
+    card.setAttribute("aria-pressed", String(flipped));
+    card.setAttribute("aria-label", t("cardAria", { deck: top.deck, front: top.front }));
+    if (shownId !== null && shownId !== top.id && !reduced()) {
+      card.classList.remove("arrive");
+      void card.offsetWidth;
+      card.classList.add("arrive");
+    }
+    shownId = top.id;
+    $("actFront").classList.toggle("hide", flipped);
+    $("actBack").classList.toggle("hide", !flipped);
+    for (const n of $("actFront").querySelectorAll("button")) n.tabIndex = flipped ? -1 : 0;
+    renderGrades(top, flipped);
+  }
+
+  function nextLine(m) {
+    const scoped = m.cards.filter((c) => !scope || c.deck === scope);
+    let best = Infinity;
+    for (const c of scoped) best = Math.min(best, delta(c));
+    if (!Number.isFinite(best)) return t("nothingScheduled");
+    const n = scoped.filter((c) => delta(c) === best).length;
+    return best === 1 ? t("nextUp", { n: num(n) }) : t("nextOn", { n: num(n), date: shortDate(addDays(today(), best)) });
+  }
+
+  const RATINGS = ["again", "hard", "good", "easy"];
+  function renderGrades(card, flipped) {
+    const box = $("actBack");
+    if (!box.children.length) {
+      RATINGS.forEach((r, i) => {
+        const b = el("button", `gb ${r}`);
+        b.type = "button";
+        b.dataset.r = r;
+        b.append(el("b"), el("small"));
+        b.onclick = () => grade(r);
+        b.title = String(i + 1);
+        box.append(b);
       });
-    } catch (error) {
-      writePending = false;
-      showStatus(t("saveFailed", { error: String(error?.message || error) }), "bad", true);
-      render(latestState);
+    }
+    for (const b of box.children) {
+      const r = b.dataset.r;
+      b.firstChild.textContent = t(r);
+      b.lastChild.textContent = t("dShort", { n: num(ratingResult(card, r).interval) });
+      b.tabIndex = flipped ? 0 : -1;
+    }
+  }
+
+  function renderFoot(m) {
+    const foot = $("foot");
+    foot.textContent = "";
+    if (!m.cards.length) return;
+    if (receipt) {
+      foot.insertAdjacentHTML("beforeend", '<svg class="sc-ico" viewBox="0 0 16 16" aria-hidden="true"><path d="m3.5 8.5 3 3 6-7"/></svg>');
+      const when = receipt.days === 1 ? t("backTomorrow") : t("backIn", { n: num(receipt.days), date: shortDate(addDays(today(), receipt.days)) });
+      foot.append(el("span", "", `${t(receipt.rating)} · ${when}`));
+      const u = el("button", "k-btn ghost", t("undo"));
+      u.type = "button";
+      u.onclick = undo;
+      foot.append(u);
       return;
     }
-    sessionRatings[rating] += 1;
-    reviewIndex += 1;
-    revealed = false;
-    writePending = false;
-    render(oma.state || latestState);
-  }
-
-  // AWAITED, and every button for the same hand-off is dead while the bridge is in flight, so a
-  // second visible entry point cannot queue a duplicate proposal into someone's chat.
-  // A DEGRADED RESULT IS NOT A FAILURE: standalone answers `{isError: true, degraded: "clipboard"}`
-  // after the runtime has already copied the prompt and told the user; only an undegraded error
-  // belongs on this app's existing status strip.
-  async function makeCardsWithAi() {
-    const buttons = [document.getElementById("studioAiButton"), document.getElementById("emptyAiButton")];
-    clearStatus();
-    for (const button of buttons) button.disabled = true;
-    try {
-      const result = await oma.sendMessage(t("aiMakePrompt"));
-      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
-    } catch (error) {
-      showStatus(String(error?.message || error || t("askFailed")), "bad");
-    } finally {
-      for (const button of buttons) button.disabled = false;
-    }
-  }
-
-  async function explainCurrentCard() {
-    const card = currentReviewCard(cardsFrom(latestState));
-    if (!card) {
-      showStatus(t("explainUnavailable"), "warn");
+    if (notice && notice.until > Date.now()) {
+      foot.append(el("span", "", notice.text));
       return;
     }
-    const button = document.getElementById("explainButton");
-    clearStatus();
-    button.disabled = true;
-    try {
-      const result = await oma.sendMessage(t("aiExplainPrompt", { deck: card.deck, front: card.front, back: card.back }));
-      if (result && result.isError === true && !result.degraded) showStatus(t("askFailed"), "bad");
-    } catch (error) {
-      showStatus(String(error?.message || error || t("askFailed")), "bad");
-    } finally {
-      button.disabled = false;
+    if (m.queue[0] && flippedId === m.queue[0].id) foot.append(el("span", "", t("rateHint")));
+  }
+
+  let barsBuilt = false;
+  function renderForecast(m) {
+    const bars = $("bars");
+    const lbl = $("blbl");
+    if (!barsBuilt) {
+      for (let i = 0; i < DAYS; i++) {
+        const col = el("div", "bcol");
+        col.append(el("em"), el("i"));
+        bars.append(col);
+        lbl.append(el("span"));
+      }
+      barsBuilt = true;
+    }
+    const max = Math.max(1, ...m.forecast);
+    const start = today();
+    const ws = oma.pref("week_start", "monday");
+    const firstDay = ws === "sunday" ? 0 : ws === "saturday" ? 6 : 1;
+    m.forecast.forEach((n, i) => {
+      const date = addDays(start, i);
+      const col = bars.children[i];
+      col.className = `bcol${i === 0 ? " today" : ""}${n ? "" : " zero"}`;
+      col.firstChild.textContent = n ? num(n) : "";
+      col.lastChild.style.height = n ? `${Math.max(6, Math.round(n / max * 74))}px` : "2px";
+      col.title = t("barTitle", { date: shortDate(date), n: num(n) });
+      const s = lbl.children[i];
+      s.textContent = i === 0 ? "●" : weekday(date);
+      s.className = i === 0 ? "today" : date.getDay() === firstDay ? "wk" : "";
+    });
+    bars.setAttribute("aria-label", t("barsAria"));
+    $("fcRange").textContent = `${t("fcRange")} · ${shortDate(start)} – ${shortDate(addDays(start, DAYS - 1))}`;
+    $("later").textContent = m.later ? t("later", { n: num(m.later), date: shortDate(addDays(start, DAYS - 1)) }) : t("noLater");
+  }
+
+  function renderShelf(m) {
+    $("deckSum").textContent = t("deckSum", { cards: num(m.cards.length), learned: num(m.learned) });
+    const ul = $("shelf");
+    ul.textContent = "";
+    for (const d of m.decks) {
+      const li = el("li");
+      const b = el("button", d.name === scope ? "deck on" : "deck");
+      b.type = "button";
+      b.setAttribute("aria-pressed", String(d.name === scope));
+      const head = el("div", "dhead");
+      head.append(el("strong", "", d.name));
+      if (d.due) head.append(el("span", "k-badge info", t("dueBadge", { n: num(d.due) })));
+      const stack = el("div", "stack");
+      const grow = d.total - d.fresh - d.learned;
+      for (const [cls, n] of [["s-done", d.learned], ["s-grow", grow], ["s-new", d.fresh]]) {
+        if (!n) continue;
+        const seg = el("i", cls);
+        seg.style.flex = String(n);
+        stack.append(seg);
+      }
+      b.append(head, stack, el("span", "dmeta", t("deckMeta", { cards: num(d.total), learned: num(d.learned), fresh: num(d.fresh) })));
+      b.onclick = () => {
+        setScope(d.name === scope ? "" : d.name);
+        $("desk").scrollIntoView({ block: "nearest", behavior: reduced() ? "auto" : "smooth" });
+      };
+      li.append(b);
+      ul.append(li);
     }
   }
 
-  function focusManualForm() {
-    document.getElementById("frontInput").focus();
-    document.getElementById("manualForm").scrollIntoView({ block: "nearest" });
+  function renderAdd(m) {
+    $("addForm").hidden = !addOpen;
+    $("addToggle").hidden = m.cards.length === 0;
+    $("addToggle").setAttribute("aria-expanded", String(addOpen));
+    const list = $("deckList");
+    list.textContent = "";
+    for (const d of m.decks) {
+      const o = el("option");
+      o.value = d.name;
+      list.append(o);
+    }
+    const deck = $("addDeck");
+    if (!deck.value && document.activeElement !== deck && scope) deck.value = scope;
+    $("addBtn").disabled = addPending;
   }
 
-  async function addManualCard(event) {
+  // ── actions ──
+  function setScope(value) {
+    scope = value;
+    flippedId = "";
+    receipt = null;
+    lastPips = null;
+    shownId = null;
+    render(latest);
+  }
+
+  function flip() {
+    const top = model(latest).queue[0];
+    if (!top) return;
+    flippedId = flippedId === top.id ? "" : top.id;
+    render(latest);
+  }
+
+  function flyAway(rating, days) {
+    if (reduced()) return;
+    const card = $("card");
+    const copy = card.cloneNode(true);
+    copy.removeAttribute("id");
+    for (const n of copy.querySelectorAll("[id]")) n.removeAttribute("id");
+    copy.classList.remove("arrive");
+    copy.classList.add("fly", rating);
+    copy.setAttribute("aria-hidden", "true");
+    copy.style.width = `${card.offsetWidth}px`;
+    const spin = { hard: ["108%", "6px", "4deg"], good: ["118%", "-14px", "9deg"], easy: ["125%", "-44px", "14deg"] }[rating];
+    if (spin) {
+      copy.style.setProperty("--dx", spin[0]);
+      copy.style.setProperty("--dy", spin[1]);
+      copy.style.setProperty("--rot", spin[2]);
+    }
+    copy.append(el("span", `stamp ${rating}`, rating === "again" ? t("again") : `+${t("dShort", { n: num(days) })}`));
+    $("pile").append(copy);
+    const drop = () => copy.remove();
+    copy.addEventListener("animationend", (e) => { if (e.target === copy) drop(); });
+    setTimeout(drop, 1400);
+  }
+
+  function showError(msg) {
+    const e = $("err");
+    e.textContent = msg;
+    e.hidden = false;
+    clearTimeout(errTimer);
+    errTimer = setTimeout(() => { e.hidden = true; }, 6000);
+  }
+
+  function rawFields(item) {
+    const f = item.fields || {};
+    return {
+      ease: Number.isFinite(Number(f.ease)) ? Number(f.ease) : 2.5,
+      interval_days: Number.isFinite(Number(f.interval_days)) ? Number(f.interval_days) : 0,
+      last_review: String(f.last_review || ""),
+      lapses: Number.isFinite(Number(f.lapses)) ? Number(f.lapses) : 0
+    };
+  }
+
+  // Write `fields` to one card, showing it at once. Resolves true when the store took it.
+  async function writeCard(id, fields) {
+    const entry = { fields, acked: false, timer: 0 };
+    overlay.set(id, entry);
+    render(latest);
+    let ack;
+    try {
+      ack = await oma.updateItem(id, fields);
+    } catch (error) {
+      ack = { ok: false, note: String(error?.message || error) };
+    }
+    if (overlay.get(id) !== entry) return true;
+    if (!ack || ack.ok === false) {
+      overlay.delete(id);
+      pinFirst = id;
+      receipt = null;
+      showError(t("saveFailed", { why: ack?.note || ack?.reason || "refused" }));
+      render(oma.state || latest);
+      return false;
+    }
+    entry.acked = true;
+    entry.timer = setTimeout(() => {
+      if (overlay.get(id) === entry) {
+        overlay.delete(id);
+        render(oma.state || latest);
+      }
+    }, 8000);
+    render(oma.state || latest);
+    return true;
+  }
+
+  let receiptTimer = 0;
+  function grade(rating) {
+    const top = model(latest).queue[0];
+    if (!top || flippedId !== top.id) return;
+    const next = ratingResult(top, rating);
+    const prev = rawFields(top.item);
+    flyAway(rating, next.interval);
+    if (pinFirst === top.id) pinFirst = "";
+    flippedId = "";
+    receipt = { id: top.id, rating, days: next.interval, prev };
+    clearTimeout(receiptTimer);
+    receiptTimer = setTimeout(() => {
+      receipt = null;
+      render(latest);
+    }, 9000);
+    writeCard(top.id, {
+      ease: next.ease,
+      interval_days: next.interval,
+      last_review: toISO(today()),
+      lapses: next.lapses
+    });
+  }
+
+  function undo() {
+    const r = receipt;
+    if (!r) return;
+    receipt = null;
+    clearTimeout(receiptTimer);
+    pinFirst = r.id;
+    flippedId = r.id;
+    writeCard(r.id, r.prev);
+  }
+
+  async function askAi(prompt, buttons) {
+    for (const b of buttons) b.disabled = true;
+    try {
+      const res = await oma.sendMessage(prompt);
+      if (res && res.isError === true && !res.degraded) showError(t("askFailed"));
+    } catch {
+      showError(t("askFailed"));
+    } finally {
+      for (const b of buttons) b.disabled = false;
+    }
+  }
+
+  function parseLines(text) {
+    const out = [];
+    const lines = text.split(/\r?\n/);
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i].trim();
+      if (!line) continue;
+      const m = line.match(/^(.+?)(?:\t|\s+[—–|-]\s+|\s*\|\s*)(.+)$/);
+      if (!m || !m[1].trim() || !m[2].trim()) return { error: t("addNeed", { n: num(i + 1) }) };
+      out.push({ front: m[1].trim(), back: m[2].trim() });
+    }
+    return out.length ? { cards: out } : { error: t("addEmpty") };
+  }
+
+  async function addCards(event) {
     event.preventDefault();
-    if (manualPending) return;
-    const frontInput = document.getElementById("frontInput");
-    const backInput = document.getElementById("backInput");
-    const deckInput = document.getElementById("deckInput");
-    const front = frontInput.value.trim();
-    const back = backInput.value.trim();
-    const deck = deckInput.value.trim() || t("generalDeck");
-    if (!front || !back) {
-      showStatus(t("manualMissing"), "warn");
-      (front ? backInput : frontInput).focus();
+    if (addPending) return;
+    const area = $("addLines");
+    const parsed = parseLines(area.value);
+    if (parsed.error) {
+      showError(parsed.error);
+      area.focus();
       return;
     }
-
-    manualPending = true;
-    const button = document.getElementById("manualSubmit");
-    button.disabled = true;
-    applyStaticText();
-    try {
-      await oma.addItem({
-        group: deck,
-        fields: {
-          front,
-          back,
-          deck,
-          ease: 2.5,
-          interval_days: 0,
-          last_review: "",
-          lapses: 0
-        }
-      });
-    } catch (error) {
-      manualPending = false;
-      button.disabled = false;
-      applyStaticText();
-      showStatus(t("manualFailed", { error: String(error?.message || error) }), "bad", true);
-      return;
+    const deck = $("addDeck").value.trim() || t("general");
+    addPending = true;
+    $("addBtn").disabled = true;
+    let added = 0;
+    let why = "";
+    for (const c of parsed.cards) {
+      let ack;
+      try {
+        ack = await oma.addItem({
+          group: deck,
+          fields: { front: c.front, back: c.back, deck, ease: 2.5, interval_days: 0, last_review: "", lapses: 0 }
+        });
+      } catch (error) {
+        ack = { ok: false, note: String(error?.message || error) };
+      }
+      if (!ack || ack.ok === false) {
+        why = ack?.note || ack?.reason || "refused";
+        break;
+      }
+      added += 1;
     }
-    frontInput.value = "";
-    backInput.value = "";
-    deckInput.value = deck === t("generalDeck") ? "" : deck;
-    manualPending = false;
-    button.disabled = false;
-    applyStaticText();
-    showStatus(t("manualSuccess", { deck }), "ok");
-    frontInput.focus();
+    addPending = false;
+    $("addBtn").disabled = false;
+    const remaining = area.value.split(/\r?\n/).filter((l) => l.trim()).slice(added);
+    area.value = remaining.join("\n");
+    if (why) showError(t("addFailed", { n: num(added), why }));
+    else {
+      receipt = null;
+      notice = { text: added === 1 ? t("addedOne", { deck }) : t("added", { n: num(added), deck }), until: Date.now() + 6000 };
+      render(oma.state || latest);
+      setTimeout(() => render(oma.state || latest), 6100);
+    }
+    area.focus();
   }
 
-  function scheduleClockRefresh() {
+  // ── wiring ──
+  if (oma.standalone) document.body.classList.add("standalone");
+  $("card").addEventListener("click", flip);
+  $("card").addEventListener("keydown", (e) => {
+    if (e.key === " " || e.key === "Enter") {
+      e.preventDefault();
+      flip();
+    }
+  });
+  $("flipBtn").onclick = flip;
+  $("explainBtn").onclick = () => {
+    const top = model(latest).queue[0];
+    if (top) askAi(t("aiExplainPrompt", { deck: top.deck, front: top.front, back: top.back }), [$("explainBtn")]);
+  };
+  $("aiBtn").onclick = () => askAi(t("aiMakePrompt"), [$("aiBtn"), $("emptyAi")]);
+  $("emptyAi").onclick = () => askAi(t("aiMakePrompt"), [$("aiBtn"), $("emptyAi")]);
+  $("doneAll").onclick = () => setScope("");
+  $("addToggle").onclick = () => {
+    addOpen = !addOpen;
+    render(latest);
+    if (addOpen) $("addLines").focus();
+  };
+  $("addForm").onsubmit = addCards;
+  document.addEventListener("keydown", (e) => {
+    if (e.metaKey || e.ctrlKey || e.altKey) return;
+    if (e.target.closest && e.target.closest("input, textarea, select, button, [role=button]")) return;
+    const top = model(latest).queue[0];
+    if (!top) return;
+    if (e.key === " ") {
+      e.preventDefault();
+      flip();
+      return;
+    }
+    const i = ["1", "2", "3", "4"].indexOf(e.key);
+    if (i >= 0 && flippedId === top.id) grade(RATINGS[i]);
+  });
+  // Grades from inside the card area keep working with the keyboard too.
+  $("card").addEventListener("keydown", (e) => {
+    const i = ["1", "2", "3", "4"].indexOf(e.key);
+    if (i >= 0 && flippedId) grade(RATINGS[i]);
+  });
+
+  function atMidnight() {
     const now = new Date();
     const next = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 1, 0, 0, 2);
     setTimeout(() => {
-      render(oma.state || latestState);
-      scheduleClockRefresh();
+      render(oma.state || latest);
+      atMidnight();
     }, Math.max(1000, next - now));
   }
 
-  document.getElementById("studioAiButton").onclick = makeCardsWithAi;
-  document.getElementById("emptyAiButton").onclick = makeCardsWithAi;
-  document.getElementById("emptyManualButton").onclick = focusManualForm;
-  document.getElementById("manualForm").onsubmit = addManualCard;
-  document.getElementById("startButton").onclick = () => startReview();
-  document.getElementById("revealButton").onclick = () => {
-    revealed = true;
-    render(latestState);
-  };
-  document.getElementById("stopReviewButton").onclick = stopReview;
-  document.getElementById("backToDecksButton").onclick = stopReview;
-  document.getElementById("explainButton").onclick = explainCurrentCard;
-
   oma.ready((state) => {
     render(state);
-    scheduleClockRefresh();
+    atMidnight();
   });
   oma.onChange(render);
-  oma.onPrefChange(() => render(oma.state || latestState));
+  oma.onPrefChange(() => render(oma.state || latest));
 </script>
 </body>
 </html>

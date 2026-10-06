@@ -7,11 +7,11 @@
 // TWO KINDS OF ASSERTION, and the second kind is the one that pays for this file:
 //
 //   · POSITIVE — a declaration reaches the wire. Easy to write, and easy to make pass by accident.
-//   · FLOOR — an app that declares NOTHING gets byte-for-byte what this engine emitted before any
-//     of this existed. Those bytes are hard-coded LITERALS below, captured from the previous commit
-//     and never re-derived from the code under test: comparing runnerCspFor() against
-//     RUNNER_CSP_POLICY would only prove the code agrees with itself, and the whole risk of a
-//     "widen it per app" change is that the floor quietly widens for everybody.
+//   · FLOOR — an app that declares NOTHING gets exactly the platform base (the CDN script hosts and
+//     Google Fonts, static loads only — platform plan D4, 2026-10-02) and no server. Those bytes are
+//     hard-coded LITERALS below, never re-derived from the code under test: comparing against
+//     PLATFORM_CSP would only prove the code agrees with itself, and the whole risk of a "widen
+//     it per app" change is that the floor quietly widens for everybody.
 //
 // Run: node test/csp-passthrough.mjs
 
@@ -20,7 +20,12 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { existsSync, unlinkSync, readFileSync } from "node:fs";
-import { openStore, cspShapeError, cspFor, manifestShapeError } from "../src/store.mjs";
+import { openStore, cspShapeError, cspFor, cspPolicy, manifestShapeError } from "../src/store.mjs";
+import { LOADER_URI_RE } from "../src/tools/apps.mjs";
+// The loader's URI is named by its own bytes (tools/apps.mjs loaderUriFor), so it is read off
+// open_app — the one tool that points at it — never spelled out here.
+const loaderUriOf = async (c) => (await c.listTools()).tools.find((t) => t.name === "open_app")._meta.ui.resourceUri;
+const loaderEntry = (eng) => Object.entries(eng._registeredResources || {}).find(([k]) => LOADER_URI_RE.test(k))?.[1];
 import { runnerCspFor, RUNNER_CSP_POLICY, composeChildDoc } from "../src/runner.mjs";
 import { viewCspFor } from "../src/http.mjs";
 
@@ -38,7 +43,12 @@ const ok = (name, cond, note) => (cond
 // rather than imported: an imported constant follows the code it is supposed to be pinning.
 const FLOOR_RUNNER = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none'; form-action 'none'";
 const FLOOR_VIEW = "default-src 'none'; style-src 'unsafe-inline'; img-src data:; font-src data:; script-src 'unsafe-inline'; connect-src 'self'; frame-src 'none'; form-action 'none'";
-const FLOOR_META = '{"ui":{"csp":{"connectDomains":[],"resourceDomains":[]}},"openai/widgetCSP":{"connect_domains":[],"resource_domains":[]}}';
+// The platform base (2026-10-02). Literal on purpose, see the header.
+const BASE_RES = '["https://cdnjs.cloudflare.com","https://cdn.jsdelivr.net","https://unpkg.com","https://cdn.tailwindcss.com","https://code.jquery.com","https://fonts.googleapis.com","https://fonts.gstatic.com"]';
+const FLOOR_META = '{"ui":{"csp":{"connectDomains":[],"resourceDomains":' + BASE_RES + '}},"openai/widgetCSP":{"connect_domains":[],"resource_domains":' + BASE_RES + '}}';
+// The merge rules of §3 are about the four sources, not the base: they run under a policy whose
+// base is empty, so each assertion still reads as the union it is testing.
+const NO_BASE = cspPolicy({ base: {} });
 
 const PLAIN_HTML = '<!DOCTYPE html><html><head><meta charset="utf-8"></head><body><div id="a">x</div><script type="module">window.oma.ready(()=>{});</scr' + 'ipt></body></html>';
 
@@ -83,7 +93,7 @@ console.log("\n2. the save door refuses a bad declaration through manifestShapeE
     /is not an origin/.test(manifestShapeError({ csp: { connectDomains: ["api.github.com"] } }) || ""));
   ok("manifest.csp non-object is refused", /manifest\.csp must be an object/.test(manifestShapeError({ csp: [] }) || ""));
   ok("a good manifest.csp saves", manifestShapeError({ csp: { connectDomains: ["https://api.github.com"] } }) === null);
-  ok("no csp at all is still a valid manifest (nothing became mandatory)", manifestShapeError({ kind: "app" }) === null);
+  ok("no csp at all is still a valid manifest (nothing became mandatory)", manifestShapeError({ manifest_version: 2 }) === null);
 }
 
 console.log("\n3. the merge — declaration ∪ policy:csp:<app> ∪ policy:csp:*, deduped, ordered");
@@ -93,33 +103,33 @@ console.log("\n3. the merge — declaration ∪ policy:csp:<app> ∪ policy:csp:
     manifest: { csp: { connectDomains: ["https://api.github.com"] } }, actor: "seed" });
   const comp = () => store.getApp("merge-fixture");
 
-  ok("declaration alone", JSON.stringify(cspFor(comp(), store)) === '{"connectDomains":["https://api.github.com"]}');
+  ok("declaration alone", JSON.stringify(cspFor(comp(), store, NO_BASE)) === '{"connectDomains":["https://api.github.com"]}');
   ok("an app with no declaration merges to {} — every key empty is every key omitted",
-    JSON.stringify(cspFor({ name: "nothing", manifest: null }, store)) === "{}");
+    JSON.stringify(cspFor({ name: "nothing", manifest: null }, store, NO_BASE)) === "{}");
 
   const set = (key, value) => store.executePrivileged({ type: "add_item", command_id: "s-" + key + value,
     collection: "settings", fields: { key, value }, actor: "human", host: "test" });
 
   set("policy:csp:merge-fixture", JSON.stringify({ connectDomains: ["https://api.stripe.com"] }));
   ok("policy:csp:<app> unions with the declaration",
-    JSON.stringify(cspFor(comp(), store)) === '{"connectDomains":["https://api.github.com","https://api.stripe.com"]}',
-    JSON.stringify(cspFor(comp(), store)));
+    JSON.stringify(cspFor(comp(), store, NO_BASE)) === '{"connectDomains":["https://api.github.com","https://api.stripe.com"]}',
+    JSON.stringify(cspFor(comp(), store, NO_BASE)));
 
   set("policy:csp:*", JSON.stringify({ connectDomains: ["https://api.stripe.com", "https://cdn.jsdelivr.net"], frameDomains: ["https://www.youtube.com"] }));
-  const merged = cspFor(comp(), store);
+  const merged = cspFor(comp(), store, NO_BASE);
   ok("policy:csp:* unions on top, and a duplicate appears ONCE",
     JSON.stringify(merged.connectDomains) === '["https://api.github.com","https://api.stripe.com","https://cdn.jsdelivr.net"]',
     JSON.stringify(merged.connectDomains));
   ok("the global row reaches a key the app never declared", JSON.stringify(merged.frameDomains) === '["https://www.youtube.com"]');
   ok("keys nobody declared stay omitted", merged.resourceDomains === undefined && merged.baseUriDomains === undefined);
   ok("the global row applies to an app that declared nothing at all",
-    JSON.stringify(cspFor({ name: "other", manifest: null }, store).frameDomains) === '["https://www.youtube.com"]');
+    JSON.stringify(cspFor({ name: "other", manifest: null }, store, NO_BASE).frameDomains) === '["https://www.youtube.com"]');
 
   // The gate belongs on the road the value LEAVES by, not only on the way in: a settings row can
   // predate this gate, or be written by an older engine sharing the same SQLite file.
-  const clean = JSON.stringify(cspFor({ name: "unpoisoned", manifest: null }, store));
+  const clean = JSON.stringify(cspFor({ name: "unpoisoned", manifest: null }, store, NO_BASE));
   set("policy:csp:poisoned", JSON.stringify({ connectDomains: ["https://ok.example.com", "https://x.com; script-src *"] }));
-  const poisoned = cspFor({ name: "poisoned", manifest: null }, store);
+  const poisoned = cspFor({ name: "poisoned", manifest: null }, store, NO_BASE);
   ok("a settings row that would inject a directive contributes NOTHING — whole, not half",
     !JSON.stringify(poisoned).includes("script-src") && !JSON.stringify(poisoned).includes("ok.example.com"),
     JSON.stringify(poisoned));
@@ -127,7 +137,21 @@ console.log("\n3. the merge — declaration ∪ policy:csp:<app> ∪ policy:csp:
     JSON.stringify(poisoned) === clean, JSON.stringify(poisoned) + " vs " + clean);
   set("policy:csp:garbage", "not json at all");
   ok("an unparseable settings row contributes nothing and throws nothing",
-    JSON.stringify(cspFor({ name: "garbage", manifest: null }, store)) === clean);
+    JSON.stringify(cspFor({ name: "garbage", manifest: null }, store, NO_BASE)) === clean);
+
+  // The base, and the policy that decides whether anything may widen it.
+  ok("under the default policy the platform base comes FIRST, then the declaration",
+    JSON.stringify(cspFor(comp(), store).resourceDomains) === BASE_RES
+    && cspFor(comp(), store).connectDomains[0] === "https://api.github.com");
+  ok("a non-extensible policy (a hosted plane) is the base alone — declaration and settings rows ignored",
+    JSON.stringify(cspFor(comp(), store, cspPolicy({ extensible: false }))) === '{"resourceDomains":' + BASE_RES + '}',
+    JSON.stringify(cspFor(comp(), store, cspPolicy({ extensible: false }))));
+  ok("…and an operator's own base replaces the platform's",
+    JSON.stringify(cspFor(comp(), store, cspPolicy({ base: { resourceDomains: ["https://cdn.corp.example"] }, extensible: false })))
+      === '{"resourceDomains":["https://cdn.corp.example"]}');
+  let threw = null; try { cspPolicy({ base: { resourceDomains: ["cdn.corp.example"] } }); } catch (e) { threw = e.message; }
+  ok("a malformed base THROWS — a deployment that meant to narrow must not silently get the default",
+    /csp\.base\.resourceDomains/.test(threw || ""), threw);
   store.close();
   for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
@@ -186,21 +210,23 @@ const client = new Client({ name: "csp", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  // OMA_DYNAMIC_TOOLS=1 is what makes a host able to reach a PER-APP resource at all (see §6).
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "csp-test", OMA_VIEWER: "0", OMA_DYNAMIC_TOOLS: "1" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "csp-test", OMA_VIEWER: "0" },
 }));
+// A pinned app is what gets a per-app tool pointing at its own resource (§8 reads that door).
+await client.callTool({ name: "data_add_item", arguments: { command_id: "pin-csp-loud", collection: "settings",
+  group: "csp-loud", fields: { key: "open_tool", value: true } } });
 
 const save = (name, manifest) => client.callTool({ name: "save_app", arguments: { name, ui: PLAIN_HTML, ...(manifest ? { manifest } : {}) } });
 const metaOf = async (name) => (await client.readResource({ uri: `ui://open-mcp-apps/${name}.html` })).contents[0]._meta;
 
 {
-  await save("csp-quiet", { kind: "app" });
+  await save("csp-quiet", { manifest_version: 2 });
   const quiet = await metaOf("csp-quiet");
   // THE FLOOR, on the wire, byte for byte. Every app shipped today is in this state.
-  ok("an app that declares nothing produces the v0.5.9 _meta, byte for byte",
+  ok("an app that declares nothing produces the platform base _meta, byte for byte",
     JSON.stringify(quiet) === FLOOR_META, JSON.stringify(quiet));
 
-  await save("csp-loud", { kind: "app", csp: { connectDomains: ["https://api.github.com"] } });
+  await save("csp-loud", { csp: { connectDomains: ["https://api.github.com"] } });
   const loud = await metaOf("csp-loud");
   ok("a declared connectDomains reaches _meta.ui.csp (the spec key)",
     JSON.stringify(loud.ui.csp.connectDomains) === '["https://api.github.com"]', JSON.stringify(loud.ui.csp));
@@ -208,23 +234,23 @@ const metaOf = async (name) => (await client.readResource({ uri: `ui://open-mcp-
     JSON.stringify(loud["openai/widgetCSP"].connect_domains) === '["https://api.github.com"]');
   ok("the twin gets no invented keys — it carries only the two fields ChatGPT documents",
     Object.keys(loud["openai/widgetCSP"]).join(",") === "connect_domains,resource_domains");
-  ok("resourceDomains stays present-and-empty (a positive 'reaches nothing' a reviewer can read)",
-    Array.isArray(loud.ui.csp.resourceDomains) && loud.ui.csp.resourceDomains.length === 0);
+  ok("resourceDomains carries the platform base alongside the declaration",
+    JSON.stringify(loud.ui.csp.resourceDomains) === BASE_RES, JSON.stringify(loud.ui.csp.resourceDomains));
   ok("frameDomains/baseUriDomains stay ABSENT when undeclared — declaring an empty one invites a stricter review",
     loud.ui.csp.frameDomains === undefined && loud.ui.csp.baseUriDomains === undefined);
 
-  await save("csp-framer", { kind: "app", csp: { frameDomains: ["https://www.youtube.com"], baseUriDomains: ["https://cdn.example.com"] } });
+  await save("csp-framer", { csp: { frameDomains: ["https://www.youtube.com"], baseUriDomains: ["https://cdn.example.com"] } });
   const framer = await metaOf("csp-framer");
   ok("frameDomains and baseUriDomains reach _meta when they ARE declared",
     JSON.stringify(framer.ui.csp.frameDomains) === '["https://www.youtube.com"]'
     && JSON.stringify(framer.ui.csp.baseUriDomains) === '["https://cdn.example.com"]');
 
   // The save door, over the wire this time — the message has to be readable by whoever typed it.
-  const bad = await save("csp-bad", { kind: "app", csp: { connectDomains: ["api.github.com"] } });
+  const bad = await save("csp-bad", { csp: { connectDomains: ["api.github.com"] } });
   ok("save_app refuses a non-origin and says what to write instead",
     bad.isError === true && /is not an origin/.test(bad.content[0].text) && bad.content[0].text.includes("scheme://host[:port]"),
     bad.content?.[0]?.text);
-  const badShape = await save("csp-bad2", { kind: "app", csp: { connectDomains: "https://api.github.com" } });
+  const badShape = await save("csp-bad2", { csp: { connectDomains: "https://api.github.com" } });
   ok("save_app refuses a bare string where an array belongs",
     badShape.isError === true && /must be an array of origins/.test(badShape.content[0].text));
 }
@@ -232,11 +258,11 @@ const metaOf = async (name) => (await client.readResource({ uri: `ui://open-mcp-
 console.log("\n6. get_app_html carries the merge (the loader's channel to the runner child)");
 {
   const sc = (await client.callTool({ name: "get_app_html", arguments: { name: "csp-loud" } })).structuredContent;
-  ok("get_app_html declares csp in structuredContent", JSON.stringify(sc.csp) === '{"connectDomains":["https://api.github.com"]}', JSON.stringify(sc.csp));
+  ok("get_app_html declares csp in structuredContent", JSON.stringify(sc.csp) === '{"connectDomains":["https://api.github.com"],"resourceDomains":' + BASE_RES + '}', JSON.stringify(sc.csp));
   ok("…and it is the MERGE, not the raw declaration `declaration` already carries",
     sc.declaration.csp !== undefined && sc.csp !== sc.declaration.csp);
   const quiet = (await client.callTool({ name: "get_app_html", arguments: { name: "csp-quiet" } })).structuredContent;
-  ok("an app that declares nothing reports {} — the child then gets the floor", JSON.stringify(quiet.csp) === "{}");
+  ok("an app that declares nothing reports the base — the child then gets the floor plus the CDNs", JSON.stringify(quiet.csp) === '{"resourceDomains":' + BASE_RES + '}', JSON.stringify(quiet.csp));
 }
 
 console.log("\n7. security_set — the user's own additions");
@@ -275,7 +301,7 @@ console.log("\n8. the universal loader carries the UNION of every app's declarat
   // (apps' manifest.csp ∪ the user's per-app and global additions), and the runner child inside the
   // loader is narrowed back to its own app by composeChildDoc (parent ∩ own). Two apps are in this
   // store: csp-loud declares api.github.com, csp-quiet was granted api.stripe.com by the user in §7.
-  const loader = (await client.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0]._meta;
+  const loader = (await client.readResource({ uri: await loaderUriOf(client) })).contents[0]._meta;
   const conn = loader?.ui?.csp?.connectDomains || [];
   ok("the loader's _meta.ui.csp.connectDomains is the union of what the store's apps may reach",
     conn.includes("https://api.github.com") && conn.includes("https://api.stripe.com"), JSON.stringify(loader));
@@ -288,7 +314,7 @@ console.log("\n8. the universal loader carries the UNION of every app's declarat
   // in the plan's to-test list, not something this suite can settle.
   const openApp = (await client.listTools()).tools.find((t) => t.name === "open_app");
   ok("open_app still points at the loader, so this is the DEFAULT path — and now the union rides it",
-    openApp._meta.ui.resourceUri === "ui://open-mcp-apps/app.html", openApp._meta?.ui?.resourceUri);
+    LOADER_URI_RE.test(openApp._meta.ui.resourceUri), openApp._meta?.ui?.resourceUri);
   const perApp = (await client.listTools()).tools.find((t) => t.name === "open_csp_loud");
   ok("the per-app tool still points at the per-app resource — the NARROW path, one app's own declaration",
     perApp?._meta?.ui?.resourceUri === "ui://open-mcp-apps/csp-loud.html", perApp?._meta?.ui?.resourceUri);
@@ -300,7 +326,7 @@ console.log("\n8. the universal loader carries the UNION of every app's declarat
     command: "node", args: [join(ROOT, "src", "server.mjs")],
     env: { ...process.env, OMA_DB: quietDb, OMA_HOST: "csp-test", OMA_VIEWER: "0" },
   }));
-  const quietLoader = (await c2.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0]._meta;
+  const quietLoader = (await c2.readResource({ uri: await loaderUriOf(c2) })).contents[0]._meta;
   ok("a store with no declarations anywhere: the loader's _meta is the 0.5.9 floor, byte for byte",
     JSON.stringify(quietLoader) === FLOOR_META, JSON.stringify(quietLoader));
   await c2.close();
@@ -330,7 +356,7 @@ console.log("\n9. the probe app this repo ships to ask a HOST the same questions
     (csp.connectDomains || []).includes("https://api.github.com")
     && (csp.connectDomains || []).some((o) => o.startsWith("http://127.0.0.1:")), JSON.stringify(csp));
   ok("…and so do resourceDomains and frameDomains — three of the four spec keys on one app",
-    JSON.stringify(csp.resourceDomains) === '["https://raw.githubusercontent.com"]'
+    JSON.stringify(csp.resourceDomains) === BASE_RES.slice(0, -1) + ',"https://raw.githubusercontent.com"]'
     && JSON.stringify(csp.frameDomains) === '["https://www.youtube-nocookie.com"]', JSON.stringify(csp));
   // The control group has to BE a control: the probe fetches https://example.com expecting a
   // REFUSAL, so the day someone "helpfully" adds it to the manifest, the seventh reading silently

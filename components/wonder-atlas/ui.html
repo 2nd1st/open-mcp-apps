@@ -17,6 +17,17 @@ Wonder Atlas hard-contract check
 <meta name="description" content="Keep the questions that make you stop, look closer, and understand the world a little better.">
 <meta name="oma-category" content="Learning">
 <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:1120px;margin-inline:auto;overflow-x:clip}
+
   :root {
     --ink: var(--color-text-primary, #17202a);
     --muted: var(--color-text-secondary, #5d6875);
@@ -26,11 +37,16 @@ Wonder Atlas hard-contract check
     --surface-softer: var(--color-background-tertiary, #e9edf2);
     --line: var(--color-border-primary, #d5dbe2);
     --line-soft: var(--color-border-secondary, #e6eaf0);
-    --blue: var(--color-text-info, #5267d8);
-    --green: var(--color-text-success, #3d8b66);
-    --gold: var(--color-text-warning, #c7861e);
+    /* ONE identity colour. Every scene is drawn in it (plus the host's text colour), so the atlas
+       reads as one hand-drawn series instead of a box of crayons. */
+    --wa: light-dark(#6a4bc4, #b9a5ff);
+    --wa-on: light-dark(#ffffff, #1a1033);
+    --k-accent: var(--wa);
+    --k-accent-bg: color-mix(in oklab, var(--wa) 10%, transparent);
+    --k-accent-brd: color-mix(in oklab, var(--wa) 30%, transparent);
+    --blue: var(--wa);
+    --violet: var(--wa);
     --rose: var(--color-text-danger, #bd536a);
-    --violet: color-mix(in oklab, var(--blue) 72%, var(--rose));
     --shadow: var(--shadow-lg, 0 24px 70px rgba(28, 38, 52, .14));
     --fast: 150ms;
     --ease: cubic-bezier(.2, .75, .2, 1);
@@ -44,9 +60,9 @@ Wonder Atlas hard-contract check
     display: none !important;
   }
 
-  /* No document rule. Padding, ground, margin, type and root clipping belong to the kit's stage
-     contract now; `.k-stage` uses `clip`, not `hidden`, so the page remains the scroll container
-     and the sticky app bar below can follow the viewport instead of dying inside the root. */
+  /* No document rule. `.k-stage` (above) uses `clip`, not `hidden`, so the page remains the
+     scroll container and the sticky app bar below can follow the viewport instead of dying
+     inside the root. */
 
   button {
     color: inherit;
@@ -58,17 +74,14 @@ Wonder Atlas hard-contract check
   }
 
   button:focus-visible {
-    outline: 3px solid color-mix(in oklab, var(--blue) 42%, transparent);
+    outline: 2px solid var(--color-ring-primary, var(--wa));
     outline-offset: 3px;
   }
 
-  /* `.atlas` is `.k-stage` now: the kit draws one card in chat and no card on a screen the app
-     owns. The old width, border, radius, shadow, fill and clipping were all frame, so none remain
-     on the root; its blue-and-gold gradient survives below as app-bar content paint. */
+  /* `.atlas` is the `.k-stage` root; it draws no frame of its own. */
 
-  /* `.topbar` is `.k-appbar` now — row, gaps, padding, mark box, title/eyebrow scale and the
-     chat-only rule come from the kit. Sticky is app behaviour, and works because every stage
-     ancestor clips with `overflow: clip`, never `hidden`, so no ancestor becomes a scrollport. */
+  /* `.topbar` is a `.k-appbar` (rules above). Sticky works because every ancestor clips with
+     `overflow: clip`, never `hidden`, so no ancestor becomes a scrollport. */
   .topbar {
     position: sticky;
     top: 0;
@@ -79,54 +92,17 @@ Wonder Atlas hard-contract check
     isolation: isolate;
   }
 
-  /* The radius-28 card's gradient was Wonder Atlas's face, not its frame. It now lives inside the
-     content bar, above either the app's standalone glass fill or the kit's chat-card fill. */
-  .topbar::before {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    content: "";
-    background:
-      radial-gradient(circle at 9% 0%, color-mix(in oklab, var(--blue) 9%, transparent), transparent 30%),
-      radial-gradient(circle at 92% 4%, color-mix(in oklab, var(--gold) 10%, transparent), transparent 28%);
-    pointer-events: none;
-  }
-
   .topbar > * {
     position: relative;
     z-index: 1;
   }
 
-  /* The mark keeps its PAINT and loses its box: compass fill, ring and inset glow are identity,
-     while dimensions and radius are the kit's stage contract. */
+  /* The mark's dimensions and radius come from `.k-appbar .k-appmark`; compass fill, ring and
+     inset glow are this app's identity. */
   .brand-mark {
-    color: var(--blue);
-    background:
-      radial-gradient(circle, color-mix(in oklab, var(--gold) 28%, var(--surface)) 0 18%, transparent 19%),
-      color-mix(in oklab, var(--blue) 9%, var(--surface));
-    border: 1px solid color-mix(in oklab, var(--blue) 24%, var(--line));
-    box-shadow: inset 0 0 0 5px color-mix(in oklab, var(--surface) 66%, transparent);
-  }
-
-  .brand-mark::before,
-  .brand-mark::after {
-    position: absolute;
-    width: 4px;
-    height: 4px;
-    content: "";
-    background: var(--gold);
-    border-radius: 50%;
-  }
-
-  .brand-mark::before {
-    top: 7px;
-    right: 8px;
-  }
-
-  .brand-mark::after {
-    bottom: 8px;
-    left: 8px;
-    opacity: .6;
+    color: var(--wa);
+    background: var(--k-accent-bg);
+    border: 1px solid var(--k-accent-brd);
   }
 
   .brand-mark svg {
@@ -137,30 +113,12 @@ Wonder Atlas hard-contract check
     stroke-linejoin: round;
   }
 
-  .eyebrow {
-    font-family: var(--font-mono, ui-monospace, monospace);
-  }
-
-  /* These two content eyebrows are outside `.k-appbar`, so they retain the atlas's small-map
-     typography; the app-bar eyebrow itself gets the shared recipe. */
-  .empty-copy .eyebrow,
-  .trail-header .eyebrow {
+  .empty-copy .eyebrow {
     display: block;
-    margin: 0 0 2px;
-    color: var(--quiet);
-    font-size: 9px;
-    font-weight: 750;
-    letter-spacing: .15em;
-    text-transform: uppercase;
-  }
-
-  .brand-copy p {
-    margin: 3px 0 0;
-    overflow: hidden;
-    color: var(--muted);
-    font-size: 11.5px;
-    text-overflow: ellipsis;
-    white-space: nowrap;
+    margin: 0 0 6px;
+    color: var(--wa);
+    font-size: 12.5px;
+    font-weight: 650;
   }
 
   .progress-pill {
@@ -180,21 +138,29 @@ Wonder Atlas hard-contract check
   }
 
   .progress-ring {
-    --progress: 0deg;
-    position: relative;
-    width: 27px;
-    height: 27px;
+    width: 26px;
+    height: 26px;
     flex: 0 0 auto;
-    background: conic-gradient(var(--green) var(--progress), var(--surface-softer) 0);
-    border-radius: 50%;
+    rotate: -90deg;
   }
 
-  .progress-ring::after {
-    position: absolute;
-    inset: 4px;
-    content: "";
-    background: var(--surface);
-    border-radius: inherit;
+  .progress-ring circle {
+    fill: none;
+    stroke-width: 4;
+  }
+
+  .progress-ring .track {
+    stroke: var(--line-soft);
+  }
+
+  .progress-ring .done {
+    stroke: var(--wa);
+    stroke-linecap: round;
+  }
+
+  .progress-pill b {
+    color: var(--ink);
+    font-variant-numeric: tabular-nums;
   }
 
   .top-actions {
@@ -222,7 +188,7 @@ Wonder Atlas hard-contract check
 
   .button:hover {
     background: var(--surface-soft);
-    border-color: color-mix(in oklab, var(--blue) 27%, var(--line));
+    border-color: var(--k-accent-brd);
   }
 
   .button:active {
@@ -230,19 +196,19 @@ Wonder Atlas hard-contract check
   }
 
   .button.primary {
-    color: var(--color-text-inverse, #ffffff);
-    background: var(--ink);
-    border-color: var(--ink);
+    color: var(--wa-on);
+    background: var(--wa);
+    border-color: var(--wa);
   }
 
   .button.primary:hover {
-    background: color-mix(in oklab, var(--ink) 88%, var(--blue));
+    background: color-mix(in oklab, var(--wa) 88%, var(--ink));
   }
 
   .button.soft {
-    color: var(--blue);
-    background: color-mix(in oklab, var(--blue) 8%, var(--surface));
-    border-color: color-mix(in oklab, var(--blue) 22%, var(--line));
+    color: var(--wa);
+    background: var(--k-accent-bg);
+    border-color: var(--k-accent-brd);
   }
 
   .button svg {
@@ -295,17 +261,19 @@ Wonder Atlas hard-contract check
     border-bottom: 1px solid var(--line-soft);
   }
 
+  /* One palette for every scene: the accent, a lighter wash of it, a deeper shade of it, and the
+     host's text colour for figures. The scenes differ by drawing, not by colour. */
+  .scene-host {
+    --scene-main: var(--wa);
+    --scene-alt: color-mix(in oklab, var(--wa) 45%, var(--surface));
+    --scene-pop: color-mix(in oklab, var(--wa) 62%, var(--ink));
+  }
+
   .scene-panel {
-    --scene-main: var(--blue);
-    --scene-alt: var(--violet);
-    --scene-pop: var(--gold);
     position: relative;
     min-width: 0;
     min-height: 512px;
     overflow: clip;
-    background:
-      radial-gradient(circle at 70% 24%, color-mix(in oklab, var(--scene-pop) 16%, transparent), transparent 22%),
-      linear-gradient(145deg, color-mix(in oklab, var(--scene-main) 12%, var(--surface)), color-mix(in oklab, var(--scene-alt) 7%, var(--surface-soft)));
     border-right: 1px solid var(--line-soft);
     isolation: isolate;
   }
@@ -334,54 +302,6 @@ Wonder Atlas hard-contract check
     pointer-events: none;
   }
 
-  .scene-host[data-scene="moon"] {
-    --scene-main: var(--violet);
-    --scene-alt: var(--blue);
-    --scene-pop: var(--gold);
-  }
-
-  .scene-host[data-scene="blue-sky"] {
-    --scene-main: var(--blue);
-    --scene-alt: var(--violet);
-    --scene-pop: var(--gold);
-  }
-
-  .scene-host[data-scene="rainbow"] {
-    --scene-main: var(--rose);
-    --scene-alt: var(--blue);
-    --scene-pop: var(--gold);
-  }
-
-  .scene-host[data-scene="migration"] {
-    --scene-main: var(--blue);
-    --scene-alt: var(--green);
-    --scene-pop: var(--gold);
-  }
-
-  .scene-host[data-scene="autumn-leaf"] {
-    --scene-main: var(--gold);
-    --scene-alt: var(--rose);
-    --scene-pop: var(--green);
-  }
-
-  .scene-host[data-scene="shell-sound"] {
-    --scene-main: var(--rose);
-    --scene-alt: var(--gold);
-    --scene-pop: var(--blue);
-  }
-
-  .scene-host[data-scene="cold-breath"] {
-    --scene-main: var(--blue);
-    --scene-alt: var(--violet);
-    --scene-pop: var(--green);
-  }
-
-  .scene-host[data-scene="seed-direction"] {
-    --scene-main: var(--green);
-    --scene-alt: var(--gold);
-    --scene-pop: var(--rose);
-  }
-
   .scene-meta {
     position: absolute;
     top: 34px;
@@ -399,16 +319,18 @@ Wonder Atlas hard-contract check
     min-height: 25px;
     padding: 5px 9px;
     align-items: center;
-    color: color-mix(in oklab, var(--scene-main) 76%, var(--ink));
-    background: color-mix(in oklab, var(--surface) 82%, transparent);
-    border: 1px solid color-mix(in oklab, var(--scene-main) 20%, var(--line));
+    color: var(--wa);
+    background: var(--surface);
+    border: 1px solid var(--k-accent-brd);
     border-radius: 999px;
-    backdrop-filter: blur(10px);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 9px;
-    font-weight: 750;
-    letter-spacing: .1em;
-    text-transform: uppercase;
+    font-size: 11px;
+    font-weight: 650;
+  }
+
+  .scene-coordinate.is-done {
+    color: var(--wa-on);
+    background: var(--wa);
+    border-color: var(--wa);
   }
 
   .scene-coordinate {
@@ -493,9 +415,9 @@ Wonder Atlas hard-contract check
 
   .scene-caption span {
     max-width: 320px;
-    color: color-mix(in oklab, var(--ink) 75%, var(--scene-main));
-    font-size: 10.5px;
-    font-weight: 650;
+    color: var(--muted);
+    font-size: 11.5px;
+    font-weight: 600;
     line-height: 1.35;
   }
 
@@ -507,10 +429,9 @@ Wonder Atlas hard-contract check
     padding: 0;
     place-items: center;
     color: var(--scene-main);
-    background: color-mix(in oklab, var(--surface) 86%, transparent);
-    border: 1px solid color-mix(in oklab, var(--scene-main) 24%, var(--line));
+    background: var(--surface);
+    border: 1px solid var(--k-accent-brd);
     border-radius: 50%;
-    backdrop-filter: blur(10px);
   }
 
   .round-button svg {
@@ -528,29 +449,6 @@ Wonder Atlas hard-contract check
     min-width: 0;
     padding: 42px 38px 34px;
     flex-direction: column;
-    background:
-      linear-gradient(180deg, color-mix(in oklab, var(--surface) 86%, transparent), var(--surface)),
-      var(--surface);
-  }
-
-  .answer-kicker {
-    display: flex;
-    margin: 0 0 15px;
-    align-items: center;
-    gap: 8px;
-    color: var(--quiet);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 9px;
-    font-weight: 750;
-    letter-spacing: .14em;
-    text-transform: uppercase;
-  }
-
-  .answer-kicker::before {
-    width: 24px;
-    height: 1px;
-    content: "";
-    background: var(--blue);
   }
 
   .answer-panel h2 {
@@ -576,8 +474,8 @@ Wonder Atlas hard-contract check
     margin: 23px 0 0;
     padding: 14px 15px 14px 42px;
     color: var(--ink);
-    background: color-mix(in oklab, var(--blue) 6%, var(--surface));
-    border: 1px solid color-mix(in oklab, var(--blue) 18%, var(--line));
+    background: color-mix(in oklab, var(--wa) 6%, var(--surface));
+    border: 1px solid color-mix(in oklab, var(--wa) 20%, var(--line));
     border-radius: 15px;
     font-size: 12px;
     line-height: 1.5;
@@ -592,7 +490,7 @@ Wonder Atlas hard-contract check
     height: 19px;
     content: "✦";
     place-items: center;
-    color: var(--blue);
+    color: var(--wa);
     font-size: 14px;
   }
 
@@ -600,9 +498,8 @@ Wonder Atlas hard-contract check
   .try-copy b {
     display: block;
     margin-bottom: 3px;
-    font-size: 9px;
-    letter-spacing: .11em;
-    text-transform: uppercase;
+    font-size: 12px;
+    font-weight: 700;
   }
 
   .try-card {
@@ -611,8 +508,8 @@ Wonder Atlas hard-contract check
     padding: 14px 15px;
     grid-template-columns: 32px minmax(0, 1fr);
     gap: 10px;
-    background: color-mix(in oklab, var(--gold) 7%, var(--surface));
-    border: 1px solid color-mix(in oklab, var(--gold) 22%, var(--line));
+    background: var(--surface);
+    border: 1px solid var(--line);
     border-radius: 15px;
   }
 
@@ -621,8 +518,8 @@ Wonder Atlas hard-contract check
     width: 31px;
     height: 31px;
     place-items: center;
-    color: var(--gold);
-    background: color-mix(in oklab, var(--gold) 12%, var(--surface));
+    color: var(--wa);
+    background: var(--k-accent-bg);
     border-radius: 10px;
     font-size: 16px;
   }
@@ -635,7 +532,7 @@ Wonder Atlas hard-contract check
   }
 
   .try-copy b {
-    color: color-mix(in oklab, var(--gold) 74%, var(--ink));
+    color: var(--ink);
   }
 
   .try-note {
@@ -654,29 +551,25 @@ Wonder Atlas hard-contract check
     flex-wrap: wrap;
   }
 
+  .explore-button[data-explored="false"] {
+    color: var(--wa-on);
+    background: var(--wa);
+    border-color: var(--wa);
+  }
+
+  .explore-button[data-explored="false"]:hover {
+    background: color-mix(in oklab, var(--wa) 88%, var(--ink));
+  }
+
   .explore-button[data-explored="true"] {
-    color: var(--green);
-    background: color-mix(in oklab, var(--green) 8%, var(--surface));
-    border-color: color-mix(in oklab, var(--green) 24%, var(--line));
+    color: var(--wa);
+    background: var(--k-accent-bg);
+    border-color: var(--k-accent-brd);
   }
 
   .trail {
     position: relative;
-    padding: 42px 38px 50px;
-    background:
-      linear-gradient(90deg, transparent 0 49.9%, color-mix(in oklab, var(--blue) 7%, transparent) 50% 50.1%, transparent 50.2%),
-      var(--surface-soft);
-  }
-
-  .trail::before {
-    position: absolute;
-    top: 117px;
-    bottom: 66px;
-    left: 50%;
-    width: 1px;
-    content: "";
-    background: repeating-linear-gradient(to bottom, color-mix(in oklab, var(--blue) 20%, transparent) 0 5px, transparent 5px 13px);
-    pointer-events: none;
+    padding: 36px 38px 44px;
   }
 
   .trail-header {
@@ -705,10 +598,7 @@ Wonder Atlas hard-contract check
   .trail-count {
     flex: 0 0 auto;
     color: var(--quiet);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 10px;
-    letter-spacing: .08em;
-    text-transform: uppercase;
+    font-size: 12px;
   }
 
   .filters {
@@ -724,10 +614,10 @@ Wonder Atlas hard-contract check
     min-height: 30px;
     padding: 6px 10px;
     color: var(--muted);
-    background: color-mix(in oklab, var(--surface) 80%, transparent);
+    background: var(--surface);
     border: 1px solid var(--line);
     border-radius: 999px;
-    font-size: 10.5px;
+    font-size: 11.5px;
     font-weight: 650;
     transition: transform var(--fast) var(--ease), color var(--fast), background var(--fast);
   }
@@ -738,9 +628,9 @@ Wonder Atlas hard-contract check
   }
 
   .filter[aria-pressed="true"] {
-    color: var(--color-text-inverse, #ffffff);
-    background: var(--ink);
-    border-color: var(--ink);
+    color: var(--wa);
+    background: var(--k-accent-bg);
+    border-color: var(--k-accent-brd);
   }
 
   .portal-grid {
@@ -796,9 +686,6 @@ Wonder Atlas hard-contract check
   }
 
   .portal {
-    --scene-main: var(--blue);
-    --scene-alt: var(--violet);
-    --scene-pop: var(--gold);
     position: relative;
     min-width: 0;
     padding: 0;
@@ -833,9 +720,7 @@ Wonder Atlas hard-contract check
     position: relative;
     height: 158px;
     overflow: clip;
-    background:
-      radial-gradient(circle at 70% 18%, color-mix(in oklab, var(--scene-pop) 13%, transparent), transparent 27%),
-      color-mix(in oklab, var(--scene-main) 9%, var(--surface-soft));
+    background: color-mix(in oklab, var(--wa) 5%, var(--surface));
     border-bottom: 1px solid var(--line-soft);
   }
 
@@ -856,14 +741,13 @@ Wonder Atlas hard-contract check
     height: 26px;
     translate: -50% 0;
     place-items: center;
-    color: color-mix(in oklab, var(--scene-main) 80%, var(--ink));
-    background: color-mix(in oklab, var(--surface) 84%, transparent);
-    border: 1px solid color-mix(in oklab, var(--scene-main) 22%, var(--line));
+    color: var(--wa);
+    background: var(--surface);
+    border: 1px solid var(--k-accent-brd);
     border-radius: 50%;
-    backdrop-filter: blur(8px);
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 9px;
-    font-weight: 750;
+    font-size: 10.5px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
 
   .portal-copy {
@@ -877,19 +761,16 @@ Wonder Atlas hard-contract check
     align-items: center;
     justify-content: space-between;
     gap: 8px;
-    color: color-mix(in oklab, var(--scene-main) 72%, var(--ink));
-    font-family: var(--font-mono, ui-monospace, monospace);
-    font-size: 8.5px;
-    font-weight: 750;
-    letter-spacing: .1em;
-    text-transform: uppercase;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 650;
   }
 
   .portal-done {
     display: inline-flex;
     align-items: center;
     gap: 3px;
-    color: var(--green);
+    color: var(--wa);
   }
 
   .portal h3 {
@@ -908,9 +789,6 @@ Wonder Atlas hard-contract check
     min-height: 650px;
     padding: 48px;
     place-items: center;
-    background:
-      radial-gradient(circle at 50% 32%, color-mix(in oklab, var(--blue) 12%, transparent), transparent 33%),
-      var(--surface-soft);
   }
 
   .empty-card {
@@ -928,7 +806,7 @@ Wonder Atlas hard-contract check
     position: relative;
     min-height: 410px;
     overflow: clip;
-    background: color-mix(in oklab, var(--violet) 10%, var(--surface-soft));
+    background: color-mix(in oklab, var(--wa) 5%, var(--surface));
     border-right: 1px solid var(--line-soft);
   }
 
@@ -967,36 +845,6 @@ Wonder Atlas hard-contract check
     margin-top: 23px;
     flex-wrap: wrap;
     gap: 8px;
-  }
-
-  .atlas-footer {
-    display: flex;
-    min-height: 62px;
-    padding: 14px 20px;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    color: var(--quiet);
-    background: var(--surface);
-    border-top: 1px solid var(--line-soft);
-    font-size: 10.5px;
-  }
-
-  .footer-mark {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
-    color: var(--muted);
-    font-weight: 650;
-  }
-
-  .footer-mark::before {
-    width: 7px;
-    height: 7px;
-    content: "";
-    background: var(--green);
-    border-radius: 50%;
-    box-shadow: 0 0 0 4px color-mix(in oklab, var(--green) 10%, transparent);
   }
 
   html[data-motion="gentle"] .moon-orbit {
@@ -1042,6 +890,22 @@ Wonder Atlas hard-contract check
     }
   }
 
+  @media (prefers-reduced-motion: no-preference) {
+    .progress-ring .done {
+      transition: stroke-dasharray 700ms var(--k-spring, var(--ease));
+    }
+
+    .scene-coordinate.pop {
+      animation: wa-stamp 560ms var(--k-spring, var(--ease));
+    }
+
+    @keyframes wa-stamp {
+      0% { transform: scale(.6) rotate(-8deg); }
+      60% { transform: scale(1.14) rotate(2deg); }
+      100% { transform: none; }
+    }
+  }
+
   @media (prefers-reduced-motion: reduce) {
     .moon-orbit,
     .float-one,
@@ -1057,25 +921,6 @@ Wonder Atlas hard-contract check
   }
 
   @media (max-width: 920px) {
-    .topbar {
-      flex-wrap: wrap;
-    }
-
-    .progress-pill {
-      order: 3;
-      width: 100%;
-      /* Align the wrapped live count with copy after the kit's 34px mark + 11px gap. */
-      margin-left: 45px;
-      justify-content: flex-start;
-      border: 0;
-      background: transparent;
-      padding-block: 0;
-    }
-
-    .top-actions {
-      margin-left: auto;
-    }
-
     .hero {
       grid-template-columns: minmax(0, 1.05fr) minmax(320px, .95fr);
     }
@@ -1089,12 +934,31 @@ Wonder Atlas hard-contract check
     }
 
     .portal-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
     }
 
     .portal:nth-child(4n + 2),
     .portal:nth-child(4n + 4) {
+      margin-top: 0;
+    }
+
+    .portal:nth-child(3n + 2) {
+      margin-top: 26px;
+    }
+
+    .portal-art {
+      height: 150px;
+    }
+  }
+
+  @media (max-width: 700px) {
+    .portal-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .portal:nth-child(3n + 2) {
       margin-top: 0;
     }
 
@@ -1103,11 +967,9 @@ Wonder Atlas hard-contract check
     }
 
     .portal-art {
-      height: 190px;
+      height: 170px;
     }
-  }
 
-  @media (max-width: 700px) {
     .hero {
       grid-template-columns: 1fr;
     }
@@ -1135,10 +997,6 @@ Wonder Atlas hard-contract check
       align-items: flex-start;
       flex-direction: column;
       gap: 8px;
-    }
-
-    .trail::before {
-      left: 50%;
     }
 
     .portal-grid[data-count="1"] {
@@ -1174,14 +1032,10 @@ Wonder Atlas hard-contract check
 
   @media (max-width: 500px) {
     .topbar {
+      flex-wrap: wrap;
       min-height: 0;
       padding: 12px;
       gap: 10px;
-    }
-
-    .brand-copy p {
-      max-width: 165px;
-      font-size: 10px;
     }
 
     .top-actions {
@@ -1300,13 +1154,7 @@ Wonder Atlas hard-contract check
     }
 
     .portal-meta {
-      font-size: 7.5px;
-    }
-
-    .atlas-footer {
-      align-items: flex-start;
-      flex-direction: column;
-      gap: 6px;
+      font-size: 10.5px;
     }
 
     .empty-card {
@@ -1327,10 +1175,6 @@ Wonder Atlas hard-contract check
   }
 
   @media (max-width: 370px) {
-    .brand-copy p {
-      display: none;
-    }
-
     .progress-pill #progressText {
       max-width: none;
       overflow: visible;
@@ -1355,7 +1199,7 @@ Wonder Atlas hard-contract check
     .scene-category,
     .scene-coordinate {
       padding-inline: 7px;
-      font-size: 7.5px;
+      font-size: 10px;
     }
 
     .scene-caption span {
@@ -1395,13 +1239,11 @@ Wonder Atlas hard-contract check
       </svg>
     </div>
     <div class="brand-copy k-appcopy">
-      <span class="eyebrow k-eyebrow" data-i18n="appEyebrow">World explorer</span>
       <h1 data-i18n="appName">Wonder Atlas</h1>
-      <p data-i18n="appSubtitle">A map made from real questions</p>
     </div>
 
     <div class="progress-pill" aria-live="polite">
-      <span class="progress-ring" id="progressRing" aria-hidden="true"></span>
+      <svg class="progress-ring" viewBox="0 0 26 26" aria-hidden="true"><circle class="track" cx="13" cy="13" r="10"></circle><circle class="done" id="progressRing" cx="13" cy="13" r="10" pathLength="100" stroke-dasharray="0 100"></circle></svg>
       <span id="progressText">0 of 0 explored</span>
     </div>
 
@@ -1456,7 +1298,6 @@ Wonder Atlas hard-contract check
       </div>
 
       <article class="answer-panel">
-        <p class="answer-kicker" data-i18n="currentWonder">Current wonder</p>
         <h2 id="heroQuestion" tabindex="-1">Why does the Moon follow me?</h2>
         <p class="answer" id="heroAnswer"></p>
         <div class="big-idea">
@@ -1487,7 +1328,6 @@ Wonder Atlas hard-contract check
     <section class="trail">
       <div class="trail-header">
         <div>
-          <span class="eyebrow" data-i18n="atlasTrail">Atlas trail</span>
           <h2 data-i18n="chooseQuestion">Pick another question</h2>
           <p data-i18n="trailBody">Follow any path. The atlas grows whenever you ask why.</p>
         </div>
@@ -1497,10 +1337,6 @@ Wonder Atlas hard-contract check
       <div class="portal-grid" id="portalGrid"></div>
     </section>
 
-    <footer class="atlas-footer">
-      <span class="footer-mark" data-i18n="footerPrivate">Your questions stay in your own atlas.</span>
-      <span data-i18n="footerQuiet">No feed. No ads. Just things you chose to understand.</span>
-    </footer>
   </div>
 </main>
 
@@ -1510,18 +1346,14 @@ Wonder Atlas hard-contract check
   const STR = {
     en: {
       metaDescription: "Keep the questions that make you stop, look closer, and understand the world a little better.",
-      appEyebrow: "World explorer",
       appName: "Wonder Atlas",
-      appSubtitle: "A map made from real questions",
       surprise: "Surprise me",
       addQuestion: "Add a question",
-      currentWonder: "Current wonder",
       bigIdea: "The big idea",
       tryIt: "Try it",
       markExplored: "Mark explored",
       explored: "Explored",
       goDeeper: "Go deeper with AI",
-      atlasTrail: "Atlas trail",
       chooseQuestion: "Pick another question",
       trailBody: "Follow any path. The atlas grows whenever you ask why.",
       allWonders: "All wonders",
@@ -1533,8 +1365,6 @@ Wonder Atlas hard-contract check
       done: "Explored",
       openQuestion: "Open: {question}",
       filtersAria: "Question categories",
-      footerPrivate: "Your questions stay in your own atlas.",
-      footerQuiet: "No feed. No ads. Just things you chose to understand.",
       emptyEyebrow: "The first waypoint",
       emptyTitle: "Every atlas begins with one good question.",
       emptyBody: "Ask about something you noticed. The AI can answer clearly, add a small safe way to investigate it, and keep the question here for you.",
@@ -1550,18 +1380,14 @@ Wonder Atlas hard-contract check
     },
     zh: {
       metaDescription: "把那些让你停下来、再看一眼、想真正弄懂世界的问题留在自己的地图里。",
-      appEyebrow: "世界探索者",
       appName: "奇问地图",
-      appSubtitle: "由真实问题长成的地图",
       surprise: "随机探索",
       addQuestion: "添加问题",
-      currentWonder: "正在探索",
       bigIdea: "关键原理",
       tryIt: "试一试",
       markExplored: "标记已探索",
       explored: "已探索",
       goDeeper: "和 AI 继续深入",
-      atlasTrail: "探索路线",
       chooseQuestion: "选择另一个问题",
       trailBody: "沿任何方向出发。每一次追问都会让地图继续生长。",
       allWonders: "全部奇问",
@@ -1573,8 +1399,6 @@ Wonder Atlas hard-contract check
       done: "已探索",
       openQuestion: "打开：{question}",
       filtersAria: "问题分类",
-      footerPrivate: "你的问题保存在自己的地图里。",
-      footerQuiet: "没有信息流，没有广告，只有你真正想弄懂的事。",
       emptyEyebrow: "第一个地点",
       emptyTitle: "每一张地图，都从一个好问题开始。",
       emptyBody: "问一件你刚刚留意到的事。AI 会清楚回答，附上一个安全的小观察，并把问题留在这里。",
@@ -1791,6 +1615,8 @@ Wonder Atlas hard-contract check
   };
 
   let latestState = { items: [] };
+  // explored flips we wrote and have not yet seen come back: the UI shows them at once.
+  const pending = new Map();
   let selectedId = "";
   let activeCategory = "All";
   let selectedItem = null;
@@ -1871,6 +1697,11 @@ Wonder Atlas hard-contract check
 
   function orderedItems(state) {
     return (Array.isArray(state && state.items) ? state.items : [])
+      .map(function (item) {
+        return item && pending.has(item.id)
+          ? Object.assign({}, item, { fields: Object.assign({}, item.fields, { explored: pending.get(item.id) }) })
+          : item;
+      })
       .filter(function (item) {
         return item && item.fields && String(item.fields.question || "").trim();
       })
@@ -1968,13 +1799,38 @@ Wonder Atlas hard-contract check
     });
   }
 
+  function doneMark() {
+    const done = document.createElement("span");
+    done.className = "portal-done";
+    done.textContent = "✓ " + t("done");
+    return done;
+  }
+
   function renderPortals(items) {
-    nodes.portalGrid.innerHTML = "";
     const visible = activeCategory === "All"
       ? items
       : items.filter(function (item) { return item.fields.category === activeCategory; });
     nodes.portalGrid.dataset.count = String(visible.length);
     nodes.trailCount.textContent = t(visible.length === 1 ? "waypointCountOne" : "waypoints", { count: visible.length });
+    // Same portals as last time? Update selection and explored marks in place — rebuilding would
+    // restart every scene's drift and pulse on each refresh.
+    const sig = JSON.stringify([language(), visible.map(function (item) {
+      return [item.id, item.fields.question, item.fields.category, sceneKey(item.fields.scene), items.indexOf(item)];
+    })]);
+    if (nodes.portalGrid.dataset.sig === sig) {
+      nodes.portalGrid.querySelectorAll(".portal").forEach(function (portal) {
+        const item = visible.find(function (row) { return row.id === portal.dataset.id; });
+        if (!item) return;
+        portal.setAttribute("aria-pressed", String(item.id === selectedId));
+        const meta = portal.querySelector(".portal-meta");
+        const mark = meta.querySelector(".portal-done");
+        if (item.fields.explored && !mark) meta.appendChild(doneMark());
+        if (!item.fields.explored && mark) mark.remove();
+      });
+      return;
+    }
+    nodes.portalGrid.dataset.sig = sig;
+    nodes.portalGrid.innerHTML = "";
 
     visible.forEach(function (item) {
       const fields = item.fields;
@@ -1982,6 +1838,7 @@ Wonder Atlas hard-contract check
       const portal = document.createElement("button");
       portal.type = "button";
       portal.className = "portal scene-host";
+      portal.dataset.id = item.id;
       portal.dataset.scene = sceneKey(fields.scene);
       portal.setAttribute("aria-pressed", String(item.id === selectedId));
       portal.setAttribute("aria-label", t("openQuestion", { question: fields.question }));
@@ -2001,12 +1858,7 @@ Wonder Atlas hard-contract check
       const category = document.createElement("span");
       category.textContent = categoryLabel(fields.category);
       meta.appendChild(category);
-      if (fields.explored) {
-        const done = document.createElement("span");
-        done.className = "portal-done";
-        done.textContent = "✓ " + t("done");
-        meta.appendChild(done);
-      }
+      if (fields.explored) meta.appendChild(doneMark());
       const question = document.createElement("h3");
       question.textContent = fields.question;
       copy.append(meta, question);
@@ -2030,9 +1882,21 @@ Wonder Atlas hard-contract check
     const scene = sceneKey(fields.scene);
     nodes.scenePanel.dataset.scene = scene;
     nodes.scenePanel.setAttribute("aria-label", fields.question);
-    nodes.sceneArt.innerHTML = sceneMarkup(scene);
+    if (nodes.sceneArt.dataset.scene !== scene) {
+      nodes.sceneArt.dataset.scene = scene;
+      nodes.sceneArt.innerHTML = sceneMarkup(scene);
+    }
     nodes.sceneCategory.textContent = categoryLabel(fields.category);
-    nodes.sceneCoordinate.textContent = t("waypoint", { number: String(index).padStart(2, "0") });
+    const waypoint = t("waypoint", { number: String(index).padStart(2, "0") });
+    const wasDone = nodes.sceneCoordinate.classList.contains("is-done");
+    nodes.sceneCoordinate.textContent = fields.explored ? "✓ " + waypoint : waypoint;
+    nodes.sceneCoordinate.classList.toggle("is-done", !!fields.explored);
+    if (fields.explored && !wasDone && nodes.sceneCoordinate.dataset.id === item.id) {
+      nodes.sceneCoordinate.classList.remove("pop");
+      void nodes.sceneCoordinate.offsetWidth;
+      nodes.sceneCoordinate.classList.add("pop");
+    }
+    nodes.sceneCoordinate.dataset.id = item.id;
     nodes.sceneCaption.textContent = t("sceneCaption");
     nodes.heroQuestion.textContent = fields.question;
     nodes.heroAnswer.textContent = String(fields.short_answer || "");
@@ -2045,15 +1909,20 @@ Wonder Atlas hard-contract check
   }
 
   function render(state) {
-    latestState = state || { items: [] };
+    latestState = state || latestState || { items: [] };
+    (Array.isArray(latestState.items) ? latestState.items : []).forEach(function (item) {
+      if (pending.has(item.id) && !!item.fields.explored === pending.get(item.id)) pending.delete(item.id);
+    });
     applyLanguage();
     document.documentElement.dataset.motion = oma.pref("scene_motion", "gentle") === "still" ? "still" : "gentle";
     document.documentElement.dataset.density = String(oma.pref("density", "comfortable") || "comfortable");
     const items = orderedItems(latestState);
     const explored = items.filter(function (item) { return !!item.fields.explored; }).length;
-    const degrees = items.length ? Math.round((explored / items.length) * 360) : 0;
-    nodes.progressRing.style.setProperty("--progress", String(degrees) + "deg");
-    nodes.progressText.textContent = t("progress", { done: explored, total: items.length });
+    const percent = items.length ? Math.round((explored / items.length) * 100) : 0;
+    nodes.progressRing.style.strokeDasharray = percent + " " + (100 - percent);
+    nodes.progressRing.style.strokeOpacity = percent ? "1" : "0";
+    document.querySelector(".progress-pill").hidden = !items.length;
+    nodes.progressText.innerHTML = t("progress", { done: "<b>" + explored + "</b>", total: items.length });
     nodes.progressText.dataset.short = String(explored) + "/" + String(items.length);
     document.getElementById("surpriseButton").hidden = items.length < 2;
     document.getElementById("sceneSurpriseButton").hidden = items.length < 2;
@@ -2102,23 +1971,30 @@ Wonder Atlas hard-contract check
   };
   document.getElementById("surpriseButton").onclick = chooseSurprise;
   document.getElementById("sceneSurpriseButton").onclick = chooseSurprise;
+  // Optimistic: the waypoint stamps, the ring sweeps and the trail card ticks NOW; a refusal undoes it.
   nodes.exploreButton.onclick = async function () {
     if (!selectedItem) return;
     clearError();
-    nodes.exploreButton.disabled = true;
+    const id = selectedItem.id;
+    const next = !selectedItem.fields.explored;
+    pending.set(id, next);
+    render(latestState);
+    let failed = false;
     try {
-      const result = await oma.updateItem(selectedItem.id, { explored: !selectedItem.fields.explored });
-      if (writeResultFailed(result)) throw new Error(t("writeFailed"));
+      const result = await oma.updateItem(id, { explored: next });
+      failed = !result || writeResultFailed(result);
     } catch (error) {
-      showError(error && error.message ? error.message : t("writeFailed"));
-    } finally {
-      nodes.exploreButton.disabled = false;
+      failed = true;
+    }
+    if (failed) {
+      pending.delete(id);
+      showError(t("writeFailed"));
+      render(latestState);
     }
   };
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-  // card; absent = a widget in someone's conversation, where the card is ours to draw.
+  // `standalone` = the browser viewer or a panel host, which frame the page already; absent = a
+  // widget in someone's conversation. The `body:not(.standalone) .k-appbar` rule above reads it.
   if (oma.standalone) document.body.classList.add("standalone");
   oma.ready(render);
   oma.onChange(render);

@@ -7,8 +7,5 @@
     "date_format",
     "density",
     "confirm_delete"
-  ],
-  "stage": {
-    "width": "wide"
-  }
+  ]
 }

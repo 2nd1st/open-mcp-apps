@@ -10,7 +10,7 @@
 //     answered -32601 Method not found on every legacy wire era the SDK negotiates. Every shipping
 //     host today speaks a legacy era. Measured 2026-08-16.
 //   · `tools.listChanged` was written as a CONDITIONAL declaration (`...(dynamicTools ? {…} : {})`),
-//     meant to say `true` only when the per-app openers are on. It said `true` in every mode: an
+//     meant to say `true` only when per-app openers are possible. It said `true` in every mode: an
 //     ABSENT key is not `false` to the SDK — registering a tool makes it fill the bit with `?? true`.
 //     The comment above that line described a behaviour that had never once been observed.
 // So the shape here is: connect, read what was declared, then EXERCISE what was declared, on the
@@ -37,44 +37,57 @@ const ok = (name, cond, detail = "") => {
 
 // A ui:// URI that exists once the seeds are in — any seeded app will do; habit-streaks ships.
 const URI = "ui://open-mcp-apps/habit-streaks.html";
-const connect = async (dynamicTools, clientOpts = {}) => {
+const connect = async (clientOpts = {}) => {
   const client = new Client({ name: "capabilities", version: "1.0.0" }, clientOpts);
   await client.connect(new StdioClientTransport({
     command: "node",
     args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: DB, OMA_HOST: "capabilities", OMA_VIEWER: "0",
-      OMA_DYNAMIC_TOOLS: dynamicTools ? "1" : "" },
+    env: { ...process.env, OMA_DB: DB, OMA_HOST: "capabilities", OMA_VIEWER: "0" },
   }));
   return client;
 };
+// `dynamicTools: false` is an embedder's option (no env switch reaches it), so that mode is
+// exercised in-process over the same SDK client.
+const connectFixed = async () => {
+  const { InMemoryTransport } = await import("@modelcontextprotocol/client");
+  const { createEngine } = await import("../index.mjs");
+  const { openStore } = await import("../src/store.mjs");
+  const store = openStore(DB + ".fixed");
+  const [ct, st] = InMemoryTransport.createLinkedPair();
+  await createEngine(store, { dynamicTools: false }).connect(st);
+  const client = new Client({ name: "capabilities", version: "1.0.0" });
+  await client.connect(ct);
+  return { client, done: async () => { await client.close(); store.close();
+    for (const f of [DB + ".fixed", DB + ".fixed-wal", DB + ".fixed-shm"]) if (existsSync(f)) unlinkSync(f); } };
+};
 const attempt = async (fn) => { try { return { ok: true, value: await fn() }; } catch (e) { return { ok: false, code: e?.code, message: String(e?.message ?? e) }; } };
 
-console.log("1. tools.listChanged says what the mode does — off");
+console.log("1. tools.listChanged says what the mode does — dynamicTools:false");
 {
-  const c = await connect(false);
+  const { client: c, done } = await connectFixed();
   const caps = c.getServerCapabilities();
-  // With the per-app openers OFF the tool surface is fixed for the life of the process, and the
+  // With pinning OFF the tool surface is fixed for the life of the process, and the
   // declaration must say so. Pinned as an exact object: a missing key would be filled in as
   // `true` by the SDK, which is precisely the failure this line exists to catch.
-  ok("OMA_DYNAMIC_TOOLS off ⇒ tools: {listChanged: false}",
+  ok("dynamicTools:false ⇒ tools: {listChanged: false}",
     JSON.stringify(caps?.tools) === JSON.stringify({ listChanged: false }),
     `declared ${JSON.stringify(caps?.tools)} — a fixed surface must not invite re-listing`);
-  await c.close();
+  await done();
 }
 
-console.log("2. tools.listChanged says what the mode does — on");
+console.log("2. tools.listChanged says what the mode does — default (pinning)");
 {
-  const c = await connect(true);
+  const c = await connect();
   const caps = c.getServerCapabilities();
-  ok("OMA_DYNAMIC_TOOLS on ⇒ tools: {listChanged: true}",
+  ok("default ⇒ tools: {listChanged: true}",
     JSON.stringify(caps?.tools) === JSON.stringify({ listChanged: true }),
-    `declared ${JSON.stringify(caps?.tools)} — with per-app openers the surface DOES move on save_app`);
+    `declared ${JSON.stringify(caps?.tools)} — pinning or unpinning an app DOES move the surface`);
   await c.close();
 }
 
 console.log("3. resources.subscribe is honoured on the legacy wire (what shipping hosts speak)");
 {
-  const c = await connect(false);
+  const c = await connect();
   const caps = c.getServerCapabilities();
   ok("resources: {subscribe: true, listChanged: true} declared",
     JSON.stringify(caps?.resources) === JSON.stringify({ subscribe: true, listChanged: true }),
@@ -96,7 +109,7 @@ console.log("4. the modern wire replaces the verb, and the replacement exists");
   // Pinned 2026-07-28: `resources/subscribe` is gone from that era by design and
   // `subscriptions/listen` is what the same declared bit entitles a client to. Both facts are
   // asserted: the old verb must be refused BY ERA (not by absence), the new one must be routed.
-  const c = await connect(false, { versionNegotiation: { mode: { pin: "2026-07-28" } } });
+  const c = await connect({ versionNegotiation: { mode: { pin: "2026-07-28" } } });
   const old = await attempt(() => c.subscribeResource({ uri: URI }));
   ok("resources/subscribe refused by era on 2026-07-28 (not -32601)",
     !old.ok && old.code === "METHOD_NOT_SUPPORTED_BY_PROTOCOL_VERSION",
@@ -124,7 +137,7 @@ console.log("5. prompts.listChanged is the explicit false, both eras");
   // suite is the one place that reads the WHOLE capability object, and a reader should not need
   // two files to learn what the engine declares.
   for (const [label, opts] of [["legacy", {}], ["2026-07-28", { versionNegotiation: { mode: { pin: "2026-07-28" } } }]]) {
-    const c = await connect(false, opts);
+    const c = await connect(opts);
     ok(`${label}: prompts: {listChanged: false}`,
       JSON.stringify(c.getServerCapabilities()?.prompts) === JSON.stringify({ listChanged: false }));
     await c.close();

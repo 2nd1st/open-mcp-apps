@@ -26,8 +26,8 @@ import { Client, ProtocolError } from "@modelcontextprotocol/client";
 import { fileURLToPath } from "node:url";
 import { dirname, join, resolve as resolvePath } from "node:path";
 import { openStore, APP_NAME_RE, cspFor } from "./store.mjs";
-import { createEngine, hostContext, tierOf, defaultCollectionFor, stageWidthFor, stageDisplayFor } from "./engine.mjs";
-import { wrapApp, wrapLoader, stampStage } from "./shell.mjs";
+import { createEngine, hostContext, tierOf, defaultCollectionFor, liveFrameFor } from "./engine.mjs";
+import { wrapApp, wrapLoader } from "./shell.mjs";
 import { openFileChannel } from "./files.mjs";
 import { resolveAssets, appAssetReader } from "./assets.mjs";
 import { runnerCspFor } from "./runner.mjs";
@@ -80,10 +80,16 @@ const INDEX_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:;
 // a statement about how big an app is allowed to be, and it must stay comfortably above anything a
 // real save_app or file chunk sends.
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
+// The body stays BYTES until it is whole: a network chunk can end inside a multi-byte character,
+// and decoding chunk by chunk turned each half into U+FFFD (an AI's long Chinese write was stored
+// as "回���"). Counting bytes also makes the limit mean what its name says.
 const readBody = (req) => new Promise((resolve, reject) => {
-  let data = "";
-  req.on("data", (c) => { data += c; if (data.length > MAX_BODY_BYTES) { reject(new Error("body too large")); req.destroy(); } });
-  req.on("end", () => resolve(data));
+  const chunks = []; let size = 0;
+  req.on("data", (c) => {
+    size += c.length; chunks.push(c);
+    if (size > MAX_BODY_BYTES) { reject(new Error("body too large")); req.destroy(); }
+  });
+  req.on("end", () => resolve(Buffer.concat(chunks, size).toString("utf8")));
   req.on("error", reject);
 });
 
@@ -165,7 +171,7 @@ const server = http.createServer(async (req, res) => {
 
     // ---- plain RPC for the standalone shell ----
     if (url.pathname === "/rpc" && req.method === "POST") {
-      const { name, arguments: args } = JSON.parse((await readBody(req)) || "{}");
+      const { name, arguments: args, _meta } = JSON.parse((await readBody(req)) || "{}");
       if (!name) return json(res, 400, { isError: true, content: [{ type: "text", text: "name required" }] });
       // Internal `_` methods (write-set D): the Data pane's non-tool verbs — undo and the
       // via-bearing ledger view. Deliberately NOT MCP tools (the ledger stays off the AI face,
@@ -192,7 +198,9 @@ const server = http.createServer(async (req, res) => {
       // outer handler turns a retired tool name in stale app code into a bare HTTP 500, and the
       // shell runtime surfaces "HTTP 500" with the useful message discarded.
       try {
-        const result = await viewerClient.callTool({ name, arguments: args || {} });
+        // `_meta` passes through as the request's own: it is how the shell runtime says the APP
+        // is reading (runtime-core READER_META_KEY), so a viewer's page is sized like a widget's.
+        const result = await viewerClient.callTool({ name, arguments: args || {}, ...(_meta && typeof _meta === "object" ? { _meta } : {}) });
         return json(res, 200, result);
       } catch (e) {
         if (e instanceof ProtocolError)
@@ -258,24 +266,24 @@ const server = http.createServer(async (req, res) => {
       if (!comp) return html(res, 404, `<h3>No app "${view[1]}"</h3>`);
       // Same binding rule the open_app tool uses — one answer to "what does this app open on".
       const collection = url.searchParams.get("collection") || defaultCollectionFor(comp);
-      // ?chrome=0 — serve the BARE widget: no viewer bar, no page stage (shell-runtime.js
+      // ?chrome=0 — serve the BARE widget: no viewer bar, no page card (shell-runtime.js
       // `SA.chrome !== false`). The switch already existed for the hosted shell; the URL is
       // how a LOCAL embedder reaches it. Both parts of that chrome are wrong inside a host
       // panel: the bar carries an "All apps" link OUT of the app — which a shell that opened
-      // this app as a dedicated place must not offer — and the stage draws a page-sized card
+      // this app as a dedicated place must not offer — and the card draws a page-sized frame
       // around a widget that is already framed by the panel it sits in. Opt-in and default-off:
       // a person who opens /view in a tab still gets the tab's chrome.
       //
-      // EXCEPT for an app that declared itself a display (`manifest.stage.display` — contracts.mjs
-      // stageDisplayFor). That declaration already says what the chrome asks: this app IS the
+      // EXCEPT for an app that declared itself a live frame (`manifest.live_frame` — contracts.mjs
+      // liveFrameFor). That declaration already says what the chrome asks: this app IS the
       // frame, not a widget someone framed. A wall on a spare tablet with an "← All apps" bar
       // above it and a rounded card under it is the viewer decorating a screen the app was written
-      // to own, edge to edge — the same double bezel the stage contract removed one level down.
+      // to own, edge to edge.
       // So the default flips for those apps only, and `?chrome=1` is the way back: a person
       // developing a wall still wants a tab to look like a tab. Both doors below read this one
       // answer, because a display served through the loader (non-local tier) is the same screen.
       const chromeParam = url.searchParams.get("chrome");
-      const chrome = chromeParam === "0" || (chromeParam !== "1" && stageDisplayFor(comp)) ? { chrome: false } : {};
+      const chrome = chromeParam === "0" || (chromeParam !== "1" && liveFrameFor(comp)) ? { chrome: false } : {};
       // ?nav=intent — app→app links stop navigating this document and become a message to the
       // embedder instead (shell-runtime.js SA.navIntent). Orthogonal to chrome=0 on purpose:
       // chrome is about what this page DRAWS, this is about who decides where a link GOES. A
@@ -309,20 +317,8 @@ const server = http.createServer(async (req, res) => {
       // bundle separately, and a document leaving the store is where they become one. The channel
       // is memoised per store, so this is the SAME upload/ref table the engine's file_* tools use —
       // not a second view of the file plane.
-      // The stage class goes on the TEMPLATE, before the bundle is inlined into it — the class
-      // belongs on the app's own <body>, and a bundle's bytes only ever MENTION one (measured:
-      // React's dev build says "<body>" inside an error string and had it rewritten). Same order
-      // tools/apps.mjs serveUi keeps for the other two seams.
       return html(res, 200, wrapApp(
-        await resolveAssets(stampStage(comp.ui, stageWidthFor(comp)),
-          appAssetReader(openFileChannel(store), view[1])), {
-        // The width track the app declared, written onto its body for the kit (contracts.mjs
-        // stageWidthFor / shell.mjs stampStage). Same rule the ui:// resource applies, from the
-        // same function — a second copy would be a second answer waiting to disagree. Passed to
-        // wrapApp as well because a FRAGMENT template has no body of its own to stamp: the one
-        // wrapApp builds around it is where the class lands. stampStage is idempotent, so a
-        // full-document template is stamped once, not twice.
-        stage: stageWidthFor(comp),
+        await resolveAssets(comp.ui, appAssetReader(openFileChannel(store), view[1])), {
         // WHO WE ARE, as a document fact (shell-runtime compName()). Without it the runtime learns
         // this app's name only once the standalone block below has been read and `state.app`
         // assigned — which happens AFTER the early-error buffer is drained, so a bundle that

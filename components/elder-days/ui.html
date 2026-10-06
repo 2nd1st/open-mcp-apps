@@ -8,8 +8,52 @@
 <meta name="description" content="A clear daily care record for today's medicines, a 14-day blood-pressure trend, medicine supply, and family hand-off.">
 
 <style>
-  /* Width, centering, ground and outer padding belong to the kit's stage contract now. This
-     app keeps only its larger, care-oriented reading scale on body. */
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-s2:8px;--k-s3:12px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+  .k-card{position:relative;border:1px solid var(--color-border-primary);border-radius:var(--border-radius-lg,14px);background:var(--color-background-primary);padding:var(--k-s3) 14px;transition:transform var(--k-t) var(--k-ease),box-shadow var(--k-t) var(--k-ease),border-color var(--k-t) var(--k-ease)}
+  .k-card.is-click{cursor:pointer}
+  .k-card.is-click:hover{transform:translateY(-1px);box-shadow:var(--shadow-md,var(--shadow-sm));border-color:color-mix(in oklab,var(--k-accent) 28%,transparent)}
+  .k-card.is-click:active{transform:translateY(0) scale(.985);box-shadow:none}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-tabs{display:inline-flex;gap:2px;padding:3px;background:var(--color-background-secondary);border-radius:var(--border-radius-md,10px)}
+  .k-tab{display:inline-flex;align-items:center;gap:6px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:550;padding:5px 12px;border-radius:var(--border-radius-sm,7px);transition:background var(--k-t) var(--k-ease),color var(--k-t)}
+  .k-tab.on{background:var(--color-background-primary);color:var(--color-text-primary);box-shadow:var(--shadow-sm)}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
+  /* Width and centering come from `.k-stage` above. Body carries this app's larger,
+     care-oriented reading scale. */
   body {
     font-size: 17px;
     line-height: 1.5;
@@ -34,29 +78,45 @@
     display: none !important;
   }
 
-  /* `.app` is the `.k-stage` root. There was no self-drawn frame to remove; the grid and gap stay
-     because they arrange the daybook's own sections. */
+  /* `.app` is the `.k-stage` root; the grid and gap arrange the daybook's own sections. */
   .app {
+    /* The daybook's one identity colour: terracotta, a warm clay that reads as care rather than
+       alarm. It marks the doses ring, the current period, a recorded dose and the one button that
+       records it. Everything structural stays on host tokens; warning keeps its own meaning. */
+    --ed-accent: light-dark(#a8502f, #f0a585);
+    --ed-on-accent: light-dark(#ffffff, #2b1208);
+    --ed-tint: color-mix(in oklab, var(--ed-accent) 10%, transparent);
+    --k-accent: var(--ed-accent);
     display: grid;
     gap: var(--k-s3);
   }
 
-  /* `.app-bar` is `.k-appbar` now: the kit owns its row, spacing, mark box, type scale and the
-     chat-only rule underneath. The minimum height remains part of this app's larger tap target. */
+  .app .k-btn:not(.sec):not(.ghost):not(.danger) {
+    background: var(--ed-accent);
+    color: var(--ed-on-accent);
+  }
+
+  /* `.app-bar` is a `.k-appbar` (rules above); the minimum height is part of this app's larger
+     tap target. */
   .app-bar {
     min-height: 64px;
   }
 
   /* The mark keeps its paint. Identity is content; the contract supplies only its box. */
   .app-mark {
-    border: 1px solid var(--color-border-primary);
-    color: var(--color-text-info, var(--color-ring-primary));
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 9%, transparent);
+    color: var(--ed-accent);
+    background: var(--ed-tint);
   }
 
   .time-badge {
     margin-left: auto;
     white-space: nowrap;
+  }
+
+  /* `.k-badge.info` mixes its tint from the :root accent, before this app's accent exists — pin it here. */
+  .app .k-badge.info {
+    background: var(--ed-tint);
+    color: var(--ed-accent);
   }
 
   .calendar-sheet {
@@ -83,7 +143,7 @@
     min-height: 30px;
     align-items: center;
     margin-bottom: 4px;
-    color: var(--color-text-info, var(--color-ring-primary));
+    color: var(--ed-accent);
     font-weight: 750;
   }
 
@@ -148,7 +208,7 @@
   }
 
   .progress-fill {
-    stroke: var(--color-text-success, var(--color-ring-primary));
+    stroke: var(--ed-accent);
     stroke-linecap: round;
     stroke-dasharray: 251.2;
     stroke-dashoffset: 251.2;
@@ -264,8 +324,8 @@
   }
 
   .slot-block.current {
-    border: 2px solid var(--color-ring-primary);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 6%, var(--color-background-primary));
+    border: 2px solid var(--ed-accent);
+    background: color-mix(in oklab, var(--ed-accent) 6%, var(--color-background-primary));
   }
 
   .slot-name {
@@ -298,8 +358,8 @@
   }
 
   .med-row.done {
-    border-color: var(--color-text-success, var(--color-ring-primary));
-    background: color-mix(in oklab, var(--color-text-success, var(--color-ring-primary)) 9%, var(--color-background-primary));
+    border-color: color-mix(in oklab, var(--ed-accent) 55%, var(--color-border-secondary));
+    background: color-mix(in oklab, var(--ed-accent) 7%, var(--color-background-primary));
   }
 
   .med-row.late {
@@ -335,7 +395,7 @@
   }
 
   .med-state.ok {
-    color: var(--color-text-success, var(--color-ring-primary));
+    color: var(--ed-accent);
   }
 
   .med-state.warn {
@@ -350,10 +410,11 @@
     font-weight: 750;
   }
 
-  .med-action.taken {
-    color: var(--color-text-success, var(--color-ring-primary));
-    border-color: var(--color-text-success, var(--color-ring-primary));
+  .app .med-action.taken {
+    color: var(--ed-accent);
+    border-color: color-mix(in oklab, var(--ed-accent) 45%, transparent);
     background: transparent;
+    opacity: 1;
   }
 
   .empty-large {
@@ -491,8 +552,8 @@
   }
 
   .bp-board {
-    --sys-line: var(--color-text-info, var(--color-ring-primary));
-    --dia-line: var(--color-text-success, var(--color-ring-primary));
+    --sys-line: var(--ed-accent);
+    --dia-line: var(--color-text-secondary);
     overflow: hidden;
     border: 1px solid var(--color-border-secondary);
     border-radius: var(--border-radius-sm, 6px);
@@ -575,19 +636,19 @@
     width: 24px;
     height: 11px;
     border: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-text-info, var(--color-ring-primary)) 8%, transparent);
+    background: var(--ed-tint);
   }
 
   .chart-wrap {
     position: relative;
-    min-height: 300px;
     padding: 0 8px 6px;
   }
 
+  /* Height follows the viewBox the chart draws for its own width (300 wide-screen, 240 narrow). */
   .bp-chart {
     display: block;
     width: 100%;
-    height: 300px;
+    height: auto;
     overflow: visible;
   }
 
@@ -645,10 +706,18 @@
   }
 
   .trend-badge {
+    flex: none;
     min-height: 30px;
     align-self: flex-start;
-    white-space: normal;
-    text-align: center;
+    white-space: nowrap;
+  }
+
+  #panel-vitals .section-head {
+    flex-wrap: wrap;
+  }
+
+  #panel-vitals .section-head > div {
+    flex: 1 1 18em;
   }
 
   .supply-list {
@@ -706,7 +775,7 @@
     width: 0;
     height: 100%;
     border-radius: inherit;
-    background: var(--color-text-success, var(--color-ring-primary));
+    background: var(--ed-accent);
   }
 
   .supply-fill.low {
@@ -760,18 +829,28 @@
       transform: scale(.98);
     }
 
-    .med-row.done .med-action,
+    .med-row.just-taken .med-action,
     .supply-row.just-restocked {
-      animation: saved-pop 260ms cubic-bezier(.34, 1.56, .64, 1);
+      animation: saved-pop 320ms var(--k-spring, cubic-bezier(.34, 1.56, .64, 1));
+    }
+
+    .med-row.just-taken {
+      animation: taken-glow 700ms cubic-bezier(.2, .8, .3, 1);
+    }
+
+    @keyframes taken-glow {
+      0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--ed-accent) 35%, transparent); }
+      100% { box-shadow: 0 0 0 10px color-mix(in oklab, var(--ed-accent) 0%, transparent); }
     }
 
     @keyframes current-breathe {
-      0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--color-ring-primary) 0%, transparent); }
-      50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--color-ring-primary) 10%, transparent); }
+      0%, 100% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--ed-accent) 0%, transparent); }
+      50% { box-shadow: 0 0 0 5px color-mix(in oklab, var(--ed-accent) 12%, transparent); }
     }
 
     @keyframes saved-pop {
-      0% { transform: scale(.94); }
+      0% { transform: scale(.9); }
+      60% { transform: scale(1.04); }
       100% { transform: scale(1); }
     }
   }
@@ -837,8 +916,7 @@
     }
 
     .ring-label span {
-      margin-top: 3px;
-      font-size: 10px;
+      display: none;
     }
 
     .remaining-line {
@@ -985,11 +1063,6 @@
       font-size: 12.5px;
     }
 
-    .chart-wrap,
-    .bp-chart {
-      min-height: 235px;
-      height: 235px;
-    }
 
     .supply-row {
       grid-template-columns: minmax(0, 1fr) auto;
@@ -1108,7 +1181,6 @@
       </svg>
     </div>
     <div class="identity k-grow k-appcopy">
-      <p class="eyebrow k-eyebrow" id="eyebrow">DAILY CARE</p>
       <h1 id="app-title">Care Daybook</h1>
     </div>
     <span class="k-badge info time-badge" id="time-badge">Local time</span>
@@ -1270,7 +1342,6 @@
 
   const STR = {
     en: {
-      eyebrow: "DAILY CARE",
       appName: "Care Daybook",
       metaDescription: "A clear daily care record for medicines, a 14-day blood-pressure trend, medicine supply, and family hand-off.",
       today: "Today",
@@ -1286,7 +1357,7 @@
       supplyTab: "Supply",
       medsTitle: "Today's medicines",
       snapshotMedsTitle: "Medicines · {date}",
-      medsNote: "One large button records a dose. The current time period has a breathing outline.",
+      medsNote: "Tap once when a dose is taken — family and the AI see it too.",
       snapshotMedsNote: "Completed doses and the remaining open slot are shown exactly as saved.",
       noMedicineTitle: "Start with the real medicine list",
       noMedicineBody: "Ask family or the AI to add the names, times, doses and current supply. Nothing is invented here.",
@@ -1353,7 +1424,6 @@
       supplyMeta: "{pills} pills · {daily} per day",
       restockBadge: "Time to restock",
       restockedButton: "Restocked +30",
-      restocking: "Updating…",
       askRestock: "Draft a family restock message",
       statusRefreshFailed: "Could not refresh all three data sets: {message}",
       statusTakenSaved: "Dose recorded and supply updated.",
@@ -1376,7 +1446,6 @@
       unknownError: "Unknown error"
     },
     zh: {
-      eyebrow: "日常照护",
       appName: "安心日常",
       metaDescription: "清楚查看服药记录、14 天血压趋势、剩余药量与家庭交接。",
       today: "今天",
@@ -1392,7 +1461,7 @@
       supplyTab: "药量",
       medsTitle: "今天的药",
       snapshotMedsTitle: "{date} 的药",
-      medsNote: "一个大按钮记录一次服药；当前时段会有呼吸描边。",
+      medsNote: "吃完点一下就记上，家人和 AI 都能看到。",
       snapshotMedsNote: "已完成与未记录的时段，均按这份快照原样显示。",
       noMedicineTitle: "先放进真实药单",
       noMedicineBody: "请家人或 AI 补上药名、时段、剂量和现有药量。这里不会自行编药。",
@@ -1459,7 +1528,6 @@
       supplyMeta: "剩 {pills} 片 · 每天 {daily}",
       restockBadge: "该补药了",
       restockedButton: "已补货 +30",
-      restocking: "正在更新…",
       askRestock: "整理一条家庭补药消息",
       statusRefreshFailed: "三份数据没有读完整：{message}",
       statusTakenSaved: "服药已记录，剩余药量也已扣减。",
@@ -1504,6 +1572,16 @@
   let statusState = null;
   let statusTimer = 0;
   let justRestocked = "";
+  // A tap shows its result at once; the ack corrects it. `localTaken` holds doses this device
+  // recorded that the collection has not echoed back yet (key: date · name · slot) — dropped the
+  // moment the refreshed data carries the check, or when the write is refused.
+  const localTaken = new Set();
+  // Supply the device just changed, keyed by medicine NAME (ids differ between the preview and a
+  // re-read), valid only while the stored row still has the version the change was based on.
+  const localPills = new Map();
+  let justTakenKey = "";
+  let scheduleSig = "";
+  const rowRefs = new Map();
 
   function uiLanguage() {
     const pref = String(oma.pref("locale", "auto") || "auto");
@@ -1701,7 +1779,8 @@
 
   async function writeTool(name, args) {
     const response = await oma.callTool(name, {
-      command_id: crypto.randomUUID(),
+      // randomUUID exists only in a secure context; a command id just has to be unique.
+      command_id: globalThis.crypto?.randomUUID ? crypto.randomUUID() : `ed-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`,
       actor: "human",
       ...args
     });
@@ -1756,6 +1835,13 @@
       const slot = String(check.fields?.slot || "");
       if (med && SLOT_ORDER.includes(slot)) map.set(`${med}\u0000${slot}`, check);
     }
+    for (const local of [...localTaken]) {
+      const [date, med, slot] = local.split("\u0000");
+      const key = `${med}\u0000${slot}`;
+      if (date !== iso) localTaken.delete(local);
+      else if (map.has(key) && !map.get(key).local) localTaken.delete(local);
+      else map.set(key, { local: true });
+    }
     return map;
   }
 
@@ -1774,7 +1860,6 @@
     document.title = t("appName");
     document.body.dataset.density = oma.pref("density", "comfortable");
     const pairs = [
-      ["eyebrow", "eyebrow"],
       ["app-title", "appName"],
       ["today-label", "today"],
       ["honesty", "honesty"],
@@ -1852,7 +1937,7 @@
     const box = el("div", "k-empty empty-large");
     const svg = svgNode("svg", { viewBox: "0 0 72 72", fill: "none", "aria-hidden": "true" });
     svg.append(svgNode("path", { stroke: "var(--color-text-tertiary)", "stroke-width": 2, d: "M18 11h36v50H18zM27 5v12M45 5v12M18 23h36M27 34h18M27 44h18" }));
-    svg.append(svgNode("path", { stroke: "var(--color-text-info, var(--color-ring-primary))", "stroke-width": 2, d: "M9 52h18M18 43v18" }));
+    svg.append(svgNode("path", { stroke: "var(--ed-accent)", "stroke-width": 2, d: "M9 52h18M18 43v18" }));
     box.append(svg, el("b", "", t("noMedicineTitle")), el("span", "", t("noMedicineBody")));
     const actions = el("div", "empty-actions");
     const ask = el("button", "k-btn", t("askAiSetup"));
@@ -1887,51 +1972,75 @@
     const importBox = document.getElementById("medicine-import");
     importBox.hidden = due.length > 0;
     if (!due.length) {
+      scheduleSig = "";
+      rowRefs.clear();
       renderMedicineEmpty(root);
       return;
     }
 
-    root.innerHTML = "";
     const checks = todayCheckMap();
     const snapshot = snapshotContext();
     const nowSlot = snapshot.active ? "" : currentSlot();
-    for (const slot of SLOT_ORDER) {
-      const entries = due.filter((entry) => entry.slot === slot);
-      if (!entries.length) continue;
-      const block = el("section", `slot-block${slot === nowSlot ? " current" : ""}`);
-      const heading = el("div", "slot-name");
-      heading.append(el("strong", "", slotLabel(slot)), el("span", "", t(`${slot}Hint`)));
-      const list = el("div", "slot-meds");
-      for (const { med } of entries) {
-        const key = `${med.fields.name}\u0000${slot}`;
-        const checked = checks.has(key);
-        const status = doseStatus(slot, checked);
-        const row = el("article", `k-card med-row${status === "done" ? " done" : status === "late" ? " late" : ""}`);
-        const copy = el("div", "med-copy");
-        copy.append(el("strong", "", med.fields.name));
-        const meta = el("div", "med-meta");
-        if (med.fields.dose) meta.append(el("span", "k-badge static", String(med.fields.dose)));
-        if (med.fields.note) meta.append(el("span", "", String(med.fields.note)));
-        copy.append(meta);
-        const state = el("div", `med-state${status === "done" ? " ok" : status === "late" ? " warn" : ""}`);
-        if (status === "done") state.textContent = t("taken");
-        if (status === "late") state.textContent = t("notYet");
-        if (status === "current") state.textContent = t("currentPeriod");
-        if (status === "future") state.textContent = t(snapshot.active ? "laterSnapshot" : "laterToday");
-        copy.append(state);
-        row.append(copy);
-        const snapshotOpen = snapshot.active && status !== "done";
-        const button = el("button", `k-btn${status === "done" ? " sec med-action taken" : " med-action"}`, status === "done" ? t("taken") : snapshotOpen ? t("openSnapshot") : t("takeButton"));
-        button.type = "button";
-        button.disabled = status === "done" || snapshotOpen;
-        if (status === "done") button.prepend(icon("M2.5 8.5l3.5 3.5 7.5-8.5"));
-        else button.onclick = () => markTaken(med, slot, button);
-        row.append(button);
-        list.append(row);
+    // Structure (which rows exist, their words) rebuilds only when it changes; a dose being
+    // recorded — here, by the AI, or by family elsewhere — updates its row in place, so nothing
+    // replays and the ring's own transition carries the moment.
+    const sig = JSON.stringify([uiLanguage(), nowSlot, snapshot.active, due.map(({ med, slot }) => [slot, med.fields.name, med.fields.dose || "", med.fields.note || ""])]);
+    if (sig !== scheduleSig) {
+      scheduleSig = sig;
+      rowRefs.clear();
+      root.innerHTML = "";
+      for (const slot of SLOT_ORDER) {
+        const entries = due.filter((entry) => entry.slot === slot);
+        if (!entries.length) continue;
+        const block = el("section", `slot-block${slot === nowSlot ? " current" : ""}`);
+        const heading = el("div", "slot-name");
+        heading.append(el("strong", "", slotLabel(slot)), el("span", "", t(`${slot}Hint`)));
+        const list = el("div", "slot-meds");
+        for (const { med } of entries) {
+          const row = el("article", "k-card med-row");
+          const copy = el("div", "med-copy");
+          copy.append(el("strong", "", med.fields.name));
+          const meta = el("div", "med-meta");
+          if (med.fields.dose) meta.append(el("span", "k-badge static", String(med.fields.dose)));
+          if (med.fields.note) meta.append(el("span", "", String(med.fields.note)));
+          const state = el("div", "med-state");
+          copy.append(meta, state);
+          const button = el("button", "k-btn med-action");
+          button.type = "button";
+          row.append(copy, button);
+          list.append(row);
+          rowRefs.set(`${med.fields.name}\u0000${slot}`, { row, state, button });
+        }
+        block.append(heading, list);
+        root.append(block);
       }
-      block.append(heading, list);
-      root.append(block);
     }
+
+    for (const { med, slot } of due) {
+      const key = `${med.fields.name}\u0000${slot}`;
+      const refs = rowRefs.get(key);
+      if (!refs) continue;
+      const status = doseStatus(slot, checks.has(key));
+      const { row, state, button } = refs;
+      row.classList.toggle("done", status === "done");
+      row.classList.toggle("late", status === "late");
+      row.classList.toggle("just-taken", key === justTakenKey);
+      state.className = `med-state${status === "done" ? " ok" : status === "late" ? " warn" : ""}`;
+      state.textContent = status === "done" ? t("taken")
+        : status === "late" ? t("notYet")
+        : status === "current" ? t("currentPeriod")
+        : t(snapshot.active ? "laterSnapshot" : "laterToday");
+      const snapshotOpen = snapshot.active && status !== "done";
+      // The filled terracotta button belongs to the dose that is due now (or overdue); later
+      // doses stay recordable but quiet, so the eye lands on the one that matters.
+      button.className = `k-btn med-action${status === "done" ? " sec taken" : status === "future" ? " sec" : ""}`;
+      button.replaceChildren();
+      if (status === "done") button.append(icon("M2.5 8.5l3.5 3.5 7.5-8.5"));
+      button.append(document.createTextNode(status === "done" ? t("taken") : snapshotOpen ? t("openSnapshot") : t("takeButton")));
+      button.disabled = status === "done" || snapshotOpen;
+      button.onclick = status === "done" || snapshotOpen ? null : () => markTaken(med, slot);
+    }
+    justTakenKey = "";
   }
 
   function decrementPerCheck(med) {
@@ -1941,31 +2050,43 @@
     return daily / slots;
   }
 
-  async function markTaken(med, slot, button) {
-    button.disabled = true;
-    button.textContent = t("saving");
+  async function markTaken(med, slot) {
     const iso = localIso(today());
+    const name = String(med.fields.name);
+    const localKey = `${iso}\u0000${name}\u0000${slot}`;
+    if (localTaken.has(localKey)) return;
+    // Optimistic: the row turns, the ring advances and the supply drops before the network
+    // answers. A refusal takes all three back.
+    localTaken.add(localKey);
+    justTakenKey = `${name}\u0000${slot}`;
+    const pillsLeft = effectivePills(med);
+    const decrement = decrementPerCheck(med);
+    const tracksSupply = Number.isFinite(pillsLeft) && decrement !== null;
+    const nextPills = tracksSupply ? Math.max(0, Math.round((pillsLeft - decrement) * 100) / 100) : null;
+    if (tracksSupply) localPills.set(name, { pills: nextPills, version: med.version });
+    render();
+
     try {
       await writeTool("data_add_item", {
         collection: CHECKS_COLLECTION,
         group: iso,
-        fields: { med: String(med.fields.name), date: iso, slot }
+        fields: { med: name, date: iso, slot }
       });
     } catch (error) {
+      localTaken.delete(localKey);
+      localPills.delete(name);
+      render();
       showStatus("statusTakenFailed", "bad", { message: safeError(error) }, true);
       requestRefresh();
       return;
     }
 
-    const pillsLeft = Number(med.fields.pills_left);
-    const decrement = decrementPerCheck(med);
-    if (!Number.isFinite(pillsLeft) || decrement === null) {
+    if (!tracksSupply) {
       showStatus("statusTakenNoSupply", "warn");
       requestRefresh();
       return;
     }
 
-    const nextPills = Math.max(0, Math.round((pillsLeft - decrement) * 100) / 100);
     try {
       await writeTool("data_update_item", {
         id: med.id,
@@ -1974,6 +2095,8 @@
       });
       showStatus("statusTakenSaved", "ok");
     } catch {
+      localPills.delete(name);
+      render();
       showStatus("statusTakenPartial", "bad", {}, true);
     }
     requestRefresh();
@@ -2049,9 +2172,13 @@
   function renderBloodPressureChart(rows) {
     const svg = document.getElementById("bp-chart");
     svg.innerHTML = "";
-    const width = 700;
-    const height = 300;
-    const left = 50;
+    // Drawn at its real width, so axis text stays readable on a phone instead of being a 700-wide
+    // picture shrunk to half size. A hidden tab measures 0 — it redraws when it is shown.
+    const measured = Math.round(svg.getBoundingClientRect().width);
+    const width = measured > 0 ? Math.max(300, measured) : 700;
+    const height = width < 520 ? 240 : 300;
+    svg.setAttribute("viewBox", `0 0 ${width} ${height}`);
+    const left = width < 520 ? 38 : 50;
     const right = 18;
     const top = 24;
     const bottom = 42;
@@ -2088,7 +2215,7 @@
       svg.append(label);
     }
 
-    const xLabelIndexes = new Set([0, 3, 6, 9, 13]);
+    const xLabelIndexes = new Set(width < 520 ? [0, 4, 9, 13] : [0, 3, 6, 9, 13]);
     visible.forEach(({ iso }, index) => {
       if (!xLabelIndexes.has(index)) return;
       const label = svgNode("text", { class: "chart-axis-text", x: x(index), y: height - 14, "text-anchor": "middle" });
@@ -2157,8 +2284,15 @@
     }
   }
 
+  function effectivePills(med) {
+    const local = localPills.get(String(med.fields.name));
+    if (local && local.version === med.version) return local.pills;
+    if (local) localPills.delete(String(med.fields.name));
+    return Number(med.fields.pills_left);
+  }
+
   function supplyFacts(med) {
-    const pills = Number(med.fields.pills_left);
+    const pills = effectivePills(med);
     const daily = Number(med.fields.daily_use);
     if (!Number.isFinite(pills) || !Number.isFinite(daily) || daily <= 0) return { known: false, pills, daily, days: null };
     return { known: true, pills: Math.max(0, pills), daily, days: Math.floor(Math.max(0, pills) / daily) };
@@ -2168,7 +2302,7 @@
     const box = el("div", "k-empty empty-large");
     const svg = svgNode("svg", { viewBox: "0 0 72 72", fill: "none", "aria-hidden": "true" });
     svg.append(svgNode("path", { stroke: "var(--color-text-tertiary)", "stroke-width": 2, d: "M22 10h28v52H22zM27 21h18M27 31h18M27 41h12" }));
-    svg.append(svgNode("path", { stroke: "var(--color-text-info, var(--color-ring-primary))", "stroke-width": 2, d: "M12 51h22M23 40v22" }));
+    svg.append(svgNode("path", { stroke: "var(--ed-accent)", "stroke-width": 2, d: "M12 51h22M23 40v22" }));
     box.append(svg, el("b", "", t("noSupplyTitle")), el("span", "", t("noSupplyBody")));
     root.replaceChildren(box);
   }
@@ -2204,9 +2338,9 @@
       track.append(fill);
       copy.append(track);
       row.append(copy);
-      const button = el("button", "k-btn restock-button", t("restockedButton"));
+      const button = el("button", "k-btn sec restock-button", t("restockedButton"));
       button.type = "button";
-      button.onclick = () => restockMedicine(med, button);
+      button.onclick = () => restockMedicine(med);
       row.append(button);
       root.append(row);
     }
@@ -2214,27 +2348,28 @@
     document.getElementById("supply-actions").hidden = low.length === 0;
   }
 
-  async function restockMedicine(med, button) {
-    const current = Number(med.fields.pills_left);
+  async function restockMedicine(med) {
+    const name = String(med.fields.name);
+    const current = effectivePills(med);
     const next = (Number.isFinite(current) ? current : 0) + 30;
-    button.disabled = true;
-    button.textContent = t("restocking");
+    const before = localPills.get(name);
+    localPills.set(name, { pills: next, version: med.version });
+    justRestocked = med.id;
+    render();
     try {
       await writeTool("data_update_item", {
         id: med.id,
         expected_version: med.version,
         fields: { pills_left: next }
       });
-      justRestocked = med.id;
-      showStatus("statusRestocked", "ok", { name: med.fields.name });
-      await refreshCollections();
+      showStatus("statusRestocked", "ok", { name });
     } catch (error) {
+      if (before) localPills.set(name, before);
+      else localPills.delete(name);
+      render();
       showStatus("statusRestockFailed", "bad", { message: safeError(error) }, true);
-      requestRefresh();
-    } finally {
-      button.disabled = false;
-      button.textContent = t("restockedButton");
     }
+    requestRefresh();
   }
 
   function parseSlots(value) {
@@ -2315,6 +2450,7 @@
     }
     for (const panel of document.querySelectorAll(".panel")) panel.hidden = panel.id !== `panel-${name}`;
     document.getElementById("content-scroll").scrollTop = 0;
+    if (name === "vitals") renderBloodPressureChart(validVitalRows());
   }
 
   function render() {
@@ -2329,6 +2465,14 @@
   for (const button of document.querySelectorAll(".main-tabs .k-tab")) {
     button.onclick = () => selectTab(button.dataset.tab);
   }
+
+  let chartWidth = 0;
+  new ResizeObserver(([entry]) => {
+    const next = Math.round(entry.contentRect.width);
+    if (!next || next === chartWidth) return;
+    chartWidth = next;
+    renderBloodPressureChart(validVitalRows());
+  }).observe(document.getElementById("bp-chart"));
 
   document.getElementById("medicine-import-button").onclick = importMedicines;
   document.getElementById("reading-form").onsubmit = (event) => {
@@ -2366,8 +2510,8 @@
     }
   };
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` means
-  // the host already framed the page, so the kit must not draw a chat card around it.
+  // `standalone` = the browser viewer or a panel host, which frame the page already; absent = a
+  // widget in someone's conversation. The `body:not(.standalone) .k-appbar` rule above reads it.
   if (oma.standalone) document.body.classList.add("standalone");
 
   document.getElementById("reading-date").value = localIso(today());

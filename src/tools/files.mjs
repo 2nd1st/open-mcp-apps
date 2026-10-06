@@ -6,10 +6,26 @@
 
 import { z } from "zod";
 import { APP_NAME_RE, MAX_FILE_INLINE_BYTES, MAX_FILE_BYTES } from "../store.mjs";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, fileMetaShape, answer, toMcp, sizeOf, RESULT_BUDGET } from "../contracts.mjs";
+import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, fileMetaShape, answer, toMcp, sizeOf, RESULT_BUDGET, readBudget } from "../contracts.mjs";
+import { isHandle, handleOf, notShared, readOnlyNote } from "../sharing.mjs";
 
 export function register(ctx) {
-  const { server, store, fileChannel, fail, fileFailNote } = ctx;
+  const { server, store, fileChannel, fail, fileFailNote, failNote } = ctx;
+  const { route } = ctx;
+  // A write's failure. The two limits a share puts on a collaborator's file writes (store.mjs
+  // scopeStore → files) answer with their reason on the structured channel too, in the same
+  // sentence an item write gets — one budget, one way of saying it ran out.
+  const failWrite = (r) => (r.error === "rate_limited" || r.error === "app_files_full"
+    ? toMcp(answer.fail(r.error, {}, failNote(r)), { isError: true }) : fail(fileFailNote(r)));
+
+  // A shared app's files (`@owner/app`): the owner's file plane, pinned to that one app by the
+  // facade (store.mjs scopeStore → files), writes counted against the OWNER's quotas because that
+  // is the store they land in. null = the caller's own app; false = refused; else {m, app, role}.
+  const sharedApp = async (h) => (route && isHandle(h) ? (await route.session().app(h)) ?? false : null);
+  // The viewer's refusal, in the words every shared tool uses. (Every other failure — a missing
+  // file, a quota — is the file plane's own answer: the app itself was already resolved.)
+  const readOnly = (sa, h, r) => (r && r.error === "read_only"
+    ? toMcp(answer.fail("read_only", {}, readOnlyNote(h, sa.m.ownerLabel)), { isError: true }) : null);
 
   // ------------------------------------------------------------ per-app file plane (scope b)
   // Opaque user-file storage the AI uses to stash + retrieve files the user hands it (chat
@@ -37,8 +53,12 @@ export function register(ctx) {
       },
     },
     async (a) => {
-      if (!APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
-      const { files: all } = fileChannel.list(a.app, a.prefix);
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      if (!sa && !APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
+      const listed = sa ? sa.m.face.files.list(sa.app, a.prefix) : fileChannel.list(a.app, a.prefix);
+      if (!listed) return notShared(a.app);
+      const { files: all } = listed;
       const lim = Math.max(1, Math.min(Number(a.limit) || 200, 1000));
       let start = 0;
       if (a.cursor) {
@@ -49,10 +69,12 @@ export function register(ctx) {
         if (start === -1) start = all.length;
       }
       let files = all.slice(start, start + lim);
-      const usage = store.fileUsage(a.app);
+      const usage = sa ? listed.usage : store.fileUsage(a.app);
+      // A shared app's file mark is that app's own, never the owner's store-wide one.
+      const filesVersion = sa ? sa.m.face.files.version(sa.app) ?? 0 : store.filesVersion();
       let note;
       const bodyOf = (rows) => ({ app: a.app, files: rows,
-        usage: { bytes: usage.bytes, count: usage.count }, files_version: store.filesVersion(),
+        usage: { bytes: usage.bytes, count: usage.count }, files_version: filesVersion,
         ...(note ? { note } : {}) });
       // Metadata is small, but paths are caller-sized — same budget discipline as every page.
       if (sizeOf(bodyOf(files)) > RESULT_BUDGET) {
@@ -90,24 +112,31 @@ export function register(ctx) {
         data_base64: z.string().optional(), eot: z.string().optional(),
       },
     },
-    async (a) => {
-      if (!APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
-      const meta = fileChannel.stat(a.app, a.path);
+    async (a, ctx) => {
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      if (!sa && !APP_NAME_RE.test(a.app || "")) return fail("Invalid app name.");
+      const ch = sa ? sa.m.face.files : fileChannel, app = sa ? sa.app : a.app;
+      const meta = ch.stat(app, a.path);
       if (!meta) return fail(`No file "${a.path}" stored for "${a.app}". Use file_list to see what exists.`);
       let got;
-      try { got = await fileChannel.get(a.app, a.path); }
+      try { got = await ch.get(app, a.path); }
       catch { return fail(`File "${a.path}" failed its integrity check (content-hash mismatch) — it may be corrupted.`); }
       if (!got) return fail(`File "${a.path}" is missing its stored bytes.`);
       const whole = got.bytes;
       const base = { app: a.app, path: a.path, mime: meta.mime, size: meta.size, sha256: meta.sha256, version: meta.version };
       const at = Math.max(0, Math.min(Math.floor(Number(a.offset) || 0), whole.length));
       // Raw-byte window, shrunk until the base64 body fits the budget — the same doctrine as every
-      // other window, in the units a file actually has. (base64 inflates 4/3, hence the 3/4.)
+      // other window, in the units a file actually has. (base64 inflates 4/3, hence the 3/4.) The
+      // budget is the READER's (contracts.mjs readBudget), as for data_list: the widget's own
+      // oma.files.read walks these windows to the end, and at a model's size a 2 MB image cost ~80
+      // round trips; at the app's it is a handful.
+      const budget = readBudget(ctx);
       const rawLen = Math.floor(Number(a.length));
-      const wantLen = Number.isFinite(rawLen) && rawLen > 0 ? rawLen : Math.floor(((RESULT_BUDGET - 2_000) * 3) / 4);
+      const wantLen = Number.isFinite(rawLen) && rawLen > 0 ? rawLen : Math.floor(((budget - 2_000) * 3) / 4);
       let want = Math.max(1, Math.min(wantLen, Math.max(whole.length - at, 1)));
       let b64 = whole.subarray(at, at + want).toString("base64");
-      while (want > 1 && sizeOf({ ...base, offset: at, next_offset: 0, returned: want, total: whole.length, data_base64: b64, eot: "·eot" }) > RESULT_BUDGET) {
+      while (want > 1 && sizeOf({ ...base, offset: at, next_offset: 0, returned: want, total: whole.length, data_base64: b64, eot: "·eot" }) > budget) {
         want = Math.ceil(want / 2);
         b64 = whole.subarray(at, at + want).toString("base64");
       }
@@ -163,10 +192,15 @@ export function register(ctx) {
       const bytes = decodeBase64(a.data_base64);
       if (bytes === null) return fail("data_base64 is not valid base64 — nothing was written.");
       if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Single-call write is limited to ${MAX_FILE_INLINE_BYTES} bytes; this file is ${bytes.length}. Use the chunked path: file_write_begin → file_write_chunk (in order) → file_write_commit.`);
-      const r = await fileChannel.put(a.app, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
-      if (!r.ok) return fail(fileFailNote(r));
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      const r = sa
+        ? await sa.m.face.files.put(sa.app, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version })
+        : await fileChannel.put(a.app, a.path, bytes, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
+      if (sa && readOnly(sa, a.app, r)) return readOnly(sa, a.app, r);
+      if (!r.ok) return failWrite(r);
       const m = r.meta;
-      return { content: [{ type: "text", text: `Stored "${a.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${a.app}".${r.idempotent ? " (already stored)" : ""}` }], structuredContent: { app: a.app, path: a.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() } };
+      return { content: [{ type: "text", text: `Stored "${a.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${a.app}".${r.idempotent ? " (already stored)" : ""}` }], structuredContent: { app: a.app, path: a.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: sa ? sa.m.face.files.version(sa.app) ?? 0 : store.filesVersion() } };
     },
   );
 
@@ -184,11 +218,17 @@ export function register(ctx) {
       outputSchema: { upload_id: z.string(), chunk_limit_bytes: z.number(), file_limit_bytes: z.number() },
     },
     async (a) => {
-      const r = await fileChannel.beginUpload(a.app);
-      if (!r.ok) return fail(fileFailNote(r));
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      const r = sa ? await sa.m.face.files.beginUpload(sa.app) : await fileChannel.beginUpload(a.app);
+      if (sa && readOnly(sa, a.app, r)) return readOnly(sa, a.app, r);
+      if (!r.ok) return failWrite(r);
+      // An upload opened through a share is named like the share (`@owner/<id>`), so its chunks
+      // and its commit route back to the same owner — and only through this caller's own grants.
+      const id = sa ? handleOf(sa.m.alias, r.upload_id) : r.upload_id;
       return {
-        content: [{ type: "text", text: `Upload started (id ${r.upload_id}). Send chunks in order with file_write_chunk, then file_write_commit.` }],
-        structuredContent: { upload_id: r.upload_id, chunk_limit_bytes: MAX_FILE_INLINE_BYTES, file_limit_bytes: MAX_FILE_BYTES },
+        content: [{ type: "text", text: `Upload started (id ${id}). Send chunks in order with file_write_chunk, then file_write_commit.` }],
+        structuredContent: { upload_id: id, chunk_limit_bytes: MAX_FILE_INLINE_BYTES, file_limit_bytes: MAX_FILE_BYTES },
       };
     },
   );
@@ -210,8 +250,11 @@ export function register(ctx) {
       if (bytes === null) return fail("data_base64 is not valid base64 — this chunk was not staged.");
       if (!bytes.length) return fail("Empty chunk — send actual bytes.");
       if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Chunk too large (${bytes.length} bytes) — keep each chunk at or under ${MAX_FILE_INLINE_BYTES} bytes.`);
-      const r = await fileChannel.appendUpload(a.upload_id, bytes, { seq: a.seq });
-      if (!r.ok) return fail(fileFailNote(r));
+      const su = route && isHandle(a.upload_id) ? await route.session().upload(a.upload_id) : null;
+      const r = su ? await su.m.face.files.appendUpload(su.id, bytes, { seq: a.seq })
+        : route && isHandle(a.upload_id) ? { ok: false, error: "upload_not_found" }
+        : await fileChannel.appendUpload(a.upload_id, bytes, { seq: a.seq });
+      if (!r.ok) return failWrite(r);
       return { content: [{ type: "text", text: r.duplicate ? `Chunk ${a.seq} was already staged — not appended again (${r.bytes} bytes staged).` : `${r.bytes} bytes staged.` }],
         structuredContent: { upload_id: a.upload_id, bytes: r.bytes, ...(r.chunks != null ? { chunks: r.chunks } : {}), ...(r.duplicate ? { duplicate: true } : {}) } };
     },
@@ -233,12 +276,17 @@ export function register(ctx) {
       outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
     },
     async (a) => {
-      const r = await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
-      if (!r.ok) return fail(fileFailNote(r));
+      const su = route && isHandle(a.upload_id) ? await route.session().upload(a.upload_id) : null;
+      const r = su ? await su.m.face.files.commitUpload(su.id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version })
+        : route && isHandle(a.upload_id) ? { ok: false, error: "upload_not_found" }
+        : await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
+      if (!r.ok) return failWrite(r);
       const m = r.meta;
+      // Through a share, the file is named by the handle the caller knows the app by.
+      const app = su ? handleOf(su.m.alias, m.app) : m.app;
       return {
-        content: [{ type: "text", text: `Stored "${m.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${m.app}".${r.idempotent ? " (already committed by this command_id — nothing re-uploaded)" : ""}` }],
-        structuredContent: { app: m.app, path: m.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: store.filesVersion() },
+        content: [{ type: "text", text: `Stored "${m.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${app}".${r.idempotent ? " (already committed by this command_id — nothing re-uploaded)" : ""}` }],
+        structuredContent: { app, path: m.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: su ? su.m.face.files.version(m.app) ?? 0 : store.filesVersion() },
       };
     },
   );
@@ -263,8 +311,13 @@ export function register(ctx) {
       // No `via`: the file plane never grew the shadow-provenance edge the item plane has, so the
       // confirmation principal for a file delete is the actor alone (per-app confirm_delete
       // overrides therefore do not apply to files — the global preference does).
-      const r = await fileChannel.del(a.app, a.path, { command_id: a.command_id, expected_version: a.expected_version,
-        actor: a.actor, request_state: a.request_state });
+      const sa = await sharedApp(a.app);
+      if (sa === false) return notShared(a.app);
+      const r = sa
+        ? await sa.m.face.files.del(sa.app, a.path, { command_id: a.command_id, expected_version: a.expected_version, actor: a.actor, request_state: a.request_state })
+        : await fileChannel.del(a.app, a.path, { command_id: a.command_id, expected_version: a.expected_version,
+          actor: a.actor, request_state: a.request_state });
+      if (sa && readOnly(sa, a.app, r)) return readOnly(sa, a.app, r);
       // Same two-phase shape data_delete_item publishes — a demand is not an error, and it must
       // carry the state or the caller is told to resend something it never received.
       if (r.confirmation_required) {
@@ -275,8 +328,8 @@ export function register(ctx) {
           // degrades to "Delete this item?" about a file whose name we know perfectly well.
           structuredContent: { app: a.app, path: a.path, ok: false, reason: "confirmation_required", preview: a.path, request_state: r.request_state, expires_at: r.expires_at, note } };
       }
-      if (!r.ok) return fail(fileFailNote(r));
-      return { content: [{ type: "text", text: `Deleted "${a.path}" from "${a.app}".` }], structuredContent: { app: a.app, path: a.path, deleted: true, files_version: store.filesVersion() } };
+      if (!r.ok) return failWrite(r);
+      return { content: [{ type: "text", text: `Deleted "${a.path}" from "${a.app}".` }], structuredContent: { app: a.app, path: a.path, deleted: true, files_version: sa ? sa.m.face.files.version(sa.app) ?? 0 : store.filesVersion() } };
     },
   );
 

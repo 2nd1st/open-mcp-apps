@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { RO, WRITE, DESTRUCTIVE, RESERVED_APP_NAMES, LOCKED_APPS, cmdArgs, answer, toMcp } from "../contracts.mjs";
 
 export function register(ctx) {
-  const { server, store, hostName, run, failNote, fail, registerApp } = ctx;
+  const { server, store, hostName, run, failNote, fail, registerApp, lockedOrNot, scopeOf, scopeNote } = ctx;
 
   // ---------------------------------------------------- registry lifecycle (design-system §7.5)
   server.registerTool(
@@ -17,7 +17,7 @@ export function register(ctx) {
     {
       title: "App history (checkpoints)",
       annotations: RO,
-      description: "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots BOTH slots (ui + manifest); restore brings back the pair.",
+      description: "List an app's checkpoints as {checkpoint, ts, ui_size} — metadata only, NEVER the source (keeps context small; use get_app for the current source). Checkpoint 1 is the oldest; restore_app takes that number. History survives delete_app (tombstone). Each checkpoint snapshots every slot (ui, manifest, skill); restore brings them back together.",
       inputSchema: { name: z.string() },
       outputSchema: {
         name: z.string(),
@@ -25,6 +25,9 @@ export function register(ctx) {
       },
     },
     async (a) => {
+      // A shared app's history is its owner's — not part of what was shared.
+      const shared = await lockedOrNot(a.name);
+      if (shared) return shared;
       const history = store.appHistory(a.name);
       if (!history.length) return fail(`No history for app "${a.name}".`);
       // Checkpoints, not raw versions: `version` is the global ledger seq, so reciting it makes a
@@ -64,9 +67,11 @@ export function register(ctx) {
       },
     },
     async (a) => {
+      const shared = await lockedOrNot(a.name);
+      if (shared) return shared;
       if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — it can't be restored or overwritten here.`);
       if (RESERVED_APP_NAMES.has(a.name)) return fail(`"${a.name}" is a reserved namespace — nothing restorable lives there.`);
-      // Replay first, same rule as save_app / edit_app / promote_app: the store makes the retry a
+      // Replay first, same rule as save_app / edit_app: the store makes the retry a
       // no-op, but without this the receipt still read "Restored … saved as a new checkpoint" —
       // a rollback the user believes happened twice. A retry deserves a receipt, not a lie.
       if (a.command_id) {
@@ -82,14 +87,15 @@ export function register(ctx) {
       if (!target) return fail(`No checkpoint ${a.checkpoint} for "${a.name}" — it has ${hist.length}. list_app_checkpoints lists them.`);
       const old = store.getAppVersion(a.name, target.version);
       if (!old) return fail(`Checkpoint ${a.checkpoint} of "${a.name}" has no stored source.`);
-      // BOTH slots travel: a checkpoint is a coherent (ui, manifest) pair, and restoring one
-      // without the other would manufacture a state that never existed. expected_version rides
+      // EVERY slot travels: a checkpoint is a coherent (ui, manifest, skill) triple, and restoring
+      // one without the others would manufacture a state that never existed. expected_version rides
       // along so a concurrent save between the read above and this write is a clean conflict
       // (the OCC bypass the W-N review flagged — closed here).
       const cur = store.getApp(a.name);
+      const scopeBefore = cur ? scopeOf(a.name) : null;
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
-        name: a.name, ui: old.ui, manifest: old.manifest ? JSON.parse(old.manifest) : null,
+        name: a.name, ui: old.ui, manifest: old.manifest ? JSON.parse(old.manifest) : null, skill: old.skill ?? null, skill_from: old.skill_from ?? null,
         description: "", actor: "agent", host: hostName(),
         ...(cur ? { expected_version: cur.version } : {}),
       });
@@ -99,7 +105,9 @@ export function register(ctx) {
       if (r.idempotent)
         return { content: [{ type: "text", text: `Already restored — "${a.name}" was rolled back to checkpoint ${a.checkpoint} under this same command_id (v${r.version}). Nothing happened this time and NO new checkpoint was made. Show it with open_app {app: "${a.name}"}.` }] };
       registerApp(a.name);
-      return { content: [{ type: "text", text: `Restored "${a.name}" from checkpoint ${a.checkpoint} → saved as a new checkpoint (history preserved). Show it now with open_app {app: "${a.name}"}.` }] };
+      // A checkpoint carries its declaration, so rolling back can move a shared app's scope.
+      const reach = await scopeNote(a.name, scopeBefore);
+      return { content: [{ type: "text", text: `Restored "${a.name}" from checkpoint ${a.checkpoint} → saved as a new checkpoint (history preserved). Show it now with open_app {app: "${a.name}"}.` + (reach ? `\n${reach}` : "") }] };
     },
   );
 
@@ -124,7 +132,19 @@ export function register(ctx) {
     // the world the user was shown (any interleaved write invalidates the answer), and the
     // server never guesses which user data to erase — shared/unknown collections are kept.
     async (a) => {
+      const shared = await lockedOrNot(a.name);
+      if (shared) return shared;
       if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — its UI ships with the engine and can't be deleted here.`);
+      // Who this app is shared with, asked BEFORE it goes: a delete ends every share of it (the
+      // grants name this app's life — store.mjs sharedScopeOf — and a new app under the same
+      // name is a new life), and the receipt says so while the owner can still tell people.
+      let sharedWith = 0;
+      if (ctx.sharing && store.getApp(a.name)) {
+        try {
+          const l = await ctx.sharing.list({ app: a.name });
+          if (l && l.ok) sharedWith = (l.grants || []).filter((g) => g.role !== "owner").length;
+        } catch { /* the receipt simply does not mention it */ }
+      }
       const r = run(a, "delete_app");
       // Not isError, same doctrine as delete_item: the demand IS the useful payload — a host
       // that discards errored results would strand the confirmation flow on its first leg.
@@ -144,9 +164,11 @@ export function register(ctx) {
       const took = r.cascaded
         ? ` Cascade removed ${r.cascaded.map((c) => `${c.collection} (${c.rows} rows)`).join(", ") || "no collections"} and ${r.settings_keys} setting(s); anything shared or unprovable was kept.`
         : " Its data and settings were KEPT — remove rows directly with the data_* tools if they should go too.";
+      const ended = sharedWith && !r.idempotent
+        ? ` It was shared with ${sharedWith} account(s): those shares ended with it, and an app created later under this name is NOT shared.` : "";
       return toMcp(answer.ack({ ok: true, name: a.name, deleted: true,
-        ...(r.cascaded ? { cascaded: r.cascaded, settings_keys: r.settings_keys } : {}) },
-        `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}.` + took));
+        ...(r.cascaded ? { cascaded: r.cascaded, settings_keys: r.settings_keys } : {}), ...(ended ? { note: ended.trim() } : {}) },
+        `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}.` + took + ended));
     },
   );
 

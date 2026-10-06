@@ -123,7 +123,17 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //           occurrences x 6 chars); the real number beat it because renaming a tool shortens its
 //           name in the seat AND in every description that references it. What did NOT change is
 //           the part worth pinning: still 36 seats, same order, same membership.
-const SURFACE_BYTES_CAP = 47_935;
+//   (cap unchanged) the app skill slot: 46,672 -> 47,370 B measured, +698. One seat
+//           (get_app_skill, 481 B) is the rest of a guide that every other surface names in one
+//           line; save_app learned the third slot (+180 B), install_from_app_store declares the
+//           `note` its line rides on the structured channel (+25 B). 565 B of room left.
+//   (cap unchanged) get_app loses slot "artifact" (Leo 10-05: depending on one host's Artifact is not
+//           the way apps travel; it comes back, if ever, with a two-way design): 47,370 -> 47,159 B.
+//   49,775  the screen relay on by default (Leo 10-05: 「很有用 转默认」): screen_read 560 + screen_act
+//           1,284 are what a model reads to see and use the open app; screen_poll is the widget's
+//           long poll, app-only (hidden from the model where `visibility` is honored), cut to the
+//           bone: 863 -> 721 B. 47,159 -> 49,727 B measured; cap = measured + 48.
+const SURFACE_BYTES_CAP = 49_775;
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
@@ -139,7 +149,7 @@ const canon = (v) =>
   : v && typeof v === "object" ? Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]))
   : v;
 
-// DEFAULT env on purpose: no OMA_DYNAMIC_TOOLS, empty registry. This is the surface a new user
+// DEFAULT config on purpose: nothing pinned, empty registry. This is the surface a new user
 // actually pays for. (server-smoke covers the opt-in dynamic-tool path separately.)
 // LEGACY era on purpose too: it is the wire every shipped host (claude.ai / ChatGPT / Claude
 // Desktop) speaks today, so the golden pins the bytes THOSE models actually see. The 2026-07-28
@@ -147,7 +157,7 @@ const canon = (v) =>
 const stdioParams = () => ({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "surface", OMA_DYNAMIC_TOOLS: "" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "surface" },
 });
 const client = new Client({ name: "surface", version: "1.0.0" });
 await client.connect(new StdioClientTransport(stdioParams()));
@@ -155,7 +165,11 @@ await client.connect(new StdioClientTransport(stdioParams()));
 const { tools } = await client.listTools();
 const names = tools.map((t) => t.name);
 const canonical = canon(tools);
-const actual = JSON.stringify(canonical, null, 2) + "\n"; // golden: pretty, so its diff is readable
+// golden: pretty, so its diff is readable. The loader's URI carries a hash of the document it
+// names (tools/apps.mjs loaderUriFor), so it moves with every runtime change by design: a host
+// keys its template cache on that URI, and a release that changes the widget runtime OUGHT to cost
+// one tools/list cache miss. The golden pins everything else and the URI's shape.
+const actual = (JSON.stringify(canonical, null, 2) + "\n").replace(/app\.[0-9a-f]{12}\.html/g, "app.<build>.html");
 const wireBytes = JSON.stringify(canonical).length;       // budget: compact, so it means something
 
 console.log("1. surface shape");
@@ -182,10 +196,10 @@ console.log("2. dialect + caching hints (src/cache-hints.mjs) — on the 2026-07
   ok("modern list carries no `execution` — Tasks vocabulary left the core schema (SEP-2663)",
     !raw.includes('"execution"'));
   ok(`ttlMs present (${list.ttlMs})`, typeof list.ttlMs === "number" && list.ttlMs >= 0);
-  // The default configuration registers no per-app tools, so this list is identical for every
-  // tenant and may be shared. It becomes "private" the moment OMA_DYNAMIC_TOOLS puts a tenant's own
-  // app names in it — declaring THAT public would leak them through a shared cache.
-  ok('cacheScope is "public" with dynamic tools off', list.cacheScope === "public", list.cacheScope);
+  // Pinning is on by default, so this list CAN carry a tenant's own app names (one open_<name> per
+  // pinned app) — declaring it public would leak them through a shared cache. Only
+  // `dynamicTools: false` makes the list identical for every tenant; §4 checks that side.
+  ok('cacheScope is "private" while pinning is possible', list.cacheScope === "private", list.cacheScope);
   // The eras must agree on the tools themselves: the golden below is pinned on the legacy wire,
   // and this line is what entitles it to stand for both.
   ok("modern-era tools[] byte-identical to the legacy-era list",
@@ -312,7 +326,7 @@ if (!BLESS && !existsSync(GOLDEN)) {
 
 await client.close();
 
-console.log("4. the engine options a deployment sets — unlisted, dynamicTools, telemetry");
+console.log("4. the engine options a deployment sets — unlisted, dynamicTools (pinning), telemetry");
 // Two claims, and the second is the one that can rot silently. LISTING is easy to see; being
 // still CALLABLE is what a hosted deployment and every app saved before the rename are relying
 // on, and nothing else in the suite exercises a name that is deliberately absent from the list.
@@ -347,18 +361,23 @@ console.log("4. the engine options a deployment sets — unlisted, dynamicTools,
   await plain.callTool({ name: "save_app", arguments: { name: "unlisted-probe", ui: "<p>probe</p>" } });
   await plain.close();
 
-  // THE OPTION OVERRIDES THE ENVIRONMENT, in both directions. This process runs with
-  // OMA_DYNAMIC_TOOLS unset, so `true` has to be able to turn the openers ON here — an option
-  // that only ever agreed with the env would look identical to one that did nothing.
-  const dynOn = await open({ dynamicTools: true });
+  // PINNING, both sides. The probe app is pinned; the default engine gives it its opener, and
+  // `dynamicTools: false` ignores the pin and keeps the list constant (and shareable).
+  memStore.execute({ type: "add_item", command_id: "pin-unlisted-probe", collection: "settings",
+    group: "unlisted-probe", fields: { key: "open_tool", value: true }, actor: "human" });
+  const dynOn = await open({});
   const dynOnNames = (await dynOn.listTools()).tools.map((t) => t.name);
-  ok("dynamicTools:true registers the per-app openers, whatever the environment says",
+  ok("default engine: a pinned app has its own opener",
     dynOnNames.includes("open_unlisted_probe"), dynOnNames.filter((n) => n.startsWith("open_")).join(", "));
   await dynOn.close();
   const dynOff = await open({ dynamicTools: false });
   const dynOffNames = (await dynOff.listTools()).tools.map((t) => t.name);
-  ok("…and dynamicTools:false keeps them off", !dynOffNames.some((n) => /^open_.+/.test(n) && n !== "open_app"));
+  ok("…and dynamicTools:false ignores the pin", !dynOffNames.some((n) => /^open_.+/.test(n) && n !== "open_app"));
+  ok("…and declares tools.listChanged false", dynOff.getServerCapabilities()?.tools?.listChanged === false,
+    JSON.stringify(dynOff.getServerCapabilities()?.tools));
   await dynOff.close();
+  memStore.execute({ type: "add_item", command_id: "unpin-unlisted-probe", collection: "settings",
+    group: "unlisted-probe", fields: { key: "open_tool", value: false }, actor: "human" });
 
   const hidden = await open({ unlisted: ["get_app_html"] });
   const hiddenNames = (await hidden.listTools()).tools.map((t) => t.name);
@@ -403,6 +422,47 @@ console.log("4. the engine options a deployment sets — unlisted, dynamicTools,
     JSON.stringify(off.r).slice(0, 200));
   rmSync(onDir, { recursive: true, force: true });
   rmSync(offDir, { recursive: true, force: true });
+}
+
+console.log("5. the sharing options — a local install pays nothing, a sharing deployment pays two seats");
+// The engine's cross-account options (caller / mounts / sharing, src/sharing.mjs). Two claims: an
+// engine given NONE of them is the surface pinned above; one given all three lists exactly that
+// surface, byte for byte, with `share` and `copy_app` APPENDED — so no existing seat's cache entry
+// moves for a deployment that turns sharing on. The hosted size is printed, not capped: the cap
+// above is the local product's resident cost, and a deployment trims its own list (`unlisted`).
+{
+  const { Client: MemClient, InMemoryTransport } = await import("@modelcontextprotocol/client");
+  const { createEngine } = await import("../index.mjs");
+  const { openStore } = await import("../src/store.mjs");
+  const { mkdtempSync, rmSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const dir = mkdtempSync(join(tmpdir(), "oma-share-surface-"));
+  const s = openStore(join(dir, "t.db"));
+  const list = async (opts) => {
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    await createEngine(s, { functions: true, ...opts }).connect(st);
+    const c = new MemClient({ name: "surface", version: "1.0.0" });
+    await c.connect(ct);
+    const t = (await c.listTools()).tools;
+    await c.close();
+    return t;
+  };
+  const none = { ok: false, error: "unused" };
+  const providers = {
+    caller: { principal: "user_a", label: "a@example.com" },
+    mounts: { grants: () => [] },
+    sharing: { invite: async () => none, list: async () => none, revoke: async () => none, setRole: async () => none, leave: async () => none },
+  };
+  const oss = await list({});
+  const hosted = await list(providers);
+  const ossBytes = JSON.stringify(canon(oss)).length, hostedBytes = JSON.stringify(canon(hosted)).length;
+  ok("no sharing option ⇒ the same seats as the golden", JSON.stringify(oss.map((t) => t.name)) === JSON.stringify(names));
+  ok("all three ⇒ the local surface byte for byte, then share + copy_app appended",
+    JSON.stringify(canon(hosted.slice(0, oss.length))) === JSON.stringify(canon(oss))
+    && hosted.slice(oss.length).map((t) => t.name).join() === "share,copy_app");
+  ok(`hosted surface with sharing: ${hostedBytes} B (local ${ossBytes} B + ${hostedBytes - ossBytes} B for the two seats)`, hostedBytes > ossBytes);
+  s.close();
+  rmSync(dir, { recursive: true, force: true });
 }
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);

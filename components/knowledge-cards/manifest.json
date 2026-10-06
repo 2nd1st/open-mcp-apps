@@ -80,11 +80,7 @@
       }
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "teach-sim"
-  },
-  "stage": {
-    "width": "column"
   }
 }

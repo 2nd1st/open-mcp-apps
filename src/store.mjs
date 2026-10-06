@@ -18,17 +18,19 @@ import { homedir, platform } from "node:os";
 import { join, dirname } from "node:path";
 import { mkdirSync, existsSync } from "node:fs";
 import { EventEmitter } from "node:events";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { readDeclaration, stripDeclarationBlock, mentionsDeclarationTag } from "./manifest-block.mjs";
 import { functionsJoinError, FN_NAME_RE, MAX_FUNCTIONS, FN_TIME_TIMER_MAX_MS, SECRETS_RESERVED_NOTE } from "./functions.mjs";
 // The other half of a two-way import (assets.mjs reads FILE_PATH_RE from here). Both directions
 // are used only inside function bodies, so neither module reads a binding that is still being
 // initialised — see the note at the top of assets.mjs for why one scanner, not two.
 import { hasAssetReferences, assetSyntaxError } from "./assets.mjs";
+import { parseSkill } from "./skill.mjs";
 // tierOf only, and deliberately from the module that owns the security model rather than a second
 // copy of the author→tier partition living here: the disease this codebase watches for is DIALECTS,
 // and two places deciding what "local" means is exactly one. contracts.mjs imports nothing but zod,
 // so this direction adds no cycle.
-import { tierOf } from "./contracts.mjs";
+import { tierOf, defaultCollectionFor } from "./contracts.mjs";
 import { CONFIRMATION_CLASSES, createRequestStateCodec, deletePreview, storeSecret } from "./confirmation.mjs";
 // The renderer's own value coercion — see confirmPrefOn (one answer to "what does this row mean").
 import { coercePref, latestPref } from "./runtime-core.mjs";
@@ -36,7 +38,7 @@ import { coercePref, latestPref } from "./runtime-core.mjs";
 // Migration-format pin: stamped into PRAGMA user_version AND every change_event payload (`sv`).
 // Export/import + SaaS sync read this to know which event shape they are looking at — bump it on
 // any breaking payload/schema change and translate old values on read. Never reuse a number.
-export const SCHEMA_VERSION = 7;
+export const SCHEMA_VERSION = 9;
 
 const SCHEMA = `
 CREATE TABLE IF NOT EXISTS item (
@@ -55,26 +57,30 @@ CREATE INDEX IF NOT EXISTS idx_item_collection ON item(collection);
 CREATE INDEX IF NOT EXISTS idx_item_coll_grp_pos ON item(collection, grp, position);
 
 CREATE TABLE IF NOT EXISTS app (
-  name        TEXT PRIMARY KEY,             -- [a-z][a-z0-9-]*; with OMA_DYNAMIC_TOOLS=1 it also surfaces as an open_<name> tool (flag defaults OFF — cache)
+  name        TEXT PRIMARY KEY,             -- [a-z][a-z0-9-]*; once the user pins it (settings key open_tool) it also surfaces as an open_<name> tool
   version     INTEGER NOT NULL DEFAULT 1,
   ui          TEXT NOT NULL,                -- the ui SLOT: a complete HTML document (v6: no embedded declaration block)
   description TEXT NOT NULL DEFAULT '',
   author      TEXT NOT NULL DEFAULT 'agent',
   scene       TEXT,                         -- projection of manifest.scene (App Store taxonomy) — derived, rebuildable
   manifest    TEXT,                         -- JSON | NULL — the AUTHORITATIVE declaration (v6/W-N: no longer a projection of an in-document block)
-  kind        TEXT NOT NULL DEFAULT 'app',  -- projection of manifest.kind — lets list_apps filter without parsing JSON
+  kind        TEXT NOT NULL DEFAULT 'app',  -- unread; leaves with the next schema migration
   visibility  TEXT NOT NULL DEFAULT 'listed', -- featured | listed | unlisted | archived (archive, curation and the long tail, in one field)
-  updated_at  TEXT NOT NULL
+  updated_at  TEXT NOT NULL,
+  skill       TEXT,                         -- the skill SLOT (v9): SKILL.md text — how an AI uses this app | NULL
+  skill_from  TEXT                          -- v9: WHO wrote that skill when it is not the user — the original author's label (a copied app) | NULL = the user's own words
 );
--- The REVISION table (v6): every save snapshots BOTH slots, so a restore/undo target is always a
--- coherent (ui, manifest) pair — never a document from one save paired with a declaration from
--- another. version = the writing event's ledger seq, exactly as before.
+-- The REVISION table (v6): every save snapshots EVERY slot, so a restore/undo target is always a
+-- coherent (ui, manifest, skill) triple — never a document from one save paired with a declaration
+-- or a skill from another. version = the writing event's ledger seq, exactly as before.
 CREATE TABLE IF NOT EXISTS app_history (
   name     TEXT NOT NULL,
   version  INTEGER NOT NULL,
   ui       TEXT NOT NULL,
   manifest TEXT,                            -- JSON | NULL — this revision's declaration, verbatim
   ts       TEXT NOT NULL,
+  skill    TEXT,                            -- v9: this revision's skill, verbatim | NULL
+  skill_from TEXT,                          -- v9: who wrote this revision's skill, as on app.skill_from | NULL
   PRIMARY KEY (name, version)
 );
 
@@ -104,7 +110,8 @@ CREATE TABLE IF NOT EXISTS change_event (
   payload      TEXT NOT NULL,               -- JSON (app html NOT included — it's in app_history)
   actor        TEXT NOT NULL,             -- see ACTORS: the CLASS that wrote this (E13b closed set — the wall that keeps anonymous writes from ever landing mislabelled)
   host         TEXT,
-  ts           TEXT NOT NULL
+  ts           TEXT NOT NULL,
+  principal    TEXT                       -- WHICH ACCOUNT wrote this (v8): stamped by the server from the caller it authenticated, never from arguments; NULL = no identified caller (every local write)
 );
 -- settings_version: every item event's payload carries \`collection\`; component_saved does
 -- not and is excluded. Ledger-derived so it stays correct across processes sharing one DB.
@@ -137,6 +144,17 @@ CREATE TABLE IF NOT EXISTS live_pointer (
   n   INTEGER NOT NULL
 );
 
+-- WHO a change_event.principal is, for display (v8). A principal id is an opaque account id the
+-- deployment authenticated; the label is what a person reads ("leif@example.com"). Kept per store
+-- so a ledger answers "who changed this" on its own — a store that receives another account's
+-- writes holds that account's label beside them. Upserted by the write that carries it; never read
+-- for authorization (the id is the identity, the label is presentation).
+CREATE TABLE IF NOT EXISTS principal (
+  id         TEXT PRIMARY KEY,
+  label      TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 `;
 
 // The CLASS that performed a write. Closed on purpose (E13b): `actor` used to be free text, so an
@@ -152,13 +170,31 @@ CREATE TABLE IF NOT EXISTS live_pointer (
 
 export const ACTORS = new Set(["agent", "human", "seed", "library", "guest", "anon"]);
 
-// What an app IS (drives what list_apps will eventually bother listing) and how visible
-// it is. Closed sets for the same reason ACTORS is: a typo'd value would be indistinguishable from
-// a real one, and these decide what the model gets to see.
+/** WHICH ACCOUNT is writing — `{ principal, label? }`, or nothing.
+ *
+ *  The third attribution axis beside `actor` (human or AI, caller-declared) and `host` (which
+ *  client, self-reported). This one is the only one a caller cannot choose: the engine enters the
+ *  scope from its `caller` option — an identity the DEPLOYMENT authenticated — around each tool
+ *  call, and core() reads it here. It is deliberately not a command field at all, so no argument
+ *  bag, batch, envelope or replay can carry one in; there is nothing to strip because there is no
+ *  key to strip.
+ *
+ *  A scope rather than a parameter because a write reaches core() through many doors (the tools,
+ *  the file channel, a function body's dispatch, a write into ANOTHER account's store through a
+ *  share) and every one of them must be stamped; threading a value through each would leave the
+ *  next door unstamped by default. Outside any scope — every local install, every test that does
+ *  not ask — the column is NULL, which is the true answer: no authenticated caller wrote it. */
+export const principalScope = new AsyncLocalStorage();
+const currentPrincipal = () => {
+  const who = principalScope.getStore();
+  return who && typeof who.principal === "string" && who.principal ? who : null;
+};
+
 // Commands where `actor` is authorship provenance rather than a write class — see execute().
 const AUTHORSHIP_COMMANDS = new Set(["save_app", "delete_app"]);
 
-export const APP_KINDS = new Set(["app", "visual", "primitive"]);
+// How visible an app is. A closed set for the same reason ACTORS is: a typo'd value would be
+// indistinguishable from a real one, and this decides what the model gets to see.
 export const VISIBILITIES = new Set(["featured", "listed", "unlisted", "archived"]);
 
 export const APP_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
@@ -174,6 +210,10 @@ export const APP_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 // bind EVERY caller and transport (the AI, the browser /rpc, a widget) — the engine cannot
 // tell an AI tool-call from a widget tool-call, so these are the rules that hold for all.
 export const SETTINGS_COLLECTION = "settings";
+// The per-app pin (group = the app's name, value true): only a pinned app gets its own
+// open_<name> tool (tools/apps.mjs syncOpeners). The engine owns this key, so no manifest may
+// declare it as one of the app's own settings.
+export const OPEN_TOOL_PREF = "open_tool";
 // Reserved policy namespaces: writable ONLY via executePrivileged (the security_set tool).
 // The colon prefix is outside the settings-design declared-key charset, so it never collides
 // with an app's own preference keys.
@@ -209,12 +249,57 @@ export const MAX_GROUP_CHARS = 500;
 // Note what is deliberately absent: `id` on add_item. The engine mints row ids. The ledger-replay
 // path DOES recreate rows under their original ids, and it reaches store.execute() directly — this
 // table governs the TOOL face, which is the only face an untrusted caller has.
+// `collection` on the three id-addressed writes is an ASSERTION, not a route: "this row is in that
+// collection". When given, a row that lives anywhere else is answered exactly like a row that does
+// not exist — a stale widget snapshot can no longer land a write on a row it never showed, and a
+// shared collection's writes stay pinned to it (the engine routes `@owner/…` handles by it).
 export const ITEM_WRITE_KEYS = {
   add_item: ["collection", "group", "fields", "position"],
-  update_item: ["id", "fields", "expected_version"],
-  move_item: ["id", "group", "position", "expected_version"],
-  delete_item: ["id", "expected_version", "request_state", "require_confirmation"],
+  update_item: ["id", "collection", "fields", "expected_version"],
+  move_item: ["id", "collection", "group", "position", "expected_version"],
+  delete_item: ["id", "collection", "expected_version", "request_state", "require_confirmation"],
 };
+/** A local collection name may not begin with `@`. That prefix is the shared namespace
+ *  (`@owner/collection`, resolved per caller by the engine), so a local name spelled like a handle
+ *  could only ever be mistaken for one. Refused for every new write and every declaration; no
+ *  existing row is touched. */
+export const SHARED_PREFIX = "@";
+/** Set on a command by the sharing facade (scopeStore) alone: its delete is confirmed whatever
+ *  `actor` it claims. `actor` is the caller's own word, and an agent-labelled delete skips the gate
+ *  by design — fine for the account's own data, not for another account's (S4 audit T12). A Symbol,
+ *  so no argument bag, batch or JSON payload can carry one in; it can only ever ADD a demand. */
+export const CONFIRM_ALWAYS = Symbol("oma.confirmAlways");
+/** Rows a SHARED collection may hold before the facade refuses another add (S4 audit T19). The
+ *  owner's own writes are not capped; a collaborator's are, because what they add is stored — and
+ *  paid for — by someone else. The same number as copy_app's ceiling: past it, it is a migration. */
+export const SHARED_COLLECTION_MAX_ROWS = 50_000;
+/** Writes one account may make through shares from ONE owner per rolling hour (S4 audit T19) —
+ *  item writes and file writes (write, commit, delete) alike, one budget. Counted in this process's
+ *  memory, per (owner store file, principal) — every grant that owner gave that account draws on
+ *  one budget. A deployment running several processes over a store grants one budget per process;
+ *  a restart resets it. It is a floor against a runaway client or a hostile collaborator, not
+ *  metering. */
+export const SHARED_WRITES_PER_HOUR = 600;
+const SHARED_WRITE_WINDOW_MS = 60 * 60 * 1000;
+/** What a shared app's file plane may hold before a COLLABORATOR's write that would grow it is
+ *  refused (S4 round 2): the row cap's counterpart for files. The owner's own writes meet only the
+ *  store's quotas (MAX_APP_FILE_*); a collaborator's meet these too, for the same reason rows do —
+ *  the bytes are stored, and paid for, by the owner. An overwrite that adds no file and no bytes
+ *  past the line is not refused. */
+export const SHARED_APP_MAX_FILES = 1_000;
+export const SHARED_APP_MAX_FILE_BYTES = 1024 * 1024 * 1024;
+/** Set on a write_file by the sharing facade alone (files.mjs put / a shared upload's commit): the
+ *  collaborator ceilings above apply, checked inside the write's own transaction. A Symbol, like
+ *  CONFIRM_ALWAYS, so nothing a caller sends can carry it in or strip it off. */
+export const SHARED_WRITE = Symbol("oma.sharedWrite");
+/** Staged uploads one account may hold open through shares on one owner's file channel, and all
+ *  collaborators together. The channel has MAX_ACTIVE_UPLOADS slots for everyone; without these a
+ *  collaborator could hold every one for the upload TTL and the owner could not upload at all. */
+export const SHARED_UPLOADS_PER_ACCOUNT = 4;
+export const SHARED_UPLOADS_TOTAL = 8;
+// A shared app's handle as the recipient's store may record it (the live pointer): `@alias/app`,
+// alias as sharing.mjs ALIAS_RE, app as APP_NAME_RE.
+const SHARED_APP_HANDLE_RE = /^@[a-z0-9][a-z0-9-]{0,23}\/[a-z][a-z0-9-]{0,31}$/;
 /** Envelope keys a batch command may carry — the historical set, unchanged. */
 export const BATCH_ENVELOPE_KEYS = ["command_id", "actor", "host"];
 /** The SHAPE each published key must have — the value half of ITEM_WRITE_KEYS.
@@ -342,38 +427,35 @@ function cspSource(v) {
   return cspShapeError(o) ? null : o;
 }
 
-/** WHERE THIS APP MAY REACH, as one merged declaration: what the app declared ∪ what the user
- *  added for it (`policy:csp:<app>`) ∪ what the user added for everything (`policy:csp:*`).
- *
- *  THE ENGINE DOES NOT ADJUDICATE — it merges and relays (Leo, 2026-08-16). This is not an
- *  allowlist the engine enforces against the app; it is the app's own statement of need plus the
- *  user's own additions, handed to the host, which is the party the MCP Apps spec puts in charge of
- *  enforcement. The OSS engine sets no egress ceiling of its own.
- *
- *  It lives HERE, not in contracts.mjs, for one hard reason: store.mjs imports `tierOf` from
- *  contracts.mjs, so contracts.mjs may never import store.mjs (the cycle that file's header exists
- *  to prevent) — and both of this function's inputs are store-shaped, the app row's manifest and
- *  the settings collection.
- *
- *  Order is fixed so the output is too: declaration, then per-app, then global; first occurrence
- *  wins a duplicate. Empty keys are OMITTED — an omitted key IS the spec's secure default, and a
- *  caller that needs the empty array on the wire (the resource `_meta`, whose two legacy keys have
- *  always been present) shapes that itself rather than making every caller carry it. */
-export function cspFor(comp, store) {
-  let declared = null;
-  try { declared = comp?.manifest ? JSON.parse(comp.manifest).csp : null; } catch { declared = null; }
-  const sources = [cspSource(declared)];
-  if (store && comp?.name) {
-    // Last row wins per key — the same scan computeCaps and the pref merge use. Duplicate settings
-    // rows are ordinary (nothing forbids a second data_add_item under a key), and a reader that
-    // took the FIRST would answer with the row the settings UI does not update.
-    const byKey = new Map();
-    for (const it of store.snapshot(SETTINGS_COLLECTION).items) {
-      const k = String(it.fields?.key ?? "");
-      if (k) byKey.set(k, it.fields.value);
-    }
-    sources.push(cspSource(byKey.get(`policy:csp:${comp.name}`)), cspSource(byKey.get("policy:csp:*")));
-  }
+/** THE PLATFORM'S OWN ALLOWANCE — where every app may load from without declaring anything.
+ *  The same script hosts Claude's Artifacts admit (cdnjs, jsdelivr, unpkg, Tailwind's play script,
+ *  jQuery's CDN) plus Google Fonts, so a page written for one runs on the other and an app can use
+ *  React or Tailwind the way a model already writes them (Leo, 2026-10-02, platform plan D4).
+ *  `resourceDomains` only: these are static loads (script, style, font, image). Nothing here lets an
+ *  app talk to a server — connectDomains stays the app's own declaration. */
+export const PLATFORM_CSP = Object.freeze({
+  resourceDomains: Object.freeze([
+    "https://cdnjs.cloudflare.com", "https://cdn.jsdelivr.net", "https://unpkg.com",
+    "https://cdn.tailwindcss.com", "https://code.jquery.com",
+    "https://fonts.googleapis.com", "https://fonts.gstatic.com",
+  ]),
+});
+/** How a deployment treats the network declaration. `base` is what every app gets; `extensible`
+ *  says whether an app's manifest.csp and the user's `policy:csp:*` rows may widen it. The local
+ *  product is extensible — the user owns their machine and their allowlist (plan D5). A hosted
+ *  plane passes `extensible: false` and a fixed base, so what a widget may reach is one statement
+ *  the operator can make about every app (plan D6). */
+export const CSP_POLICY = Object.freeze({ base: PLATFORM_CSP, extensible: true });
+/** Normalise an embedder's `csp` option into a policy. Throws on a malformed base: a deployment
+ *  that meant to narrow the allowlist and passed a typo must not silently serve the default. */
+export function cspPolicy(opt) {
+  if (opt == null) return CSP_POLICY;
+  const base = opt.base === undefined ? PLATFORM_CSP : opt.base;
+  const bad = cspShapeError(base, "csp.base");
+  if (bad) throw new Error(bad);
+  return Object.freeze({ base, extensible: opt.extensible !== false });
+}
+function mergeCsp(sources) {
   const out = {};
   for (const key of CSP_DOMAIN_KEYS) {
     const seen = [];
@@ -382,25 +464,54 @@ export function cspFor(comp, store) {
   }
   return out;
 }
-/** THE LOADER'S DECLARATION: every app's merged declaration (cspFor) folded into one, plus the
- *  user's global additions. Exists for the one resource that serves EVERY app — the universal
- *  loader `open_app` points hosts at — which structurally cannot carry any single app's `csp`, and
- *  before this carried nobody's (Leo 2026-08-16, plan §7-8, option A): the host is asked to allow
- *  the UNION, and the runner child inside the loader is narrowed back to its own app by
- *  composeChildDoc — a srcdoc frame runs under parent ∩ own, so the outer wall has to be at least
- *  as wide as the widest app or the inner declaration means nothing. Same merge rule as cspFor,
- *  same omitted-empty-key shape; a store with no declarations anywhere yields `{}`, and the loader
- *  then serves the exact bytes it served in 0.5.9. */
-export function cspUnion(store) {
-  const sources = [];
-  for (const row of store.listApps({})) sources.push(cspFor(store.getApp(row.name), store));
-  const out = {};
-  for (const key of CSP_DOMAIN_KEYS) {
-    const seen = [];
-    for (const src of sources) for (const v of (src?.[key] || [])) if (!seen.includes(v)) seen.push(v);
-    if (seen.length) out[key] = seen;
+
+/** WHERE THIS APP MAY REACH, as one merged declaration: the platform's base ∪ what the app
+ *  declared ∪ what the user added for it (`policy:csp:<app>`) ∪ what the user added for everything
+ *  (`policy:csp:*`). Under a non-extensible policy it is the base alone.
+ *
+ *  The engine merges and relays; the host enforces (Leo, 2026-08-16). The base is the one line the
+ *  engine draws itself, and only as a floor — never a ceiling on a local install.
+ *
+ *  It lives HERE, not in contracts.mjs, for one hard reason: store.mjs imports `tierOf` from
+ *  contracts.mjs, so contracts.mjs may never import store.mjs (the cycle that file's header exists
+ *  to prevent) — and both of this function's inputs are store-shaped, the app row's manifest and
+ *  the settings collection.
+ *
+ *  Order is fixed so the output is too: base, declaration, per-app, global; first occurrence wins a
+ *  duplicate. Empty keys are OMITTED — an omitted key IS the spec's secure default, and a caller
+ *  that needs the empty array on the wire (the resource `_meta`) shapes that itself. */
+export function cspFor(comp, store, policy = CSP_POLICY) {
+  const sources = [policy.base];
+  if (policy.extensible) {
+    let declared = null;
+    try { declared = comp?.manifest ? JSON.parse(comp.manifest).csp : null; } catch { declared = null; }
+    sources.push(cspSource(declared));
+    if (store && comp?.name) {
+      // Last row wins per key — the same scan computeCaps and the pref merge use. Duplicate settings
+      // rows are ordinary (nothing forbids a second data_add_item under a key), and a reader that
+      // took the FIRST would answer with the row the settings UI does not update.
+      const byKey = new Map();
+      for (const it of store.snapshot(SETTINGS_COLLECTION).items) {
+        const k = String(it.fields?.key ?? "");
+        if (k) byKey.set(k, it.fields.value);
+      }
+      sources.push(cspSource(byKey.get(`policy:csp:${comp.name}`)), cspSource(byKey.get("policy:csp:*")));
+    }
   }
-  return out;
+  return mergeCsp(sources);
+}
+/** THE LOADER'S DECLARATION: every app's merged declaration (cspFor) folded into one. Exists for
+ *  the one resource that serves EVERY app — the universal loader `open_app` points hosts at —
+ *  which structurally cannot carry any single app's `csp` (Leo 2026-08-16, plan §7-8, option A):
+ *  the host is asked to allow the UNION, and the runner child inside the loader is narrowed back
+ *  to its own app by composeChildDoc — a srcdoc frame runs under parent ∩ own, so the outer wall
+ *  has to be at least as wide as the widest app or the inner declaration means nothing. With no
+ *  declarations anywhere it is the base — a fixed value, so a host that snapshots the loader
+ *  (ChatGPT's plugin refresh) needs to see it once. */
+export function cspUnion(store, policy = CSP_POLICY) {
+  const sources = [policy.base];
+  for (const row of store.listApps({})) sources.push(cspFor(store.getApp(row.name), store, policy));
+  return mergeCsp(sources);
 }
 export function manifestShapeError(m) {
   if (!m || typeof m !== "object" || Array.isArray(m)) return "manifest must be an object";
@@ -419,6 +530,7 @@ export function manifestShapeError(m) {
       // at the door, where the message can say what to write instead.
       if (coll !== coll.trim()) return `collection name "${coll}" has leading/trailing whitespace — write "${coll.trim()}"`;
       if (coll === SETTINGS_COLLECTION) return `manifest may not govern the reserved "${SETTINGS_COLLECTION}" collection`;
+      if (coll.startsWith(SHARED_PREFIX)) return `collection name "${coll}" begins with "${SHARED_PREFIX}", which names another account's shared collection — a declaration is about this store's own collections`;
       if (!spec || typeof spec !== "object" || Array.isArray(spec)) return `collections.${coll} must be an object`;
       if (spec.strict != null && typeof spec.strict !== "boolean") return `collections.${coll}.strict must be a boolean`;
       // strict without fields would mean "reject every key against an empty contract" — a footgun
@@ -465,25 +577,19 @@ export function manifestShapeError(m) {
     }
   }
   // The rest of the declaration face. Shape only — what each key MEANS is enforced by whoever reads
-  // it (the settings app renders `settings`, list_apps filters on `kind`), which is why a key
+  // it (the settings app renders `settings`, the App Store files by `scene`), which is why a key
   // this build does not know yet is IGNORED rather than rejected: a document written for a newer
   // engine must still save on an older one, or the declaration stops being safe to grow.
   if (m.manifest_version != null && ![1, 2].includes(m.manifest_version)) return "manifest_version must be 1 or 2";
   if (m.settings != null && !Array.isArray(m.settings)) return "manifest.settings must be an array";
+  if (m.settings?.some((s) => s && s.key === OPEN_TOOL_PREF))
+    return `manifest.settings must not declare "${OPEN_TOOL_PREF}" — the engine owns that key (the user pins an app's own open_<name> tool with it in the settings app); pick another key`;
   if (m.uses_shared != null && !Array.isArray(m.uses_shared)) return "manifest.uses_shared must be an array";
-  if (m.kind != null && !APP_KINDS.has(m.kind)) return `manifest.kind must be one of ${[...APP_KINDS].join("|")}`;
   if (m.scene != null && (typeof m.scene !== "object" || Array.isArray(m.scene))) return "manifest.scene must be an object";
-  // `stage` — how the app wants to sit on a screen ({width: "column"|"wide"|"fluid"}, read by
-  // contracts.mjs stageWidthFor). SHAPE only, and deliberately no enum on `width`: a track name
-  // this build has never heard of is exactly the "written for a newer engine" case the paragraph
-  // above promises to keep saveable, and the reader falls back to the default rather than break.
-  if (m.stage != null && (typeof m.stage !== "object" || Array.isArray(m.stage))) return "manifest.stage must be an object";
-  if (m.stage?.width != null && typeof m.stage.width !== "string") return "manifest.stage.width must be a string";
-  // `stage.display` — "this app is a surface that shows OTHER apps" (contracts.mjs
-  // stageDisplayFor). Same shape-only treatment as width, one axis narrower: a boolean has no
-  // vocabulary to grow, so the type IS the whole check, and the reader still demands `true`
-  // rather than truthiness.
-  if (m.stage?.display != null && typeof m.stage.display !== "boolean") return "manifest.stage.display must be a boolean";
+  // `live_frame` — "this app is a surface that shows OTHER apps" (contracts.mjs liveFrameFor).
+  // A boolean has no vocabulary to grow, so the type IS the whole check, and the reader still
+  // demands `true` rather than truthiness.
+  if (m.live_frame != null && typeof m.live_frame !== "boolean") return "manifest.live_frame must be a boolean";
   // `csp` — WHERE THIS APP REACHES. Declared by the app, relayed by the engine, enforced by the
   // host (MCP Apps spec). Validated by shape only, and by the one function that owns that question:
   // the user may add origins of their own through `policy:csp:*`, and two graders would eventually
@@ -756,6 +862,45 @@ function migrateV6toV7(db) {
   db.exec(SCHEMA);
 }
 
+// ─────────────────────────────────────────────────── v7 → v8: the ledger learns WHICH ACCOUNT
+// One added column (change_event.principal, NULL for every row that exists) and one added table
+// (principal: id → display label). No row is read or rewritten, so every existing row crosses the
+// line byte-identical with a NULL in the new column — which is the true answer for them: no
+// authenticated caller wrote them, whoever was at the keyboard. The column v4→v5 dropped was a
+// reservation nothing filled; this one arrives with its writer (the engine's `caller` option —
+// cross-account sharing is the first second caller there has ever been).
+//
+// A rung rather than idempotent DDL for the reason v6→v7 gives: the ladder is what states which
+// builds may WRITE this file, and an older process writing into a v8 store would append ledger
+// rows with no principal while another account's writes sat beside them — an attribution hole
+// nobody could see. The pragma guard is SQLite's missing ADD COLUMN IF NOT EXISTS.
+function migrateV7toV8(db) {
+  if (!db.pragma("table_info(change_event)").some((x) => x.name === "principal"))
+    db.exec("ALTER TABLE change_event ADD COLUMN principal TEXT");
+  db.exec(SCHEMA);
+}
+
+// ─────────────────────────────────────────────────────────── v8 → v9: an app gains its skill slot
+// Two added columns — app.skill and app_history.skill, NULL for every row that exists — and nothing
+// read or rewritten. NULL is the true answer for every app and every revision written before the slot
+// existed: none of them carried a skill, so a restore to one of them brings back "no skill", exactly
+// as a restore brings back the declaration that revision had.
+//
+// A rung for the reason v6→v7 gives: an older build writing into this file would save apps through an
+// upsert that never mentions the column, so a ui-only save from it would keep the head's skill while
+// its revision row said NULL — the next restore would then silently drop a guide the app still shows.
+//
+// skill_from rides beside it from the start (same rung — v9 was never released): the skill's AUTHOR
+// when that is not the user. A copied app's skill is another account's words, and the row's
+// `author` (the copier) cannot say so; NULL is the right answer for every existing row, since no
+// copy carried a skill before the slot existed.
+function migrateV8toV9(db) {
+  for (const t of ["app", "app_history"])
+    for (const c of ["skill", "skill_from"])
+      if (!db.pragma(`table_info(${t})`).some((x) => x.name === c)) db.exec(`ALTER TABLE ${t} ADD COLUMN ${c} TEXT`);
+  db.exec(SCHEMA);
+}
+
 /** Which app_history row did each save event write?
  *
  *  The primary key is (aggregate_id, seq): from v0.4.x a save stamps the app's version with the
@@ -880,9 +1025,9 @@ export function openStore(path, { readOnly = false } = {}) {
       db.close();
       throw new Error(`store schema is v${uvGate}, this build understands up to v${SCHEMA_VERSION} — update open-mcp-apps`);
     }
-    if (hasTables && uvGate !== 4 && uvGate !== 5 && uvGate !== 6 && uvGate !== SCHEMA_VERSION) {
+    if (hasTables && ![4, 5, 6, 7, 8, SCHEMA_VERSION].includes(uvGate)) {
       db.close();
-      throw new Error(`store schema is v${uvGate} — this build migrates v4 (v0.4.2), v5 and v6 (v0.5.0), and opens v${SCHEMA_VERSION}. ` +
+      throw new Error(`store schema is v${uvGate} — this build migrates v4 (v0.4.2), v5, v6 (v0.5.0), v7 (v0.6–v0.7) and v8 (pre-release), and opens v${SCHEMA_VERSION}. ` +
         `For an older store: read what matters out with the release that wrote it, then start fresh. ` +
         `(Nothing is touched by this refusal — the file is exactly as it was.)`);
     }
@@ -900,33 +1045,37 @@ export function openStore(path, { readOnly = false } = {}) {
   } else {
     // ONE transaction for the whole open: DDL, the retained migrations and the user_version stamp
     // live or die together — an interrupted open leaves rows, table shape AND version alike
-    // untouched, at whichever version the file arrived. Five states are spoken here, and only five:
+    // untouched, at whichever version the file arrived. Seven states are spoken here, and only seven:
     //   · a FRESH file (no tables) gets the current schema;
-    //   · v4 — the store v0.4.2 released — climbs v4→v5→v6→v7 in this one open;
-    //   · v5 — released by nobody, but the shape a mid-development store carries — takes v5→v6→v7;
-    //   · v6 — the store v0.5.0 released, so the rung with real users behind it — takes v6→v7;
-    //   · v7 — current — runs the idempotent DDL and proceeds.
+    //   · v4 — the store v0.4.2 released — climbs v4→v5→v6→v7→v8→v9 in this one open;
+    //   · v5 — released by nobody, but the shape a mid-development store carries — takes v5→…→v9;
+    //   · v6 — the store v0.5.0 released — takes v6→…→v9;
+    //   · v7 — the store v0.6/v0.7 released, the rung with the most users behind it — takes v7→v8→v9;
+    //   · v8 — unreleased, written by every build since sharing landed (dev and staging stores) — takes v8→v9;
+    //   · v9 — current — runs the idempotent DDL and proceeds.
     // Anything older refuses with the way forward named. The ladder reaches back to the last public
     // release and no further: that is the whole compatibility promise, and it is a CHAIN — a rung
     // is written once and every older store climbs through it, never one direct step per origin.
     // `.immediate()` takes the write lock up front: the v5→v6 step reads before it writes, and a
     // deferred transaction could observe another process's writes between the two.
     db.transaction(() => {
-      // The gate above already refused everything but fresh / v4 / v5 / v6 / v7 — re-read, don't re-judge.
+      // The gate above already refused everything but fresh / v4 … v9 — re-read, don't re-judge.
       const uv = db.pragma("user_version", { simple: true });
       const fresh = !db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='item'").get();
       if (fresh) {
         db.exec(SCHEMA);
         db.pragma(`user_version = ${SCHEMA_VERSION}`);
-      } else if (uv === 4 || uv === 5 || uv === 6) {
+      } else if (uv >= 4 && uv <= 8) {
         try {
           if (uv === 4) migrateV4toV5(db);
           if (uv <= 5) migrateV5toV6(db);
-          migrateV6toV7(db);
+          if (uv <= 6) migrateV6toV7(db);
+          if (uv <= 7) migrateV7toV8(db);
+          migrateV8toV9(db);
         } catch (e) {
           // A v4 reader has never heard of v5 — name the store they actually have before the
           // rung's own verdict. The refusal semantics stay the rung's; only the address is added.
-          if (uv === 4) e.message = `your store is v4 (written by v0.4.2), which climbs v4→v5→v6→v7 in one open — the v5→v6 rung refused: ${e.message}`;
+          if (uv === 4) e.message = `your store is v4 (written by v0.4.2), which climbs v4→v5→v6→v7→v8→v9 in one open — the v5→v6 rung refused: ${e.message}`;
           throw e;
         }
         db.pragma(`user_version = ${SCHEMA_VERSION}`);
@@ -937,7 +1086,7 @@ export function openStore(path, { readOnly = false } = {}) {
   }
 
   const q = {
-    eventByCmd: db.prepare("SELECT seq, event_type, aggregate_id, payload FROM change_event WHERE command_id = ?"),
+    eventByCmd: db.prepare("SELECT seq, event_type, aggregate_id, payload, principal FROM change_event WHERE command_id = ?"),
     seq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event"),
     settingsSeq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = 'settings'"),
     // Per-COLLECTION high-water mark, served by idx_event_collection. This is the precision the ack
@@ -946,8 +1095,25 @@ export function openStore(path, { readOnly = false } = {}) {
     // turning every concurrent write anywhere into a spurious refresh here.
     collSeq: db.prepare("SELECT COALESCE(MAX(seq),0) AS v FROM change_event WHERE json_extract(payload,'$.collection') = ?"),
     appendEvent: db.prepare(
-      `INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, host, ts)
-       VALUES (@aggregate_id, @command_id, @event_type, @payload, @actor, @host, @ts)`),
+      `INSERT INTO change_event (aggregate_id, command_id, event_type, payload, actor, host, ts, principal)
+       VALUES (@aggregate_id, @command_id, @event_type, @payload, @actor, @host, @ts, @principal)`),
+    // The label beside a principal id — refreshed by the write that carries it, so the store always
+    // shows the name the account had at its latest write. A no-op when nothing changed.
+    upsertPrincipal: db.prepare(
+      `INSERT INTO principal (id, label, updated_at) VALUES (@id, @label, @ts)
+       ON CONFLICT(id) DO UPDATE SET label = @label, updated_at = @ts WHERE principal.label <> @label`),
+    principalLabel: db.prepare("SELECT label FROM principal WHERE id = ?"),
+    // Who last wrote each of these rows. A row's version IS the seq of the event that last touched
+    // it (one ordinal axis), so the answer is a primary-key lookup per row, never a ledger scan.
+    writersOf: db.prepare(
+      `SELECT seq, principal FROM change_event
+        WHERE seq IN (SELECT value FROM json_each(?)) AND principal IS NOT NULL AND json_extract(payload,'$.collection') = ?`),
+    // ONE app's file activity — the file-plane twin of collSeq, for a reader that may see only
+    // that app's files (a shared app). Served by idx_event_file (the partial index over file events).
+    appFilesSeq: db.prepare(
+      `SELECT COALESCE(MAX(seq),0) AS v FROM change_event
+        WHERE (event_type = 'file_written' OR event_type = 'file_deleted') AND json_extract(payload,'$.app') = ?`),
+    itemCollection: db.prepare("SELECT collection FROM item WHERE id = ?"),
 
     // Ledger reads for delta reporting. Ordered seq ASC + LIMIT: the window is the CONTIGUOUS run
     // right after `since`, never a sample with a gap. That ordering is what makes a caller-held mark
@@ -955,7 +1121,7 @@ export function openStore(path, { readOnly = false } = {}) {
     // still strictly after it. (The old shape served the NEWEST window and skipped the middle; a
     // mark advanced over a skipped event lost it forever — read-plane audit D4.)
     changesSince: db.prepare(
-      `SELECT seq, aggregate_id, event_type, payload, actor, host, ts FROM change_event
+      `SELECT seq, aggregate_id, event_type, payload, actor, host, ts, principal FROM change_event
        WHERE json_extract(payload, '$.collection') = @c AND seq > @since
        ORDER BY seq ASC LIMIT @n`),
     countChangesSince: db.prepare(
@@ -1053,30 +1219,30 @@ export function openStore(path, { readOnly = false } = {}) {
     // manifest document into JS to count one key would make the cheapest read in the registry
     // scale with the size of every declaration in it. json_type guards the NULL/absent cases so
     // json_each is only reached for a real object.
-    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, CASE WHEN json_type(manifest, '$.functions') = 'object' THEN (SELECT COUNT(*) FROM json_each(app.manifest, '$.functions')) ELSE 0 END AS fn_count, kind, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
+    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, CASE WHEN skill IS NULL THEN 0 ELSE 1 END AS has_skill, CASE WHEN json_type(manifest, '$.functions') = 'object' THEN (SELECT COUNT(*) FROM json_each(app.manifest, '$.functions')) ELSE 0 END AS fn_count, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
     // v6: the slots resolve BEFORE this statement runs (save_app's tri-state manifest and slot
     // inheritance live in the command handler), so every column here is written outright — the
-    // old scene_set/manifest_set three-state and the kind COALESCE retired with the block:
+    // old scene_set/manifest_set three-state retired with the block:
     // projections are recomputed from the resolved manifest on every save, never carried.
     insComp: db.prepare(
-      `INSERT INTO app (name, version, ui, description, author, scene, manifest, kind, visibility, updated_at)
-       VALUES (@name, @version, @ui, @description, @author, @scene, @manifest, @kind,
+      `INSERT INTO app (name, version, ui, description, author, scene, manifest, skill, skill_from, visibility, updated_at)
+       VALUES (@name, @version, @ui, @description, @author, @scene, @manifest, @skill, @skill_from,
                COALESCE(@visibility, 'listed'), @ts)
        ON CONFLICT(name) DO UPDATE SET version = @version, ui = @ui,
          description = CASE WHEN @description = '' THEN app.description ELSE @description END,
-         author = @author, scene = @scene, manifest = @manifest, kind = @kind,
+         author = @author, scene = @scene, manifest = @manifest, skill = @skill, skill_from = @skill_from,
          visibility = COALESCE(@visibility, app.visibility),
          updated_at = @ts`),
-    insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, ui, manifest, ts) VALUES (@name, @version, @ui, @manifest, @ts)"),
+    insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, ui, manifest, skill, skill_from, ts) VALUES (@name, @version, @ui, @manifest, @skill, @skill_from, @ts)"),
     // Human-push retention (HUMAN_HISTORY_KEEP_DAYS). Scoped to ONE app and to revisions strictly
     // BELOW the row just written, so the head survives however old the app is.
     pruneAppHist: db.prepare("DELETE FROM app_history WHERE name = @name AND version < @head AND ts < @cutoff"),
     compHist: db.prepare("SELECT version, ts, length(ui) AS ui_size FROM app_history WHERE name = ? ORDER BY version DESC"),
-    compVersion: db.prepare("SELECT name, version, ui, manifest, ts FROM app_history WHERE name = ? AND version = ?"),
+    compVersion: db.prepare("SELECT name, version, ui, manifest, skill, skill_from, ts FROM app_history WHERE name = ? AND version = ?"),
     // Head revision — what an omitted slot inherits (W-N). From the REVISION table, never the
     // projection columns: projections are rebuildable caches, and inheriting from one would
     // quietly promote it to a second source.
-    headRev: db.prepare("SELECT ui, manifest FROM app_history WHERE name = ? ORDER BY version DESC LIMIT 1"),
+    headRev: db.prepare("SELECT ui, manifest, skill, skill_from FROM app_history WHERE name = ? ORDER BY version DESC LIMIT 1"),
     delComp: db.prepare("DELETE FROM app WHERE name = ?"),
     setCompVisibility: db.prepare("UPDATE app SET visibility = @visibility, version = @version, updated_at = @ts WHERE name = @name"),
 
@@ -1109,7 +1275,10 @@ export function openStore(path, { readOnly = false } = {}) {
     // Data-pane ledger window (newest first) — the internal read that keeps `via`.
     recentEventsAll: db.prepare("SELECT seq, event_type, aggregate_id, actor, host, ts, payload FROM change_event ORDER BY seq DESC LIMIT @n"),
     recentEventsColl: db.prepare("SELECT seq, event_type, aggregate_id, actor, host, ts, payload FROM change_event WHERE json_extract(payload,'$.collection') = @c ORDER BY seq DESC LIMIT @n"),
-    compHistory: db.prepare("SELECT version, ui, manifest FROM app_history WHERE name = ? ORDER BY version DESC"),
+    compHistory: db.prepare("SELECT version, ui, manifest, skill, skill_from FROM app_history WHERE name = ? ORDER BY version DESC"),
+    // The apps that carry a skill — what data_list consults to point a reader at the guide for the
+    // collection it just read. Small by construction (one row per app that has written one).
+    skillApps: db.prepare("SELECT name, author, manifest, skill_from FROM app WHERE skill IS NOT NULL ORDER BY name"),
     settingByKey: db.prepare("SELECT fields FROM item WHERE collection = 'settings' AND json_extract(fields,'$.key') = ?"),
   };
 
@@ -1215,12 +1384,15 @@ export function openStore(path, { readOnly = false } = {}) {
     return coercePref(own ? own.fields.value : global ? global.fields.value : undefined, true);
   };
   function confirmationGate(command, privileged, via, { target, version, preview, collection }) {
-    if (privileged || !CONFIRMATION_CLASSES[command.type].confirm || command.actor !== "human") return null;
+    // CONFIRM_ALWAYS (the sharing facade's mark): another account's data — every actor is asked,
+    // and neither account's confirm_delete preference can switch it off.
+    const always = command[CONFIRM_ALWAYS] === true;
+    if (privileged || !CONFIRMATION_CLASSES[command.type].confirm || (!always && command.actor !== "human")) return null;
     const viaApp = (via && via.app) || "";
     // `require_confirmation` is how a CALLER raises the bar on itself — the embedder's
     // `delete_items: "confirm"` tier speaks through it. It can only ever add a confirmation,
     // never remove one, which is why it is safe to accept from an untrusted child.
-    if (command.require_confirmation !== true && !confirmPrefOn(viaApp)) return null;
+    if (!always && command.require_confirmation !== true && !confirmPrefOn(viaApp)) return null;
     const binding = { type: command.type, caller: command.actor + "|" + viaApp, target, version };
     if (command.request_state != null) {
       const v = requestState.verify(String(command.request_state), binding);
@@ -1265,14 +1437,24 @@ export function openStore(path, { readOnly = false } = {}) {
         : type === "write_file" || type === "delete_file"
         ? String(command.app || "") + "/" + String(command.path || "")
         : command.id; // add_item without an explicit id has no verifiable target → type-only
-      if (seen.event_type === EVENT_TYPES[type] && (target == null || seen.aggregate_id === target)) {
+      // …and only for the same CALLER in the same PLACE. A command_id is caller-supplied, not a
+      // credential: type + target was enough while one account wrote one store, but a share puts a
+      // second account's commands into the owner's ledger, and an add_item names no target to
+      // match. Without these two checks a known id replayed the owner's private row into a
+      // recipient's receipt, or answered a recipient's write with the owner's (S4 audit X1). So the
+      // prior event must carry this call's principal (NULL = no identified caller, on both sides)
+      // and, for an item command, this command's collection.
+      let payload = {};
+      try { payload = JSON.parse(seen.payload) || {}; } catch {}
+      const samePrincipal = (seen.principal ?? null) === (currentPrincipal()?.principal ?? null);
+      const sameCollection = collection == null || payload.collection == null
+        || payload.collection === (type === "add_item" ? String(collection).trim() : String(collection));
+      if (seen.event_type === EVENT_TYPES[type] && (target == null || seen.aggregate_id === target) && samePrincipal && sameCollection) {
         // The replay's receipt is the ORIGINAL receipt, recovered from the ledger row that made the
         // command idempotent. A retry fires precisely when the first response was lost — which is
         // when the receipt matters most — so a bare {ok} here would defeat the retry it exists for.
         // (The pre-envelope shape returned a whole collection snapshot; the tool layer dropped it
         // and the model read "Already added item undefined".)
-        let payload = {};
-        try { payload = JSON.parse(seen.payload) || {}; } catch {}
         const out = { ok: true, idempotent: true, event_type: seen.event_type, seq: seen.seq };
         if (APP_CMDS) {
           out.name = seen.aggregate_id;
@@ -1331,15 +1513,28 @@ export function openStore(path, { readOnly = false } = {}) {
     // The idempotence was never load-bearing here: a replay short-circuits at the command level and
     // never reaches this function, so these receipts are emitted exactly once per real execution.
     // An opaque id therefore costs nothing and removes the shared namespace entirely.
+    // The account, from the scope the engine entered — never from `command` (see principalScope).
+    // Its label is upserted beside the first event that carries it, inside this same transaction.
+    const who = currentPrincipal();
+    let labelled = false;
     const emit = (aggregate_id, event_type, payload, extraReceipt) => {
       const prev = payload.collection != null ? q.collSeq.get(payload.collection).v : q.seq.get().v;
-      const info = q.appendEvent.run({ aggregate_id, command_id: extraReceipt ? randomUUID() : command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, host, ts });
+      const info = q.appendEvent.run({ aggregate_id, command_id: extraReceipt ? randomUUID() : command_id, event_type, payload: JSON.stringify({ ...payload, sv: SCHEMA_VERSION }), actor, host, ts, principal: who ? who.principal : null });
+      if (who && !labelled && typeof who.label === "string" && who.label) {
+        q.upsertPrincipal.run({ id: who.principal, label: who.label.slice(0, 200), ts });
+        labelled = true;
+      }
       return { seq: Number(info.lastInsertRowid), prev_collection_seq: prev };
     };
+    // An id-addressed write that names its collection is answered as "no such row" when the row
+    // lives anywhere else — the same answer a missing id gets, so the assertion is never an oracle
+    // for what exists outside it.
+    const rowIn = (row) => row && (command.collection == null || row.collection === String(command.collection)) ? row : null;
 
     if (type === "add_item") {
       const coll = String(command.collection || "").trim();
       if (!coll) return { ok: false, error: "collection_required" };
+      if (coll.startsWith(SHARED_PREFIX)) return { ok: false, error: "reserved_collection", collection: coll };
       const grp = String(command.group ?? "");
       if (grp.length > MAX_GROUP_CHARS) return { ok: false, error: "group_too_long", limit: MAX_GROUP_CHARS };
       const fields = command.fields && typeof command.fields === "object" ? command.fields : {};
@@ -1368,7 +1563,7 @@ export function openStore(path, { readOnly = false } = {}) {
     }
 
     if (type === "update_item") {
-      const row = q.itemById.get(command.id);
+      const row = rowIn(q.itemById.get(command.id));
       if (!row) return { ok: false, error: "not_found" };
       // The CURRENT row, not the collection: it is what the retry needs, and it is one row whether
       // the collection holds three items or thirty thousand.
@@ -1409,7 +1604,7 @@ export function openStore(path, { readOnly = false } = {}) {
     }
 
     if (type === "move_item") {
-      const row = q.itemById.get(command.id);
+      const row = rowIn(q.itemById.get(command.id));
       if (!row) return { ok: false, error: "not_found" };
       // The CURRENT row, not the collection: it is what the retry needs, and it is one row whether
       // the collection holds three items or thirty thousand.
@@ -1426,7 +1621,7 @@ export function openStore(path, { readOnly = false } = {}) {
     }
 
     if (type === "delete_item") {
-      const row = q.itemById.get(command.id);
+      const row = rowIn(q.itemById.get(command.id));
       if (!row) return { ok: false, error: "not_found" };
       // The CURRENT row, not the collection: it is what the retry needs, and it is one row whether
       // the collection holds three items or thirty thousand.
@@ -1496,13 +1691,11 @@ export function openStore(path, { readOnly = false } = {}) {
       // the CLI is the one holding that project: re-pushing is the supported edit.
       //
       // It sits HERE for the same reason provenance_locked does — six paths write app html, and a
-      // rule that lives in one tool is a rule five other doors do not have. Two of those doors are
-      // refused as a deliberate consequence rather than an accident:
-      //   · restore_app — rolling the template back pairs an old mount point with the CURRENT
-      //     bundle in the file plane, a state no build ever produced;
-      //   · promote_app — it touches only the manifest, but the manifest of a built app is a FILE
-      //     in that build (install-app.mjs --manifest), so flipping `kind` here is the same
-      //     desynchronisation one slot over. Change it in the project and push again.
+      // rule that lives in one tool is a rule five other doors do not have. One of those doors is
+      // refused as a deliberate consequence rather than an accident: restore_app — rolling the
+      // template back pairs an old mount point with the CURRENT bundle in the file plane, a state
+      // no build ever produced. A manifest-only save is refused too: the manifest of a built app
+      // is a FILE in that build (install-app.mjs --manifest). Change it in the project and push again.
       // (install_from_app_store needs no branch here: it already refuses any app it did not author.)
       if (existing && actor === "agent" && hasAssetReferences(existing.ui))
         return { ok: false, error: "built_outside", name };
@@ -1521,8 +1714,9 @@ export function openStore(path, { readOnly = false } = {}) {
       // the same slot contract by construction.
       const hasUi = command.ui !== undefined;
       const hasManifest = "manifest" in command;
+      const hasSkill = "skill" in command;
       if (!existing && !hasUi) return { ok: false, error: "ui_required_on_create" };
-      if (existing && !hasUi && !hasManifest) return { ok: false, error: "no_slots_provided" };
+      if (existing && !hasUi && !hasManifest && !hasSkill) return { ok: false, error: "no_slots_provided" };
       const head = existing ? q.headRev.get(name) : null;
 
       let ui;
@@ -1564,6 +1758,35 @@ export function openStore(path, { readOnly = false } = {}) {
         manifestJson = head ? (head.manifest ?? null) : null;
         manifestAction = "inherited";
       }
+      // The skill slot (v9, src/skill.mjs) — the same tri-state as manifest: omitted = inherit the
+      // head revision's, null = clear, a string = replace whole. "" is refused for the reason {} is:
+      // it reads as both "an empty guide" and "clear it", and one spelling must not mean two things.
+      // A stored skill is one that PARSED, so every surface that shows its description can trust it.
+      //
+      // WHOSE WORDS travel with the text (skill_from): a skill handed in WITH a `skill_from` is
+      // someone else's (copy_app sets it to the original author; restore/undo hand back a revision's
+      // own value); one handed in without it is the caller's own writing, so a rewrite makes the
+      // guide the user's — the save_app tool never passes one. An inherited skill keeps its author,
+      // a cleared one has none. Never more than a label: a non-string is refused, not coerced.
+      let skill, skillAction, skillDesc = null, skillFrom = null;
+      if (hasSkill) {
+        const sv = command.skill;
+        if (sv === null) { skill = null; skillAction = "cleared"; }
+        else if (sv === "") return { ok: false, error: "empty_skill_use_null" };
+        else {
+          const p = parseSkill(sv);
+          if (!p.ok) return { ok: false, error: "bad_skill", detail: p.detail };
+          const from = command.skill_from;
+          if (from != null && (typeof from !== "string" || !from.trim() || from.length > 256))
+            return { ok: false, error: "bad_skill", detail: "skill_from must be the author's label (a non-empty string of at most 256 characters) or null" };
+          skill = sv; skillAction = "replaced"; skillDesc = p.description; skillFrom = from == null ? null : from.trim();
+        }
+      } else {
+        skill = head ? (head.skill ?? null) : null;
+        skillFrom = skill != null ? (head.skill_from ?? null) : null;
+        skillAction = "inherited";
+        if (skill != null) { const p = parseSkill(skill); if (p.ok) skillDesc = p.description; }
+      }
       // Projections — recomputed from the resolved manifest on EVERY save, never carried forward
       // by column-level COALESCE: the columns exist so the App Store and list_apps need not parse
       // JSON, and staying derived is what keeps them rebuildable instead of a second source.
@@ -1575,8 +1798,6 @@ export function openStore(path, { readOnly = false } = {}) {
       // app-writing paths (save_app, edit_app, restore, install, undo, seed) get the same door.
       const fnErr = functionsJoinError(mObj, ui);
       if (fnErr) return { ok: false, error: "bad_functions", detail: fnErr };
-      const kind = mObj && mObj.kind != null ? String(mObj.kind) : "app";
-      if (!APP_KINDS.has(kind)) return { ok: false, error: "unknown_kind" };
       const scene = mObj && mObj.scene && typeof mObj.scene === "object" ? JSON.stringify(mObj.scene) : null;
       const existed = existing;
       const visibility = command.visibility === undefined ? null : String(command.visibility);
@@ -1584,11 +1805,20 @@ export function openStore(path, { readOnly = false } = {}) {
       // Append first, then stamp the row with this event's seq — same rule as an item write. It also
       // retires the old "continue from the tombstoned history's MAX(version)" dance: version
       // continuity across delete/recreate is now free, because the ledger never goes backwards.
-      const m = emit(name, "component_saved", { name, size: ui.length, created: !existed, manifest_action: manifestAction });
+      // `copied_from` is provenance for an app made by copy_app ({owner, app, version, collections}):
+      // the audit answer to "where did this come from", and the record a retried copy reads its
+      // collection mapping back from. Only the engine's copy path sets it — no tool passes it on.
+      const copied = command.copied_from && typeof command.copied_from === "object" && !Array.isArray(command.copied_from) ? command.copied_from : null;
+      const m = emit(name, "component_saved", { name, size: ui.length, created: !existed, manifest_action: manifestAction, ...(copied ? { copied_from: copied } : {}) });
       const version = m.seq;
-      q.insComp.run({ name, version, ui, description: String(command.description || ""), author: actor, scene, manifest: manifestJson, kind, visibility, ts });
+      // ONE description: an app with a skill is described by its skill's frontmatter wherever it is
+      // listed (list_apps, the App Store, a share), so the column follows the slot on every save and a
+      // caller-passed description cannot make the two say different things. Without a skill the
+      // column keeps its old rule ('' keeps what was there).
+      const description = skillDesc ?? String(command.description || "");
+      q.insComp.run({ name, version, ui, description, author: actor, scene, manifest: manifestJson, skill, skill_from: skillFrom, visibility, ts });
       const comp = q.compByName.get(name);
-      q.insCompHist.run({ name, version: comp.version, ui, manifest: manifestJson, ts });
+      q.insCompHist.run({ name, version: comp.version, ui, manifest: manifestJson, skill, skill_from: skillFrom, ts });
       // …and then sweep this app's stale revisions — but only when a human push lands on a HUMAN
       // APP (HUMAN_HISTORY_KEEP_DAYS). Both halves are load-bearing, and keying on the actor alone
       // was WRONG: `undoLast` re-saves an app's previous revision with actor "human" (this file,
@@ -1624,12 +1854,10 @@ export function openStore(path, { readOnly = false } = {}) {
         }
       }
       // The size pair travels on EVERY save, unconditionally — that is what makes a suspicious
-      // shrink (82,623 → 74 chars) announce itself instead of waiting to be asked. `manifest`
-      // rides back so tool-side diagnostics (suggested_kind) read the RESOLVED declaration
-      // instead of re-deriving inheritance.
+      // shrink (82,623 → 74 chars) announce itself instead of waiting to be asked.
       return { ok: true, name, version: comp.version, created: !existed, size: ui.length,
-        prev_size: existed ? existing.ui.length : null, kind: comp.kind,
-        manifest_action: manifestAction, manifest: manifestJson,
+        prev_size: existed ? existing.ui.length : null,
+        manifest_action: manifestAction, skill_action: skillAction,
         ...(notes.length ? { note: notes.join(" ") } : {}) };
     }
 
@@ -1755,6 +1983,12 @@ export function openStore(path, { readOnly = false } = {}) {
       const totalU = q.fileUsageTotalStmt.get();
       if (totalU.bytes - oldSize + size > MAX_TOTAL_FILE_BYTES) return { ok: false, error: "total_quota_exceeded" };
       if (totalU.count + (existing ? 0 : 1) > MAX_TOTAL_FILE_COUNT) return { ok: false, error: "total_too_many_files" };
+      // A collaborator's write through a share (SHARED_WRITE, the facade's mark) meets the lower
+      // per-app ceilings too — in this transaction, so two writes racing for the last slot cannot
+      // both land. Only GROWTH is refused: a new file at the count line, more bytes past the byte line.
+      if (command[SHARED_WRITE] === true
+          && ((!existing && appU.count + 1 > SHARED_APP_MAX_FILES) || (size > oldSize && appU.bytes - oldSize + size > SHARED_APP_MAX_FILE_BYTES)))
+        return { ok: false, error: "app_files_full", limit_files: SHARED_APP_MAX_FILES, limit_bytes: SHARED_APP_MAX_FILE_BYTES };
       // Same rule as items and apps: append first, stamp the row with this event's seq.
       const m = emit(app + "/" + path, "file_written", { app, path, sha256, size, mime });
       q.insFile.run({ app, path, sha256, size, mime, version: m.seq, ts });
@@ -1869,7 +2103,10 @@ export function openStore(path, { readOnly = false } = {}) {
         // never rides an AI-facing read (row #8: the ledger's attribution stays internal; the
         // Data pane reads it through recentEvents on the /rpc internal path instead).
         const { collection: _c, sv: _sv, via: _via, ...rest } = payload;
-        return { seq: r.seq, type: r.event_type, id: r.aggregate_id, actor: r.actor, host: r.host, ts: r.ts, ...rest };
+        // `principal` rides only when an authenticated caller wrote the event — a local store's
+        // events never carry one, so their shape is exactly what it always was.
+        return { seq: r.seq, type: r.event_type, id: r.aggregate_id, actor: r.actor, host: r.host, ts: r.ts,
+          ...(r.principal != null ? { principal: r.principal } : {}), ...rest };
       }),
     };
   });
@@ -1936,6 +2173,7 @@ export function openStore(path, { readOnly = false } = {}) {
         cmd[k] = c[k];
       }
       for (const k of BATCH_ENVELOPE) if (c[k] !== undefined) cmd[k] = c[k];
+      if (c[CONFIRM_ALWAYS] === true) cmd[CONFIRM_ALWAYS] = true;   // the facade's mark survives the re-clean
       cleaned.push(cmd);
     }
     let results;
@@ -2035,6 +2273,9 @@ export function openStore(path, { readOnly = false } = {}) {
     execute,
     executePrivileged,
     executeBatch,
+    // The store's request_state codec, for a two-step that is not a store command (copy_app): the
+    // same signed, expiring, binding-checked state the delete gate issues — never a second secret.
+    confirmation: { issue: (binding) => requestState.issue(binding), verify: (state, binding) => requestState.verify(String(state), binding) },
     events,
     snapshot,
     queryItems,
@@ -2044,7 +2285,38 @@ export function openStore(path, { readOnly = false } = {}) {
     // different axis. It is NOT on the get_data_version TOOL face — see src/tools/data.mjs, which
     // projects the four declared keys (opening an app is not a data change, and the model must
     // not start reading one as if it were).
-    dataVersion: () => ({ seq: q.seq.get().v, settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION, live_n: q.liveN.get().v }),
+    //
+    // `{collection}` narrows `seq` to that one collection's high-water mark — the probe a widget
+    // bound to ONE collection actually needs (a write elsewhere no longer reads as "something
+    // moved"), and the only one a reader allowed to see one collection may be given at all.
+    dataVersion: ({ collection } = {}) => ({
+      seq: collection != null ? q.collSeq.get(String(collection)).v : q.seq.get().v,
+      settings_version: q.settingsSeq.get().v, files_version: q.filesSeq.get().v, schema_version: SCHEMA_VERSION, live_n: q.liveN.get().v }),
+    /** One collection's position on the ledger (0 = nothing ever happened in it). */
+    collectionVersion: (collection) => q.collSeq.get(String(collection)).v,
+    /** One app's file activity (0 = none) — files_version narrowed to the files that app owns. */
+    appFilesVersion: (app) => q.appFilesSeq.get(String(app)).v,
+    /** Which collection a row lives in, or null — without reading its fields. */
+    itemCollection: (id) => q.itemCollection.get(String(id))?.collection ?? null,
+    /** The FIRST save of this app's current life (0 = no such app has ever been saved). A delete
+     *  followed by a save starts a new life, so the number changes exactly when "the app called X"
+     *  stops being the same app — which is what a grant issued for it has to be able to notice. */
+    appBirth: (name) => {
+      const n = String(name ?? "");
+      return q.firstCompEvent.get(n, q.lifeStart.get(n).v).v;
+    },
+    /** The display label recorded for a principal id, or null. */
+    principalLabel: (id) => (id == null ? null : q.principalLabel.get(String(id))?.label ?? null),
+    /** Map(seq → principal) for the given event seqs IN `collection`, authenticated writers only.
+     *  Pass row versions to learn who last wrote each row (a row's version is its last event's
+     *  seq). The collection is part of the question so that a reader allowed one collection cannot
+     *  use this to ask about events anywhere else. */
+    writersOf: (seqs, collection) => {
+      const out = new Map();
+      const list = [...new Set((seqs || []).map(Number).filter(Number.isFinite))];
+      if (list.length) for (const r of q.writersOf.all(JSON.stringify(list), String(collection))) out.set(r.seq, r.principal);
+      return out;
+    },
     /** Remember which app was opened LAST — the entire state of every `@live` brick on screen.
      *
      *  Deliberately not a ledger event (2026-08-14: "it does not need the ledger — that would
@@ -2060,7 +2332,9 @@ export function openStore(path, { readOnly = false } = {}) {
      *  checked the app exists; this only keeps a malformed value out of the column). */
     touchLiveApp(name) {
       const app = String(name ?? "");
-      if (!APP_NAME_RE.test(app)) return null;
+      // An app of this store, or one another account shared with this store's owner — named by its
+      // handle (`@owner/app`), the only name it has here. Nothing else is ever written.
+      if (!APP_NAME_RE.test(app) && !SHARED_APP_HANDLE_RE.test(app)) return null;
       const ts = new Date().toISOString();
       q.touchLive.run({ app, ts });
       const row = q.liveGet.get();
@@ -2071,13 +2345,19 @@ export function openStore(path, { readOnly = false } = {}) {
      *  pointer row was never written). Null is an ANSWER: an `@live` brick renders its wait. */
     livePointer: () => q.liveGet.get() || null,
     getApp: (name) => q.compByName.get(name) || null,
+    /** The apps carrying a skill that are about `collection` (appCollectionsOf) — [{name,
+     *  skill_from}], by name. What data_list reads to say "this collection belongs to an app with a
+     *  guide" — and whose guide it is, when it is not the user's. */
+    skillAppsFor: (collection) => {
+      const c = String(collection ?? "");
+      return q.skillApps.all().filter((r) => appCollectionsOf(r).includes(c)).map((r) => ({ name: r.name, skill_from: r.skill_from ?? null }));
+    },
     // No arguments = every row, exactly as before: the registry's own consumers (the settings
     // App Store pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's
     // choice, and the model-facing tool is the caller that has a default.
-    listApps: ({ kinds, visibilities, name } = {}) => {
+    listApps: ({ visibilities, name } = {}) => {
       let rows = q.allComps.all();
       if (name) rows = rows.filter((c) => c.name === name);
-      if (kinds) rows = rows.filter((c) => kinds.includes(c.kind));
       if (visibilities) rows = rows.filter((c) => visibilities.includes(c.visibility));
       return rows;
     },
@@ -2134,7 +2414,7 @@ export function openStore(path, { readOnly = false } = {}) {
       // that commit did, not what the path holds today).
       let payload = {};
       try { payload = JSON.parse(seen.payload) || {}; } catch {}
-      return { event_type: seen.event_type, aggregate_id: seen.aggregate_id, seq: seen.seq, payload };
+      return { event_type: seen.event_type, aggregate_id: seen.aggregate_id, seq: seen.seq, payload, principal: seen.principal ?? null };
     },
 
     /** How many items a collection holds — the zero-row open's honest companion: the model learns
@@ -2231,9 +2511,9 @@ export function openStore(path, { readOnly = false } = {}) {
             visibility: payload.was, actor: "human" }, true) };
         }
         if (ev.event_type === "component_saved") {
-          // The previous REVISION is the pre-image — BOTH slots, verbatim, because a revision is a
-          // coherent (ui, manifest) pair and restoring one without the other would manufacture a
-          // state that never existed. Rolling FORWARD to it (rather than deleting the current row)
+          // The previous REVISION is the pre-image — EVERY slot, verbatim, because a revision is a
+          // coherent (ui, manifest, skill) triple and restoring one without the others would
+          // manufacture a state that never existed. Rolling FORWARD to it (rather than deleting the current row)
           // is what keeps history honest: you can undo the undo.
           // The event's own seq IS the version it created (one ordinal axis), so the payload does not
           // carry one and does not need to — "the version before this event" is just "below its seq".
@@ -2241,7 +2521,7 @@ export function openStore(path, { readOnly = false } = {}) {
           const prev = hist.find((h) => h.version < ev.seq);
           if (!prev) return { done: { ok: false, error: "no_previous_version" } };
           return { type: "save_app", result: core({ type: "save_app", command_id: cid, name: ev.aggregate_id,
-            ui: prev.ui, manifest: prev.manifest ? JSON.parse(prev.manifest) : null, actor: "human" }, true) };
+            ui: prev.ui, manifest: prev.manifest ? JSON.parse(prev.manifest) : null, skill: prev.skill ?? null, skill_from: prev.skill_from ?? null, actor: "human" }, true) };
         }
         return { done: { ok: false, error: "not_undoable", event_type: ev.event_type } };
       });
@@ -2276,5 +2556,309 @@ export function openStore(path, { readOnly = false } = {}) {
     // structural consumer, cascade's ownership judge, retired the same day.)
 
     close: () => db.close(),
+  };
+}
+
+// ═══════════════════════════════════════════ the sharing wall: another account's view of a store
+// Cross-account sharing (docs/sharing-design-2026-10-02.md) gives a recipient reach into an OWNER's
+// store through a grant: one app × one role. Everything that reach may touch is decided HERE, in one
+// object with a fixed method list, so a tool handler that forgets a check can be wrong about a
+// feature and still never cross the line. It is the same shape as the runner: one wall, tested on
+// its own.
+//
+// Two rules hold for every method:
+//   · SCOPE FOLLOWS THE APP, recomputed on every call. A grant names an app, not a list of
+//     collections: what it reaches is whatever that app binds and declares at the moment of the
+//     call (sharedScopeOf). An owner who binds a new collection shares it; one who unbinds stops
+//     sharing it. `settings` and anything spelled like a handle are never in scope.
+//   · A refusal looks like absence. A collection outside the scope answers `not_shared` whether or
+//     not the owner has one by that name; a row outside it answers `not_found` exactly like a row
+//     that does not exist; an app or file outside it reads as missing. Nothing here can be used to
+//     learn what else the owner keeps.
+//
+// The ACCOUNT doing the writing is not a parameter: core() stamps it from principalScope, which the
+// engine entered from its authenticated caller. Writes therefore land in the owner's ledger under
+// the recipient's principal with no code here to get wrong.
+
+/** The two roles a grant can carry. viewer = read data and files, render, read source; editor =
+ *  viewer + write rows (deletes go through the usual confirmation) + write this app's files. */
+export const SHARE_ROLES = Object.freeze(["viewer", "editor"]);
+const roleRank = (r) => (r === "editor" ? 2 : r === "viewer" ? 1 : 0);
+const NOT_SHARED = "not_shared";
+
+/** What a grant for (app, appBirth) reaches in `store` RIGHT NOW, or null when the grant is dead.
+ *
+ *  Dead means the app is gone, or the app bearing the name is not the one the grant was issued for:
+ *  `appBirth` is the first save of the app's life at share time (store.appBirth), and a delete
+ *  followed by a save starts a new life. Without that check, deleting a shared app and creating a
+ *  private one under the same name would hand the new one to every old recipient.
+ *
+ *  The collection set is what the app opens on (defaultCollectionFor) plus what it declares — and
+ *  declarations count only for a local-tier app, the same tier gate the binding itself applies: an
+ *  unreviewed app's manifest is the app choosing what it is bound to. */
+export function sharedScopeOf(store, app, appBirth) {
+  const comp = store.getApp(String(app ?? ""));
+  if (!comp || !Number.isInteger(appBirth) || store.appBirth(comp.name) !== appBirth) return null;
+  return { app: comp.name, version: comp.version, description: comp.description, author: comp.author,
+    visibility: comp.visibility, ui_size: comp.ui.length, collections: appCollectionsOf(comp),
+    ...(comp.skill != null ? { has_skill: true } : {}), ...(comp.skill != null && comp.skill_from ? { skill_from: comp.skill_from } : {}) };
+}
+
+/** The collections an app is ABOUT: what it opens on (defaultCollectionFor) plus what it declares —
+ *  declarations counting only for a local-tier app, the same tier gate the binding itself applies.
+ *  Never `settings`, never a handle. One answer for two questions that must not drift apart: what a
+ *  share of the app reaches, and which app's skill a reader of a collection is pointed at.
+ *  Needs only {name, author, manifest}. */
+export function appCollectionsOf(comp) {
+  const names = new Set([defaultCollectionFor(comp)]);
+  if (comp.manifest && tierOf(comp.author) === "local") {
+    try { for (const k of Object.keys(JSON.parse(comp.manifest).collections || {})) names.add(k.trim()); }
+    catch { /* an unparseable manifest declares nothing */ }
+  }
+  return [...names].filter((c) => c && c !== SETTINGS_COLLECTION && !c.startsWith(SHARED_PREFIX)).sort();
+}
+
+// The hourly write budget's memory (SHARED_WRITES_PER_HOUR): `${owner db file}\0${principal}` → the
+// times of that account's recent writes. Keyed by the FILE, not the store object, because a
+// deployment may open the owner's store afresh for every request, and a budget that reset with it
+// would be no budget.
+const sharedWriteLog = new Map();
+function takeSharedWrites(store, n) {
+  const key = `${store.db.name}\u0000${currentPrincipal()?.principal ?? ""}`;
+  const now = Date.now();
+  const log = (sharedWriteLog.get(key) || []).filter((t) => now - t < SHARED_WRITE_WINDOW_MS);
+  if (log.length + n > SHARED_WRITES_PER_HOUR) {
+    if (log.length) sharedWriteLog.set(key, log); else sharedWriteLog.delete(key);
+    const minutes = log.length ? Math.max(1, Math.ceil((log[0] + SHARED_WRITE_WINDOW_MS - now) / 60_000)) : 60;
+    return { ok: false, error: "rate_limited", limit: SHARED_WRITES_PER_HOUR, retry_after_minutes: minutes };
+  }
+  for (let i = 0; i < n; i++) log.push(now);
+  sharedWriteLog.set(key, log);
+  return null;
+}
+
+/**
+ * One owner store, seen through a recipient's grants on it.
+ *
+ * @param store   the OWNER's store
+ * @param opts.grants  [{app, appBirth, role}] — every active grant this recipient holds on this
+ *                     owner. Several grants may cover one collection (two shared apps over the same
+ *                     data); the collection then carries the stronger role.
+ * @param opts.files   the owner store's file channel (files.mjs openFileChannel) — enables the
+ *                     `files` face. Passed in rather than opened here: files.mjs imports this module.
+ *
+ * Returns an object with a FIXED method list — anything not on it (settings, the registry, app
+ * history, the live pointer, policy, privileged writes, global versions) does not exist through it.
+ */
+export function scopeStore(store, { grants = [], files = null } = {}) {
+  const issued = [];
+  for (const g of grants || []) {
+    if (!g || typeof g.app !== "string" || !Number.isInteger(g.appBirth) || !SHARE_ROLES.includes(g.role)) continue;
+    issued.push({ app: g.app, appBirth: g.appBirth, role: g.role });
+  }
+  // Recomputed per call, never cached: the grant set came from the provider for THIS call, and the
+  // owner may have rebound, deleted or recreated the app since the last one.
+  function view() {
+    const apps = new Map(), colls = new Map(), ended = [];
+    for (const g of issued) {
+      const s = sharedScopeOf(store, g.app, g.appBirth);
+      if (!s) { ended.push({ app: g.app, appBirth: g.appBirth }); continue; }
+      const had = apps.get(g.app);
+      if (!had || roleRank(g.role) > roleRank(had.role)) apps.set(g.app, { ...s, role: g.role });
+      for (const c of s.collections) if (roleRank(g.role) > roleRank(colls.get(c))) colls.set(c, g.role);
+    }
+    return { apps, colls, ended };
+  }
+  // A read and the marks stamped beside it describe ONE instant (the queryItems doctrine).
+  const instant = (fn) => store.db.transaction(fn)();
+  // files_version for a reader that may see only these apps' files.
+  const filesSeq = (v) => Math.max(0, ...[...v.apps.keys()].map((a) => store.appFilesVersion(a)));
+  const labels = new Map();
+  const label = (p) => {
+    if (!labels.has(p)) labels.set(p, store.principalLabel(p));
+    return labels.get(p);
+  };
+
+  // One vetting step for every write, single or batched. Returns {cmd} or {refusal}.
+  function vet(v, c0) {
+    const c = c0 || {};
+    const keys = ITEM_WRITE_KEYS[c.type];
+    if (!keys) return { refusal: { ok: false, error: NOT_SHARED } };
+    if (c.actor != null && c.actor !== "human" && c.actor !== "agent") return { refusal: { ok: false, error: "unknown_actor" } };
+    const cmd = { type: c.type };
+    for (const k of keys) if (c[k] !== undefined) cmd[k] = c[k];
+    for (const k of ITEM_WRITE_ENVELOPE) if (c[k] !== undefined) cmd[k] = c[k];
+    if (c.type === "add_item") {
+      const coll = String(cmd.collection ?? "").trim();
+      const role = v.colls.get(coll);
+      if (!role) return { refusal: { ok: false, error: NOT_SHARED, collection: coll } };
+      if (role !== "editor") return { refusal: { ok: false, error: "read_only", collection: coll } };
+      cmd.collection = coll;
+      return { cmd };
+    }
+    const at = store.itemCollection(String(cmd.id ?? ""));
+    const role = at == null ? undefined : v.colls.get(at);
+    if (!role || (cmd.collection != null && String(cmd.collection) !== at)) return { refusal: { ok: false, error: "not_found" } };
+    if (role !== "editor") return { refusal: { ok: false, error: "read_only", collection: at } };
+    // Pinned for the store, which re-checks it inside the write's own transaction: a row cannot
+    // change collection, so this is the same answer twice — and the second one is the binding one.
+    cmd.collection = at;
+    if (c.type === "delete_item") cmd[CONFIRM_ALWAYS] = true;
+    return { cmd };
+  }
+  // The two limits a collaborator's writes meet and the owner's do not (S4 audit T19), checked
+  // after the wall (a refusal there is not a write) and before the store: the row cap per shared
+  // collection, counting this batch's own adds, then the account's hourly budget.
+  function limits(cmds) {
+    const adding = new Map();
+    for (let i = 0; i < cmds.length; i++) {
+      if (cmds[i].type !== "add_item") continue;
+      const c = cmds[i].collection, n = (adding.get(c) ?? store.countItems(c)) + 1;
+      if (n > SHARED_COLLECTION_MAX_ROWS) return { index: i, refusal: { ok: false, error: "collection_full", collection: c, limit: SHARED_COLLECTION_MAX_ROWS } };
+      adding.set(c, n);
+    }
+    const r = takeSharedWrites(store, cmds.length);
+    return r && { index: 0, refusal: r };
+  }
+
+  const fileApp = (v, app, write) => {
+    const a = v.apps.get(String(app ?? ""));
+    if (!a) return { refusal: { ok: false, error: "not_found" } };
+    if (write && a.role !== "editor") return { refusal: { ok: false, error: "read_only" } };
+    return { app: a.app };
+  };
+
+  return {
+    /** {apps: [{app, role, version, description, author, visibility, ui_size, collections, has_skill?, skill_from?}],
+     *   collections: [{collection, role}], ended: [{app, appBirth}]} — `ended` lists the grants
+     *   whose app is gone or reborn, for whoever keeps the grant records to close them. */
+    scope() {
+      const v = view();
+      return { apps: [...v.apps.values()], collections: [...v.colls].map(([collection, role]) => ({ collection, role })), ended: v.ended };
+    },
+    /** The role this recipient holds on a collection, or null. */
+    roleOf: (collection) => view().colls.get(String(collection ?? "")) ?? null,
+    /** The app row (ui + manifest, the head revision only) — or null, exactly as for a missing app. */
+    getApp(name) {
+      const v = view();
+      return v.apps.has(String(name ?? "")) ? store.getApp(String(name)) : null;
+    },
+    countItems: (collection) => (view().colls.has(String(collection ?? "")) ? store.countItems(String(collection)) : null),
+    /** The in-scope collections with their size and last activity — [{collection, items,
+     *  last_activity, role}]. An in-scope collection with no rows yet is listed too (0, null). */
+    listCollections() {
+      const v = view();
+      const stats = new Map(store.listCollections().filter((c) => v.colls.has(c.collection)).map((c) => [c.collection, c]));
+      return [...v.colls].map(([collection, role]) => ({ collection, items: stats.get(collection)?.items ?? 0,
+        last_activity: stats.get(collection)?.last_activity ?? null, role }));
+    },
+    /** store.queryItems, with `version` = the collection's own mark and no settings_version: the
+     *  global ledger position and the owner's settings activity are not this reader's to see. */
+    queryItems(collection, opts) {
+      return instant(() => {
+        const v = view(), c = String(collection ?? "");
+        if (!v.colls.has(c)) return { error: NOT_SHARED };
+        const r = store.queryItems(c, opts);
+        if (r.error) return r;
+        const { settings_version: _s, ...rest } = r;
+        return { ...rest, version: store.collectionVersion(c), files_version: filesSeq(v) };
+      });
+    },
+    /** store.changesSince, with latest_seq on the collection's own axis, and each authenticated
+     *  writer's label as `by`. */
+    changesSince(collection, since, limit) {
+      return instant(() => {
+        const v = view(), c = String(collection ?? "");
+        if (!v.colls.has(c)) return { error: NOT_SHARED };
+        const d = store.changesSince(c, since, limit);
+        return { ...d, latest_seq: store.collectionVersion(c),
+          events: d.events.map((e) => (e.principal != null ? { ...e, by: label(e.principal) } : e)) };
+      });
+    },
+    dataVersion({ collection } = {}) {
+      return instant(() => {
+        const v = view(), c = String(collection ?? "");
+        if (!v.colls.has(c)) return { error: NOT_SHARED };
+        return { seq: store.collectionVersion(c), files_version: filesSeq(v), schema_version: SCHEMA_VERSION };
+      });
+    },
+    /** Which in-scope collection holds this row — null for a row outside the scope or nowhere. */
+    itemCollection(id) {
+      const c = store.itemCollection(id);
+      return c != null && view().colls.has(c) ? c : null;
+    },
+    /** Map(seq → {principal, label}) for rows of an in-scope collection (pass their versions). */
+    writersOf(collection, seqs) {
+      const out = new Map();
+      if (!view().colls.has(String(collection ?? ""))) return out;
+      for (const [seq, p] of store.writersOf(seqs, collection)) out.set(seq, { principal: p, label: label(p) });
+      return out;
+    },
+    /** One item write: add / update / move / delete, nothing else. */
+    execute(command) {
+      const r = vet(view(), command);
+      if (r.refusal) return r.refusal;
+      const over = limits([r.cmd]);
+      return over ? over.refusal : store.execute(r.cmd);
+    },
+    /** A batch of item writes, all vetted before any runs; the store then applies them in ONE
+     *  transaction, all or nothing. A refusal names the index, in the store's own batch shape. */
+    executeBatch(commands) {
+      if (!Array.isArray(commands) || !commands.length) return { ok: false, error: "empty_batch" };
+      const v = view(), cleaned = [];
+      for (let i = 0; i < commands.length; i++) {
+        const r = vet(v, commands[i]);
+        if (r.refusal) return { ok: false, error: "batch_failed", index: i, failure: r.refusal, applied: 0 };
+        cleaned.push(r.cmd);
+      }
+      const over = limits(cleaned);
+      if (over) return { ok: false, error: "batch_failed", index: over.index, failure: over.refusal, applied: 0 };
+      return store.executeBatch(cleaned);
+    },
+    /** The app's own file plane, app pinned to a granted one. Writes count against the OWNER's
+     *  quotas, because they land in the owner's store — and meet a collaborator's limits on top
+     *  (S4 round 2): the same hourly budget item writes draw on, checked after the wall and before
+     *  the store; the per-app ceilings (SHARED_WRITE, enforced in the write's transaction); and a
+     *  share of the channel's upload slots. */
+    files: files && {
+      version: (app) => (view().apps.has(String(app ?? "")) ? store.appFilesVersion(String(app)) : null),
+      list(app, prefix) { const r = fileApp(view(), app, false); return r.refusal ? null : files.list(r.app, prefix); },
+      stat(app, path) { const r = fileApp(view(), app, false); return r.refusal ? null : files.stat(r.app, path); },
+      async get(app, path) { const r = fileApp(view(), app, false); return r.refusal ? null : files.get(r.app, path); },
+      async put(app, path, bytes, opts = {}) {
+        const r = fileApp(view(), app, true);
+        return r.refusal || takeSharedWrites(store, 1)
+          || files.put(r.app, path, bytes, { mime: opts.mime, command_id: opts.command_id, expected_version: opts.expected_version, shared: true });
+      },
+      async del(app, path, opts = {}) {
+        const r = fileApp(view(), app, true);
+        return r.refusal || takeSharedWrites(store, 1) || files.del(r.app, path, { command_id: opts.command_id, expected_version: opts.expected_version,
+          actor: opts.actor, via: opts.via, request_state: opts.request_state, confirmAlways: true });
+      },
+      async beginUpload(app) {
+        const r = fileApp(view(), app, true);
+        return r.refusal || files.beginUpload(r.app, { shared: true });
+      },
+      // An upload id is honoured only for an upload opened on a granted app this recipient may
+      // write — an id minted for any other app of the owner's is answered as no such upload.
+      async appendUpload(id, data, opts = {}) {
+        const r = fileApp(view(), files.uploadApp(id), true);
+        return r.refusal ? { ok: false, error: "upload_not_found" } : files.appendUpload(id, data, { seq: opts.seq });
+      },
+      async commitUpload(id, path, opts = {}) {
+        const v = view();
+        let app = files.uploadApp(id);
+        // A retried commit finds its upload consumed; the receipt it is owed comes off the
+        // ledger, and only for a file of a granted app.
+        if (app == null && opts.command_id) {
+          const prior = store.priorReceipt(opts.command_id);
+          if (prior && prior.event_type === "file_written") app = prior.payload?.app ?? null;
+        }
+        const r = fileApp(v, app, true);
+        // A refused commit leaves the upload staged, so it can be committed once the hour allows.
+        return r.refusal ? { ok: false, error: "upload_not_found" }
+          : takeSharedWrites(store, 1) || files.commitUpload(id, path, { mime: opts.mime, command_id: opts.command_id, expected_version: opts.expected_version, shared: true });
+      },
+    },
   };
 }

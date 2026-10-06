@@ -5,8 +5,5 @@
     "date_format",
     "currency",
     "confirm_delete"
-  ],
-  "stage": {
-    "width": "wide"
-  }
+  ]
 }

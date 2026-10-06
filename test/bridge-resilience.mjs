@@ -39,7 +39,7 @@ console.log("1. the bridge deadline — SDK request timeout, policy pinned at th
   // through the same tagged-error path (section 3 below exercises that end to end).
   ok("the 10s policy constant survives", /const BRIDGE_DEADLINE_MS = 10_000;/.test(rt));
   ok("…and rides the SDK's request options at the ONE bridge call site",
-    /hostApp\.callServerTool\(\{ name, arguments: args \}, \{ timeout: BRIDGE_DEADLINE_MS \}\)/.test(rt));
+    /hostApp\.callServerTool\(\{ name, arguments: args, _meta: APP_READER_META \}, \{ timeout: BRIDGE_DEADLINE_MS \}\)/.test(rt));
 }
 
 console.log("\n2. loader first paint — fresh-call retry against the early-mount drop window");
@@ -96,38 +96,44 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   ok("the loader's ready callback exists in the served document", !!rm);
   // The name lookup is the REAL one from the served document, not a stub: it is the piece that
   // decides whether a late-arriving identity is caught or dropped.
-  const cnm = doc.match(/(function appName\(state\) \{[\s\S]*?\n\})/);
+  const cnm = doc.match(/(function appName\(\) \{[\s\S]*?\n\})/);
   ok("appName exists in the served document", !!cnm);
-  const buildAppName = (oma, win, show) =>
-    new Function("oma", "window", "show", cnm[1] + "\nreturn appName;")(oma, win, show);
+  const anm = doc.match(/(async function awaitAppName\(\) \{[\s\S]*?\n\})/);
+  ok("awaitAppName exists in the served document", !!anm);
+  const buildNames = (win) => new Function("window", cnm[1] + "\n" + anm[1] + "\nreturn [appName, awaitAppName];")(win);
 
-  const run = async ({ toolInput, result, state }) => {
+  const run = async ({ identity, result, state, late }) => {
     const bound = [];
     const mounted = [];
     const shows = [];
     const embeds = [];
     const oma = {
-      toolInput,
       callTool: async () => result,
       embed: async (n, o) => { embeds.push(o); },
     };
-    // The binding handoff moved off the author API onto the internal hook (elegance A10).
-    const win = { __OMA_BIND__: (c) => bound.push(c) };
+    // The binding handoff moved off the author API onto the internal hook (elegance A10); the
+    // name arrives through the runtime's identity hook, which reads the live tool input.
+    // `late`: the name is not known at ready and arrives through the runtime's bounded wait (or
+    // never: late === null) — the shape a second open_app in one conversation produced, 2026-10-02.
+    const win = { __OMA_BIND__: (c) => bound.push(c), __OMA_IDENTITY__: () => identity,
+      __OMA_AWAIT_IDENTITY__: async () => late ?? null };
+    let lostCalled = false;
     const body = rm[1]
       .replace(/const r = await fetchAppHtml\(name\);/, "const r = await oma.callTool();");
     const document = { body: { innerHTML: "x" } };   // the sandboxed branch clears the body first
     const show = (m) => shows.push(m);
-    const fn = new Function("oma", "state", "show", "mount", "window", "document", "appName",
+    const [appName, awaitAppName] = buildNames(win);
+    const fn = new Function("oma", "state", "show", "mount", "window", "document", "appName", "awaitAppName", "lost",
       `return (async () => {${body}})();`);
-    await fn(oma, state, show, (h) => mounted.push(h), win, document, buildAppName(oma, win, show));
-    return { bound, mounted, shows, embeds, win, document };
+    await fn(oma, state, show, (h) => mounted.push(h), win, document, appName, awaitAppName, () => { lostCalled = true; });
+    return { bound, mounted, shows, embeds, win, document, lostCalled };
   };
 
   const HTML = "<b>the app</b>";
   {
     // The shape a refresh actually produces: a name, no collection.
     const r = await run({
-      toolInput: { app: "shopping-list" },
+      identity: "shopping-list",
       state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 3, collection: "shopping-list" } },
     });
@@ -137,10 +143,23 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
     ok("…and says nothing alarming on the way", r.shows.length === 0, JSON.stringify(r.shows));
   }
   {
+    // Ready before told: data is opt-in, so the loader (which subscribes to nothing) can be ready
+    // while the host's tool input is still in flight. It must WAIT for the name, not give up.
+    const r = await run({
+      identity: null, late: "trip-planner",
+      state: { collection: null, app: null },
+      result: { structuredContent: { html: HTML, tier: "local", version: 2, collection: "trip-planner" } },
+    });
+    ok("🔴 a name that lands after ready is waited for, and the app mounts", r.mounted.length === 1 && !r.lostCalled,
+      JSON.stringify({ mounted: r.mounted.length, lost: r.lostCalled }));
+    const n = await run({ identity: null, late: null, state: { collection: null, app: null }, result: {} });
+    ok("…and a name that never comes still ends in the lost screen", n.lostCalled && n.mounted.length === 0);
+  }
+  {
     // An app whose rows do NOT live under its own name: the loader must use what it was SENT.
     // Re-deriving from the name here is the failure this test exists to make impossible.
     const r = await run({
-      toolInput: { app: "builder-progress" },
+      identity: "builder-progress",
       state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 1, collection: "build-progress" } },
     });
@@ -150,7 +169,7 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   {
     // An older engine that does not send one must not make the loader invent a binding.
     const r = await run({
-      toolInput: { app: "legacy" },
+      identity: "legacy",
       state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "local", version: 1 } },
     });
@@ -160,7 +179,7 @@ console.log("\n2a2. the loader BINDS from the answer it already fetched (fix (c)
   {
     // The sandboxed branch takes the same answer instead of falling back to the name.
     const r = await run({
-      toolInput: { app: "third-party" },
+      identity: "third-party",
       state: { collection: null, app: null },
       result: { structuredContent: { html: HTML, tier: "unreviewed", caps: {}, collection: "tp-rows" } },
     });
@@ -175,7 +194,7 @@ console.log("\n2b. the SHIPPED bundle carries the envelope (dist is what browser
   // source-level tests above can still be absent from what the host serves. Strings survive
   // minification; the function names may not.
   const dist = readFileSync(join(ROOT, "dist", "shell.js"), "utf-8");
-  ok("dist/shell.js carries the 10s deadline policy on the bridge call", /callServerTool\(\{name:\w+,arguments:\w+\},\{timeout:/.test(dist.replace(/\s+/g, "")) || dist.includes("timeout:O$") || /timeout:[A-Za-z_$]+\}\)/.test(dist));
+  ok("dist/shell.js carries the 10s deadline policy on the bridge call", /callServerTool\(\{name:\w+,arguments:\w+,_meta:[\w$]+\},\{timeout:/.test(dist.replace(/\s+/g, "")) || dist.includes("timeout:O$") || /timeout:[A-Za-z_$]+\}\)/.test(dist));
   ok("dist/shell.js contains the inert fixture answering", dist.includes('"fx-"') || dist.includes("'fx-'") || dist.includes("fx-"));
 }
 
@@ -634,7 +653,7 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
   const doc = wrapLoader();
   // boundToolName is included because lost() calls it: the panel names WHICH call the host bound
   // this render to, and that sentence is the diagnosis.
-  const m = doc.match(/(function boundToolName\(\) \{[\s\S]*?)\nfunction mount\(/);
+  const m = doc.match(/(function boundToolName\(\) \{[\s\S]*?)\n\/\/ MOUNT = /);
   ok("identityChannels + lost exist in the served loader document", !!m);
 
   const paperDom = (win) => {
@@ -668,7 +687,7 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
   // The forensic roster/raw dump retired 2026-08-04 (elegance A15): once identity recovery has
   // failed, no evidence changes the user's next move. What must survive: the plain sentence, the
   // recovery instruction, and the one diagnosis that names the call the host DID bind.
-  const bare = runLost({ toolInput: null, state: { app: null, collection: null, items: [] } }, undefined);
+  const bare = runLost({ state: { app: null, collection: null, items: [] } }, undefined);
   ok("it says, in words, that the widget lost track of which app it is",
     /lost track of which app it is/.test(bare), bare.slice(0, 120));
   ok("…and tells the user their data is fine and what to do next",
@@ -676,7 +695,7 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
 
   // 🔴 The one diagnosis kept: a host that bound this render to a DIFFERENT call is named.
   const withInfo = runLost(
-    { toolInput: null, state: { app: null, collection: null, items: [] } },
+    { state: { app: null, collection: null, items: [] } },
     { theme: "dark", toolInfo: { id: 42, tool: { name: "get_app" } } });
   ok("a render bound to a different call names that call in the sentence",
     /get_app/.test(withInfo) && /different call/.test(withInfo), withInfo);
@@ -684,7 +703,7 @@ console.log("\n6. the loader's identity-lost surface REPORTS instead of shruggin
   // Nothing here may throw: this is the surface that runs when everything else already failed.
   let threw = null;
   try {
-    runLost({ get toolInput() { throw new Error("bridge gone"); }, get state() { throw new Error("bridge gone"); } }, null);
+    runLost({ get state() { throw new Error("bridge gone"); } }, null);
   } catch (e) { threw = e; }
   ok("a runtime whose every accessor throws still produces a panel rather than a blank widget",
     threw === null, threw && threw.message);
@@ -705,22 +724,20 @@ console.log("\n7. WHICH APP AM I — answered now, from what we know and what th
   // call's envelope verbatim — one that will never name us, however long it is held. The
   // subscription's own first line returned early without a name, so it could not even fire.
   const doc = wrapLoader();
-  const cm = doc.match(/(function appName\(state\) \{[\s\S]*?\n\})/);
+  // The loader asks the runtime's identity hook and nothing else; which channel answers (live tool
+  // input, N11's state.app, the remembered note) is the hook's precedence, pinned in §8.
+  const cm = doc.match(/(function appName\(\) \{[\s\S]*?\n\})/);
   ok("appName is in the served document", !!cm);
-  const build = (oma, win) => new Function("oma", "window", cm[1] + "\nreturn appName;")(oma, win);
+  const build = (win) => new Function("window", cm[1] + "\nreturn appName;")(win);
 
-  ok("a live name in the tool input answers straight away",
-    build({ toolInput: { app: "shopping-list" } }, {})({ app: null }) === "shopping-list");
-  ok("N11's channel counts as knowing too — a result-only replay lands the name there",
-    build({ toolInput: {} }, {})({ app: "rescued-app" }) === "rescued-app");
-  ok("🔴 nothing live, but the host kept our note — this is what survives a mis-bound re-render",
-    build({ toolInput: {} }, { __OMA_IDENTITY__: () => "remembered-app" })({ app: null }) === "remembered-app");
+  ok("the hook's answer is the loader's answer",
+    build({ __OMA_IDENTITY__: () => "shopping-list" })() === "shopping-list");
   ok("nothing anywhere answers null — immediately, not after a spinner",
-    build({ toolInput: {} }, { __OMA_IDENTITY__: () => null })({ app: null }) === null);
+    build({ __OMA_IDENTITY__: () => null })() === null);
   ok("a runtime without the identity hook degrades to null instead of throwing",
-    build({ toolInput: {} }, {})({ app: null }) === null);
+    build({})() === null);
   ok("it is synchronous — no promise, so no window in which a wrong answer can arrive late",
-    typeof build({ toolInput: { app: "x" } }, {})({}) === "string");
+    typeof build({ __OMA_IDENTITY__: () => "x" })() === "string");
 
   ok("the runtime records identity from the tool-INPUT door", /toolInput = a;[\s\S]{0,2500}rememberIdentity\(\);/.test(rt));
   ok("…and from the tool-RESULT door, where N11's rescue lands",
@@ -805,6 +822,11 @@ console.log("\n8. 🔴 a re-render bound to the WRONG tool call — remember, be
     ok("a live name outranks a remembered one", a.identity() === "live-app", String(a.identity()));
   }
   {
+    const a = build({ openai: undefined, toolInput: {}, state: { app: "rescued-app" } });
+    ok("N11's channel counts as knowing too — a result-only replay lands the name in state.app",
+      a.identity() === "rescued-app", String(a.identity()));
+  }
+  {
     const a = build({ openai: undefined, toolInput: {} });   // Claude, Codex, any non-OpenAI host
     ok("a host with no state channel simply has nothing remembered — null, not a throw",
       a.identity() === null);
@@ -858,7 +880,7 @@ console.log("\n9. a document that was STAMPED with its identity must not have to
     "a guard requiring a.app would silently drop the AI's explicit binding here");
 }
 
-console.log("\n10. the system badge — hover corner, pref-forced, or recovery-forced (D-13 + W1)");
+console.log("\n10. the system badge — hidden (not there), pref-forced, or recovery-forced (D-13 + W1)");
 {
   // ONE corner affordance, three states. The recovery story (ChatGPT web, both panes,
   // 2026-08-05): after a page refresh the re-render is handed another call's envelope with no
@@ -873,7 +895,7 @@ console.log("\n10. the system badge — hover corner, pref-forced, or recovery-f
   ok("…and both time literals were found to scale (test rig integrity)",
     scaled.includes("[8, 16, 24]") && !scaled.includes("1500"));
 
-  const build = ({ note, walkSucceeds, pref, viewBase = null, openLinkOk = true }) => {
+  const build = ({ note, walkSucceeds, pref, viewBase = null, openLinkOk = true, subscribed = true }) => {
     const rig = { walks: 0, notes: [], attached: [], embeds: [], links: [], unmounts: 0, keyListeners: 0 };
     const stubs = `
       let walkedOnce = false, walking = null;
@@ -891,6 +913,7 @@ console.log("\n10. the system badge — hover corner, pref-forced, or recovery-f
         if (env.walkSucceeds()) { walkedOnce = true; hideRecoveryBadge(); }
         return Promise.resolve();
       };
+      const subscribed = () => env.subscribed !== false;   // a data app unless the case says page
       const omaNotify = (m) => env.notes.push(m);
       const rawPref = () => env.pref;
       const coercePref = (v, f) => (v == null ? f : v);
@@ -920,21 +943,37 @@ console.log("\n10. the system badge — hover corner, pref-forced, or recovery-f
                panel: () => sysPanel, forced: () => badgeForced,
                setApp: (n) => { state.app = n; },
                markWalked: () => { walkedOnce = true; } };`)(
-      Object.assign(rig, { note, walkSucceeds, pref, viewBase, openLinkOk }));
+      Object.assign(rig, { note, walkSucceeds, pref, viewBase, openLinkOk, subscribed }));
     return { rig, ...handles };
   };
   const visible = (t) => t.badge() && t.badge().classList.contains("oma-on");
   const item = (t, title) => t.items().find((b) => b.title === title);
   const healthy = (extra) => build({ note: () => null, walkSucceeds: () => true, pref: undefined, ...extra });
 
-  { // healthy host: mounted (as connect does), hover-only, ladder does nothing visible
+  { // healthy host: mounted (as connect does), hidden, ladder does nothing visible
     const t = build({ note: () => null, walkSucceeds: () => true, pref: undefined });
     t.mount();
     t.markWalked();
     t.schedule();
     await sleep(80);
-    ok("on a healthy host the ladder never walks and the badge stays hover-only",
+    ok("on a healthy host the ladder never walks and the badge stays hidden",
       t.rig.walks === 0 && !t.forced() && !visible(t) && t.badge().textContent === "↻");
+  }
+  { // the hidden corner sits on the app's own bottom-right control — hidden must mean not there
+    const t = build({ note: () => null, walkSucceeds: () => true, pref: undefined });
+    t.mount();
+    const css = t.rig.attached.map((n) => n.textContent || "").join("");
+    ok("a hidden corner lets every click through to the app (no hover-reveal over the app's controls)",
+      /\.oma-sysbar:not\(\.oma-on\),\.oma-sysbar:not\(\.oma-on\) \.oma-sysbadge:not\(:focus-visible\)\{pointer-events:none\}/.test(css)
+      && !/:hover/.test(css.slice(0, css.indexOf(".oma-syspanel"))), css.slice(0, 600));
+  }
+  { // a PAGE (never subscribed with onChange) has no data to lose: no ladder, no forced badge
+    const t = build({ note: () => null, walkSucceeds: () => false, pref: undefined, subscribed: false });
+    t.mount();
+    t.schedule();
+    await sleep(200);
+    ok("a page that never subscribed is not 'recovered': no walks, the badge never forced",
+      t.rig.walks === 0 && !t.forced() && !visible(t), "walks=" + t.rig.walks);
   }
   { // the shared pref forces it visible without any failure
     const t = build({ note: () => null, walkSucceeds: () => true, pref: "always" });
@@ -1061,7 +1100,8 @@ console.log("\n11. one intent, one card — a burst of delete demands coalesces 
   const build = () => {
     const dom = { attached: [], keyHandlers: [] };
     const node = () => ({
-      style: {}, textContent: "", _kids: [],
+      style: {}, textContent: "", _kids: [], _attrs: {},
+      setAttribute(k, v) { this._attrs[k] = v; },
       append(...k) { this._kids.push(...k); },
       appendChild(k) { this._kids.push(k); },
       focus() {}, remove() { dom.attached = dom.attached.filter((x) => x !== this); },
@@ -1076,7 +1116,8 @@ console.log("\n11. one intent, one card — a burst of delete demands coalesces 
     // The card's pieces by construction order: [label, no, yes] appended to el.
     const card = () => dom.attached[0];
     const label = () => card()._kids[0].textContent;
-    const click = (which) => card()._kids[which === "yes" ? 2 : 1].onclick();
+    // A person's click is one the browser marks isTrusted; a script's (the screen relay's) is not.
+    const click = (which, isTrusted = true) => card()._kids[which === "yes" ? 2 : 1].onclick({ isTrusted });
     return { confirm, dom, card, label, click };
   };
 
@@ -1087,6 +1128,10 @@ console.log("\n11. one intent, one card — a burst of delete demands coalesces 
     ok("three demands in one burst share one card", t.dom.attached.length === 1);
     ok("…whose label is plural and names the first member",
       /Delete 3 items, including "locale"\?/.test(t.label()), t.label());
+    ok("the card is marked chrome, so the screen relay never lists or presses it", t.card()._attrs["data-oma-chrome"] === "");
+    t.click("yes", false);
+    ok("…and a scripted Delete (isTrusted false — the relay's, or an app's) answers nothing",
+      t.dom.attached.length === 1 && (await Promise.race([Promise.all(answers).then(() => "answered"), new Promise((r) => setTimeout(() => r("open"), 20))])) === "open");
     t.click("yes");
     ok("one click answers every joined demand true", (await Promise.all(answers)).every((a) => a === true));
     ok("…and the card is gone", t.dom.attached.length === 0);

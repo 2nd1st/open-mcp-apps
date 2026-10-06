@@ -1,0 +1,1773 @@
+{
+  "as_of": "2026-08-06",
+  "items": [
+    {
+      "id": "3ced9365-144f-453d-afb5-1107909cf068",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 1,
+      "fields": {
+        "name": "苯磺酸氨氯地平",
+        "slots": [
+          "morning"
+        ],
+        "dose": "5 mg · 1 片",
+        "pills_left": 26,
+        "daily_use": 1,
+        "note": "早饭后"
+      },
+      "version": 3
+    },
+    {
+      "id": "3431792e-d86e-491f-a2d5-78923a0bb702",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 2,
+      "fields": {
+        "name": "阿司匹林肠溶片",
+        "slots": [
+          "morning"
+        ],
+        "dose": "100 mg · 1 片",
+        "pills_left": 5,
+        "daily_use": 1,
+        "note": "早饭前，整片吞服"
+      },
+      "version": 3
+    },
+    {
+      "id": "dc4f05e4-521e-4e86-ad09-c8cffc604fe5",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 3,
+      "fields": {
+        "name": "二甲双胍缓释片",
+        "slots": [
+          "morning",
+          "evening"
+        ],
+        "dose": "0.5 g · 1 片",
+        "pills_left": 11,
+        "daily_use": 2,
+        "note": "随餐吃，别空腹"
+      },
+      "version": 3
+    },
+    {
+      "id": "61662e5a-ba26-4bcd-aff9-8b811f183b5d",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 4,
+      "fields": {
+        "name": "碳酸钙 D3",
+        "slots": [
+          "noon"
+        ],
+        "dose": "1 片",
+        "pills_left": 44,
+        "daily_use": 1,
+        "note": "午饭后嚼服"
+      },
+      "version": 3
+    },
+    {
+      "id": "fc12f69c-a4a1-4ce4-a5ba-eeae7d41edf4",
+      "collection": "elder-meds",
+      "group": "medicine",
+      "position": 5,
+      "fields": {
+        "name": "阿托伐他汀钙片",
+        "slots": [
+          "evening"
+        ],
+        "dose": "20 mg · 1 片",
+        "pills_left": 17,
+        "daily_use": 1,
+        "note": "睡前"
+      },
+      "version": 3
+    },
+    {
+      "id": "f28a51fc-d30d-4f4d-a985-0f32db9e4860",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 1,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-17",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "b343df73-1641-4d04-a569-e70a333d4da4",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 2,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-17",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "c715a72a-10d8-4ff4-a2d0-81c791e5eb7f",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 3,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-17",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "47c7eb94-531e-4a70-a417-e45d4d189bd4",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 4,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-17",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "6f7e7293-7f19-4b30-a6dd-a1b15d91c4d4",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 5,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-17",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "aca47f62-adea-4e53-ae14-ccbda2245146",
+      "collection": "elder-checks",
+      "group": "2026-07-17",
+      "position": 6,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-17",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "afcedf39-830b-440a-a386-6ff20cf9fa30",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 7,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-18",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "98abade7-9a54-4075-ae04-1543806d35be",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 8,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-18",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "1e0968f3-7eaf-4237-a45f-fe91f98fdb78",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 9,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-18",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "4ed8eb0a-97df-4ea0-a5b5-3c98f60e7b34",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 10,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-18",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "36345e3f-6036-4e08-a7e1-d4c16f511b2f",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 11,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-18",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "84a2df01-2e50-43bc-acd7-080cf4ce831c",
+      "collection": "elder-checks",
+      "group": "2026-07-18",
+      "position": 12,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-18",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "6525c8c2-e4a4-40d3-a91a-57c0f87c4345",
+      "collection": "elder-checks",
+      "group": "2026-07-19",
+      "position": 13,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-19",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "16bb19b9-1b3a-458e-a2e9-f8c3ddbea483",
+      "collection": "elder-checks",
+      "group": "2026-07-19",
+      "position": 14,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-19",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "3518a74c-4c83-4491-aa45-27fb72dfd2c7",
+      "collection": "elder-checks",
+      "group": "2026-07-19",
+      "position": 15,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-19",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "7b1da9d4-8fe3-45f9-a19e-4ee7800bf261",
+      "collection": "elder-checks",
+      "group": "2026-07-19",
+      "position": 16,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-19",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "30d48295-577a-4ca5-a06d-37c8a22206c7",
+      "collection": "elder-checks",
+      "group": "2026-07-19",
+      "position": 17,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-19",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "5508188c-5725-42f7-a4fa-8d7a97cdb245",
+      "collection": "elder-checks",
+      "group": "2026-07-20",
+      "position": 18,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-20",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "48a846e3-7d92-4833-af00-c6be73e8bd63",
+      "collection": "elder-checks",
+      "group": "2026-07-20",
+      "position": 19,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-20",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "24f1aa25-c905-4999-ac25-67daf779986a",
+      "collection": "elder-checks",
+      "group": "2026-07-20",
+      "position": 20,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-20",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "8c49b200-d7a2-438b-a58e-3d13c0e6a06a",
+      "collection": "elder-checks",
+      "group": "2026-07-20",
+      "position": 21,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-20",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "1d334628-73c8-4648-a331-d263c4194269",
+      "collection": "elder-checks",
+      "group": "2026-07-20",
+      "position": 22,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-20",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "d823d4d1-edfb-476c-a1f3-ad491e21728f",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 23,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-21",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "7b7add3b-1429-49bc-aec7-792ea200497e",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 24,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-21",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "e6b71845-639d-4b53-a223-cb137a76e761",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 25,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-21",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "f1ba345d-134c-49ef-af86-aa3e9136c554",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 26,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-21",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "1d575e78-88ad-464f-a81a-84ba49fdf613",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 27,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-21",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "a5c78bf8-f907-4dcf-a0b6-dec1e540d5c8",
+      "collection": "elder-checks",
+      "group": "2026-07-21",
+      "position": 28,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-21",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "d9489383-1d38-4de4-a4a1-826605fac77e",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 29,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-22",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "bb7ee4fe-ad40-4f99-ab8d-b029ff7d6d53",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 30,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-22",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "8915e293-cb9c-407a-a202-58d850a19cd3",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 31,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-22",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "c25acd60-2c8b-4871-a909-d36b071045f6",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 32,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-22",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "03a08322-a0c5-4cd7-a8a9-b5c77cbc3c3f",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 33,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-22",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "676d492d-4662-4857-aa0a-b23303232fb6",
+      "collection": "elder-checks",
+      "group": "2026-07-22",
+      "position": 34,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-22",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "a862b49d-734e-4cad-a841-9879802c8e87",
+      "collection": "elder-checks",
+      "group": "2026-07-23",
+      "position": 35,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-23",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "64036a88-e4af-4723-a8ec-aa2870a627fe",
+      "collection": "elder-checks",
+      "group": "2026-07-23",
+      "position": 36,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-23",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "6bffffca-d717-4c49-a12b-50ae8f889fd4",
+      "collection": "elder-checks",
+      "group": "2026-07-23",
+      "position": 37,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-23",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "98c861b0-f1b5-442e-a1bf-3f545de9b9d4",
+      "collection": "elder-checks",
+      "group": "2026-07-23",
+      "position": 38,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-23",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "8540ab94-78f3-4044-ad9a-756660970af4",
+      "collection": "elder-checks",
+      "group": "2026-07-23",
+      "position": 39,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-23",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "90566c38-7034-43f3-a900-5180286be936",
+      "collection": "elder-checks",
+      "group": "2026-07-24",
+      "position": 40,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-24",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "d50f834c-c739-4f0e-a713-3dc582777221",
+      "collection": "elder-checks",
+      "group": "2026-07-24",
+      "position": 41,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-24",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "cd625505-3f09-4553-a7e1-b75e6f7685e8",
+      "collection": "elder-checks",
+      "group": "2026-07-24",
+      "position": 42,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-24",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "01672b9b-efd3-47be-add1-83e027b9a53d",
+      "collection": "elder-checks",
+      "group": "2026-07-24",
+      "position": 43,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-24",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "3f3cc1fe-3a78-45b6-a1e2-65f728edbc50",
+      "collection": "elder-checks",
+      "group": "2026-07-24",
+      "position": 44,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-24",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "c859b09d-528e-4dd1-ae6b-e7a726e67674",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 45,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-25",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "7435206c-df39-4f24-a267-1088a74caedf",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 46,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-25",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "e078668f-3dfa-4b60-a8b1-fafd9e8d646f",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 47,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-25",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "3a01e24d-7f21-4623-a248-5d50cf91324e",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 48,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-25",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "866564ac-9a72-4df9-afe8-5658c3c92ee7",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 49,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-25",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "343b7563-4ba7-4518-ab3f-396b81bbac25",
+      "collection": "elder-checks",
+      "group": "2026-07-25",
+      "position": 50,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-25",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "9d88222b-eca7-43b5-a495-9ffd55cf128e",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 51,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-26",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "ead93017-5ce2-45c7-a147-a22ab9364e0b",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 52,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-26",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "55a66d3f-ff74-4129-acd7-51d04a14e49b",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 53,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-26",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "c322ddd7-6067-4c67-a486-e68ab14c3946",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 54,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-26",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "f1d79e36-4986-47a6-a537-d09544020149",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 55,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-26",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "2b0922ac-e93e-4dbc-a0a5-dd7366544029",
+      "collection": "elder-checks",
+      "group": "2026-07-26",
+      "position": 56,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-26",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "51c6d45f-27c4-4ae9-a1a2-50f7ae3833ce",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 57,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-27",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "17b04ed1-38b2-4065-a023-a9fc620cf2c6",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 58,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-27",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "8c1cdc9f-1f9c-42d1-ae67-41b172286ec3",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 59,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-27",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "be2ecaa3-e40f-49a1-a868-baa24fcaae4e",
+      "collection": "elder-checks",
+      "group": "2026-07-27",
+      "position": 60,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-27",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "6885375f-2447-486a-ae48-26f6f0776842",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 61,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-28",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "9e66c878-8f62-4177-af65-c3764fab9924",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 62,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-28",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "4bab62e5-c787-4cd3-a4a3-1cfa0bb5d5ab",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 63,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-28",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "640e10f7-3680-4558-a2fd-d766781be389",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 64,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-28",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "acbdf8e1-1b78-46ae-a55a-0b5ac9419cdb",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 65,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-28",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "ce9aff06-b3bf-4ace-a177-981b4fb8d106",
+      "collection": "elder-checks",
+      "group": "2026-07-28",
+      "position": 66,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-28",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "6b537b82-f9df-47ef-a91f-71a7712c251c",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 67,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-29",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "01b28019-de44-4d3e-afa7-fd935f7caa70",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 68,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-29",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "4690d13d-f4dd-460d-a717-90d0061c6a2c",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 69,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-29",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "5ea51448-f51b-46c9-ad7c-1157b6671ad2",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 70,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-29",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "582b8bf1-27d9-4509-aa27-e1b49542db4b",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 71,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-29",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "7a009eee-09e4-459e-a32b-60ea07ee9e51",
+      "collection": "elder-checks",
+      "group": "2026-07-29",
+      "position": 72,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-29",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "e6d142cd-ab08-4c39-a465-7931ab0a4d33",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 73,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-30",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "f0ba5236-8c1d-49f9-ae48-948f0eb62bd0",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 74,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-30",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "f2cd01b1-985a-4f0f-a57d-da98e054a93f",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 75,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-30",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "2b8ae051-c12d-483c-a062-9a8d22549668",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 76,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-30",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "055a0599-9b49-4c0c-a173-03f4812545fe",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 77,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-30",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "fad7c699-76ea-45ed-ac08-674736a1dc39",
+      "collection": "elder-checks",
+      "group": "2026-07-30",
+      "position": 78,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-30",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "17a8dd37-a904-4414-a3ce-f9cb4810207e",
+      "collection": "elder-checks",
+      "group": "2026-07-31",
+      "position": 79,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-07-31",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "f3c66368-8509-4a2e-a04c-2d7eacab68bd",
+      "collection": "elder-checks",
+      "group": "2026-07-31",
+      "position": 80,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-07-31",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "c21979d0-cd52-435f-af3a-b29b3c43bfd1",
+      "collection": "elder-checks",
+      "group": "2026-07-31",
+      "position": 81,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-07-31",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "ba06f025-a468-4e78-ad36-336b197a013c",
+      "collection": "elder-checks",
+      "group": "2026-07-31",
+      "position": 82,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-07-31",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "6f635f7f-eccb-44aa-adff-5cb71b085d08",
+      "collection": "elder-checks",
+      "group": "2026-07-31",
+      "position": 83,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-07-31",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "aff5b673-dca2-4e1c-ab5b-2cc76bbb85d1",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 84,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-01",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "d7c9f2b8-7dc0-46c1-a388-45163905c407",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 85,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-08-01",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "31ef5190-1104-47c0-a5b4-7e75abfad96d",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 86,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-01",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "7747ec69-ca16-4658-a85a-332aa82f84e4",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 87,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-08-01",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "37a17b2d-4f01-4517-a0aa-31f1ce66c21a",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 88,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-01",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "17ea465b-d1f1-48c3-ad25-e640b3f726ad",
+      "collection": "elder-checks",
+      "group": "2026-08-01",
+      "position": 89,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-08-01",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "974d029b-e300-410b-ac21-ba5739c1d18d",
+      "collection": "elder-checks",
+      "group": "2026-08-02",
+      "position": 90,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-02",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "22d52ef8-ef91-496b-a7cd-c1ead977bf4d",
+      "collection": "elder-checks",
+      "group": "2026-08-02",
+      "position": 91,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-08-02",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "3c2d6fa7-5967-4223-a380-719fb8df5d4b",
+      "collection": "elder-checks",
+      "group": "2026-08-02",
+      "position": 92,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-02",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "f5ca088f-e9ad-411a-aa3b-235aa11aecf6",
+      "collection": "elder-checks",
+      "group": "2026-08-02",
+      "position": 93,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-02",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "1e77699a-6b10-4cfa-a4ae-7c1da3c8f41f",
+      "collection": "elder-checks",
+      "group": "2026-08-02",
+      "position": 94,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-08-02",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "43545ce9-05f7-41b6-ac53-8f72ca1b6e19",
+      "collection": "elder-checks",
+      "group": "2026-08-03",
+      "position": 95,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-03",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "33ad55e0-c223-4cf4-a7e0-00453188628d",
+      "collection": "elder-checks",
+      "group": "2026-08-03",
+      "position": 96,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-03",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "3b295cdf-7b72-45fa-a3c8-f33f72863945",
+      "collection": "elder-checks",
+      "group": "2026-08-03",
+      "position": 97,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-08-03",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "ef5c7e75-f6ab-4344-aa25-ad5afefd6b2f",
+      "collection": "elder-checks",
+      "group": "2026-08-03",
+      "position": 98,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-03",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "b6d053ce-2f40-454e-aa66-ba6af23f8685",
+      "collection": "elder-checks",
+      "group": "2026-08-03",
+      "position": 99,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-08-03",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "de72fc1e-882e-474a-a04a-834b82a6e400",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 100,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-04",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "011d9c62-b703-4be3-ab73-5ff419b87f42",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 101,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-08-04",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "bba7eb1b-e3eb-4d7d-afa4-900b82a5d8bf",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 102,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-04",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "b9dd0c68-b34a-4ae0-ac4d-2e655f3eebb8",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 103,
+      "fields": {
+        "med": "碳酸钙 D3",
+        "date": "2026-08-04",
+        "slot": "noon"
+      },
+      "version": 1
+    },
+    {
+      "id": "70c3b70c-1e7e-4340-ab62-ef79d77a724b",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 104,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-04",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "94e15448-6e46-480f-a431-9aa1862fc3fd",
+      "collection": "elder-checks",
+      "group": "2026-08-04",
+      "position": 105,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-08-04",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "270c0feb-8af0-43dd-aa80-f499cd43df43",
+      "collection": "elder-checks",
+      "group": "2026-08-05",
+      "position": 106,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-05",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "38f725c6-abf2-47b3-af7e-aa5369c099ca",
+      "collection": "elder-checks",
+      "group": "2026-08-05",
+      "position": 107,
+      "fields": {
+        "med": "阿司匹林肠溶片",
+        "date": "2026-08-05",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "4dafde6e-28c3-4267-aa2f-82f5673816c7",
+      "collection": "elder-checks",
+      "group": "2026-08-05",
+      "position": 108,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-05",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "4123d20d-3477-4feb-a130-144ce4d8714a",
+      "collection": "elder-checks",
+      "group": "2026-08-05",
+      "position": 109,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-05",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "eaa6e4b5-7053-40f7-a7fa-6ccd27102106",
+      "collection": "elder-checks",
+      "group": "2026-08-05",
+      "position": 110,
+      "fields": {
+        "med": "阿托伐他汀钙片",
+        "date": "2026-08-05",
+        "slot": "evening"
+      },
+      "version": 1
+    },
+    {
+      "id": "48fc24b9-0408-42c7-a17b-e35388f86297",
+      "collection": "elder-checks",
+      "group": "2026-08-06",
+      "position": 111,
+      "fields": {
+        "med": "苯磺酸氨氯地平",
+        "date": "2026-08-06",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "7ca9f777-559b-4629-a81d-cac632feacca",
+      "collection": "elder-checks",
+      "group": "2026-08-06",
+      "position": 112,
+      "fields": {
+        "med": "二甲双胍缓释片",
+        "date": "2026-08-06",
+        "slot": "morning"
+      },
+      "version": 1
+    },
+    {
+      "id": "29687a27-3ead-4b2b-a2b5-8af833f9507f",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 1,
+      "fields": {
+        "date": "2026-06-26",
+        "systolic": 136,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "d4aad9a9-10f7-412f-ae7a-4e78d7449348",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 2,
+      "fields": {
+        "date": "2026-06-28",
+        "systolic": 138,
+        "diastolic": 86,
+        "pulse": 78
+      },
+      "version": 1
+    },
+    {
+      "id": "bc9c4362-4052-4bda-a25d-0621f441d59b",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 3,
+      "fields": {
+        "date": "2026-06-29",
+        "systolic": 134,
+        "diastolic": 83,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "fd775d4d-4b28-4cc7-a905-4547e22efb1c",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 4,
+      "fields": {
+        "date": "2026-07-01",
+        "systolic": 139,
+        "diastolic": 85,
+        "pulse": 77
+      },
+      "version": 1
+    },
+    {
+      "id": "db3e4973-7274-4611-a06b-cd18509b5941",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 5,
+      "fields": {
+        "date": "2026-07-03",
+        "systolic": 137,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "1732474a-8252-44b1-a845-3f143bad396b",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 6,
+      "fields": {
+        "date": "2026-07-04",
+        "systolic": 135,
+        "diastolic": 82,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "875d4a9f-d9d0-44bf-a9b7-091dc4503328",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 7,
+      "fields": {
+        "date": "2026-07-06",
+        "systolic": 141,
+        "diastolic": 87,
+        "pulse": 79
+      },
+      "version": 1
+    },
+    {
+      "id": "b78206fa-acee-418c-ab39-af8ce8b0a0d6",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 8,
+      "fields": {
+        "date": "2026-07-08",
+        "systolic": 136,
+        "diastolic": 83,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "2832c0eb-b426-47ed-af48-f1c8f73d1454",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 9,
+      "fields": {
+        "date": "2026-07-10",
+        "systolic": 138,
+        "diastolic": 85,
+        "pulse": 77
+      },
+      "version": 1
+    },
+    {
+      "id": "c6d98697-24a4-4e51-a181-f8217298be13",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 10,
+      "fields": {
+        "date": "2026-07-11",
+        "systolic": 134,
+        "diastolic": 82,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "bf972853-6534-4562-afb6-199d1b2e0596",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 11,
+      "fields": {
+        "date": "2026-07-13",
+        "systolic": 137,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "5204611e-7b1b-47be-a942-5dd57b258900",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 12,
+      "fields": {
+        "date": "2026-07-15",
+        "systolic": 135,
+        "diastolic": 83,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "34e5e40d-1463-445d-a00a-6afda7f82c67",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 13,
+      "fields": {
+        "date": "2026-07-17",
+        "systolic": 139,
+        "diastolic": 86,
+        "pulse": 78
+      },
+      "version": 1
+    },
+    {
+      "id": "9ba5bd34-b38f-4dfe-a9ed-881923e3a114",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 14,
+      "fields": {
+        "date": "2026-07-19",
+        "systolic": 136,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "2fa103e8-39ce-4b2d-ad44-131b2b14eb7c",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 15,
+      "fields": {
+        "date": "2026-07-20",
+        "systolic": 133,
+        "diastolic": 82,
+        "pulse": 73
+      },
+      "version": 1
+    },
+    {
+      "id": "d2598b71-c650-48da-a630-7d4649b9b239",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 16,
+      "fields": {
+        "date": "2026-07-22",
+        "systolic": 138,
+        "diastolic": 85,
+        "pulse": 77
+      },
+      "version": 1
+    },
+    {
+      "id": "92dd8309-83d0-4df7-a61b-863ab5a817b6",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 17,
+      "fields": {
+        "date": "2026-07-24",
+        "systolic": 135,
+        "diastolic": 83,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "7523ef13-a092-4d43-a880-3d611cf07e0c",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 18,
+      "fields": {
+        "date": "2026-07-25",
+        "systolic": 137,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "fd6a0faa-883f-4daf-abd2-696034fc7306",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 19,
+      "fields": {
+        "date": "2026-07-27",
+        "systolic": 134,
+        "diastolic": 82,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "2c020e18-4f16-4662-a594-2eb4d887bba5",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 20,
+      "fields": {
+        "date": "2026-07-29",
+        "systolic": 136,
+        "diastolic": 83,
+        "pulse": 75
+      },
+      "version": 1
+    },
+    {
+      "id": "b4808c66-592f-4be8-abba-487b37b873db",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 21,
+      "fields": {
+        "date": "2026-07-30",
+        "systolic": 138,
+        "diastolic": 85,
+        "pulse": 77
+      },
+      "version": 1
+    },
+    {
+      "id": "69872bbb-f047-4016-a324-fc70df6b97f5",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 22,
+      "fields": {
+        "date": "2026-07-31",
+        "systolic": 135,
+        "diastolic": 83,
+        "pulse": 74
+      },
+      "version": 1
+    },
+    {
+      "id": "671e1702-b4db-476c-aee3-ed52c9bcad15",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 23,
+      "fields": {
+        "date": "2026-08-02",
+        "systolic": 137,
+        "diastolic": 84,
+        "pulse": 76
+      },
+      "version": 1
+    },
+    {
+      "id": "ecc009c7-a699-4b0f-a757-0988300a3c45",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 24,
+      "fields": {
+        "date": "2026-08-03",
+        "systolic": 134,
+        "diastolic": 82,
+        "pulse": 73
+      },
+      "version": 1
+    },
+    {
+      "id": "9abee97b-a633-4f67-afae-7dbb59accc39",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 25,
+      "fields": {
+        "date": "2026-08-04",
+        "systolic": 139,
+        "diastolic": 86,
+        "pulse": 78
+      },
+      "version": 1
+    },
+    {
+      "id": "0cc1fd53-032c-48af-a6b8-10880b634942",
+      "collection": "elder-vitals",
+      "group": "reading",
+      "position": 26,
+      "fields": {
+        "date": "2026-08-06",
+        "systolic": 136,
+        "diastolic": 84,
+        "pulse": 75
+      },
+      "version": 1
+    }
+  ]
+}

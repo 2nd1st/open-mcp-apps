@@ -8,6 +8,7 @@
 //   node install-app.mjs ./my-app.html --update        overwrite an app of the same name
 //   node install-app.mjs ./my-app.html --sandboxed     install as UNTRUSTED (runs behind the runner)
 //   node install-app.mjs ./ui.html --manifest ./manifest.json    declaration as its own file
+//   node install-app.mjs ./ui.html --skill ./skill.md   how an AI uses the app (SKILL.md; omitted = kept)
 //   node install-app.mjs ./ui.html --asset ./dist/app.js --asset ./dist/app.css   push the bundle
 //   node install-app.mjs ./ui.html --asset … --prune-assets   …and drop the files this build left behind
 //   node install-app.mjs --list                        what is installed, and under whose provenance
@@ -72,6 +73,7 @@ import { openStore, FILE_PATH_RE } from "./src/store.mjs";
 import { openFileChannel } from "./src/files.mjs";
 import { tierOf, TIER_CAPS, RESERVED_APP_NAMES, LOCKED_APPS } from "./src/contracts.mjs";
 import { readDeclaration, stripDeclarationBlock } from "./src/manifest-block.mjs";
+import { parseSkill } from "./src/skill.mjs";
 import { OMA_REFERENCE_RE } from "./src/tools/apps.mjs";
 import { scanAssets } from "./src/assets.mjs";
 
@@ -108,7 +110,7 @@ const bytes = (s) => Buffer.byteLength(s, "utf8").toLocaleString();
 // Options that consume the NEXT argument. Named once, because the html file is found by "the
 // argument that is not a flag and not a flag's value" — a list that goes stale silently turns an
 // option's value into the document being installed.
-const VALUE_FLAGS = new Set(["name", "description", "db", "manifest", "asset"]);
+const VALUE_FLAGS = new Set(["name", "description", "db", "manifest", "skill", "asset"]);
 const KNOWN = new Set(["list", "update", "sandboxed", "dry-run", "help", "prune-assets", ...VALUE_FLAGS]);
 for (const a of argv) {
   if (!a.startsWith("--")) continue;
@@ -228,6 +230,19 @@ if (manifestFile) {
   manifest = parsed;
 }
 const ui = decl.state === "present" || decl.state === "empty" ? stripDeclarationBlock(html).html : html;
+// --skill: the third slot, as the file a build keeps beside the other two (skill.md). Unlike the
+// manifest it is only sent when named — an omitted skill slot is KEPT by the store, so a push that
+// does not mention one leaves the guide the app already has. Read and checked here so a bad file
+// dies before anything is written, in the same words the store would refuse it with.
+const skillFile = val("skill");
+let skill;
+if (skillFile) {
+  const sp = resolve(skillFile);
+  if (!existsSync(sp) || !statSync(sp).isFile()) die(`no such skill file: ${sp}`);
+  skill = readFileSync(sp, "utf-8");
+  const p = parseSkill(skill);
+  if (!p.ok) die(`${sp} is not a usable skill: ${p.detail}.`);
+}
 if (decl.state === "present" && !manifestFile)
   warn.push("legacy #oma-manifest block found — extracted into the manifest slot and stripped from the document (v6 stores them separately).");
 else if (decl.state === "absent" && !manifestFile)
@@ -281,6 +296,7 @@ console.log(`  file      ${path}`);
 console.log(`  name      ${name}`);
 console.log(`  size      ${bytes(html)} B` + (existing ? `  (replacing ${bytes(existing.ui)} B at v${existing.version})` : ""));
 if (manifestFile) console.log(`  manifest  ${resolve(manifestFile)}`);
+if (skillFile) console.log(`  skill     ${resolve(skillFile)}`);
 for (const a of assets) console.log(`  asset     ${a.path}  ← ${a.src}  (${a.bytes.length.toLocaleString()} B, ${a.mime})`);
 if (refs.length) console.log(`  shape     TEMPLATE + BUNDLE — ${refs.length} asset reference(s); the AI reads this template, not the bundle, and cannot edit either`);
 console.log(`  runs as   ${actor} → tier ${tier}` + (tier === "local"
@@ -334,7 +350,7 @@ if (assets.length) {
 }
 
 const r = store.execute({
-  type: "save_app", command_id: randomUUID(), name, ui, manifest,
+  type: "save_app", command_id: randomUUID(), name, ui, manifest, ...(skillFile ? { skill } : {}),
   description: val("description") || "", actor, host: "install-app",
   ...(existing ? { expected_version: existing.version } : {}),
 });

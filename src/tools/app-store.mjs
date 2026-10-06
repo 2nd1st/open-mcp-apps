@@ -6,8 +6,16 @@
 
 import { z } from "zod";
 import { randomUUID } from "node:crypto";
-import { listAppStore, readAppStoreApp } from "../app-store.mjs";
+import { listAppStore, readAppStoreApp, previewFixtures } from "../app-store.mjs";
 import { RO, WRITE, itemShape, RESERVED_APP_NAMES, LOCKED_APPS, tierOf } from "../contracts.mjs";
+import { skillLine } from "../skill.mjs";
+
+/** Is the installed row exactly what this App Store entry would install? All three slots, compared
+ *  the way they are stored — one function, so the list's "update available" and the install's
+ *  "already current" can never answer the same question two ways. */
+const sameAsEntry = (cur, entry) => cur.ui === entry.ui
+  && (cur.manifest ?? null) === (entry.manifest ? JSON.stringify(entry.manifest) : null)
+  && (cur.skill ?? null) === (entry.skill ?? null);
 
 export function register(ctx) {
   const { server, store, hostName, failNote, fail, registerApp } = ctx;
@@ -39,11 +47,11 @@ export function register(ctx) {
       const entries = listAppStore().map((e) => {
         const cur = store.getApp(e.name);
         const from_app_store = !!cur && cur.author === "library";
-        // BOTH slots decide freshness: a manifest-only store update is still an update, and
-        // comparing only the document made it permanently uninstallable (W-N review, contract #7).
+        // EVERY slot decides freshness: a manifest-only (or skill-only) store update is still an
+        // update, and comparing only the document made it permanently uninstallable (W-N review,
+        // contract #7).
         const lib = from_app_store ? readAppStoreApp(e.name) : null;
-        const update_available = !!lib && (cur.ui !== lib.ui
-          || (cur.manifest ?? null) !== (lib.manifest ? JSON.stringify(lib.manifest) : null));
+        const update_available = !!lib && !sameAsEntry(cur, lib);
         return { name: e.name, title: e.title, description: e.description, category: e.category,
           ui_size: e.ui_size, has_manifest: e.has_manifest, has_preview: e.has_preview, installed: !!cur, from_app_store, update_available };
       });
@@ -60,7 +68,10 @@ export function register(ctx) {
       title: "App Store live-preview payload (internal)",
       annotations: RO,
       description: "Internal: returns an App Store entry's ui and manifest plus its mock-data fixtures, so the App Store app can render a LIVE sandboxed preview card (srcdoc + stub oma + mock snapshot). Read-only; nothing is installed. Not useful to call directly.",
-      inputSchema: { name: z.string().describe("App Store entry name (see app_store_list)") },
+      inputSchema: {
+        name: z.string().describe("App Store entry name (see app_store_list)"),
+        locale: z.enum(["en", "zh"]).optional().describe("sample data language (default en)"),
+      },
       outputSchema: {
         name: z.string(), title: z.string(), description: z.string(), category: z.string(),
         html: z.string().describe("the entry's ui slot (field named for its format — the preview iframe srcdocs it)"),
@@ -82,9 +93,10 @@ export function register(ctx) {
     async (a) => {
       const entry = readAppStoreApp(a.name);
       if (!entry) return fail(`No "${a.name}" in the App Store. app_store_list shows what's available.`);
+      const fixtures = previewFixtures(entry, { locale: a.locale });
       return {
-        content: [{ type: "text", text: `(App Store preview payload for "${entry.name}" — ${entry.ui.length} chars, ${entry.fixtures ? entry.fixtures.items.length + " mock items" : "no fixtures"}; consumed by the App Store app)` }],
-        structuredContent: { name: entry.name, title: entry.title, description: entry.description, category: entry.category, html: entry.ui, manifest: entry.manifest, fixtures: entry.fixtures },
+        content: [{ type: "text", text: `(App Store preview payload for "${entry.name}" — ${entry.ui.length} chars, ${fixtures ? fixtures.items.length + " mock items" : "no fixtures"}; consumed by the App Store app)` }],
+        structuredContent: { name: entry.name, title: entry.title, description: entry.description, category: entry.category, html: entry.ui, manifest: entry.manifest, fixtures },
       };
     },
   );
@@ -109,7 +121,8 @@ export function register(ctx) {
         // fact the model acts on travels on BOTH channels or it is not a fact of this reply).
         outcome: z.enum(["installed", "updated", "current"])
           .describe("installed = first install; updated = the store had a newer version; current = already installed and unchanged"),
-        updated: z.boolean().optional() },
+        updated: z.boolean().optional(),
+        note: z.string().optional() },
     },
     async (a) => {
       // Same name guards as save_app — this is a registry WRITE path and must refuse what
@@ -122,29 +135,31 @@ export function register(ctx) {
       const cur = store.getApp(a.name);
       if (cur && cur.author !== "library")
         return fail(`"${a.name}" already exists in your registry as a ${cur.author}-authored app — NOT overwriting it with the App Store version. Delete or rename the existing one first if you want the App Store app.`);
-      // BOTH slots decide "up to date" (a manifest-only store update must install), and both
-      // travel on the write — an install is a whole-entry act, never a document-only one.
-      const libManifest = entry.manifest ? JSON.stringify(entry.manifest) : null;
-      if (cur && cur.ui === entry.ui && (cur.manifest ?? null) === libManifest)
-        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}) — nothing was written. Open it with open_app.` }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), outcome: "current", updated: false } };
+      // EVERY slot decides "up to date" (a manifest- or skill-only store update must install), and
+      // every slot travels on the write — an install is a whole-entry act, never a document-only one.
+      // The skill's one line rides each of the three answers, on both channels: whatever happened,
+      // the model now holds an app whose author wrote down how it is used.
+      const how = skillLine(a.name, entry.skill);
+      if (cur && sameAsEntry(cur, entry))
+        return { content: [{ type: "text", text: `"${a.name}" is already installed and up to date (v${cur.version}) — nothing was written. Open it with open_app.` + (how ? `\n${how}` : "") }], structuredContent: { name: a.name, version: cur.version, tier: tierOf("library"), outcome: "current", updated: false, ...(how ? { note: how } : {}) } };
       // expected_version on updates: a concurrent write between the read above and this install
       // becomes a clean conflict instead of a silent clobber (the OCC bypass the W-N review flagged).
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
-        name: a.name, ui: entry.ui, manifest: entry.manifest ?? null,
+        name: a.name, ui: entry.ui, manifest: entry.manifest ?? null, skill: entry.skill ?? null,
         description: entry.description || entry.title, actor: "library", host: hostName(),
         ...(cur ? { expected_version: cur.version } : {}),
       });
-      if (!r.ok) return fail(failNote(r));
+      if (!r.ok) return fail(r.error === "bad_skill" ? `The App Store entry "${a.name}" ships a skill.md that cannot be read: ${r.detail}. Nothing was installed.` : failNote(r));
       registerApp(a.name);
       // Two acts, one write. The sentence follows `outcome` rather than repeating the word
       // "Installed" over an app the user already had — which is what it used to say for both.
       const outcome = cur ? "updated" : "installed";
       return {
-        content: [{ type: "text", text: cur
+        content: [{ type: "text", text: (cur
           ? `Updated "${a.name}" to v${r.version} — the App Store had a newer version than the installed copy. Open it with open_app {app: "${a.name}"}.`
-          : `Installed "${a.name}" v${r.version} from the App Store. Open it now with open_app {app: "${a.name}"}.` }],
-        structuredContent: { name: a.name, version: r.version, tier: tierOf("library"), outcome, updated: !!cur },
+          : `Installed "${a.name}" v${r.version} from the App Store. Open it now with open_app {app: "${a.name}"}.`) + (how ? `\n${how}` : "") }],
+        structuredContent: { name: a.name, version: r.version, tier: tierOf("library"), outcome, updated: !!cur, ...(how ? { note: how } : {}) },
       };
     },
   );

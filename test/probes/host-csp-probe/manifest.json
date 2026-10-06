@@ -1,10 +1,8 @@
 {
   "manifest_version": 2,
-  "kind": "app",
   "collections": {
     "host-csp-probe": { "label_field": "probe" }
   },
-  "stage": { "width": "wide" },
   "csp": {
     "connectDomains": [
       "https://api.github.com",

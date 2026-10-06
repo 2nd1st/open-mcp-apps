@@ -2,15 +2,21 @@
 // Copyright (C) 2026 2nd1st
 // test/server-smoke.mjs — end-to-end proof of the ENGINE over real stdio.
 // Covers the creation loop itself: seed apps present → generic data flow →
-// save_app at runtime → the open_<name> tool appears dynamically → shell-wrapped ui://.
+// save_app at runtime → (pinned) the open_<name> tool appears dynamically → shell-wrapped ui://.
 // Run: node test/server-smoke.mjs
 import { Client } from "@modelcontextprotocol/client";
+import { BASICS_GATE } from "./guide-gate.mjs";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { randomUUID } from "node:crypto";
 import { unlinkSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, basename } from "node:path";
-import { openStore, SCHEMA_VERSION } from "../src/store.mjs";
+import { openStore, SCHEMA_VERSION, PLATFORM_CSP } from "../src/store.mjs";
+import { LOADER_URI_RE } from "../src/tools/apps.mjs";
+// The loader's URI is named by its own bytes (tools/apps.mjs loaderUriFor), so it is read off
+// open_app — the one tool that points at it — never spelled out here.
+const loaderUriOf = async (c) => (await c.listTools()).tools.find((t) => t.name === "open_app")._meta.ui.resourceUri;
+const loaderEntry = (eng) => Object.entries(eng._registeredResources || {}).find(([k]) => LOADER_URI_RE.test(k))?.[1];
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "smoke.db");
@@ -81,19 +87,24 @@ const client = new Client({ name: "smoke", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  // OMA_DYNAMIC_TOOLS=1: this suite covers the opt-in per-app tool path;
-  // http-smoke covers the default (open_app-only) behavior.
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke", OMA_DYNAMIC_TOOLS: "1" },
+  // This suite pins a few apps (below) to cover the per-app tool path; http-smoke covers the
+  // unpinned (open_app-only) behavior.
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke" },
 }));
 armPoisonScan(client);
 console.log("connected over stdio");
+// A pin is the settings row the settings app writes. smoke-notes is pinned BEFORE it exists: the
+// opener appears when the app is saved.
+const pin = (name, value = true) => client.callTool({ name: "data_add_item", arguments: {
+  command_id: randomUUID(), collection: "settings", group: name, fields: { key: "open_tool", value } } });
+for (const n of ["habit-streaks", "meal-planner", "smoke-notes"]) await pin(n);
 
 console.log("0. server instructions teach when-to-use");
 const instr = client.getInstructions?.();
 ok("instructions delivered at initialize", typeof instr === "string" && instr.includes("ROUTING:"));
 ok("instructions teach persisting files (file_write)", typeof instr === "string" && /FILES/.test(instr) && /file_write/.test(instr));
 
-console.log("1. seed apps are live as dynamic tools");
+console.log("1. pinned seed apps are live as dynamic tools");
 let { tools } = await client.listTools();
 let names = tools.map((t) => t.name);
 ok("open_habit_streaks + open_meal_planner exist", names.includes("open_habit_streaks") && names.includes("open_meal_planner"));
@@ -125,14 +136,42 @@ console.log("2b-lib. every shipped App Store entry can actually be previewed");
   }
   ok(`all ${entries.length} App Store entries preview cleanly`, broken.length === 0, `broken: ${broken.join(", ")}`);
 
+  // Fixture dates slide to TODAY (fixture as_of): a preview written for one day must not show an
+  // empty "this week" forever after (meal-planner did — its meals sat two weeks before the pinned
+  // preview day). Unit-level on the pure function, so the assertion does not depend on which apps
+  // have migrated to the as_of format yet.
+  {
+    const { previewFixtures } = await import("../src/app-store.mjs");
+    const entry = { fixtures: { as_of: "2026-08-06", items: [{ id: "x", fields: {
+      date: "2026-08-06", due: "2026-08-10T09:00", seen: ["2026-08-01"], code: "2026-99", name: "Rent" } }] },
+      fixturesZh: { as_of: "2026-08-06", items: [{ id: "z", fields: { name: "房租" } }] } };
+    const f = previewFixtures(entry, { today: "2026-10-01" }).items[0].fields;
+    ok("fixture dates slide from as_of to today — date, datetime (time kept), dates inside arrays",
+      f.date === "2026-10-01" && f.due === "2026-10-05T09:00" && f.seen[0] === "2026-09-26", JSON.stringify(f));
+    ok("…and nothing that merely resembles a date moves, nor does the entry itself",
+      f.code === "2026-99" && f.name === "Rent" && entry.fixtures.items[0].fields.date === "2026-08-06");
+    ok("locale zh picks fixtures.zh; a missing zh falls back to en",
+      previewFixtures(entry, { locale: "zh" }).items[0].fields.name === "房租"
+      && previewFixtures({ fixtures: entry.fixtures }, { locale: "zh" }).items[0].id === "x");
+    ok("a fixture without as_of is shown exactly as written",
+      previewFixtures({ fixtures: { items: [{ fields: { d: "2026-01-01" } }] } }, { today: "2026-10-01" }).items[0].fields.d === "2026-01-01");
+  }
+
   // …and the blurb the storefront shows is the WHOLE sentence. The attribute parser used to accept
   // either quote as the closer regardless of which one opened, so a `content="…"` holding an
   // apostrophe — "today's medicines", "that week's Monday" — ended at the apostrophe and four apps
   // shipped half a description. The round trip is the assertion: whatever came back must appear in
   // the source file still wrapped in its own quotes. Re-deriving it with a regex here would only
   // prove the two regexes agree.
+  // An entry that ships a skill.md is described by the skill's frontmatter instead (app-store.mjs —
+  // one description, the skill's), so its round trip is against THAT line.
   const halved = [];
   for (const e of entries) {
+    const skillPath = join(ROOT, "components", e.name, "skill.md");
+    if (existsSync(skillPath)) {
+      if (!readFileSync(skillPath, "utf-8").split(/\r?\n/).includes(`description: ${e.description}`)) halved.push(e.name);
+      continue;
+    }
     const src = readFileSync(join(ROOT, "components", e.name, "ui.html"), "utf-8");
     if (e.description && !src.includes(`content="${e.description}"`) && !src.includes(`content='${e.description}'`))
       halved.push(e.name);
@@ -143,30 +182,30 @@ console.log("2b-lib. every shipped App Store entry can actually be previewed");
 
 console.log("2b-ui. widget security declaration (ChatGPT submission gate)");
 // ChatGPT's connector page flags a template with no widget CSP and no widget domain, and its
-// reference calls the domain "required when submitting a plugin with UI". Ours is the easiest
-// possible declaration to make honestly: every shipped app is self-contained (verified —
-// zero absolute URLs), so the truthful answer is also the strictest one, and it stops being a
-// claim in a README the moment it is on the wire.
+// reference calls the domain "required when submitting a plugin with UI". With no app declaring
+// anything, the loader's declaration is EXACTLY the platform base (store.PLATFORM_CSP): static
+// loads from the CDN script hosts and Google Fonts, and no server at all — the strictest statement
+// that still lets an app use React or Tailwind the way a model writes them (platform plan D4).
 {
-  const meta = (await client.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0]._meta;
-  ok("the loader declares an EMPTY CSP allowlist — self-contained, and it says so",
-    meta?.ui?.csp?.connectDomains?.length === 0 && meta?.ui?.csp?.resourceDomains?.length === 0, JSON.stringify(meta?.ui?.csp));
+  const base = JSON.stringify(PLATFORM_CSP.resourceDomains);
+  const meta = (await client.readResource({ uri: await loaderUriOf(client) })).contents[0]._meta;
+  ok("the loader declares the platform base and nothing else — no server reachable",
+    meta?.ui?.csp?.connectDomains?.length === 0 && JSON.stringify(meta?.ui?.csp?.resourceDomains) === base, JSON.stringify(meta?.ui?.csp));
   // Declaring frameDomains buys a stricter review for a capability we do not want; omitting it
   // means frame-src 'none', which measurably does NOT affect our srcdoc previews.
   ok("…and does NOT declare frameDomains", meta?.ui?.csp?.frameDomains === undefined);
   ok("ChatGPT's legacy snake_case twin is sent and agrees",
-    meta?.["openai/widgetCSP"]?.connect_domains?.length === 0 && meta?.["openai/widgetCSP"]?.resource_domains?.length === 0);
+    meta?.["openai/widgetCSP"]?.connect_domains?.length === 0 && JSON.stringify(meta?.["openai/widgetCSP"]?.resource_domains) === base);
   // The domain is per-SUBMISSION ("must be unique per plugin"), so the engine must never invent one.
   ok("no widget domain is invented when the deployment did not set one",
     meta?.ui?.domain === undefined && meta?.["openai/widgetDomain"] === undefined);
-  const listed = (await client.listResources()).resources.find((r) => r.uri.endsWith("app.html"));
+  const listed = (await client.listResources()).resources.find((r) => LOADER_URI_RE.test(r.uri));
   // Asserted by VALUE, not by presence. `!== undefined` passed on `csp: {}` — an empty object is
   // exactly what a half-built declaration looks like, and the listing is the copy a reviewer reads
-  // at connection time, so "something is there" is the wrong question. The listing must carry the
-  // SAME empty allowlists the read does.
+  // at connection time, so "something is there" is the wrong question.
   ok("the listing carries the same declaration the read does (what a reviewer sees at connection time)",
     listed?._meta?.ui?.csp?.connectDomains?.length === 0
-    && listed?._meta?.ui?.csp?.resourceDomains?.length === 0
+    && JSON.stringify(listed?._meta?.ui?.csp?.resourceDomains) === base
     && JSON.stringify(listed?._meta?.ui?.csp) === JSON.stringify(meta?.ui?.csp),
     JSON.stringify(listed?._meta?.ui?.csp));
 }
@@ -184,7 +223,7 @@ console.log("2b-domain. widgetDomain feeds TWO keys whose hosts want INCOMPATIBL
   const metaFor = async (widgetDomain) => {
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
     const st2 = openS(probe);
-    const read = mkEngine(st2, { widgetDomain })._registeredResources?.["ui://open-mcp-apps/app.html"]?.readCallback;
+    const read = loaderEntry(mkEngine(st2, { widgetDomain }))?.readCallback;
     const m = (await read()).contents[0]._meta;
     st2.close();
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
@@ -235,7 +274,7 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
   await modern.connect(new StdioClientTransport({
     command: "node",
     args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke", OMA_DYNAMIC_TOOLS: "1" },
+    env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke" },
   }));
   const listed = await modern.listResources();
   ok("resources/list carries hints", typeof listed.ttlMs === "number" && listed.ttlMs >= 0);
@@ -246,7 +285,7 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
   ok("per-app read promises no freshness — the AI can rewrite the app mid-sentence",
     appRead.ttlMs === 0, String(appRead.ttlMs));
 
-  const loaderRead = await modern.readResource({ uri: "ui://open-mcp-apps/app.html" });
+  const loaderRead = await modern.readResource({ uri: await loaderUriOf(modern) });
   // This asserted `public` until the browser viewer became default-on. The rule did not change and
   // neither did wrapLoader(): the scope is read off the ANSWER, and a running viewer puts its own
   // origin into the widget security declaration, which is deployment-derived by definition — two
@@ -285,7 +324,7 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
     const scopeOf = (opts) => {
       for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
       const st2 = openS(probe);
-      const hint = mkEngine(st2, opts)._registeredResources?.["ui://open-mcp-apps/app.html"]?.cacheHint;
+      const hint = loaderEntry(mkEngine(st2, opts))?.cacheHint;
       st2.close();
       // No hint = the SDK default (private/zero) inherited by OMISSION — the elegance-A18 form:
       // only the truly-universal answer declares itself public.
@@ -306,12 +345,14 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
   }
 
-  // Pins the premise of calling the template list public. If a store-derived template ever gets
-  // registered, this fails and the scope decision comes back up for review.
+  // Pins the premise of calling the template list public. The one template is the loader's family
+  // of names (§12d) — a constant of the engine, not of any store. If a store-derived template ever
+  // gets registered, this fails and the scope decision comes back up for review.
   const templates = await modern.listResourceTemplates();
-  ok("resource templates: none registered, so the list is engine-constant",
-    (templates.resourceTemplates ?? []).length === 0 && templates.cacheScope === "public",
-    `${(templates.resourceTemplates ?? []).length} template(s), scope ${templates.cacheScope}`);
+  const tplUris = (templates.resourceTemplates ?? []).map((t) => t.uriTemplate).join();
+  ok("resource templates: only the loader's name family, so the list is engine-constant",
+    tplUris === "ui://open-mcp-apps/app{tail}" && templates.cacheScope === "public",
+    `${tplUris || "(none)"}, scope ${templates.cacheScope}`);
   await modern.close();
 }
 
@@ -404,8 +445,8 @@ ok(`registry lists ${seedCount} seeds + smoke-notes`, listC.structuredContent.ap
 
 console.log("6. universal opener: zero-wait open of a just-saved app");
 const openTool = tools.find((t) => t.name === "open_app");
-ok("open_app is a static tool with the loader ui://", openTool?._meta?.ui?.resourceUri === "ui://open-mcp-apps/app.html");
-const loaderRes = await client.readResource({ uri: "ui://open-mcp-apps/app.html" });
+ok("open_app is a static tool with the loader ui://", LOADER_URI_RE.test(openTool?._meta?.ui?.resourceUri || ""));
+const loaderRes = await client.readResource({ uri: await loaderUriOf(client) });
 ok("loader resource shell-wrapped + has loader", loaderRes.contents[0].text.includes('data-oma="loader"') && loaderRes.contents[0].text.includes("get_app_html"));
 const openNow = await client.callTool({ name: "open_app", arguments: { app: "smoke-notes" } });
 ok("open_app works immediately for the fresh app", openNow.structuredContent?.app === "smoke-notes" && openNow.structuredContent?.collection === "smoke-notes");
@@ -431,20 +472,18 @@ console.log("6a. the live pointer — the app opened LAST, recorded beside the l
   const rendered = probe.livePointer();
   ok("reading an app's ui:// resource moves the pointer to it",
     rendered?.app === "smoke-notes" && rendered.n > nBefore, JSON.stringify(rendered));
-  // A DISPLAY app is a frame around whatever the pointer names, so its own render must not aim
+  // A LIVE FRAME is a frame around whatever the pointer names, so its own render must not aim
   // the wall at itself — the outer of the two walls (the brick carries the inner one).
   const wallSave = await client.callTool({ name: "save_app", arguments: { name: "wall-frame",
     ui: "<!doctype html><html><body><p>frame</p></body></html>",
-    manifest: { kind: "app", stage: { display: true } } } });
-  ok("a display app saves (the fixture the next assertion needs)", !wallSave.isError,
+    manifest: { live_frame: true } } });
+  ok("a live-frame app saves (the fixture the next assertion needs)", !wallSave.isError,
     JSON.stringify(wallSave).slice(0, 300));
   await client.readResource({ uri: "ui://open-mcp-apps/wall-frame.html" });
-  ok("…but a display app's own render leaves the pointer alone",
+  ok("…but a live-frame app's own render leaves the pointer alone",
     probe.livePointer()?.app === "smoke-notes", JSON.stringify(probe.livePointer()));
-  // The fixture STAYS, and is declared kind:"app" for that reason: deleting it is a tombstone
-  // that does not retire the dynamic `open_wall_frame` seat (a known defect), so §13's "every
-  // dynamic open_* maps to a listed app" sweep would then read the leftover opener as rogue.
-  // TWO DOORS, ONE ACT: this suite runs OMA_DYNAMIC_TOOLS=1, so the opt-in per-app tool is live
+  // The fixture STAYS (it is unpinned, so it has no opener either way).
+  // TWO DOORS, ONE ACT: habit-streaks is pinned in this suite, so its per-app tool is live
   // here, and its `_meta.ui.resourceUri` sends the host to the per-app resource — the same
   // document, therefore the same record. A display must not depend on which door was offered.
   await client.readResource({ uri: "ui://open-mcp-apps/habit-streaks.html" });
@@ -476,14 +515,31 @@ console.log("6a. the live pointer — the app opened LAST, recorded beside the l
   // The same outer wall the resource path carries: a frame must not aim the pointer at itself,
   // whichever door it was mounted through.
   await client.callTool({ name: "get_app_html", arguments: { name: "wall-frame", mount: true } });
-  ok("…but a display app claiming a mount is still refused the pointer",
+  ok("…but a live-frame app claiming a mount is still refused the pointer",
     probe.livePointer()?.app === "habit-streaks", JSON.stringify(probe.livePointer()));
   // …and the loader document actually SENDS it. The assertion above proves the seat honours the
   // parameter; without this one nothing proves the only caller in the product passes it.
-  const loaderDoc = (await client.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0].text;
+  const loaderDoc = (await client.readResource({ uri: await loaderUriOf(client) })).contents[0].text;
   ok("the loader document calls get_app_html with mount: true",
     /callTool\(\s*"get_app_html"\s*,\s*\{[^}]*mount:\s*true/.test(loaderDoc),
     loaderDoc.slice(loaderDoc.indexOf("get_app_html") - 80, loaderDoc.indexOf("get_app_html") + 120));
+  // `stage` is gone from the manifest grammar. A declaration written before that still SAVES (an
+  // unknown key is ignored, never rejected) — and means nothing: the frame declaration is
+  // `live_frame`, so an old `stage.display` neither frames nor holds the pointer.
+  const legacySave = await client.callTool({ name: "save_app", arguments: { name: "legacy-stage",
+    ui: "<!doctype html><html><body><p>old</p></body></html>",
+    manifest: { stage: { width: "wide", display: true } } } });
+  ok("a manifest still carrying `stage` saves", !legacySave.isError, JSON.stringify(legacySave).slice(0, 300));
+  await client.readResource({ uri: "ui://open-mcp-apps/legacy-stage.html" });
+  ok("…and `stage.display` is not a live-frame declaration: its render moves the pointer",
+    probe.livePointer()?.app === "legacy-stage", JSON.stringify(probe.livePointer()));
+  const legacyDoc = (await client.readResource({ uri: "ui://open-mcp-apps/legacy-stage.html" })).contents[0].text;
+  ok("…and nothing is stamped from it: the served <body> is the app's own",
+    legacyDoc.includes("<body><p>old</p></body>") && !/stage-(column|wide|fluid)/.test(legacyDoc));
+  const badFrame = await client.callTool({ name: "save_app", arguments: { name: "bad-frame",
+    ui: "<!doctype html><html><body><p>x</p></body></html>", manifest: { live_frame: "yes" } } });
+  ok("`live_frame` is typed: a non-boolean is refused by name",
+    badFrame.isError === true && /live_frame/.test(JSON.stringify(badFrame.content)), JSON.stringify(badFrame).slice(0, 300));
   // Put the pointer back where the rest of this section expects it.
   await client.readResource({ uri: "ui://open-mcp-apps/smoke-notes.html" });
 
@@ -504,7 +560,9 @@ console.log("7. guardrails");
 const badName = await client.callTool({ name: "save_app", arguments: { name: "Bad Name!", ui: noteHtml } });
 ok("bad name rejected", badName.isError === true);
 const extUrl = await client.callTool({ name: "save_app", arguments: { name: "ext-test", ui: noteHtml.replace("<ul", '<script src="https://evil.example/x.js"></script><ul') } });
-ok("external URL warned", extUrl.content[0].text.includes("External URLs detected"));
+ok("an origin outside the policy is named in the warning", extUrl.content[0].text.includes("Loads from https://evil.example"), extUrl.content[0].text);
+const cdnOk = await client.callTool({ name: "save_app", arguments: { name: "cdn-test", ui: noteHtml.replace("<ul", '<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.3.1/umd/react.production.min.js"></script><link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter"><a href="https://maps.google.com/?q=1,2">map</a><ul') } });
+ok("…and the platform base (cdnjs, Google Fonts) and a plain link are not", !/Loads from/.test(cdnOk.content[0].text), cdnOk.content[0].text);
 const noOma = await client.callTool({ name: "save_app", arguments: { name: "static-test", ui: "<!DOCTYPE html><html><body><h1>static</h1>no api here, just markup filling the minimum size…</body></html>" } });
 ok("no-oma warned", noOma.content[0].text.includes("never references the oma API"));
 // …and the aliases a real app actually uses do NOT warn. A measured author re-sent an entire
@@ -524,6 +582,22 @@ ok("no-oma warned", noOma.content[0].text.includes("never references the oma API
   }
   ok("the oma-reference check accepts every idiomatic spelling, not just the literal `oma.`",
     quiet.length === 0, `still false-positive on: ${quiet.join(", ")}`);
+}
+// Size is advice: an app past one get_app read is saved AND told; under it, nothing is said; an edit
+// says it once, on the edit that crosses the line.
+{
+  const pad = (n) => noteHtml.replace("<ul", `<!--${"x".repeat(n)}--><ul`);
+  const big = await client.callTool({ name: "save_app", arguments: { name: "size-big", ui: pad(31_000) } });
+  ok("an app past one read window saves, with the size advice", !big.isError && big.content[0].text.includes("past one get_app read"), big.content[0].text);
+  const small = await client.callTool({ name: "save_app", arguments: { name: "size-small", ui: pad(20_000) } });
+  ok("…an app under it saves without one", !small.isError && !small.content[0].text.includes("past one get_app read"), small.content[0].text);
+  const v = small.structuredContent.version;
+  const cross = await client.callTool({ name: "edit_app", arguments: { app: "size-small", expected_version: v, command_id: "size-cross",
+    edits: [{ old_string: "<ul", new_string: `<!--${"y".repeat(12_000)}--><ul` }] } });
+  ok("an edit that crosses the line says so", !cross.isError && cross.content[0].text.includes("past one get_app read"), cross.content[0].text);
+  const again = await client.callTool({ name: "edit_app", arguments: { app: "size-small", expected_version: cross.structuredContent.version, command_id: "size-again",
+    edits: [{ old_string: "<ul", new_string: "<!--z--><ul" }] } });
+  ok("…and the next edit of an app already past it does not repeat it", !again.isError && !again.content[0].text.includes("past one get_app read"), again.content[0].text);
 }
 
 console.log("8. security v0.1 — reserved namespace, size cap, privileged writer");
@@ -600,11 +674,11 @@ console.log("9. onboarding vs inventory — the instructions address the reader 
   // 🔴 The regression this pins: an earlier version listed the user's actual app names here.
   // That put per-user, per-build data into the PREFIX — codex carries these instructions inside
   // tool_search's description, in req.tools — so every save_app would have invalidated the
-  // whole cached prefix. That is the exact property OMA_DYNAMIC_TOOLS is disabled to avoid. A tool
+  // whole cached prefix. That is the exact property per-app tools are pin-only to avoid. A tool
   // RESULT is cheap for the opposite reason: it lands in the conversation body, which only grows.
   ok("🔴 it carries NO per-user instance data — that belongs in a tool result, not the prefix",
     !settled.includes("expenses-2026"),
-    "instructions must not vary with what the user has built; see OMA_DYNAMIC_TOOLS in test/invariants.mjs");
+    "instructions must not vary with what the user has built (the same reason per-app tools are pin-only)");
   st.close();
   for (const f of [fresh, fresh + "-wal", fresh + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
@@ -691,52 +765,48 @@ ok("dashboard is NOT locked — save_app succeeds", !dashSave.isError && /Saved 
 console.log("12c. 🔴 A STORE THAT PREDATES A RESERVED NAME MUST STILL BOOT (anti-brick)");
 // `app` became a reserved app name on 2026-07-29. Reserving it stops NEW ones; it does
 // nothing about a store written before that, and the engine has been public with users in it.
-//
-// The failure was total, not cosmetic: the per-app resource for an app called `app` claims
-// `ui://open-mcp-apps/app.html`, which is the universal loader's own URI, so the loader's
-// registration hit "already registered", createEngine threw, and the server did not come up.
-// A server that will not start cannot be asked to delete anything — the only way out was editing
-// SQLite by hand. Boot must survive its own data.
+// The failure used to be total: an app called `app` claimed `ui://open-mcp-apps/app.html`, the
+// loader's own URI, and createEngine threw. The loader's URI now carries a content hash with a dot
+// in it (tools/apps.mjs loaderUriFor) and no app name can contain a dot — so the collision is gone
+// by construction, and every reserved name boots with its own per-app resource.
 {
   const { openStore } = await import("../src/store.mjs");
   const { createEngine } = await import("../src/engine.mjs");
   const probe = join(ROOT, "test", "reserved-name-probe.db");
   const HTML = "<!doctype html><html><body>saved before the name was reserved, and still theirs</body></html>";
-  const boot = (name) => {
+  for (const n of ["app", "loader"]) {
     for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
     const st = openStore(probe);
     // The privileged path is how such a row got there: it predates today's reserved-name check.
-    st.execute({ type: "save_app", command_id: randomUUID(), name, ui: HTML, actor: "seed" });
+    st.execute({ type: "save_app", command_id: randomUUID(), name: n, ui: HTML, actor: "seed" });
     let err = null, eng = null;
     try { eng = createEngine(st); } catch (e) { err = e; }
-    return { st, err, eng };
-  };
-
-  // The one that actually collides — measured, not assumed: only `app` shares the loader's URI.
-  const a = boot("app");
-  ok("🔴 a store holding an app named `app` still boots", a.err === null,
-    a.err && `${a.err.constructor.name}: ${a.err.message}`);
-  ok("…and the universal loader keeps its own URI (the app yields, the engine does not)",
-    a.err === null && !!a.eng);
-  ok("…and the app is still THERE — degraded, never deleted behind the user's back",
-    a.st.listApps().some((c) => c.name === "app"));
-  a.st.close();
-
-  // The other two reserved names do NOT collide (their URIs are app.html / loader.html).
-  // Asserted so nobody "fixes" them by widening the guard into something that skips real apps.
-  for (const n of ["app", "loader"]) {
-    const b = boot(n);
-    ok(`an app named \`${n}\` was never a collision and still is not`, b.err === null,
-      b.err && b.err.message);
-    b.st.close();
+    ok(`🔴 a store holding an app named \`${n}\` still boots`, err === null, err && `${err.constructor.name}: ${err.message}`);
+    ok(`…and it has its own resource beside the loader's`,
+      !!eng?._registeredResources?.[`ui://open-mcp-apps/${n}.html`] && !!loaderEntry(eng));
+    st.close();
   }
   for (const f of [probe, probe + "-wal", probe + "-shm"]) if (existsSync(f)) unlinkSync(f);
+}
+
+console.log("12d. every name the loader ever had still answers — with today's document");
+// Claude keeps a connector's tool list and reads the URI it last saw (measured 2026-10-02: a
+// resources/read of the bare app.html long after it was retired, and a widget that could not load).
+{
+  const cur = await loaderUriOf(client);
+  const isLoader = async (uri) => (await client.readResource({ uri })).contents[0].text.includes('data-oma="loader"');
+  ok("the current hashed URI serves the loader", await isLoader(cur));
+  ok("…the retired bare app.html does too (a host holding an old tool list still gets a widget)", await isLoader("ui://open-mcp-apps/app.html"));
+  ok("…and so does any earlier hash", await isLoader("ui://open-mcp-apps/app.0123456789ab.html"));
+  let miss = null; try { await client.readResource({ uri: "ui://open-mcp-apps/apple-gone.html" }); } catch (e) { miss = e.message; }
+  ok("a name outside the loader family is not swallowed by it", /not found/i.test(miss || ""), miss);
+  ok("only the current name is LISTED", (await client.listResources()).resources.filter((r) => /\/app[.]/.test(r.uri)).map((r) => r.uri).join() === cur);
 }
 
 console.log("13. THE TOOL-SURFACE INVARIANT (docs/security-model.md §1.5 — lane A item A8)");
 // The exact set of tool names the server registers TODAY (hardcoded on purpose: this list is a
 // security contract, not something to auto-derive). Per-app openers are the ONLY dynamic
-// surface — allowed via the open_<name> regex because this suite runs OMA_DYNAMIC_TOOLS=1.
+// surface — allowed via the open_<name> regex because this suite pins apps.
 const KNOWN_SAFE = new Set([
   "open_app", "get_app_html", "get_app_guide", "list_apps", "get_app", "save_app",
   "data_list", "list_data_collections", "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
@@ -772,10 +842,6 @@ const KNOWN_SAFE = new Set([
   // browser JS over the same verbs, which is why the seat is createEngine OPT-IN and this local
   // entrypoint is the party that opts in.
   "call_function",
-  // W-P (§8-R3): promote_app rewrites the declaration's `kind` IN MEMORY (writeDeclaration,
-  // manifest-block.mjs) and lands through the SAME save_app store path under OCC — no new
-  // primitive, no new code path into the store (security-model §1.5).
-  "promote_app",
   // App Store: app_store_list/preview_app_store_entry/install_from_app_store read ONLY repo
   // components/*.html through src/app-store.mjs, whose name argument is APP_NAME_RE-validated
   // (no dots/slashes → no traversal) and whose dir is fixed at module load; preview_app_store_entry
@@ -798,6 +864,17 @@ const KNOWN_SAFE = new Set([
   // all-or-nothing batch cannot give, so the schema refuses it and data_delete_item owns it.
   "apply_data_writes",
   // (data_query's dormant seat retired 2026-08-04, elegance A5 — returns slim when it ships.)
+  // get_app_skill (§1.5 review, 2026-10-03): returns ONE stored text column of an app row (the
+  // skill slot) through the same store.getApp / shared-facade getApp path get_app reads source
+  // by. Read-only, no file system, no network, no execution — the text is never interpreted.
+  "get_app_skill",
+  // The screen relay (§1.5 review, 2026-10-05, on by default): src/tools/screen.mjs holds an
+  // in-memory job queue per store and nothing else — no store write, no file system, no network,
+  // no execution on the server. screen_read / screen_act hand a job to the open widget, which
+  // reads its own DOM or dispatches a click there: reach = what the person could press on screen,
+  // minus the engine's chrome (the delete confirmation answers only an isTrusted click; reproduced
+  // and fixed before this entry). screen_poll is that widget's app-only long poll.
+  "screen_read", "screen_act", "screen_poll",
 ]);
 const DYNAMIC_OPEN_RE = /^open_[a-z0-9_]+$/; // per-app open_<name> (dynamic tools)
 ({ tools } = await client.listTools());
@@ -821,9 +898,8 @@ ok(
   rogueOpen.length === 0,
 );
 
-// ORDERING NOTE: sections 14+ save fixture apps and delete one. Under OMA_DYNAMIC_TOOLS=1
-// a deleted app's open_<name> tool lingers until restart (documented behavior), so the
-// rogue-open check in section 13 must keep running BEFORE these sections.
+// A deleted pinned app's opener is removed (test/pinned-tools.mjs), so the rogue-open sweep
+// above would hold after the deletes in sections 14+ as well.
 
 console.log("14. list_app_checkpoints — version metadata only, NEVER the html");
 const histHtml1 = noteHtml;
@@ -939,8 +1015,8 @@ console.log("15c. checkpoints — the number a person reads is not the ledger's"
 
   // 🔴 The idempotent replay must SAY it did nothing. The store already made the retry a no-op,
   // but restore_app dropped `r.idempotent` on the floor and recited "Restored … saved as a new
-  // checkpoint" — a rollback the user is told happened twice. save_app / edit_app / promote_app
-  // all pre-check priorReceipt; this verb now does too.
+  // checkpoint" — a rollback the user is told happened twice. save_app / edit_app
+  // both pre-check priorReceipt; this verb now does too.
   const cps = async () => (await client.callTool({ name: "list_app_checkpoints", arguments: { name: "cp-app" } })).structuredContent.history.length;
   const replayCid = randomUUID();
   const cpBefore = await cps();
@@ -1015,7 +1091,7 @@ console.log("18. loader runner branch — chokepoint markers (served doc + the O
 // Write-set D: the runner machine lives ONCE in src/runner.mjs and ships to the loader inside
 // the bundled runtime (minified — identifiers and whitespace don't survive), so structural
 // pins grep the SOURCE and behavioral strings are checked on the SERVED document.
-const loaderDoc = (await client.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0].text;
+const loaderDoc = (await client.readResource({ uri: await loaderUriOf(client) })).contents[0].text;
 const { readFileSync: readSrc } = await import("node:fs");
 const runnerSrc = readSrc(join(ROOT, "src", "runner.mjs"), "utf8");
 const policySrc = readSrc(join(ROOT, "src", "tool-policy.mjs"), "utf8");
@@ -1037,14 +1113,19 @@ const sandboxValues = [
   ...loaderDoc.matchAll(/sandbox="([^"]*)"/g),
 ].map((m) => m[1]);
 ok("no sandbox value grants allow-same-origin", sandboxValues.length > 0 && sandboxValues.every((v) => !v.includes("allow-same-origin")));
-ok("tier branch: local (or missing tier) mounts direct", loaderDoc.includes('sc.tier == null || sc.tier === "local"') && loaderDoc.includes("return mount(sc.html)"));
+ok("tier branch: local (or missing tier) mounts direct", loaderDoc.includes('sc.tier == null || sc.tier === "local"') && loaderDoc.includes("return await mount(sc.html)"));
 ok("non-local tiers route through the runner machine (oma.embed)", loaderDoc.includes("oma.embed(name, {") && loaderDoc.includes("caps: sc.caps || {}"));
 ok("control-plane denylist present with every registry/policy-mutating tool", runnerSrc.includes("isControlPlaneTool(tl)") && ["security_set", "save_app", "edit_app", "archive_app", "delete_app", "restore_app", "install_from_app_store"].every((n) => policySrc.includes('"' + n + '"')));
 ok("control-plane deny also covers future app_store_* tools AND internal `_` RPC names", policySrc.includes('indexOf("app_store_") === 0') && policySrc.includes('indexOf("_") === 0'));
 ok("control-plane tools rejected with a clear message", runnerSrc.includes("is not available to apps") && loaderDoc.includes("is not available to apps"));
 // CSP-first: the runner builds our own <head> with the CSP as the FIRST child; it never anchors
 // on the app's own <head> (a pre-<head> script would otherwise run before the policy).
-ok("runner builds CSP-first document, not a <head>-anchored splice", runnerSrc.includes('"<!doctype html><html><head>" + RUNNER_CSP') && !/\.replace\(\s*\/<head/.test(runnerSrc) && loaderDoc.includes("<!doctype html><html><head>"));
+// Every document the runner composes opens on a CSP: the floor, or the app's own policy built by
+// runnerCspFor — never anything else first.
+const headOpens = [...runnerSrc.matchAll(/"<!doctype html><html><head>" \+ ([^\n]*)/g)].map((m) => m[1]);
+ok("runner builds CSP-first document, not a <head>-anchored splice",
+  headOpens.length >= 2 && headOpens.every((r) => r.startsWith("RUNNER_CSP") || r.startsWith("(csp ? cspMeta(runnerCspFor(csp)) : RUNNER_CSP)"))
+  && !/\.replace\(\s*\/<head/.test(runnerSrc) && loaderDoc.includes("<!doctype html><html><head>"), JSON.stringify(headOpens));
 
 console.log("19. policy-key naming — snake_case canonical; dotted/unknown stored but inert + warned");
 const dottedSet = await client.callTool({ name: "security_set", arguments: { key: "security:habit-streaks:sendMessage", value: "deny" } });
@@ -1400,12 +1481,12 @@ ok("a typo'd operator is a NAMED error, not a silent empty result",
   badOp.isError === true && /Unknown filter operator/.test(badOp.content[0].text) && /greaterThan/.test(badOp.content[0].text));
 
 console.log("26b6. an exact-name lookup is explicit intent — defaults scope browsing, not existence");
-bStore.execute({ type: "save_app", command_id: randomUUID(), name: "hidden-visual", visibility: "unlisted", actor: "human",
-  ui: `<p>tucked away</p>`, manifest: { manifest_version: 2, kind: "visual" } });
-const hidFound = await client.callTool({ name: "list_apps", arguments: { name: "hidden-visual" } });
-ok("list_apps {name} finds an unlisted non-app instead of reporting it does not exist",
-  !hidFound.isError && hidFound.structuredContent.total === 1 && hidFound.structuredContent.apps[0].name === "hidden-visual");
-const hidScoped = await client.callTool({ name: "list_apps", arguments: { name: "hidden-visual", kind: "app" } });
+bStore.execute({ type: "save_app", command_id: randomUUID(), name: "hidden-app", visibility: "unlisted", actor: "human",
+  ui: `<p>tucked away</p>` });
+const hidFound = await client.callTool({ name: "list_apps", arguments: { name: "hidden-app" } });
+ok("list_apps {name} finds an unlisted app instead of reporting it does not exist",
+  !hidFound.isError && hidFound.structuredContent.total === 1 && hidFound.structuredContent.apps[0].name === "hidden-app");
+const hidScoped = await client.callTool({ name: "list_apps", arguments: { name: "hidden-app", visibility: "listed" } });
 ok("...while a filter the caller actually passed still applies", hidScoped.structuredContent.total === 0);
 
 console.log("27b. stewardship declarations — `fields` is optional; declaring a collection ≠ validating it");
@@ -1443,10 +1524,10 @@ const lcMiss = await client.callTool({ name: "list_apps", arguments: { name: "no
 ok("a miss says how to widen instead of looking like an empty registry",
   lcMiss.structuredContent.total === 0 && /No app named/.test(lcMiss.content[0].text));
 const lcDefault = await client.callTool({ name: "list_apps", arguments: {} });
-const lcAny = await client.callTool({ name: "list_apps", arguments: { kind: "any", visibility: "any" } });
-ok("default scope is kind=app + featured/listed (the openable apps)",
-  lcDefault.structuredContent.apps.every((c) => c.kind === "app" && ["featured", "listed"].includes(c.visibility)));
-ok("kind/visibility any widens to the whole registry", lcAny.structuredContent.total >= lcDefault.structuredContent.total);
+const lcAny = await client.callTool({ name: "list_apps", arguments: { visibility: "any" } });
+ok("default scope is featured/listed (the openable apps)",
+  lcDefault.structuredContent.apps.every((c) => ["featured", "listed"].includes(c.visibility)));
+ok("visibility any widens to the whole registry", lcAny.structuredContent.total > lcDefault.structuredContent.total);
 ok("the store's own listApps() is unfiltered — the registry's consumers see everything",
   lcAny.structuredContent.total === lcAny.structuredContent.shown);
 
@@ -1500,11 +1581,31 @@ ok("default chapter carries the API contract AND a working template", /window\.o
 // (`apply_data_writes` → `apply_data_writes`, `get_data_version` → `get_data_version`) costs bytes the
 // author never asked for and cannot decline. Measured 25,813 after the rename, 25,800 before;
 // the cap moves by the mechanical difference and nothing was added, removed, or reworded.
-ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < 25900,
+// 26,300 (was 25,900): the style prescription (House style + App shell — "eyebrow, overview band,
+// no chart") was measured to BE the SaaS look: same model, same conversation, four arms
+// (docs/app-design-brief-2026-09-30.md §9) — full guide → an admin dashboard; the prescription
+// deleted → cleaner at once; the hosts' own published rules (structure from tokens, one accent of
+// the app's own) → compliant AND characterful. Basics never carried that prescription, but it also
+// never carried ANY design direction or the k-stage frame (only RUNTIME.md did — the in-chat author
+// never saw it). So basics swaps the 1.6 KB kit table (now in topic "style"; a one-line kit mention
+// stays) for the Design section, net +395 B. Probation: the rollout's new-vs-old guide generation
+// in real hosts; if it does not show the difference, the section comes back out.
+// 23,500 (was 26,300) — LOWERED, platform plan W2 (2026-10-02): the kit and the stage frame are
+// gone from the engine, so their teaching went too, and the chapter became a contract — the two ways
+// to write (plain HTML / React UMD + htm), where things load from, width-based layout, display mode,
+// safe area, app tools — with taste left to the model. The manifest, workflow and empty-data prose
+// were cut to their rules. Measured 23,098 with the React template and oma.tools added.
+// 23,750 (was 23,500): a new SLOT, not new guidance — an app gained its skill (how an AI uses it),
+// and an author who never learns the slot exists cannot fill it. The contract only: format, the two
+// limits, the slot rules, "no secrets" — three lines, no advice on how to write one (Leo: the guide
+// stays light). 23,334 → 23,677 measured.
+ok("default chapter is smaller than the whole guide (the author pays for what they ask for)", gBasics.length < BASICS_GATE,
   `basics is ${gBasics.length} chars`);
-ok("…and it carries the three slimming rules, since basics is the chapter authors actually pull",
-  /\.k-btn/.test(gBasics) && /apply_data_writes/.test(gBasics) && /skeleton/i.test(gBasics),
-  "an author who only pulls basics must still know the kit exists and that data belongs in the collection");
+ok("…and it carries the contract an author who only pulls basics must know",
+  /apply_data_writes/.test(gBasics) && /skeleton/i.test(gBasics) && /cdnjs\.cloudflare\.com/.test(gBasics)
+    && /htm/.test(gBasics) && /--oma-safe-/.test(gBasics) && /requestDisplay/.test(gBasics) && /oma\.tools\.register/.test(gBasics),
+  "data in the collection, skeleton-first, where libraries load from, React via htm, safe area, display mode, app tools");
+ok("…and teaches no kit class or stage frame (the engine injects neither)", !/\bk-(stage|btn|scroll|appbar|card)\b|"stage"/.test(gBasics + gStyle));
 // The guide's apply_data_writes example is the centrepiece of a rule we made HARD ("data goes in the
 // collection"), so it must actually run. The first version of it put `collection` at the batch
 // level, where the tool has no such parameter — every author who copied it would have hit
@@ -1525,7 +1626,7 @@ ok("…and it carries the three slimming rules, since basics is the chapter auth
     JSON.stringify(batch.structuredContent));
 }
 ok("style stands alone: it repeats the hard rules rather than assuming basics was read",
-  /NO external resources/.test(gStyle) && /design tokens/.test(gStyle));
+  /Where things load from/.test(gStyle) && /design tokens/.test(gStyle));
 // The "sync axiom" pin here died with the worker executor (2026-08-16): a body may await now, and
 // a guide still saying SYNCHRONOUS would be the one lie an author cannot check. What replaced it is
 // the pair of facts that are true and that an author gets wrong without being told — the body may
@@ -1615,9 +1716,9 @@ console.log("27g. tokenCSS — an embedder's PER-APP theme must not be baked int
     /--color-background-primary:Canvas/.test(swapped));
   ok("the child document carries a fallback layer BEFORE the tokens, so omitting is safe",
     (() => {
-      const doc = barrel.composeChildDoc("<p>x</p>", { fallbackCss: ":root{--x:1}", tokenCss: "<style>T</style>", kitCss: ".k{}" });
+      const doc = barrel.composeChildDoc("<p>x</p>", { fallbackCss: ":root{--x:1}", tokenCss: "<style>T</style>", baseCss: "b{}" });
       return doc.indexOf('data-oma="token-fallback"') < doc.indexOf("<style>T</style>")
-        && doc.indexOf("<style>T</style>") < doc.indexOf('data-oma="kit"');
+        && doc.indexOf("<style>T</style>") < doc.indexOf('data-oma="base"');
     })());
 }
 
@@ -1784,7 +1885,7 @@ const proPref = prefsShared.find((p) => p.key === "proactivity");
 ok("proactivity is an enum with 2 options", proPref?.type === "enum" && Array.isArray(proPref.options) && proPref.options.length === 2);
 // app_permissions retired (elegance A13): the pane's truths now ride reads it already makes —
 // `locked` on every list_apps row, tier+caps on get_app_html.
-const permRows = (await client.callTool({ name: "list_apps", arguments: { kind: "any", visibility: "any" } })).structuredContent.apps;
+const permRows = (await client.callTool({ name: "list_apps", arguments: { visibility: "any" } })).structuredContent.apps;
 ok("list_apps rows carry locked — settings is locked:true", permRows.find((c) => c.name === "settings")?.locked === true);
 const habitMeta = (await client.callTool({ name: "get_app_html", arguments: { name: "habit-streaks" } })).structuredContent;
 ok("get_app_html carries tier+caps+locked — habit-streaks (App Store-installed): local tier, full file caps, not locked",
@@ -2096,7 +2197,7 @@ ok("🔴 an override WITHOUT the placeholders gets neither dynamic segment appen
     && !inst32b.includes("__ONBOARDING_OR_INVENTORY__") && !inst32b.includes("__PROACTIVITY_STANCE__"));
   await c32b.close();
 }
-const loader32 = await c32.readResource({ uri: "ui://open-mcp-apps/app.html" });
+const loader32 = await c32.readResource({ uri: await loaderUriOf(c32) });
 ok("served loader carries no brand layer", !loader32.contents[0].text.includes('data-oma="brand"'));
 // viewBase: a REAL per-app link when a viewer exists, none when it does not (a URL that 404s
 // teaches the user this thing is broken).
@@ -2122,7 +2223,7 @@ ok("viewBase puts a real /view link on every listed app — and a bare engine pr
     doc33.includes('window.__OMA_VIEW_BASE__="https://apps.example/u/x/view/"'),
     doc33.slice(0, 400));
   ok("…and into the universal loader, the other document a host mounts",
-    (await c33.readResource({ uri: "ui://open-mcp-apps/app.html" })).contents[0].text
+    (await c33.readResource({ uri: await loaderUriOf(c33) })).contents[0].text
       .includes('window.__OMA_VIEW_BASE__="https://apps.example/u/x/view/"'));
   ok("🔴 an engine with NO viewer stamps no base at all — the item cannot be drawn dead",
     !bare33.includes('data-oma="viewbase"') && !loader32.contents[0].text.includes('data-oma="viewbase"'));

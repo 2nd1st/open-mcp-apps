@@ -19,11 +19,18 @@ import { existsSync, unlinkSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { openStore } from "../src/store.mjs";
+import { walkPages, MAX_PAGES, WALK_LIMIT, APP_READER_META, READER_META_KEY } from "../src/runtime-core.mjs";
+import { RESULT_BUDGET, APP_READ_BUDGET } from "../src/contracts.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "budget.db");
 const N = 500;          // the size the roadmap quotes its numbers at
 const COLL = "budget-probe";
+// The two-readers fixture: shaped like the collection that found the bug (Findable, 2026-10-03 —
+// 226 rows / ~305K, the last group sorting onto page 12 of the model's budget). FAT_N rows of
+// ~1.5K each ≈ 450K serialized: more than MAX_PAGES model pages, inside one or two app pages.
+const FAT = "budget-fat";
+const FAT_N = 300;
 
 // Two axes, because they mean different things and only one is the model's bill:
 //   text    — content[], what the model reads and pays for. THIS is where E1Δ's win is locked in.
@@ -54,6 +61,14 @@ for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f)
       fields: { title: `item ${i}`, done: i % 3 === 0, note: "a realistic-length note field" },
       actor: "seed",
     });
+  for (let i = 0; i < FAT_N; i++)
+    store.execute({
+      type: "add_item", command_id: `fat-${i}`, collection: FAT,
+      // "z-last" sorts after every other group, exactly where Findable's `target` rows sat.
+      group: i < FAT_N - 4 ? `g${i % 6}` : "z-last",
+      fields: { title: `row ${i}`, body: "x".repeat(1_400) + ` ${i}` },
+      actor: "seed",
+    });
   store.close();
 }
 
@@ -66,7 +81,7 @@ const client = new Client({ name: "budget", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "budget", OMA_DYNAMIC_TOOLS: "" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "budget" },
 }));
 
 /** Two numbers per call, because they are not the same number:
@@ -116,6 +131,70 @@ ok("a one-row write costs the model less than reading the collection",
 console.log(`\n  E1Δ: a write costs the model ${Math.round(calls.write_one.text / 4)} tk over ${N} items ` +
   `(6,845 B / ~1,711 tk before). The default read is a first PAGE (never a refusal, never the whole ` +
   `collection): items ride whole, returned/total say what you got, next_cursor continues.`);
+
+// ── two readers, two budgets ───────────────────────────────────────────────────────────────
+// RESULT_BUDGET is sized for a MODEL's context. When the app's own runtime walks a collection the
+// page goes to the app, and the runtime says so in `_meta` (runtime-core READER_META_KEY). This
+// walks the fat collection both ways with the runtime's own walker and page size.
+console.log(`\ntwo readers over a ${FAT_N}-row collection (~${Math.round(FAT_N * 1.5)}K):`);
+const walkAs = async (meta) => {
+  const pages = [];
+  const out = await walkPages(async (cursor) => {
+    const r = await client.callTool({ name: "data_list", arguments: { collection: FAT, limit: WALK_LIMIT, ...(cursor ? { cursor } : {}) }, ...(meta ? { _meta: meta } : {}) });
+    pages.push(r);
+    return r.isError ? null : r.structuredContent;
+  });
+  return { out, pages };
+};
+const model = await walkAs(null);
+const app = await walkAs(APP_READER_META);
+const lastGroup = (o) => (o.items || []).filter((i) => i.group === "z-last").length;
+const maxBody = (w) => Math.max(...w.pages.map((p) => JSON.stringify(p.structuredContent).length));
+ok(`model read: every page stays inside RESULT_BUDGET (largest ${maxBody(model)} ≤ ${RESULT_BUDGET} + envelope)`,
+  maxBody(model) <= RESULT_BUDGET + 200);
+ok(`model read: the walk hits the page cap (${model.pages.length} pages, cap ${MAX_PAGES}) and says so — truncated, last group unseen`,
+  model.pages.length === MAX_PAGES && model.out.truncated === true && lastGroup(model.out) === 0,
+  `pages=${model.pages.length} truncated=${model.out.truncated} lastGroup=${lastGroup(model.out)} — the fixture must be bigger than MAX_PAGES model pages or this proves nothing`);
+ok(`app read: the whole collection in ${app.pages.length} page(s), last group included, not truncated`,
+  app.out.truncated === false && app.out.items.length === FAT_N && lastGroup(app.out) === 4 && app.pages.length <= 2,
+  `pages=${app.pages.length} items=${app.out.items?.length} truncated=${app.out.truncated} lastGroup=${lastGroup(app.out)}`);
+ok(`app read: no page exceeds APP_READ_BUDGET (largest ${maxBody(app)} ≤ ${APP_READ_BUDGET} + envelope)`,
+  maxBody(app) <= APP_READ_BUDGET + 200);
+ok("app read: the text channel does not repeat the rows (a widget reads structuredContent only)",
+  app.pages.every((p) => !(p.content?.[0]?.text || "").includes("x".repeat(100))) &&
+  model.pages.every((p) => (p.content?.[0]?.text || "").includes("x".repeat(100))),
+  "model pages must carry the rows in text; app pages must not");
+// Absent, or any value but "app", is the model — byte for byte.
+{
+  const plain = await client.callTool({ name: "data_list", arguments: { collection: FAT, limit: WALK_LIMIT } });
+  const other = await client.callTool({ name: "data_list", arguments: { collection: FAT, limit: WALK_LIMIT }, _meta: { [READER_META_KEY]: "model" } });
+  const junk = await client.callTool({ name: "data_list", arguments: { collection: FAT, limit: WALK_LIMIT }, _meta: { [READER_META_KEY]: true } });
+  ok("no signal / another value / a non-string: the identical model page",
+    JSON.stringify(plain) === JSON.stringify(other) && JSON.stringify(plain) === JSON.stringify(junk));
+}
+
+// The same two readers over a file: oma.files.read walks file_read's byte windows to the end, so a
+// model-sized window costs the widget round trips, never bytes — and the app's own read is sized for it.
+{
+  await client.callTool({ name: "save_app", arguments: { name: "budget-files", ui: "<!doctype html><html><body><script type=\"module\">oma.ready(()=>{})</script></body></html>" } });
+  const raw = Buffer.alloc(300_000, 7);
+  await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "budget-files", path: "big.bin", data_base64: raw.toString("base64") } });
+  const walkFile = async (meta) => {
+    const pages = []; let offset = 0;
+    for (;;) {
+      const r = await client.callTool({ name: "file_read", arguments: { app: "budget-files", path: "big.bin", ...(offset ? { offset } : {}) }, ...(meta ? { _meta: meta } : {}) });
+      pages.push(r.structuredContent);
+      if (r.structuredContent.next_offset == null) break;
+      offset = r.structuredContent.next_offset;
+    }
+    return { pages, bytes: Buffer.concat(pages.map((p) => Buffer.from(p.data_base64, "base64"))) };
+  };
+  const m = await walkFile(null), a = await walkFile(APP_READER_META);
+  ok(`file, model read: ${m.pages.length} windows, each inside RESULT_BUDGET, reassembling the file`,
+    m.pages.length > 1 && m.pages.every((p) => JSON.stringify(p).length <= RESULT_BUDGET + 200) && m.bytes.equals(raw), `windows=${m.pages.length}`);
+  ok(`file, app read: the same 300 KB in ${a.pages.length} window — the app's budget, same bytes`,
+    a.pages.length === 1 && JSON.stringify(a.pages[0]).length <= APP_READ_BUDGET + 200 && a.bytes.equals(raw), `windows=${a.pages.length}`);
+}
 
 await client.close();
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);

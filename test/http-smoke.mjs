@@ -7,6 +7,7 @@ import { Client } from "@modelcontextprotocol/client";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/client";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { spawn } from "node:child_process";
+import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
 import { unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -33,13 +34,17 @@ for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f)
   // a NON-local fixture (author not in {agent,human,seed}) — proves /view fails closed for it
   store.execute({ type: "save_app", command_id: "seed-nonlocal", name: "nonlocal-fixture",
     ui: "<!DOCTYPE html><html><body><div id='x'>nonlocal</div></body></html>", actor: "library-test" });
-  // a DISPLAY fixture — an app declaring itself a frame for other apps (manifest.stage.display).
+  // a LIVE-FRAME fixture — an app declaring itself a frame for other apps (manifest.live_frame).
   // Its own fixture rather than the shipped `live` template on purpose: what §6b proves is the
   // ENGINE's rule, and a test that reads it off a store entry would go quiet the day that entry
   // is renamed or restyled.
   store.execute({ type: "save_app", command_id: "seed-display", name: "display-fixture",
     ui: "<!DOCTYPE html><html><body><div id='wall'>wall</div></body></html>",
-    manifest: { stage: { width: "fluid", display: true } }, actor: "seed" });
+    manifest: { live_frame: true }, actor: "seed" });
+  // a manifest written before `stage` left the grammar — it still saves, and must stamp nothing.
+  store.execute({ type: "save_app", command_id: "seed-legacy-stage", name: "legacy-stage",
+    ui: "<!DOCTYPE html><html><body><div id='old'>old</div></body></html>",
+    manifest: { stage: { width: "wide" } }, actor: "seed" });
   // a fixture that DECLARES where it reaches. The viewer's header is built per app now
   // (http.mjs viewCspFor ∘ cspFor), and test/csp-passthrough.mjs proves the builder in isolation —
   // this fixture is what proves the ROUTE actually hands it the app's declaration.
@@ -201,6 +206,16 @@ try {
   const rpcAck = await rpcWrite.json();
   const rpcChg = await client.callTool({ name: "data_changes", arguments: { collection: "kanban", since: rpcAck.structuredContent.seq - 1 } });
   ok("rpc identifies as browser-viewer — on the event it wrote", rpcChg.structuredContent.events[0]?.host === "browser-viewer");
+  // The shell runtime says who reads over /rpc the same way it does over a host bridge: the
+  // request's `_meta` (runtime-core READER_META_KEY). /rpc has to hand it to the tool, or the
+  // standalone viewer's walk stays on the model's page budget. Observable here as the text
+  // channel: a model page repeats its rows there, an app page does not.
+  const rpcList = async (_meta) => (await fetch(`${BASE}/rpc`, { method: "POST", headers: { "content-type": "application/json" },
+    body: JSON.stringify({ name: "data_list", arguments: { collection: "kanban" }, ...(_meta ? { _meta } : {}) }) })).json();
+  const asModel = await rpcList(null), asApp = await rpcList({ "app.openmcp/reader": "app" });
+  const seesRow = (r) => r.structuredContent.items.some((i) => i.fields.title === "from the viewer");
+  ok("rpc passes the request's _meta to the tool: an app page carries the rows in structuredContent only",
+    seesRow(asModel) && seesRow(asApp) && asModel.content[0].text.includes("from the viewer") && !asApp.content[0].text.includes("from the viewer"));
   // An unknown tool name (stale app code calling a retired tool) must come back as the documented
   // envelope, not a bare 500. The v2 client throws -32602 where v1 answered in-band; /rpc catches
   // ProtocolError and restores the contract — panel round 4 (out7) found the regression.
@@ -210,6 +225,24 @@ try {
   ok("rpc answers an unknown tool with 200 + isError envelope (not HTTP 500)",
     rpcMissing.status === 200 && rpcMissingBody.isError === true
     && /not found/i.test(rpcMissingBody.content?.[0]?.text || ""));
+  // A request body arrives in network chunks, and a chunk boundary can fall INSIDE a multi-byte
+  // character. Decoding each chunk on its own turned the two halves of 答 into two U+FFFD — an AI's
+  // long Chinese write was stored as "回���" (measured: the Findable build, 10-03). The body is
+  // bytes until it is whole. Two writes with a pause force the split exactly mid-character.
+  const title = "回答：跨块的中文不能坏";
+  const raw = Buffer.from(JSON.stringify({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "kanban", fields: { title } } }), "utf8");
+  const cut = raw.indexOf(Buffer.from("答", "utf8")) + 1;            // one byte into a three-byte char
+  const splitStatus = await new Promise((resolve, reject) => {
+    const sock = connect(PORT, "127.0.0.1", () => {
+      sock.write(`POST /rpc HTTP/1.1\r\nHost: 127.0.0.1:${PORT}\r\nContent-Type: application/json\r\nContent-Length: ${raw.length}\r\nConnection: close\r\n\r\n`);
+      sock.write(raw.subarray(0, cut));
+      setTimeout(() => sock.write(raw.subarray(cut)), 60);
+    });
+    let resp = ""; sock.on("data", (c) => { resp += c; }); sock.on("end", () => resolve(Number(resp.split(" ")[1]))); sock.on("error", reject);
+  });
+  const stored = (await client.callTool({ name: "data_list", arguments: { collection: "kanban", limit: 200 } }))
+    .structuredContent.items.some((it) => it.fields.title === title);
+  ok("a body split mid-character arrives whole (no U+FFFD in what was stored)", splitStatus === 200 && stored);
 
   console.log("4. /view — browser viewer page");
   const viewResp = await fetch(`${BASE}/view/dashboard`);
@@ -289,6 +322,12 @@ try {
   ok("/view?chrome=0 asks the runtime for the bare widget",
     bare.includes('"chrome":false') && bare.includes('id="grid"'));
   ok("...and /view without it keeps the viewer chrome", !page.includes('"chrome":false'));
+  // No page frame from the engine: the viewer card is chrome, and it no longer reaches into the
+  // app for a `.k-stage` to size; the served body is the app's own tag, with no width class on it.
+  ok("the viewer's card carries no rule aimed at an app's own markup", !/k-stage|k-scroll/.test(runtimeSrc));
+  const legacyView = await (await fetch(`${BASE}/view/legacy-stage`)).text();
+  ok("/view serves an app's own <body>, even under a manifest that still declares a stage width",
+    legacyView.includes("<body><div id='old'>old</div></body>") && !/stage-(column|wide|fluid)/.test(legacyView));
   const bareLoader = await (await fetch(`${BASE}/view/nonlocal-fixture?chrome=0`)).text();
   ok("...on the loader path too, where the embedded app is a sandboxed child",
     bareLoader.includes('"chrome":false') && bareLoader.includes('data-oma="loader"'));
@@ -424,7 +463,7 @@ try {
     ok("…and neither is /live/<name>, the pinned form included", (await fetch(`${BASE}/live/dashboard`)).status === 404);
 
     // WALL ① — the outer one, and the only half of the anti-nesting rule reachable without a
-    // browser: an open_* door does not move the pointer for an app declaring `stage.display`. The
+    // browser: an open_* door does not move the pointer for an app declaring `live_frame`. The
     // pointer means "the app the AI put in front of the user", and a display is the FRAME around
     // whatever it names, so recording it would aim the wall at itself. Read straight off the row.
     const ptr = () => {
@@ -455,8 +494,13 @@ try {
     ok("the runtime carries the reserved brick, wired into embed before anything else",
       runtimeSrc.includes('const LIVE_NAME = "@live"')
       && runtimeSrc.includes("if (n === LIVE_NAME) return embedLive(opts)"));
-    ok("…and the brick refuses to mount an app that declares itself a display, without retrying",
-      /stage\.display === true\) \{ drop\(\); idle\(\); return; \}/.test(runtimeSrc));
+    ok("…and the brick refuses to mount an app that declares itself a live frame, without retrying",
+      /declaration\.live_frame === true\) \{ drop\(\); idle\(\); return; \}/.test(runtimeSrc));
+    // The viewer half of the same declaration: a live frame owns its screen, so /view serves it
+    // bare by default, and ?chrome=1 is the way back to the tab's bar.
+    const frameView = await (await fetch(`${BASE}/view/display-fixture`)).text();
+    ok("/view serves a live frame bare by default (no viewer bar)", frameView.includes('"chrome":false'));
+    ok("…and ?chrome=1 brings the bar back", !(await (await fetch(`${BASE}/view/display-fixture?chrome=1`)).text()).includes('"chrome":false'));
     ok("…and in a chat it is a static tile that reads no pointer and polls nothing",
       /if \(!SA\) \{[\s\S]{0,200}?liveTile\("Live region"/.test(runtimeSrc));
     // Follow mode routes even a LOCAL app through the sandboxed embed, because a direct mount

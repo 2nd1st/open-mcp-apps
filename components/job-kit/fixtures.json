@@ -1,476 +1,1161 @@
 {
-  "items": [
-    {
-      "id": "job-carlton",
-      "collection": "job-kit-jobs",
-      "group": "active",
-      "position": 1,
-      "fields": {
-        "title": "Carlton terrace",
-        "site": "Carlton",
-        "address": "18 Drummond St",
-        "status": "active",
-        "crew": [
-          "Ben",
-          "Mick",
-          "Sam"
-        ],
-        "start_date": "2026-08-03",
-        "due_date": "2026-08-14",
-        "progress": 64,
-        "next_action": "Set the bathroom nib wall after the electrician rough-in",
-        "note": "Keys are in the site safe. Neighbour access stays clear until 4 pm."
-      },
-      "version": 1
-    },
-    {
-      "id": "job-fitzroy",
-      "collection": "job-kit-jobs",
-      "group": "active",
-      "position": 2,
-      "fields": {
-        "title": "Fitzroy shopfront",
-        "site": "Fitzroy",
-        "address": "241 Brunswick St",
-        "status": "active",
-        "crew": [
-          "Ava",
-          "Joel"
-        ],
-        "start_date": "2026-08-04",
-        "due_date": "2026-08-12",
-        "progress": 38,
-        "next_action": "Replace the damaged timber behind the left display column",
-        "note": "Trading floor must be clean and quiet again by 4:30 pm."
-      },
-      "version": 1
-    },
-    {
-      "id": "job-brunswick",
-      "collection": "job-kit-jobs",
-      "group": "active",
-      "position": 3,
-      "fields": {
-        "title": "Brunswick kitchen",
-        "site": "Brunswick",
-        "address": "7 Lygon Grove",
-        "status": "active",
-        "crew": [
-          "Nina",
-          "Ben"
-        ],
-        "start_date": "2026-08-05",
-        "due_date": "2026-08-18",
-        "progress": 12,
-        "next_action": "Confirm the island set-out before the stone template visit",
-        "note": "Cabinet delivery is booked for Friday morning."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-laser-level",
-      "collection": "job-kit-tools",
-      "group": "Levels & measure",
-      "position": 1,
-      "fields": {
-        "name": "Green-beam laser level",
-        "code": "TL-014",
-        "category": "Levels & measure",
-        "status": "checked_out",
-        "location": "Carlton · ground floor stair opening",
-        "holder": "Ben",
-        "job_id": "job-carlton",
-        "kit": "Green case · tripod · target plate",
-        "updated_at": "2026-08-06T07:42:00+10:00",
-        "note": "Checked out from Van 2 this morning."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-laser-battery",
-      "collection": "job-kit-tools",
-      "group": "Levels & measure",
-      "position": 2,
-      "fields": {
-        "name": "Laser battery pack",
-        "code": "TL-014-B",
-        "category": "Levels & measure",
-        "status": "missing",
-        "location": "Last seen in Van 2 charger drawer",
-        "holder": "",
-        "job_id": "job-carlton",
-        "kit": "Spare 12V pack",
-        "updated_at": "2026-08-06T08:11:00+10:00",
-        "note": "Not in the green case. Take the spare from the workshop before the next crew leaves."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-rotary-hammer",
-      "collection": "job-kit-tools",
-      "group": "Drill & fix",
-      "position": 3,
-      "fields": {
-        "name": "SDS rotary hammer",
-        "code": "DR-022",
-        "category": "Drill & fix",
-        "status": "service",
-        "location": "Preston workshop · service bench",
-        "holder": "Joel",
-        "job_id": "",
-        "kit": "Case · side handle · depth stop",
-        "updated_at": "2026-08-04T16:28:00+10:00",
-        "note": "Chuck is slipping under load. Do not send to site."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-dust-extractor",
-      "collection": "job-kit-tools",
-      "group": "Site control",
-      "position": 4,
-      "fields": {
-        "name": "M-class dust extractor",
-        "code": "SC-006",
-        "category": "Site control",
-        "status": "on_site",
-        "location": "Carlton · rear lock-up",
-        "holder": "Site lock-up",
-        "job_id": "job-carlton",
-        "kit": "Hose · floor head · spare bag",
-        "updated_at": "2026-08-06T07:18:00+10:00",
-        "note": "Filter cleaned before drop-off."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-framing-nailer",
-      "collection": "job-kit-tools",
-      "group": "Cut & frame",
-      "position": 5,
-      "fields": {
-        "name": "Gas framing nailer",
-        "code": "CF-031",
-        "category": "Cut & frame",
-        "status": "on_site",
-        "location": "Carlton · ground floor toolbox",
-        "holder": "Mick",
-        "job_id": "job-carlton",
-        "kit": "Case · two batteries · charger",
-        "updated_at": "2026-08-06T06:56:00+10:00",
-        "note": "One full gas cell in the case."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-mitre-saw",
-      "collection": "job-kit-tools",
-      "group": "Cut & frame",
-      "position": 6,
-      "fields": {
-        "name": "305 mm mitre saw",
-        "code": "CF-008",
-        "category": "Cut & frame",
-        "status": "checked_out",
-        "location": "Fitzroy · rear loading bay",
-        "holder": "Ava",
-        "job_id": "job-fitzroy",
-        "kit": "Stand · fine blade · lead",
-        "updated_at": "2026-08-06T07:05:00+10:00",
-        "note": "Booked to Fitzroy until Thursday afternoon."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-track-saw",
-      "collection": "job-kit-tools",
-      "group": "Cut & frame",
-      "position": 7,
-      "fields": {
-        "name": "Track saw",
-        "code": "CF-017",
-        "category": "Cut & frame",
-        "status": "on_site",
-        "location": "Fitzroy · tool cage",
-        "holder": "Joel",
-        "job_id": "job-fitzroy",
-        "kit": "1400 rail · 800 rail · clamps",
-        "updated_at": "2026-08-06T07:09:00+10:00",
-        "note": "Both rails accounted for."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-planer",
-      "collection": "job-kit-tools",
-      "group": "Cut & frame",
-      "position": 8,
-      "fields": {
-        "name": "Cordless planer",
-        "code": "CF-026",
-        "category": "Cut & frame",
-        "status": "available",
-        "location": "Preston workshop · Rack B3",
-        "holder": "",
-        "job_id": "",
-        "kit": "Fence · dust bag · two blades",
-        "updated_at": "2026-08-04T17:06:00+10:00",
-        "note": "Charged and ready."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-thermal-camera",
-      "collection": "job-kit-tools",
-      "group": "Inspect & measure",
-      "position": 9,
-      "fields": {
-        "name": "Thermal camera",
-        "code": "IM-004",
-        "category": "Inspect & measure",
-        "status": "available",
-        "location": "Preston workshop · locked cabinet",
-        "holder": "",
-        "job_id": "",
-        "kit": "Hard case · USB-C lead",
-        "updated_at": "2026-08-04T15:42:00+10:00",
-        "note": "Sign out the cabinet key from the office."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-impact-kit",
-      "collection": "job-kit-tools",
-      "group": "Drill & fix",
-      "position": 10,
-      "fields": {
-        "name": "Impact driver kit",
-        "code": "DR-011",
-        "category": "Drill & fix",
-        "status": "checked_out",
-        "location": "Carlton · upstairs tool bag",
-        "holder": "Mick",
-        "job_id": "job-carlton",
-        "kit": "Driver · drill · two 5Ah batteries",
-        "updated_at": "2026-08-06T06:54:00+10:00",
-        "note": "Checked out with the framing gear."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-sds-bits",
-      "collection": "job-kit-tools",
-      "group": "Drill & fix",
-      "position": 11,
-      "fields": {
-        "name": "SDS bit set",
-        "code": "DR-022-B",
-        "category": "Drill & fix",
-        "status": "on_site",
-        "location": "Carlton · rear lock-up",
-        "holder": "Ben",
-        "job_id": "job-carlton",
-        "kit": "6–16 mm masonry set",
-        "updated_at": "2026-08-06T07:21:00+10:00",
-        "note": "Bits are on site; use the backup hammer drill while DR-022 is serviced."
-      },
-      "version": 1
-    },
-    {
-      "id": "tool-work-lights",
-      "collection": "job-kit-tools",
-      "group": "Site control",
-      "position": 12,
-      "fields": {
-        "name": "Twin work lights",
-        "code": "SC-018",
-        "category": "Site control",
-        "status": "on_site",
-        "location": "Brunswick · garage",
-        "holder": "Nina",
-        "job_id": "job-brunswick",
-        "kit": "Tripod · two heads · 10 m lead",
-        "updated_at": "2026-08-06T07:31:00+10:00",
-        "note": "Delivered with floor protection."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-carlton-nib",
-      "collection": "job-kit-actions",
-      "group": "job-carlton",
-      "position": 1,
-      "fields": {
-        "title": "Set bathroom nib wall",
-        "job_id": "job-carlton",
-        "status": "blocked",
-        "priority": "now",
-        "owner": "Ben",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T10:18:00+10:00",
-        "note": "Waiting on the electrician to finish the rough-in."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-carlton-stairs",
-      "collection": "job-kit-actions",
-      "group": "job-carlton",
-      "position": 2,
-      "fields": {
-        "title": "Fit stair nosing templates",
-        "job_id": "job-carlton",
-        "status": "open",
-        "priority": "today",
-        "owner": "Mick",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T09:34:00+10:00",
-        "note": "Laser set-out is ready at the stair opening."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-carlton-frame",
-      "collection": "job-kit-actions",
-      "group": "job-carlton",
-      "position": 3,
-      "fields": {
-        "title": "Frame north wall",
-        "job_id": "job-carlton",
-        "status": "done",
-        "priority": "today",
-        "owner": "Mick",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T10:18:00+10:00",
-        "note": "Ready for sheet after inspection."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-fitzroy-timber",
-      "collection": "job-kit-actions",
-      "group": "job-fitzroy",
-      "position": 4,
-      "fields": {
-        "title": "Replace damaged column timber",
-        "job_id": "job-fitzroy",
-        "status": "open",
-        "priority": "now",
-        "owner": "Ava",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T09:26:00+10:00",
-        "note": "Damage is deeper than the tender photos showed."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-fitzroy-measure",
-      "collection": "job-kit-actions",
-      "group": "job-fitzroy",
-      "position": 5,
-      "fields": {
-        "title": "Measure new display wall panels",
-        "job_id": "job-fitzroy",
-        "status": "open",
-        "priority": "today",
-        "owner": "Joel",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T08:52:00+10:00",
-        "note": "Send the cutting list before 2 pm."
-      },
-      "version": 1
-    },
-    {
-      "id": "action-brunswick-setout",
-      "collection": "job-kit-actions",
-      "group": "job-brunswick",
-      "position": 6,
-      "fields": {
-        "title": "Confirm island set-out",
-        "job_id": "job-brunswick",
-        "status": "open",
-        "priority": "today",
-        "owner": "Nina",
-        "due_date": "2026-08-06",
-        "updated_at": "2026-08-06T08:37:00+10:00",
-        "note": "Stone template visit is tomorrow at 8 am."
-      },
-      "version": 1
-    },
-    {
-      "id": "update-carlton-laser",
-      "collection": "job-kit-updates",
-      "group": "job-carlton",
-      "position": 1,
-      "fields": {
-        "job_id": "job-carlton",
-        "author": "Ben",
-        "message": "Taking the laser and green case to Carlton. I'll leave it on the ground floor beside the stair opening.",
-        "created_at": "2026-08-06T07:42:00+10:00",
-        "source": "text",
-        "kind": "tool"
-      },
-      "version": 1
-    },
-    {
-      "id": "update-carlton-battery",
-      "collection": "job-kit-updates",
-      "group": "job-carlton",
-      "position": 2,
-      "fields": {
-        "job_id": "job-carlton",
-        "author": "Ben",
-        "message": "The spare laser battery isn't in the case. I've marked it missing so the next van grabs one from the workshop.",
-        "created_at": "2026-08-06T08:11:00+10:00",
-        "source": "text",
-        "kind": "blocker"
-      },
-      "version": 1
-    },
-    {
-      "id": "update-fitzroy-timber",
-      "collection": "job-kit-updates",
-      "group": "job-fitzroy",
-      "position": 3,
-      "fields": {
-        "job_id": "job-fitzroy",
-        "author": "Ava",
-        "message": "Frontage is stripped back. The timber behind the left column is worse than the photos, but the shop can still reopen this afternoon.",
-        "created_at": "2026-08-06T09:26:00+10:00",
-        "source": "photo",
-        "kind": "blocker"
-      },
-      "version": 1
-    },
-    {
-      "id": "update-carlton-wall",
-      "collection": "job-kit-updates",
-      "group": "job-carlton",
-      "position": 4,
-      "fields": {
-        "job_id": "job-carlton",
-        "author": "Mick",
-        "message": "North wall is framed and checked. Holding the bathroom nib until the electrician finishes the rough-in.",
-        "created_at": "2026-08-06T10:18:00+10:00",
-        "source": "text",
-        "kind": "progress"
-      },
-      "version": 1
-    },
-    {
-      "id": "update-brunswick-delivery",
-      "collection": "job-kit-updates",
-      "group": "job-brunswick",
-      "position": 5,
-      "fields": {
-        "job_id": "job-brunswick",
-        "author": "Nina",
-        "message": "Floor protection and the work lights are in the garage. I left the kitchen datum marked for tomorrow's set-out.",
-        "created_at": "2026-08-06T07:31:00+10:00",
-        "source": "photo",
-        "kind": "delivery"
-      },
-      "version": 1
-    }
-  ]
+ "as_of": "2026-08-06",
+ "items": [
+  {
+   "id": "job-carlton",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "Carlton terrace",
+    "site": "Carlton",
+    "address": "18 Drummond St",
+    "status": "active",
+    "crew": [
+     "Ben",
+     "Mick",
+     "Sam"
+    ],
+    "start_date": "2026-07-20",
+    "due_date": "2026-08-14",
+    "progress": 64,
+    "next_action": "Set the bathroom nib wall after the electrician's rough-in",
+    "note": "Keys in the site safe — Ben has the code. Neighbour's side gate stays clear until 4 pm."
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "job-fitzroy",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "Fitzroy shopfront",
+    "site": "Fitzroy",
+    "address": "241 Brunswick St",
+    "status": "active",
+    "crew": [
+     "Ava",
+     "Joel"
+    ],
+    "start_date": "2026-08-03",
+    "due_date": "2026-08-12",
+    "progress": 38,
+    "next_action": "Replace the damaged timber behind the left display column",
+    "note": "Trading floor has to be clean and quiet again by 4:30 pm."
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "job-brunswick",
+   "collection": "job-kit-jobs",
+   "group": "active",
+   "fields": {
+    "title": "Brunswick kitchen",
+    "site": "Brunswick",
+    "address": "7 Lygon Grove",
+    "status": "active",
+    "crew": [
+     "Nina",
+     "Ben"
+    ],
+    "start_date": "2026-08-05",
+    "due_date": "2026-08-21",
+    "progress": 12,
+    "next_action": "Confirm the island set-out before the stone template visit",
+    "note": "Cabinet delivery booked for Friday, 7 am."
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "job-thornbury",
+   "collection": "job-kit-jobs",
+   "group": "paused",
+   "fields": {
+    "title": "Thornbury deck",
+    "site": "Thornbury",
+    "address": "52 Clarendon St",
+    "status": "paused",
+    "crew": [
+     "Sam",
+     "Joel"
+    ],
+    "start_date": "2026-07-27",
+    "due_date": "2026-08-19",
+    "progress": 45,
+    "next_action": "Restart once the merbau boards land (supplier says Monday)",
+    "note": "Joists and bearers done and under tarps."
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "job-coburg",
+   "collection": "job-kit-jobs",
+   "group": "upcoming",
+   "fields": {
+    "title": "Coburg laundry",
+    "site": "Coburg",
+    "address": "9 Rennie St",
+    "status": "upcoming",
+    "crew": [
+     "Nina"
+    ],
+    "start_date": "2026-08-11",
+    "due_date": "2026-08-15",
+    "progress": 0,
+    "next_action": "Pick up the tiles from the Coburg supplier on Monday",
+    "note": "Owner works from home — knock, don't ring."
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "job-northcote",
+   "collection": "job-kit-jobs",
+   "group": "done",
+   "fields": {
+    "title": "Northcote bathroom",
+    "site": "Northcote",
+    "address": "31 Bent St",
+    "status": "done",
+    "crew": [
+     "Mick",
+     "Ava",
+     "Sam"
+    ],
+    "start_date": "2026-07-06",
+    "due_date": "2026-07-24",
+    "progress": 100,
+    "next_action": "",
+    "note": "Handed over 24 Jul. Three-month check booked for October."
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "tool-laser-level",
+   "collection": "job-kit-tools",
+   "group": "Levels & measure",
+   "fields": {
+    "name": "Green-beam laser level",
+    "code": "TL-014",
+    "category": "Levels & measure",
+    "status": "checked_out",
+    "location": "Carlton · ground floor, beside the stair opening",
+    "holder": "Ben",
+    "job_id": "job-carlton",
+    "kit": "Green case · tripod · target plate",
+    "updated_at": "2026-08-06T07:42:00",
+    "note": "Took it from Van 2 this morning."
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "tool-laser-battery",
+   "collection": "job-kit-tools",
+   "group": "Levels & measure",
+   "fields": {
+    "name": "Laser battery pack",
+    "code": "TL-014-B",
+    "category": "Levels & measure",
+    "status": "missing",
+    "location": "Last seen in Van 2 charger drawer",
+    "holder": "",
+    "job_id": "job-carlton",
+    "kit": "Spare 12V pack",
+    "updated_at": "2026-08-06T08:11:00",
+    "note": "Not in the green case. Grab the spare from the workshop before the next run."
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "tool-rotary-hammer",
+   "collection": "job-kit-tools",
+   "group": "Drill & fix",
+   "fields": {
+    "name": "SDS rotary hammer",
+    "code": "DR-022",
+    "category": "Drill & fix",
+    "status": "service",
+    "location": "Preston workshop · service bench",
+    "holder": "Joel",
+    "job_id": "",
+    "kit": "Case · side handle · depth stop",
+    "updated_at": "2026-08-04T16:28:00",
+    "note": "Chuck slips under load. Do not send to site."
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "tool-dust-extractor",
+   "collection": "job-kit-tools",
+   "group": "Site control",
+   "fields": {
+    "name": "M-class dust extractor",
+    "code": "SC-006",
+    "category": "Site control",
+    "status": "on_site",
+    "location": "Carlton · rear lock-up",
+    "holder": "",
+    "job_id": "job-carlton",
+    "kit": "Hose · floor head · spare bag",
+    "updated_at": "2026-08-05T15:10:00",
+    "note": "Filter cleaned before drop-off."
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "tool-framing-nailer",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "Gas framing nailer",
+    "code": "CF-031",
+    "category": "Cut & frame",
+    "status": "on_site",
+    "location": "Carlton · ground floor toolbox",
+    "holder": "Mick",
+    "job_id": "job-carlton",
+    "kit": "Case · two batteries · charger",
+    "updated_at": "2026-08-06T06:56:00",
+    "note": "One full gas cell left in the case."
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "tool-mitre-saw",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "305 mm mitre saw",
+    "code": "CF-008",
+    "category": "Cut & frame",
+    "status": "checked_out",
+    "location": "Fitzroy · rear loading bay",
+    "holder": "Ava",
+    "job_id": "job-fitzroy",
+    "kit": "Stand · fine blade · lead",
+    "updated_at": "2026-08-03T07:05:00",
+    "note": "Booked to Fitzroy until Thursday afternoon."
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "tool-track-saw",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "Track saw",
+    "code": "CF-017",
+    "category": "Cut & frame",
+    "status": "on_site",
+    "location": "Fitzroy · tool cage",
+    "holder": "Joel",
+    "job_id": "job-fitzroy",
+    "kit": "1400 rail · 800 rail · clamps",
+    "updated_at": "2026-08-05T16:40:00",
+    "note": "Both rails accounted for."
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "tool-multitool",
+   "collection": "job-kit-tools",
+   "group": "Drill & fix",
+   "fields": {
+    "name": "Oscillating multi-tool",
+    "code": "DR-015",
+    "category": "Drill & fix",
+    "status": "on_site",
+    "location": "Fitzroy · tool cage",
+    "holder": "Joel",
+    "job_id": "job-fitzroy",
+    "kit": "Blade tin · two batteries",
+    "updated_at": "2026-08-04T08:10:00",
+    "note": ""
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "tool-planer",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "Cordless planer",
+    "code": "CF-026",
+    "category": "Cut & frame",
+    "status": "available",
+    "location": "Preston workshop · Rack B3",
+    "holder": "",
+    "job_id": "",
+    "kit": "Fence · dust bag · two blades",
+    "updated_at": "2026-07-31T17:06:00",
+    "note": "Charged and ready."
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "tool-thermal-camera",
+   "collection": "job-kit-tools",
+   "group": "Inspect & measure",
+   "fields": {
+    "name": "Thermal camera",
+    "code": "IM-004",
+    "category": "Inspect & measure",
+    "status": "available",
+    "location": "Preston workshop · locked cabinet",
+    "holder": "",
+    "job_id": "",
+    "kit": "Hard case · USB-C lead",
+    "updated_at": "2026-07-28T15:42:00",
+    "note": "Sign out the cabinet key from the office."
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "tool-impact-kit",
+   "collection": "job-kit-tools",
+   "group": "Drill & fix",
+   "fields": {
+    "name": "Impact driver kit",
+    "code": "DR-011",
+    "category": "Drill & fix",
+    "status": "checked_out",
+    "location": "Carlton · upstairs tool bag",
+    "holder": "Mick",
+    "job_id": "job-carlton",
+    "kit": "Driver · drill · two 5Ah batteries",
+    "updated_at": "2026-08-06T06:54:00",
+    "note": "Went out with the framing gear."
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "tool-sds-bits",
+   "collection": "job-kit-tools",
+   "group": "Drill & fix",
+   "fields": {
+    "name": "SDS bit set",
+    "code": "DR-022-B",
+    "category": "Drill & fix",
+    "status": "on_site",
+    "location": "Carlton · rear lock-up",
+    "holder": "Ben",
+    "job_id": "job-carlton",
+    "kit": "6–16 mm masonry set",
+    "updated_at": "2026-08-05T07:21:00",
+    "note": "Use the backup hammer drill while DR-022 is in service."
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "tool-work-lights",
+   "collection": "job-kit-tools",
+   "group": "Site control",
+   "fields": {
+    "name": "Twin work lights",
+    "code": "SC-018",
+    "category": "Site control",
+    "status": "on_site",
+    "location": "Brunswick · garage",
+    "holder": "Nina",
+    "job_id": "job-brunswick",
+    "kit": "Tripod · two heads · 10 m lead",
+    "updated_at": "2026-08-05T15:31:00",
+    "note": "Delivered with the floor protection."
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "tool-moisture-meter",
+   "collection": "job-kit-tools",
+   "group": "Inspect & measure",
+   "fields": {
+    "name": "Moisture meter",
+    "code": "IM-009",
+    "category": "Inspect & measure",
+    "status": "checked_out",
+    "location": "Thornbury · Sam's ute, glovebox",
+    "holder": "Sam",
+    "job_id": "job-thornbury",
+    "kit": "Pin probe · spare 9V",
+    "updated_at": "2026-08-01T11:20:00",
+    "note": "Rechecking the joists after the rain."
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "tool-tile-saw",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "Wet tile saw",
+    "code": "CF-040",
+    "category": "Cut & frame",
+    "status": "available",
+    "location": "Preston workshop · bay 2",
+    "holder": "",
+    "job_id": "",
+    "kit": "Water tray · 250 mm blade",
+    "updated_at": "2026-07-24T16:10:00",
+    "note": "Back from Northcote and cleaned. Coburg needs it on the 11th."
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "tool-stud-finder",
+   "collection": "job-kit-tools",
+   "group": "Inspect & measure",
+   "fields": {
+    "name": "Stud finder",
+    "code": "IM-012",
+    "category": "Inspect & measure",
+    "status": "missing",
+    "location": "Last seen at Northcote, bathroom vanity",
+    "holder": "",
+    "job_id": "job-northcote",
+    "kit": "",
+    "updated_at": "2026-07-24T14:30:00",
+    "note": "Wasn't in the tool crate at pickup. Owner is checking the vanity cupboard."
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "tool-scaffold",
+   "collection": "job-kit-tools",
+   "group": "Site control",
+   "fields": {
+    "name": "Mobile scaffold tower",
+    "code": "SC-002",
+    "category": "Site control",
+    "status": "on_site",
+    "location": "Carlton · rear courtyard",
+    "holder": "",
+    "job_id": "job-carlton",
+    "kit": "Frames · braces · four castors",
+    "updated_at": "2026-07-22T09:00:00",
+    "note": "North castor lock is stiff — go easy."
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "tool-router",
+   "collection": "job-kit-tools",
+   "group": "Cut & frame",
+   "fields": {
+    "name": "Router kit",
+    "code": "CF-021",
+    "category": "Cut & frame",
+    "status": "available",
+    "location": "Preston workshop · Rack B1",
+    "holder": "",
+    "job_id": "",
+    "kit": "Collets · edge guide · bits",
+    "updated_at": "2026-08-02T12:00:00",
+    "note": "New bearing bit in the lid."
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "act-nc-waterproof",
+   "collection": "job-kit-actions",
+   "group": "job-northcote",
+   "fields": {
+    "title": "Waterproof the shower recess",
+    "job_id": "job-northcote",
+    "status": "done",
+    "priority": "today",
+    "owner": "Mick",
+    "due_date": "2026-07-10",
+    "updated_at": "2026-07-10T15:20:00",
+    "note": ""
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "act-nc-vanity",
+   "collection": "job-kit-actions",
+   "group": "job-northcote",
+   "fields": {
+    "title": "Fit vanity and mirror",
+    "job_id": "job-northcote",
+    "status": "done",
+    "priority": "today",
+    "owner": "Ava",
+    "due_date": "2026-07-21",
+    "updated_at": "2026-07-21T13:40:00",
+    "note": ""
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "act-nc-clean",
+   "collection": "job-kit-actions",
+   "group": "job-northcote",
+   "fields": {
+    "title": "Silicone and final clean",
+    "job_id": "job-northcote",
+    "status": "done",
+    "priority": "today",
+    "owner": "Sam",
+    "due_date": "2026-07-24",
+    "updated_at": "2026-07-24T11:00:00",
+    "note": ""
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "act-ca-strip",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Strip the ground-floor lining",
+    "job_id": "job-carlton",
+    "status": "done",
+    "priority": "today",
+    "owner": "Mick",
+    "due_date": "2026-07-22",
+    "updated_at": "2026-07-22T16:00:00",
+    "note": ""
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "act-ca-waste",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Order the bathroom floor waste",
+    "job_id": "job-carlton",
+    "status": "done",
+    "priority": "soon",
+    "owner": "Sam",
+    "due_date": "2026-07-30",
+    "updated_at": "2026-07-30T10:05:00",
+    "note": ""
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "act-ca-frame",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Frame the north wall",
+    "job_id": "job-carlton",
+    "status": "done",
+    "priority": "today",
+    "owner": "Mick",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T10:18:00",
+    "note": "Ready for sheeting after inspection."
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "act-ca-nib",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Set the bathroom nib wall",
+    "job_id": "job-carlton",
+    "status": "blocked",
+    "priority": "now",
+    "owner": "Ben",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T10:18:00",
+    "note": "Waiting on the electrician's rough-in."
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "act-ca-stairs",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Fit stair nosing templates",
+    "job_id": "job-carlton",
+    "status": "open",
+    "priority": "today",
+    "owner": "Mick",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T09:34:00",
+    "note": "Laser set-out is ready at the stair opening."
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "act-ca-plaster",
+   "collection": "job-kit-actions",
+   "group": "job-carlton",
+   "fields": {
+    "title": "Book the plasterer for Tuesday",
+    "job_id": "job-carlton",
+    "status": "open",
+    "priority": "soon",
+    "owner": "Ben",
+    "due_date": "2026-08-08",
+    "updated_at": "2026-08-05T17:00:00",
+    "note": "Two quotes in — go with Hanna's crew."
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "act-fz-strip",
+   "collection": "job-kit-actions",
+   "group": "job-fitzroy",
+   "fields": {
+    "title": "Strip the frontage",
+    "job_id": "job-fitzroy",
+    "status": "done",
+    "priority": "today",
+    "owner": "Ava",
+    "due_date": "2026-08-04",
+    "updated_at": "2026-08-04T15:30:00",
+    "note": ""
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "act-fz-timber",
+   "collection": "job-kit-actions",
+   "group": "job-fitzroy",
+   "fields": {
+    "title": "Replace the damaged column timber",
+    "job_id": "job-fitzroy",
+    "status": "open",
+    "priority": "now",
+    "owner": "Ava",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T09:26:00",
+    "note": "Damage runs deeper than the tender photos."
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "act-fz-measure",
+   "collection": "job-kit-actions",
+   "group": "job-fitzroy",
+   "fields": {
+    "title": "Measure the new display wall panels",
+    "job_id": "job-fitzroy",
+    "status": "open",
+    "priority": "today",
+    "owner": "Joel",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-06T08:52:00",
+    "note": "Cutting list to the joiner before 2 pm."
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "act-fz-return",
+   "collection": "job-kit-actions",
+   "group": "job-fitzroy",
+   "fields": {
+    "title": "Return the mitre saw to the workshop",
+    "job_id": "job-fitzroy",
+    "status": "open",
+    "priority": "soon",
+    "owner": "Ava",
+    "due_date": "2026-08-07",
+    "updated_at": "2026-08-03T07:05:00",
+    "note": ""
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "act-bw-protect",
+   "collection": "job-kit-actions",
+   "group": "job-brunswick",
+   "fields": {
+    "title": "Lay floor protection",
+    "job_id": "job-brunswick",
+    "status": "done",
+    "priority": "today",
+    "owner": "Nina",
+    "due_date": "2026-08-05",
+    "updated_at": "2026-08-05T15:25:00",
+    "note": ""
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "act-bw-setout",
+   "collection": "job-kit-actions",
+   "group": "job-brunswick",
+   "fields": {
+    "title": "Confirm the island set-out",
+    "job_id": "job-brunswick",
+    "status": "open",
+    "priority": "today",
+    "owner": "Nina",
+    "due_date": "2026-08-06",
+    "updated_at": "2026-08-05T17:20:00",
+    "note": "Stone template visit is tomorrow at 8 am."
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "act-tb-tarps",
+   "collection": "job-kit-actions",
+   "group": "job-thornbury",
+   "fields": {
+    "title": "Cover the joists before the rain",
+    "job_id": "job-thornbury",
+    "status": "done",
+    "priority": "now",
+    "owner": "Joel",
+    "due_date": "2026-07-31",
+    "updated_at": "2026-07-31T16:45:00",
+    "note": ""
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "act-tb-merbau",
+   "collection": "job-kit-actions",
+   "group": "job-thornbury",
+   "fields": {
+    "title": "Chase the merbau delivery",
+    "job_id": "job-thornbury",
+    "status": "blocked",
+    "priority": "today",
+    "owner": "Sam",
+    "due_date": "2026-08-04",
+    "updated_at": "2026-08-04T09:12:00",
+    "note": "Supplier is short on 140 mm boards."
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "act-cb-tiles",
+   "collection": "job-kit-actions",
+   "group": "job-coburg",
+   "fields": {
+    "title": "Pick up the laundry tiles",
+    "job_id": "job-coburg",
+    "status": "open",
+    "priority": "soon",
+    "owner": "Nina",
+    "due_date": "2026-08-10",
+    "updated_at": "2026-08-05T12:30:00",
+    "note": ""
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "u01",
+   "collection": "job-kit-updates",
+   "group": "job-northcote",
+   "fields": {
+    "job_id": "job-northcote",
+    "author": "Mick",
+    "message": "Demo done. Old tiles out and the skip is full — swap booked for tomorrow.",
+    "created_at": "2026-07-06T15:30:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 1,
+   "version": 1
+  },
+  {
+   "id": "u02",
+   "collection": "job-kit-updates",
+   "group": "job-northcote",
+   "fields": {
+    "job_id": "job-northcote",
+    "author": "Mick",
+    "message": "Shower recess waterproofed. 24 hours to cure before the flood test.",
+    "created_at": "2026-07-10T15:20:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 2,
+   "version": 1
+  },
+  {
+   "id": "u03",
+   "collection": "job-kit-updates",
+   "group": "job-northcote",
+   "fields": {
+    "job_id": "job-northcote",
+    "author": "Ava",
+    "message": "Vanity arrived with a chipped corner. Supplier is sending a replacement top by Friday.",
+    "created_at": "2026-07-15T12:05:00",
+    "source": "photo",
+    "kind": "delivery"
+   },
+   "position": 3,
+   "version": 1
+  },
+  {
+   "id": "u04",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "Keys collected. The site safe code is with me — ask before you head over.",
+    "created_at": "2026-07-20T07:15:00",
+    "source": "text",
+    "kind": "general"
+   },
+   "position": 4,
+   "version": 1
+  },
+  {
+   "id": "u05",
+   "collection": "job-kit-updates",
+   "group": "job-northcote",
+   "fields": {
+    "job_id": "job-northcote",
+    "author": "Ava",
+    "message": "Vanity and mirror in. Plumber back Tuesday for the tapware.",
+    "created_at": "2026-07-21T13:40:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 5,
+   "version": 1
+  },
+  {
+   "id": "u06",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Sam",
+    "message": "Scaffold tower is up in the rear courtyard. North castor lock is stiff, go easy.",
+    "created_at": "2026-07-22T09:00:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 6,
+   "version": 1
+  },
+  {
+   "id": "u07",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Mick",
+    "message": "Ground-floor lining stripped. Cracked lintel over the back door — engineer booked.",
+    "created_at": "2026-07-22T16:00:00",
+    "source": "photo",
+    "kind": "blocker"
+   },
+   "position": 7,
+   "version": 1
+  },
+  {
+   "id": "u08",
+   "collection": "job-kit-updates",
+   "group": "job-northcote",
+   "fields": {
+    "job_id": "job-northcote",
+    "author": "Sam",
+    "message": "Handed over. The stud finder didn't come back in the crate — owner will check the vanity cupboard.",
+    "created_at": "2026-07-24T14:30:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 8,
+   "version": 1
+  },
+  {
+   "id": "u09",
+   "collection": "job-kit-updates",
+   "group": "job-thornbury",
+   "fields": {
+    "job_id": "job-thornbury",
+    "author": "Sam",
+    "message": "Started the deck. Bearers going in today.",
+    "created_at": "2026-07-27T07:50:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 9,
+   "version": 1
+  },
+  {
+   "id": "u10",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "Lintel replaced and signed off by the engineer.",
+    "created_at": "2026-07-29T14:10:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 10,
+   "version": 1
+  },
+  {
+   "id": "u11",
+   "collection": "job-kit-updates",
+   "group": "job-thornbury",
+   "fields": {
+    "job_id": "job-thornbury",
+    "author": "Joel",
+    "message": "Joists done and under tarps before the rain.",
+    "created_at": "2026-07-31T16:45:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 11,
+   "version": 1
+  },
+  {
+   "id": "u12",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "Electrician can't come until next Wednesday. Resequencing: framing first, nib wall after.",
+    "created_at": "2026-08-01T08:40:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 12,
+   "version": 1
+  },
+  {
+   "id": "u13",
+   "collection": "job-kit-updates",
+   "group": "job-thornbury",
+   "fields": {
+    "job_id": "job-thornbury",
+    "author": "Sam",
+    "message": "Took the moisture meter to recheck the joists after the rain. It's in my ute.",
+    "created_at": "2026-08-01T11:20:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 13,
+   "version": 1
+  },
+  {
+   "id": "u14",
+   "collection": "job-kit-updates",
+   "group": "job-fitzroy",
+   "fields": {
+    "job_id": "job-fitzroy",
+    "author": "Ava",
+    "message": "Mitre saw and stand are in the rear loading bay, booked until Thursday.",
+    "created_at": "2026-08-03T07:05:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 14,
+   "version": 1
+  },
+  {
+   "id": "u15",
+   "collection": "job-kit-updates",
+   "group": "job-thornbury",
+   "fields": {
+    "job_id": "job-thornbury",
+    "author": "Sam",
+    "message": "Merbau supplier is short on 140 mm boards. Pausing the deck until they land — Monday at the earliest.",
+    "created_at": "2026-08-04T09:12:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 15,
+   "version": 1
+  },
+  {
+   "id": "u16",
+   "collection": "job-kit-updates",
+   "group": "job-fitzroy",
+   "fields": {
+    "job_id": "job-fitzroy",
+    "author": "Ava",
+    "message": "Frontage stripped back to the frame.",
+    "created_at": "2026-08-04T15:30:00",
+    "source": "photo",
+    "kind": "progress"
+   },
+   "position": 16,
+   "version": 1
+  },
+  {
+   "id": "u17",
+   "collection": "job-kit-updates",
+   "group": "job-fitzroy",
+   "fields": {
+    "job_id": "job-fitzroy",
+    "author": "Joel",
+    "message": "Rotary hammer chuck started slipping. Took DR-022 back to the service bench.",
+    "created_at": "2026-08-04T16:28:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 17,
+   "version": 1
+  },
+  {
+   "id": "u18",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "SDS bits are in the rear lock-up. Use the backup hammer drill for now.",
+    "created_at": "2026-08-05T07:21:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 18,
+   "version": 1
+  },
+  {
+   "id": "u19",
+   "collection": "job-kit-updates",
+   "group": "job-coburg",
+   "fields": {
+    "job_id": "job-coburg",
+    "author": "Nina",
+    "message": "Walked the laundry with the owner. Tiles are on order, pickup Monday.",
+    "created_at": "2026-08-05T12:30:00",
+    "source": "text",
+    "kind": "general"
+   },
+   "position": 19,
+   "version": 1
+  },
+  {
+   "id": "u20",
+   "collection": "job-kit-updates",
+   "group": "job-fitzroy",
+   "fields": {
+    "job_id": "job-fitzroy",
+    "author": "Joel",
+    "message": "Track saw rails are in the tool cage. Shop reopened on time.",
+    "created_at": "2026-08-05T16:40:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 20,
+   "version": 1
+  },
+  {
+   "id": "u21",
+   "collection": "job-kit-updates",
+   "group": "job-brunswick",
+   "fields": {
+    "job_id": "job-brunswick",
+    "author": "Nina",
+    "message": "Floor protection and work lights in the garage. Kitchen datum marked for the set-out.",
+    "created_at": "2026-08-05T17:20:00",
+    "source": "photo",
+    "kind": "delivery"
+   },
+   "position": 21,
+   "version": 1
+  },
+  {
+   "id": "u22",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "Took the laser and green case to Carlton. It's on the ground floor beside the stair opening.",
+    "created_at": "2026-08-06T07:42:00",
+    "source": "text",
+    "kind": "tool"
+   },
+   "position": 22,
+   "version": 1
+  },
+  {
+   "id": "u23",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Ben",
+    "message": "Spare laser battery isn't in the case. Marked it missing so the next van grabs one.",
+    "created_at": "2026-08-06T08:11:00",
+    "source": "text",
+    "kind": "blocker"
+   },
+   "position": 23,
+   "version": 1
+  },
+  {
+   "id": "u24",
+   "collection": "job-kit-updates",
+   "group": "job-fitzroy",
+   "fields": {
+    "job_id": "job-fitzroy",
+    "author": "Ava",
+    "message": "Timber behind the left column is worse than the photos. Shop can still reopen this afternoon.",
+    "created_at": "2026-08-06T09:26:00",
+    "source": "photo",
+    "kind": "blocker"
+   },
+   "position": 24,
+   "version": 1
+  },
+  {
+   "id": "u25",
+   "collection": "job-kit-updates",
+   "group": "job-carlton",
+   "fields": {
+    "job_id": "job-carlton",
+    "author": "Mick",
+    "message": "North wall framed and checked. Holding the bathroom nib until the electrician finishes.",
+    "created_at": "2026-08-06T10:18:00",
+    "source": "text",
+    "kind": "progress"
+   },
+   "position": 25,
+   "version": 1
+  }
+ ]
 }

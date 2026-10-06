@@ -1,113 +1,304 @@
 {
+  "as_of": "2026-08-06",
   "items": [
     {
-      "id": "15d399d5-885a-47c3-afca-5c6bfb21378a",
+      "id": "b7b9dcfc-6379-49eb-aa31-a0beec3e7948",
       "group": "Backlog",
       "position": 1,
       "fields": {
-        "title": "Rewrite the homepage around product stories",
-        "note": "Connect three representative projects into one narrative, then tighten the personal introduction.",
+        "title": "Rewrite the homepage around three stories",
+        "note": "Harbour, Northfield and one personal project — a paragraph each, then tighten the intro.",
         "tag": "Content",
-        "updated_at": "2026-07-27T08:40:00+10:00"
+        "updated_at": "2026-08-06T08:40:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "ab85c8b0-ff8e-4c15-858a-596f04975b11",
+      "id": "9ef98db7-f8fa-4451-a4f8-e3b195e5ba47",
       "group": "Backlog",
       "position": 2,
       "fields": {
         "title": "Move the studio domain's DNS to Cloudflare",
-        "note": "Preserve the mail records and export the current zone before switching so rollback stays simple.",
+        "note": "Export the zone first and keep the mail records exactly as they are.",
         "tag": "Infrastructure",
-        "updated_at": "2026-07-24T16:10:00+10:00"
+        "updated_at": "2026-07-29T16:10:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "6f3b9910-3693-442e-9276-e26deea635bc",
+      "id": "1af92528-2f16-494a-ae5c-36fb6f1887ec",
       "group": "Backlog",
       "position": 3,
       "fields": {
         "title": "Set Lighthouse budgets for project pages",
-        "note": "Add blocking CI thresholds for LCP, CLS, and total script weight.",
+        "note": "Block the merge if LCP, CLS or script weight regress.",
         "tag": "Performance",
-        "updated_at": "2026-07-24T11:25:00+10:00"
+        "updated_at": "2026-07-28T09:25:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "d932daf1-eb77-4a1e-9317-f98825b0c6db",
+      "id": "579d9ea6-6eee-4d52-a340-907d63c56067",
+      "group": "Backlog",
+      "position": 4,
+      "fields": {
+        "title": "Add an RSS feed for Notes",
+        "tag": "Content",
+        "updated_at": "2026-07-20T12:00:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "3fb8b5f1-5672-41ac-a108-17dacfc9bb83",
+      "group": "Backlog",
+      "position": 5,
+      "fields": {
+        "title": "Dark-mode pass on case-study screenshots",
+        "note": "Some screenshots glow on a dark page — they need a hairline border.",
+        "tag": "Design",
+        "updated_at": "2026-07-14T10:30:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "5e9958f8-0523-4087-ab90-d4f63336c066",
+      "group": "Backlog",
+      "position": 6,
+      "fields": {
+        "title": "Ask two past clients for a short quote",
+        "tag": "Outreach",
+        "updated_at": "2026-07-09T18:00:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "78e69a75-1fa8-4853-a99e-f3183741f539",
       "group": "Doing",
       "position": 1,
       "fields": {
-        "title": "Wire the Astro build into one-command deploys",
-        "note": "Preview deploys work; failure notifications and cache cleanup are next.",
+        "title": "Wire failure alerts into the deploy pipeline",
+        "note": "Preview deploys work; a failed build should ping my phone, then clear the old cache.",
         "tag": "Automation",
-        "updated_at": "2026-07-26T21:05:00+10:00"
+        "updated_at": "2026-08-05T21:05:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "26e48e7d-244f-4a05-b156-c363bd36150e",
+      "id": "c1ba94b5-7363-4c8f-a468-5b7f42f71600",
       "group": "Doing",
       "position": 2,
       "fields": {
         "title": "Define a mobile image strategy for case studies",
-        "note": "AVIF exports are ready; next is checking narrow crops and slow-network placeholders.",
+        "note": "AVIF exports are ready; next is narrow crops and slow-network placeholders.",
         "tag": "Frontend",
-        "updated_at": "2026-07-23T14:35:00+10:00"
+        "updated_at": "2026-08-03T14:35:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "3569ab94-2a46-4e99-8040-4be74b0aff50",
+      "id": "6e3403f0-aa27-4798-a6ac-f5ff841d2af8",
       "group": "Doing",
       "position": 3,
       "fields": {
         "title": "Map 301 redirects for legacy domains",
         "note": "Two older articles still need final destinations after the content inventory.",
         "tag": "SEO",
-        "updated_at": "2026-07-17T10:15:00+10:00"
+        "updated_at": "2026-07-22T10:15:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "d8f6a270-74ef-4f05-97a3-5a83a9b320cd",
+      "id": "06f09b1b-a52e-4ec4-abe1-7ea74ff8d4ee",
       "group": "Done",
       "position": 1,
       "fields": {
-        "title": "Lock the new information architecture",
-        "note": "The Home, Projects, Notes, and About entry points are settled.",
-        "tag": "UX",
+        "title": "Replace the contact form with a booking link",
+        "note": "Two slot types; the old form stays up as a fallback for a month.",
+        "tag": "Frontend",
+        "done_at": "2026-08-06T10:15:00+10:00",
+        "updated_at": "2026-08-06T10:15:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "a71a038f-b421-4896-a9c6-b598fb08e848",
+      "group": "Done",
+      "position": 2,
+      "fields": {
+        "title": "Write the Northfield rebrand case study",
+        "note": "Shorter than Harbour — the before/after images do the talking.",
+        "tag": "Content",
+        "done_at": "2026-08-04T18:30:00+10:00",
+        "updated_at": "2026-08-04T18:30:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "7bff2720-762e-43eb-a7a4-bbd7da138fd2",
+      "group": "Done",
+      "position": 3,
+      "fields": {
+        "title": "Set up preview deploys on every push",
+        "note": "Every branch gets its own URL, and the link lands on the pull request.",
+        "tag": "Automation",
+        "done_at": "2026-07-30T14:10:00+10:00",
+        "updated_at": "2026-07-30T14:10:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "9c666f4d-8d18-42b3-a650-d721fd7ef13f",
+      "group": "Done",
+      "position": 4,
+      "fields": {
+        "title": "Fix focus styles on the project grid",
+        "note": "Visible ring on every card; tab order now follows reading order.",
+        "tag": "Accessibility",
+        "done_at": "2026-07-28T17:45:00+10:00",
+        "updated_at": "2026-07-28T17:45:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "72507992-9338-4cd9-a96e-db8f488379ff",
+      "group": "Done",
+      "position": 5,
+      "fields": {
+        "title": "Compress the hero video under 2 MB",
+        "note": "WebM at 1.6 MB, with a poster frame for slow connections.",
+        "tag": "Performance",
+        "done_at": "2026-07-28T11:20:00+10:00",
+        "updated_at": "2026-07-28T11:20:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "e30ad176-6e14-40c3-a10e-76067870737a",
+      "group": "Done",
+      "position": 6,
+      "fields": {
+        "title": "Write the Harbour & Co case study",
+        "note": "1,100 words; the client approved the numbers we can publish.",
+        "tag": "Content",
+        "done_at": "2026-07-27T16:05:00+10:00",
+        "updated_at": "2026-07-27T16:05:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "062aa65d-c2af-4f48-a6f0-8ff93b27ae02",
+      "group": "Done",
+      "position": 7,
+      "fields": {
+        "title": "Add cookieless Plausible analytics",
+        "note": "Verified on the production domain; the booking event is arriving.",
+        "tag": "Data",
+        "done_at": "2026-07-24T17:30:00+10:00",
+        "updated_at": "2026-07-24T17:30:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "ac647bd3-db62-4646-a12e-d4782f96aa5d",
+      "group": "Done",
+      "position": 8,
+      "fields": {
+        "title": "Move blog posts from Ghost to Markdown",
+        "note": "62 posts converted; code blocks needed a second pass.",
+        "tag": "Content",
+        "done_at": "2026-07-21T19:40:00+10:00",
+        "updated_at": "2026-07-21T19:40:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "96704c19-c136-47d0-ae3c-6fbe0f78cdbc",
+      "group": "Done",
+      "position": 9,
+      "fields": {
+        "title": "Build the case-study page template",
+        "note": "Hero, problem, three process frames, outcome. Holds 3 to 9 images.",
+        "tag": "Frontend",
+        "done_at": "2026-07-17T15:30:00+10:00",
+        "updated_at": "2026-07-17T15:30:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "454f507f-e46b-4ce1-a0b4-be50173e51ed",
+      "group": "Done",
+      "position": 10,
+      "fields": {
+        "title": "Set up the type scale and spacing tokens",
+        "note": "Five sizes on one ratio; the tokens live in a single CSS file.",
+        "tag": "Design",
         "done_at": "2026-07-15T18:20:00+10:00",
         "updated_at": "2026-07-15T18:20:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "1adc1335-db2f-4b6d-9e35-047040203556",
+      "id": "25807c3c-c3de-449a-a883-f7bc8060b70e",
       "group": "Done",
-      "position": 2,
+      "position": 11,
       "fields": {
-        "title": "Export project screenshots from 2021-2025",
-        "note": "Originals and compressed versions are archived by project, with a checklist for missing shots.",
+        "title": "Export project screenshots from 2021–2025",
+        "note": "Originals and compressed copies, filed by project; six shots still missing.",
         "tag": "Assets",
-        "done_at": "2026-07-20T13:45:00+10:00",
-        "updated_at": "2026-07-24T13:45:00+10:00"
+        "done_at": "2026-07-13T13:45:00+10:00",
+        "updated_at": "2026-07-14T09:10:00+10:00"
       },
       "version": 1
     },
     {
-      "id": "da9677c1-c58e-4878-8641-466c577f651c",
+      "id": "d5add26e-7ab5-4032-ab58-c2c568bde855",
       "group": "Done",
-      "position": 3,
+      "position": 12,
       "fields": {
-        "title": "Add cookieless Plausible analytics",
-        "note": "The production domain is verified and core conversion events are now arriving.",
-        "tag": "Data",
-        "done_at": "2026-07-25T17:30:00+10:00",
-        "updated_at": "2026-07-25T17:30:00+10:00"
+        "title": "Draft the About page in my own voice",
+        "note": "Read it aloud twice; cut the timeline, kept three client quotes.",
+        "tag": "Content",
+        "done_at": "2026-07-08T20:05:00+10:00",
+        "updated_at": "2026-07-08T20:05:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "490e1fa3-2d58-4ce9-a905-490954a7b757",
+      "group": "Done",
+      "position": 13,
+      "fields": {
+        "title": "Lock the new information architecture",
+        "note": "Home, Work, Notes, About. Services folds into About.",
+        "tag": "UX",
+        "done_at": "2026-07-03T16:20:00+10:00",
+        "updated_at": "2026-07-03T16:20:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "5e9ba73c-53d6-4b1e-afe7-61ce945a4b5a",
+      "group": "Done",
+      "position": 14,
+      "fields": {
+        "title": "Pick Astro over Next for the rebuild",
+        "note": "Static by default, islands for the two interactive demos.",
+        "tag": "Engineering",
+        "done_at": "2026-07-02T11:40:00+10:00",
+        "updated_at": "2026-07-02T11:40:00+10:00"
+      },
+      "version": 1
+    },
+    {
+      "id": "b97a79e1-dc5a-4df8-aa68-d795fa1b8010",
+      "group": "Done",
+      "position": 15,
+      "fields": {
+        "title": "Audit the old site's pages and traffic",
+        "note": "41 pages; nine of them bring 80% of the visits. The rest can redirect.",
+        "tag": "Research",
+        "done_at": "2026-06-29T17:10:00+10:00",
+        "updated_at": "2026-06-29T17:10:00+10:00"
       },
       "version": 1
     }

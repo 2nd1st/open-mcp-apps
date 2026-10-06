@@ -2,62 +2,239 @@
 // Copyright (C) 2026 2nd1st
 // shell-runtime.js — the browser-side runtime injected into EVERY app.
 //
-// This is the whole reason AI-written apps work: an app never touches the MCP
-// bridge, uuids, versions, or persistence. It only calls the tiny `window.oma` API and
-// re-renders on change. The shell owns the ui/initialize handshake, tool calls, idempotency
-// keys, optimistic-concurrency versions, and host theming.
+// An app never touches the MCP bridge, uuids, versions, or persistence: it calls the tiny
+// `window.oma` API and re-renders on change. The shell owns the ui/initialize handshake, tool
+// calls, idempotency keys, optimistic-concurrency versions, and host theming.
 //
-// Write-set D: every RULE this file lives by (the 0-RTT continuity decision, the adoption
-// gate, the paged walk, the poll decisions, via) is a pure function in runtime-core.mjs,
-// pinned by node tests; this file is the wiring. The sandbox machine (child doc composition,
-// mini-bridge, caps chokepoint) lives ONCE in runner.mjs and is reached here as oma.embed.
+// Every RULE this file lives by (0-RTT continuity, the adoption gate, the paged walk, the poll
+// decisions, via) is a pure function in runtime-core.mjs, pinned by node tests; this file is the
+// wiring. The sandbox machine (child doc, mini-bridge, caps chokepoint) lives once in runner.mjs
+// and is reached here as oma.embed.
 //
-// NOT a security boundary (docs/security-model.md §2): this runtime shares the document with
-// the app's own scripts, so nothing here can gate a hostile app. Untrusted
-// (non-local) apps run one level down behind the runner, never in direct mode.
+// NOT a security boundary: this runtime shares the document with the app's own scripts, so it
+// cannot gate a hostile app. Untrusted (non-local) apps run one level down, behind the runner.
 //
 // Bundled by build.mjs into dist/shell.js and inlined by shell.mjs when serving ui://.
 
-// FIRST, and the position is load-bearing — it silences the engine's own CSP eval violation by
-// configuring zod before ext-apps constructs the schemas that read the setting. See the file.
+// Must stay FIRST: it configures zod (jitless — no CSP eval violation) before ext-apps builds the
+// schemas that read the setting.
 import "./zod-jitless.js";
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
-import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, sansRequestState, withConfirmation, THEME_KEY_PREFIX, WALK_LIMIT, RUNTIME_CONTRACT } from "./runtime-core.mjs";
-import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts } from "./runner.mjs";
+import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, withConfirmation, afterAppScripts, fitFrame, createAppTools, serveAppTools, appToolText, THEME_KEY_PREFIX, WALK_LIMIT, APP_READER_META } from "./runtime-core.mjs";
+import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts, unpinDocumentHeight } from "./runner.mjs";
 import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL, canonicalToolName } from "./tool-policy.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
 const SA = typeof window !== "undefined" ? window.__OMA_STANDALONE__ : undefined;
 
-// DECLARE NOTHING WE DO NOT IMPLEMENT (SPEC-26).
-//
-// This second argument is the widget's capability declaration, sent on every `ui/initialize`.
-// It said `{ tools: {} }` — "this view serves tools" — while `oncalltool`, `onlisttools` and any
-// view-side registerTool are ZERO hits across src/. ext-apps draft apps.mdx makes that two MUST
-// violations (:1281, :1324): a declared capability has to be backed.
-//
-// Changed to `{}` — an honest empty declaration. We have NO reading on what a host does when a
-// capability it saw yesterday is absent today, which is exactly why this rides alone in its own
-// commit: if a host reacts badly it reverts as one line, tangled with nothing.
-const hostApp = new App({ name: "open-mcp-apps", version: "0.1.0" }, {});
+// The widget's capability declaration, sent on every ui/initialize. Declare only what is backed
+// (spec MUST): display modes are (oma.display / requestDisplay), and tools are — the app's own,
+// registered with oma.tools.register and served by serveAppTools below (tools/list, tools/call,
+// list_changed once the host has listed).
+const DISPLAY_MODES = ["inline", "fullscreen"];
+const hostApp = new App({ name: "open-mcp-apps", version: "0.1.0" }, { availableDisplayModes: DISPLAY_MODES, tools: { listChanged: true } });
 
-// `version` is the GLOBAL ledger seq of the last adopted read (stamped in the read's own
-// transaction server-side); `total`/`truncated` are the walk's honesty marks — an app
-// can render "N of M" instead of pretending a capped projection is the collection.
-// The direct-embed (per-app resource) document carries its binding as an injected global:
-// on hosts whose toolinput/toolresult pushes never deliver a collection (measured on Claude
-// Desktop 1.24012.9 dynamic-tools mode), the widget otherwise reaches interactivity unbound and
-// every write bounces off the server as collection:null.
+// APP TOOLS (ext-apps draft "App-provided tools"): the app names what it can do —
+// oma.tools.register({name, description, inputSchema, run}) — and the AI calls it by name instead
+// of reading the screen and pressing. The page's alone: never persisted, gone on reload. Two roads
+// to the model, chosen by what the host DOES, never by its name:
+//   native — a host that implements the draft sends tools/list / tools/call to this view;
+//   relay  — every other host (claude.ai and ChatGPT never asked, measured 2026-10-01): screen_read
+//            lists the tools and screen_act {tool, input} runs one, over the screen long-poll.
+// Both stay open: a host that lists our tools has not thereby shown them to its model.
+const appTools = createAppTools();
+serveAppTools(hostApp, appTools);
+
+// THE SCREEN: the AI reads the screen
+// and presses controls the way the user would, instead of calling functions the author exposed.
+// Generic, and it reaches only what a person could (visible controls, dispatched clicks). Jobs
+// arrive through the engine relay (screenRelay below) — hosts do not hand view tools to the model.
+const ACTIONABLE = "button,a[href],input,select,textarea,summary,[role=button],[role=tab],[role=link],[role=checkbox],[role=switch],[role=option],[role=menuitem],[data-act]";
+const screenRefs = new WeakMap();
+const screenEls = new Map();
+let screenSeq = 0;
+const squash = (t, n = 90) => String(t || "").replace(/\s+/g, " ").trim().slice(0, n);
+function screenVisible(el) {
+  const cs = getComputedStyle(el);
+  if (cs.display === "none" || cs.visibility === "hidden") return false;
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0;
+}
+function screenLabel(el) {
+  const lab = el.id && document.querySelector(`label[for="${CSS.escape(el.id)}"]`);
+  return squash(el.getAttribute("aria-label") || (lab && lab.innerText) || el.innerText || el.placeholder || el.title || el.value || el.name);
+}
+function screenRead() {
+  const out = [`app: ${document.title || "(untitled)"} · display: ${display} · viewport ${innerWidth}x${innerHeight}`];
+  // The app's own tools come first and outside the screen budget: they are the better way in, and
+  // a long page must not push them off the end.
+  const own = appTools.describe();
+  if (own) out.push("The app's own tools — call one with screen_act {tool, input}:", own, "", "Screen:");
+  let chars = 0;
+  const push = (line) => { if (chars < 6000) { out.push(line); chars += line.length + 1; } };
+  const walkEl = (el) => {
+    if (el.nodeType !== 1 || !screenVisible(el) || screenOff(el)) return;
+    if (el.matches(ACTIONABLE) && !el.disabled) {
+      let ref = screenRefs.get(el);
+      if (!ref) { ref = "r" + ++screenSeq; screenRefs.set(el, ref); }
+      screenEls.set(ref, new WeakRef(el));
+      const kind = el.getAttribute("role") || (el.tagName === "INPUT" ? `input:${el.type}` : el.tagName.toLowerCase());
+      const st = [];
+      if (el.getAttribute("aria-selected") === "true" || el.getAttribute("aria-current") || el.getAttribute("aria-pressed") === "true") st.push("selected");
+      if (el.checked) st.push("checked");
+      if (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) && el.type !== "checkbox") st.push(`value="${squash(el.value, 60)}"`);
+      const r = el.getBoundingClientRect();
+      if (r.bottom < 0 || r.top > innerHeight) st.push("off-screen");
+      push(`[${ref}] ${kind} "${screenLabel(el)}"${st.length ? " (" + st.join(", ") + ")" : ""}`);
+      return;
+    }
+    if (/^H[1-4]$/.test(el.tagName)) { push("#".repeat(+el.tagName[1]) + " " + squash(el.innerText, 120)); return; }
+    for (const c of el.childNodes) {
+      if (c.nodeType === 3) { const t = squash(c.textContent, 2000); if (t) push(t); }   // a paragraph whole; the screen budget caps the total
+      else walkEl(c);
+    }
+  };
+  walkEl(document.body);
+  return out.join("\n");
+}
+// What the relay may press is exactly what screenRead lists: the engine's own chrome (the delete
+// confirmation above all) and anything aria-hidden are not on the screen, by ref or by label.
+const screenOff = (el) => !!el.closest("[data-oma-chrome],[aria-hidden=true]");
+function screenFind(args) {
+  const w = args.ref && screenEls.get(String(args.ref));
+  const el = w && w.deref();
+  if (el && el.isConnected && !screenOff(el)) return el;
+  const want = squash(args.label).toLowerCase();
+  if (!want) return null;
+  const all = [...document.querySelectorAll(ACTIONABLE)].filter((e) => screenVisible(e) && !screenOff(e));
+  return all.find((e) => screenLabel(e).toLowerCase() === want) || all.find((e) => screenLabel(e).toLowerCase().includes(want)) || null;
+}
+async function screenAct(args) {
+  const el = screenFind(args);
+  if (!el) return { isError: true, content: [{ type: "text", text: `No control "${args.ref || args.label}" on screen now. Read the screen again.\n\n` + screenRead() }] };
+  const action = args.action || (/^(INPUT|TEXTAREA)$/.test(el.tagName) && el.type !== "checkbox" && el.type !== "radio" ? "fill" : el.tagName === "SELECT" ? "select" : "press");
+  try { el.scrollIntoView({ block: "nearest", behavior: "smooth" }); } catch {}
+  const ring = el.style.outline, off = el.style.outlineOffset;
+  el.style.outline = "3px solid var(--k-accent, #2563eb)"; el.style.outlineOffset = "2px";
+  setTimeout(() => { el.style.outline = ring; el.style.outlineOffset = off; }, 900);
+  if (action === "fill" || action === "select") {
+    const v = String(args.value ?? "");
+    if (el.tagName === "SELECT") {
+      const o = [...el.options].find((o) => o.value === v || squash(o.text).toLowerCase() === v.toLowerCase());
+      if (o) el.value = o.value;
+    } else {
+      const set = Object.getOwnPropertyDescriptor(Object.getPrototypeOf(el), "value")?.set;
+      set ? set.call(el, v) : (el.value = v);
+    }
+    el.focus?.();
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+    el.dispatchEvent(new Event("change", { bubbles: true }));
+  } else {
+    el.click();
+  }
+  await new Promise((r) => setTimeout(r, 400));
+  return { content: [{ type: "text", text: `Did ${action} on "${screenLabel(el)}". Screen now:\n\n` + screenRead() }] };
+}
+// Where the app is shown: "inline" (a card in the conversation) or "fullscreen" (the host has
+// given the app the view, composer still attached). The browser viewer owns a whole page, so it
+// IS fullscreen and cannot be anything else. Stamped on <html data-oma-display> so an app can
+// adapt with CSS alone; onDisplayChange is for the ones that need to re-lay out in script.
+let display = SA ? "fullscreen" : "inline";
+let displayModes = SA ? ["fullscreen"] : ["inline"];
+const displayCbs = [];
+function stampDisplay() {
+  try { document.documentElement.setAttribute("data-oma-display", display); } catch { /* no document (test rig) */ }
+  // In a measuring host only (the unpin's own rule: an embedder that is not a standalone shell) —
+  // fullscreen hands the frame's height back to the app, inline gives it back to the content.
+  try {
+    if (!SA && window.parent !== window && !window.__OMA_STANDALONE__ && document.body)
+      fitFrame(display, [document.documentElement, document.body], unpinDocumentHeight);
+  } catch { /* no document (test rig) */ }
+}
+function applyDisplay(ctx) {
+  if (!ctx || SA) return;
+  if (Array.isArray(ctx.availableDisplayModes)) displayModes = ctx.availableDisplayModes.filter((m) => DISPLAY_MODES.includes(m));
+  syncTopbar();
+  const m = ctx.displayMode;
+  if (typeof m !== "string" || m === display) return;
+  display = m;
+  stampDisplay();
+  for (const cb of displayCbs) { try { cb(display); } catch (e) { console.error("[oma] onDisplayChange", e); } }
+}
+stampDisplay();
+
+// THE TOP BAR — the way into fullscreen, drawn for every app on a card whose host can go
+// fullscreen. Top-left, where both hosts put their own control once fullscreen, so the gesture
+// lives in one place in and out. There is no close button: in fullscreen the host's own ✕ is the
+// way back, and the bar is hidden. Space is reserved above the app (padding on <html>), so it never
+// covers the app's own top-left. Not marked chrome: the AI can press it too ("show it full screen").
+let topbar = null;
+function syncTopbar() {
+  if (SA || typeof document === "undefined") return;
+  const can = displayModes.includes("fullscreen");
+  document.documentElement.toggleAttribute("data-oma-topbar", can);
+  if (!can) return;
+  if (!topbar) {
+    const st = document.createElement("style");
+    st.setAttribute("data-oma", "topbar");
+    st.textContent =
+      ":root[data-oma-topbar][data-oma-display=inline]{box-sizing:border-box;padding-top:40px!important}" +
+      ".oma-topbar{display:none;position:fixed;top:0;left:0;right:0;height:40px;z-index:2147483644;" +
+      "align-items:center;gap:8px;padding:0 10px;box-sizing:border-box;" +
+      "background:var(--color-background-primary,Canvas);color:var(--color-text-primary,CanvasText);" +
+      "border-bottom:1px solid var(--color-border-secondary,rgba(127,127,127,.18));" +
+      "font:600 13px/1 -apple-system,system-ui,sans-serif}" +
+      ":root[data-oma-topbar][data-oma-display=inline] .oma-topbar{display:flex}" +
+      ".oma-topbar button{width:28px;height:28px;flex:none;display:grid;place-items:center;border:0;padding:0;" +
+      "border-radius:8px;cursor:pointer;background:var(--color-background-inverse,CanvasText);color:var(--color-text-inverse,Canvas)}" +
+      ".oma-topbar span{overflow:hidden;white-space:nowrap;text-overflow:ellipsis}";
+    topbar = document.createElement("div");
+    topbar.className = "oma-topbar";
+    const open = document.createElement("button");
+    open.type = "button";
+    open.setAttribute("aria-label", "Open full screen");
+    open.title = "Open full screen";
+    open.innerHTML = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2.5h4v4M6.5 13.5h-4v-4M13.5 2.5 9 7M2.5 13.5 7 9"/></svg>';
+    open.onclick = () => window.oma.requestDisplay("fullscreen");
+    topbar.append(open, document.createElement("span"));
+    document.head.append(st);
+  }
+  // Inside <body>, first: outside it the accessibility tree (and screen_read) never sees it. The
+  // loader mounts an app with body.innerHTML, and an app may do the same, so it is put back on
+  // every change to the body's children.
+  if (document.body && topbar.parentNode !== document.body) {
+    if (!topbar.parentNode) new MutationObserver(syncTopbar).observe(document.body, { childList: true });
+    document.body.prepend(topbar);
+  }
+  topbar.lastChild.textContent = document.title || compName() || "";
+}
+
+// What of the view is covered — a notch, a home bar, the host's own controls laid over the app.
+// Stamped as --oma-safe-top/right/bottom/left on <html>: the larger of the host's report
+// (hostContext.safeAreaInsets, MCP Apps) and the browser's own env(safe-area-inset-*), so an app
+// pads with var(--oma-safe-top) and is right on either kind of host.
+function stampSafeArea(ins) {
+  try {
+    for (const side of ["top", "right", "bottom", "left"]) {
+      const px = ins && Number.isFinite(ins[side]) ? Math.max(0, ins[side]) : 0;
+      document.documentElement.style.setProperty(`--oma-safe-${side}`, `max(${px}px, env(safe-area-inset-${side}, 0px))`);
+    }
+  } catch { /* no document (test rig) */ }
+}
+function applySafeArea(ctx) {
+  if (ctx && ctx.safeAreaInsets && !SA) stampSafeArea(ctx.safeAreaInsets);
+}
+stampSafeArea();
+
+// `version` is the GLOBAL ledger seq of the last adopted read; `total`/`truncated` let an app
+// render "N of M" instead of pretending a capped projection is the collection.
+// A per-app document carries its binding as an injected global: some hosts never deliver a
+// collection through toolinput/toolresult, and an unbound widget's writes bounce as collection:null.
 const BOUND_HINT = (typeof window !== "undefined" && window.__OMA_COLLECTION_HINT__) || null;
-// The SAME stamp, for the same reason, and it was missing. wrapApp injects both globals
-// before the runtime evaluates, so a per-app document knows its own name at t=0 — but `app`
-// started at null anyway, which left the first-wins rule in ontoolresult to be won by whoever
-// spoke first. On a host that hands a widget another call's envelope (measured, ChatGPT web) or in
-// a turn that opens two apps at once, that first speaker can be a DIFFERENT app, and this document
-// would then answer with a name that is not its own. A document that was stamped with its identity
-// should never have to be told what it is.
-// Null on the universal loader, correctly: it is stamped only after it resolves and mounts.
+// …and its own name, so ontoolresult's first-wins rule cannot be won by another app's envelope
+// (a host may hand a widget a foreign one; a turn may open two apps).
+// Null on the universal loader: it is stamped only after it resolves and mounts.
 const BAKED_NAME = (typeof window !== "undefined" && window.__OMA_APP__) || null;
 let state = { collection: BOUND_HINT, items: [], version: 0, total: 0, truncated: false, app: BAKED_NAME, host: null };
 let toolInput = {};
@@ -79,13 +256,11 @@ function markReady() {
   readying = true;
   const flush = () => {
     lastMerged = currentMerged();   // diff baseline — app identity is known by now
-    // …and so is the PER-APP theme layer, which is why it is re-applied here. Prefs are fetched at
-    // connect, in parallel with the host's ontoolinput, so ingestPrefs can (and on the universal
-    // loader path usually does) run while compName() is still null — computing a theme with the
-    // global layer only and no hook to revisit it. `pref()` is immune because it resolves the name
-    // at every call; the theme is not, because it writes into the DOM once. Same hazard the line
-    // above exists for. Idempotent: applyThemeVars diffs against what it last stamped.
+    // Re-apply the theme for the same reason: prefs may have been ingested while compName() was
+    // still null (the loader path), leaving the per-app layer out. pref() resolves the name per
+    // call; the theme is written to the DOM once. Idempotent.
     applyThemeVars(themeVars(currentMerged()));
+    syncTopbar();                   // the name is known by now (the loader mounts after connect)
     ready = true;
     for (const cb of readyCbs.splice(0)) { try { cb(state); } catch (e) { console.error("[oma] ready handler threw", e); } }
     emit();                         // ONE warm first paint — covers onChange-only apps
@@ -140,19 +315,14 @@ function omaNotify(msg) {
   el._t = setTimeout(() => { el.style.display = "none"; }, 6000);
 }
 
-// The shell's confirmation affordance (W-S): the ENGINE demands confirmation, the SHELL renders
-// it — an app author never writes confirmation UI, and forgetting is impossible because the
-// demand is server-side. One implementation serves both the top-level widget's deletes
-// (deleteItem below) and every embedded child's (the runner hands demands up via
-// io.requestConfirm). Resolves true only on the user's explicit click; the Escape key or the
-// earliest joined state's own expiry resolves false — fail-closed in every direction.
+// The shell's confirmation card: the ENGINE demands confirmation (server-side, so it cannot be
+// forgotten), the SHELL renders it — app authors never write confirmation UI. Serves the top-level
+// widget's deletes and every embedded child's (runner io.requestConfirm). Resolves true only on an
+// explicit click; Escape or the earliest member's expiry resolves false — fail-closed.
 //
-// Demands that arrive WHILE the card is open JOIN it (W1, known-defects S4). "Reset all" is one
-// user intent over N rows, and asking the same question N times was the measured UX: a chain of
-// cards, one per row. One card now answers every demand it absorbed — and every re-send still
-// spends its own per-row request_state, so the engine's credential model is untouched; the card
-// is plural in the UI only. A demand that lands after the card is answered opens a NEW card:
-// joining is for one burst of one intent, never a way to spend an old answer on a new question.
+// Demands arriving WHILE the card is open JOIN it (one intent over N rows → one card); each still
+// re-sends with its own request_state. A demand after the card is answered opens a NEW card — an
+// old answer is never spent on a new question.
 let confirmCard = null;   // the open card's join(demand, resolve), or null
 function shellConfirm(demand) {
   return new Promise((resolve) => {
@@ -170,6 +340,11 @@ function shellConfirm(demand) {
       return b;
     };
     const yes = mkBtn("Delete", "#e5484d"), no = mkBtn("Cancel", "rgba(255,255,255,.14)");
+    // The person's answer, and only theirs: the screen relay never sees this card (data-oma-chrome),
+    // and a click a script dispatched — the relay's, or an app's — is not a yes. Cancel needs no
+    // such guard; declining is always safe. (Reproduced 2026-10-05 before the fix: screen_act
+    // pressed "Remove", then pressed this card's "Delete", and the row was gone.)
+    el.setAttribute("data-oma-chrome", "");
     el.append(label, no, yes);
     const members = [];   // [{demand, resolve}] — everyone this card answers for
     let timer;
@@ -191,7 +366,7 @@ function shellConfirm(demand) {
       timer = setTimeout(() => done(false), Math.min(...members.map((m) => ttlOf(m.demand))));
     };
     const onKey = (e) => { if (e.key === "Escape") done(false); };
-    yes.onclick = () => done(true);
+    yes.onclick = (e) => { if (e.isTrusted) done(true); };
     no.onclick = () => done(false);
     document.addEventListener("keydown", onKey, true);
     confirmCard = join;
@@ -201,54 +376,77 @@ function shellConfirm(demand) {
   });
 }
 
-// A bridge request the host DROPS with no reply must reject, never hang: an unsettled await here
-// wedges whatever subsystem issued it for the widget's whole life — the poll chain never
-// reschedules, syncPrefs' busy latch never clears, a walk never releases its single-flight
-// slot. Observed on Claude Desktop 1.24012.9 (and Claude Code, same bridge stack): calls sent
-// in an early post-mount window vanish. Ten seconds is far beyond any real engine round-trip.
-// The POLICY (10s, reject-not-hang) is ours; the MECHANISM is the SDK's own request timeout
-// (elegance A17 — the hand-rolled Promise/timer wrapper it replaced did the same thing worse).
+// A bridge request the host DROPS must reject, never hang: an unsettled await wedges its subsystem
+// for the widget's life (the poll chain, syncPrefs' busy latch, a walk's single-flight slot). Some
+// hosts drop calls sent in an early post-mount window. 10s is far beyond any real round-trip; the
+// mechanism is the SDK's own request timeout.
 const BRIDGE_DEADLINE_MS = 10_000;
 
+// Every call this runtime makes says who will read the answer: the app (runtime-core
+// READER_META_KEY). A read tool sizes its page for an app instead of for a model's context. Rides
+// `_meta`, so it costs tools/list nothing; a host or front door that drops it leaves the read on
+// the model's budget — more pages, same rows.
 async function rawCall(name, args) {
   try {
     if (SA) {
       const res = await fetch(SA.endpoint || "/rpc", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ name, arguments: args }),
+        body: JSON.stringify({ name, arguments: args, _meta: APP_READER_META }),
       });
       if (!res.ok) throw new Error("HTTP " + res.status);
       return await res.json(); // a CallToolResult
     }
-    return await hostApp.callServerTool({ name, arguments: args }, { timeout: BRIDGE_DEADLINE_MS });
+    return await hostApp.callServerTool({ name, arguments: args, _meta: APP_READER_META }, { timeout: BRIDGE_DEADLINE_MS });
   } catch (e) {
-    // Tag every failure that originates from a TOOL CALL (host declined, bridge blip, transport
-    // error). The render-health reporter must never mistake these for a broken app — a
-    // transient environment failure would otherwise auto-revert a perfectly healthy version.
+    // Tag every TOOL-CALL failure (host declined, bridge blip, transport error) so the broken-mount
+    // reporter never mistakes an environment failure for a broken app.
     if (e && typeof e === "object") { try { e.omaToolCallError = true; } catch {} }
     throw e;
   }
 }
 
-// ---- the paged walk: how this widget reads its collection (write-set D) -------------------
-// Reads are PAGES now (data_list, limit 500, cursor) and a widget owns its own walk: merge
-// pages pinned to one version, restart when a write moves the stamp mid-walk, mark the
-// projection truncated past the page cap instead of silently stopping. Mounting ALWAYS
-// walks — a host may replay a CACHED tool result on re-mount, and the zero-row open carries
-// no rows by design, so the walk (not the pushed result) is what the first paint stands on.
+// ---- the paged walk: how this widget reads its collection ---------------------------------
+// Reads are PAGES (data_list, cursor) and a widget owns its walk: pages pinned to one version,
+// restart when a write moves the stamp mid-walk, truncated (not silently stopped) past the page
+// cap. Mounting ALWAYS walks — a host may replay a CACHED tool result, and the open result carries
+// no rows by design, so the walk is what the first paint stands on.
 
 function pageFetcher(collection) {
   return async (cursor) => {
     const r = await rawCall("data_list", { collection, limit: WALK_LIMIT, ...(cursor ? { cursor } : {}) });
+    if (r && r.isError && isNotShared(r)) { noLongerShared(); throw new Error("not_shared"); }
     return r && !r.isError ? r.structuredContent : null;
   };
 }
 
-/** Full paged read of ANY collection. Never touches widget state (the foreign-collection
- *  rebind class of bugs is structurally out). One shape, no options (elegance A11: the
- *  {group, match, limit, maxPages} knobs had zero callers — an app that wants a slice filters
- *  the rows it was handed, or calls data_list directly through callTool). */
+// ---- shared collections (`@owner/name`): another account's data, reached through a share ----
+// The binding of a widget opened on a share is a HANDLE, and the engine routes by it — so every
+// id-addressed write names it (a bare id would be looked up in the viewer's OWN store first) and
+// the probe asks for that one collection's mark (the owner's global activity is not ours to see).
+const isHandle = (c) => typeof c === "string" && c.charAt(0) === "@";
+const sharedBinding = () => (isHandle(state.collection) ? { collection: state.collection } : {});
+const isNotShared = (r) => !!(r && r.structuredContent && r.structuredContent.reason === "not_shared");
+// The share ended (revoked, left, or the app deleted) while this widget was on screen: say so over
+// the whole widget, once, and stop pretending the last rows are live. Attached to <html> like
+// omaNotify, because apps rewrite body.innerHTML.
+let sharedGone = false;
+function noLongerShared() {
+  if (sharedGone || typeof document === "undefined") return;
+  sharedGone = true;
+  try {
+    const el = document.createElement("div");
+    el.id = "__oma_unshared";
+    el.style.cssText = "position:fixed;inset:0;z-index:2147483646;display:flex;align-items:center;justify-content:center;" +
+      "background:color-mix(in srgb,var(--color-background-primary,Canvas) 88%,transparent);backdrop-filter:blur(3px);" +
+      "font:14px/1.5 -apple-system,system-ui,sans-serif;color:var(--color-text-secondary,CanvasText);text-align:center;padding:24px";
+    el.textContent = "No longer shared with you.";
+    document.documentElement.appendChild(el);
+  } catch (e) { /* no document to draw on */ }
+}
+
+/** Full paged read of ANY collection. Never touches widget state. No options: an app that wants
+ *  a slice filters the rows, or calls data_list through callTool. */
 async function readCollection(collection) {
   const coll = String(collection);
   const out = await walkPages(pageFetcher(coll));
@@ -265,18 +463,28 @@ async function readCollection(collection) {
   };
 }
 
+// DATA IS OPT-IN. An app subscribes with oma.onChange — every data app does — and only then does
+// the runtime read its collection and watch it. One that never subscribes is a page: no reads, no
+// polling, ready() as soon as the bridge is up. Decided after the app's own scripts have run, so
+// a top-level subscription is never mistaken for a page.
+const subscribed = () => changeCbs.length > 0;
+let live = false;   // bridge up and the app's scripts have run — a later subscription walks at once
+// Decided once the app's own scripts have run — see afterAppScripts (runtime-core) for why that is
+// DOMContentLoaded plus a task, and never readyState. Armed here, at the runtime's first run, so the
+// event cannot slip past before goLive asks.
+const appScriptsRan = typeof document === "undefined" ? (cb) => cb() : afterAppScripts(document, window);
+function goLive() {
+  appScriptsRan(() => { live = true; if (subscribed()) walk(); else markReady(); });
+}
+
 let walking = null;   // single-flight: concurrent walk triggers share one pass
 let walkAgain = false;
 let walkedOnce = false;   // one full read has adopted — the paint has stood on real data at least once
 function walk() {
-  if (!state.collection) return Promise.resolve();
-  // Sharing an in-flight pass is right for two triggers that want the SAME answer, and wrong for a
-  // trigger that appeared after that pass started reading: an in-flight walk that began before a
-  // write cannot contain it, and handing it back as the write's reconciliation let a pre-write
-  // snapshot adopt and take the optimistically-painted rows away again (they came back on the next
-  // poll, so it read as a flicker of vanishing edits). A later request therefore queues ONE re-run
-  // instead of being answered with a stale promise. Bounded to one: under sustained writes this
-  // must converge, not chase.
+  if (!state.collection || !subscribed()) return Promise.resolve();
+  // A trigger arriving mid-walk queues ONE re-run instead of sharing the in-flight pass: a pass
+  // that began before a write cannot contain it, and adopting it would take the optimistically
+  // painted rows away again. Bounded to one so sustained writes converge.
   if (walking) { walkAgain = true; return walking; }
   walking = (async () => {
     try {
@@ -299,8 +507,8 @@ function walk() {
 // ---- writes: the continuity rule (0-RTT redraw) -------------------------------------------
 // A write returns an ACK with the row it wrote, never the collection. decideAck's inequality
 // (prev_collection_seq ≤ our read stamp) says whether applying just that row locally loses
-// anything; when it can't, the click paints with ZERO extra round trips. The old text-regex
-// conflict sniffing is dead — conflicts are structured (ok:false + note + current row).
+// anything; when it can't, the click paints with ZERO extra round trips. Conflicts are structured
+// (ok:false + note + current row).
 let pendingWrites = 0;   // in-flight own writes: the SSE/probe change-check must not race the ack
 let burstNeedsWalk = false;   // some ack in this burst could not be fully trusted — walk once, at the end
 async function call(name, args) {
@@ -322,12 +530,9 @@ async function call(name, args) {
       burstNeedsWalk = true;
     } else if (d.kind === "apply" || d.kind === "apply-refresh") {
       const rows = applyAck(state.items, sc);
-      // The mark may only step to this ack's seq when NO sibling write is still in flight. An
-      // overlapping write sits BELOW that seq and has not been applied yet, so advancing here
-      // claimed a position our items did not hold — and the probe, seeing nothing move, never
-      // went back for it. Sequential clicks (the common burst: each ack lands before the next
-      // click) are still sole-in-flight, so the 0-RTT path is untouched; genuinely concurrent
-      // writes pay exactly one walk, at the end of the burst.
+      // The mark may step to this ack's seq only when NO sibling write is in flight: an overlapping
+      // write sits BELOW that seq, unapplied, and the probe would never go back for it. Sequential
+      // clicks stay 0-RTT; genuinely concurrent writes pay one walk at the end of the burst.
       const advance = d.kind === "apply" && pendingWrites === 1;
       if (rows) {
         state = {
@@ -337,13 +542,8 @@ async function call(name, args) {
         };
         if (state.collection === "settings") {
           if (advance) lastSettingsVersion = state.version;
-          // ingestPrefs only emits when the MERGED map moved, and a settings widget writing ANOTHER
-          // app's group (exactly what the settings app does) moves nothing of its own — so the
-          // app that just wrote a row never re-rendered its own list, and the watermark had already
-          // advanced so no poll would repair it. The bound state DID change: emit for it, and let
-          // ingestPrefs handle the pref-cache side without owning the repaint.
-          // notify:true keeps onPrefChange working; it returns whether it already repainted, so the
-          // bound-state repaint happens exactly once either way.
+          // ingestPrefs emits only when this app's MERGED prefs moved, and the settings app writes
+          // OTHER apps' groups — but the bound rows did change, so repaint exactly once either way.
           if (!ingestPrefs(rows, true)) emit();
         } else emit();
       }
@@ -369,38 +569,25 @@ async function call(name, args) {
 
 /** Tool names a widget's own call must be STAMPED for — the writes where "who did this" is a
  *  fact about the user, not about whoever typed the tool name. Typed verbs and the generic
- *  callTool door both go through the stamp, so neither is a cheaper way to write. */
-// `file_delete` belongs here for the same reason the item writes do, and its absence was the
-// two fixes above failing to COMPOSE: the generic door was taught to stamp (so a delete cannot
-// hide behind a different method name), and the file plane was taught to demand (so a file
-// delete is confirmable) — but this list was written before the second, so a top-level widget's
-// file delete still went out unstamped, arrived as "agent", and executed. Neither fix was wrong;
-// nobody re-asked the first question after the second answer changed the set of destructive
-// doors. The membership therefore lives in tool-policy.mjs now, beside the control-plane list
-// and the runner guard's write set — one home for "which tools carry a widget's human act".
+ *  callTool door both go through the stamp, so neither is a cheaper way to write. The membership
+ *  lives in tool-policy.mjs, beside the runner guard's write set: one home for the list. */
 const STAMPED_TOOLS = new Set(STAMPED_LIST);
 
 /** The direct runtime's half of the same loop — same implementation, different transport. */
 const confirmable = withConfirmation({ send: call, ask: shellConfirm });
 
-// ---- preferences: prefetched at boot, group-indexed (app-name-INDEPENDENT),
-// merged lazily per read — identity may not be known yet when the data arrives.
-// Resolver evaluated at EVERY use, never cached into data structures: the loader path
-// learns the name only via ontoolinput/ontoolresult (guaranteed by ready()-flush time).
-// WHO WE ARE, most trustworthy first.
+// ---- preferences: prefetched at boot, group-indexed (app-name-INDEPENDENT), merged lazily per
+// read — identity may not be known yet when the data arrives. The name is resolved at EVERY use,
+// never cached into data structures (the loader learns it only by ready()-flush time).
 //
-// `__OMA_APP__` is OURS: a per-app document is stamped with it at serve time by
-// wrapApp, and on the loader path the loader writes it only after it has resolved and
-// mounted the app. Either way it is a fact about the document we are running in. The other two
-// come from the host, and the host can hand a widget another call's envelope — measured on
-// ChatGPT web, both modes. It ranked LAST, so the one channel that cannot be misdelivered was
-// the one we consulted only when the misdeliverable ones were empty.
+// WHO WE ARE, most trustworthy first. `__OMA_APP__` is stamped by us (wrapApp at serve time, or
+// the loader after it mounts the app); the other two come from the host, which can hand a widget
+// another call's envelope.
 const compName = () =>
   (typeof window !== "undefined" && window.__OMA_APP__) ||
   state.app || (toolInput && toolInput.app) || null;
 
-// Value coercion (docs/settings-design.md §2.1) lives in runtime-core — the engine's own
-// confirm_delete gate reads it too, and two answers to "what does this row mean" is a dialect.
+// Value coercion (coercePref) lives in runtime-core: the engine's confirm_delete gate reads it too.
 
 let prefItems = [];                  // raw settings rows, snapshot order (last wins)
 let prefGlobal = new Map();          // key -> value           (group === "")
@@ -478,39 +665,17 @@ function schedulePrefSync() {                      // debounced (250 ms)
 // ---- theming: adopt the host's design tokens (Claude light/dark, fonts, radii) ----
 let hostVars = null;              // the host's own variable map, kept so a removed theme token
                                   // can be RESTORED to it rather than merely dropped
-// The host context is not only paint. `McpUiHostContext.toolInfo` carries the JSON-RPC id and the
-// tool definition of THE CALL THAT INSTANTIATED THIS WIDGET (ext-apps spec.types.d.ts
-// McpUiHostContext), and the type ends in `[key: string]: unknown`, so a host may put more there.
-// We read this object for colours and dropped everything else on the floor — the same shape of
-// mistake as taking identity from the tool-result channel alone (see ontoolresult below): the host
-// may already be saying who we are through a door nobody opened. It is kept WHOLE and MERGED,
-// because host-context-changed delivers PARTIAL updates, and exposed read-only so the loader's
-// failure surface can report what it was actually handed instead of guessing.
-// REMEMBERING WHO WE ARE, ACROSS A RE-RENDER THE HOST GETS WRONG.
-//
-// Measured on ChatGPT web, 2026-07-29, with the loader's own diagnostic dump. When an assistant
-// turn contains more than one tool call, the FIRST mount is bound correctly — and a later
-// re-render replays the FIRST call of that turn instead of the one that opened the app:
-//
-//   turn: get_app{name:"dev-probe"} → open_app{app:"dev-probe"}
-//   after refresh the widget was handed  toolInput = {name:"dev-probe"}
-//                                        toolInfo.tool = get_app's definition
-//   turn: data_collections{} → open_app{...}
-//   after refresh                        toolInput = {}   toolInfo.tool = data_collections
-//
-// Both are verbatim the OTHER call's arguments, so this is not "the host sent nothing" — it is the
-// host confidently sending the wrong envelope. No amount of waiting fixes that, and no guard can
-// tell a wrong envelope from a right one. The MCP Apps spec has no clause on which call a view
-// belongs to when a turn has several (lane D checked the draft in full), so this is host
-// discretion, not a violation — Codex gets it right on the same build.
-//
-// The way out is not to be told twice: the FIRST mount does know, so write it down somewhere the
-// host itself carries across renders. ChatGPT exposes exactly that as `window.openai` —
-// `setWidgetState` / `widgetState`, per-widget-instance and replayed on re-render. It is vendor
-// API, so it is feature-detected and namespaced under one key; a host without it loses nothing it
-// had. This also covers the case a binding fix never could: a re-render that replays NOTHING.
+
+// REMEMBERING WHO WE ARE across a re-render the host binds to the wrong call. A host may re-render
+// a widget with ANOTHER tool call's envelope (ChatGPT web, multi-call turns: the turn's first call
+// is replayed verbatim), or with none at all; no guard can tell a wrong envelope from a right one.
+// The first mount does know, so it writes identity into the host's own per-instance state
+// (`window.openai.setWidgetState` / `widgetState`, replayed on re-render). Vendor API:
+// feature-detected and namespaced under one key; a host without it loses nothing.
 const STATE_KEY = "__oma";
 function rememberIdentity() {
+  const known = toolInput.app || state.app;
+  if (known) for (const w of identityWaiters.splice(0)) w(known);
   try {
     const oai = window.openai;
     if (!oai || typeof oai.setWidgetState !== "function") return;
@@ -519,10 +684,8 @@ function rememberIdentity() {
     const prev = oai.widgetState || {};
     const mine = prev[STATE_KEY] || {};
     if (mine.app === name && mine.collection === state.collection && mine.host === state.host) return;
-    // Preserve whatever the app itself keeps here — we are a guest in this object. `host` rides
-    // along because it has the same shape of problem: it can only arrive on a channel a mis-bound
-    // re-render never delivers, which is why a refreshed widget reported host:null all week. This
-    // is not a second derivation of it — it is the one we were told, written down.
+    // Preserve whatever the app keeps here — we are a guest in this object. `host` rides along: it
+    // too arrives only on a channel a mis-bound re-render never delivers.
     oai.setWidgetState({ ...prev, [STATE_KEY]: {
       app: name, collection: state.collection || null, host: state.host || null } });
   } catch (_) { /* a host that rejects the write leaves us exactly where we were */ }
@@ -544,10 +707,9 @@ function recoverIdentity() {
 
 /** Where app→app links point from THIS document, one resolution chain for every reader.
  *  `__OMA_STANDALONE__.viewBase` is the embedding shell's own mount base (browser viewer,
- *  hosted /app); `__OMA_VIEW_BASE__` is the engine's own viewer, stamped into a WIDGET document
- *  by wrapApp/wrapLoader when — and only when — this engine has one (OMA_VIEWER=0 leaves it
- *  undefined). The tail is the relative default, meaningful only where the page and the viewer
- *  share an origin. Absolute-or-nothing readers (the badge below, dashboard's Browse) test it. */
+ *  hosted /app); `__OMA_VIEW_BASE__` is the engine's viewer, stamped into a WIDGET document by
+ *  wrapApp/wrapLoader only when the engine has one (not under OMA_VIEWER=0). The relative default
+ *  works only where page and viewer share an origin; absolute-or-nothing readers test for it. */
 function linkBase() {
   const sa = SA && typeof SA.viewBase === "string" && SA.viewBase;
   if (sa) return sa;
@@ -555,32 +717,22 @@ function linkBase() {
   return "/view/";
 }
 
-// ---- the system badge (D-13, Leo 2026-08-05/06) + mount recovery (W1) ----------------------
-// ONE corner affordance on every widget, three states, three actions:
+// ---- the system badge + mount recovery ----------------------------------------------------
+// ONE corner affordance on every widget, three states:
 //   · hover (default)  — invisible until the pointer finds the corner; zero pixels taken
-//   · always           — the shared `system_badge` preference flips it permanently visible
-//   · forced           — the W1 recovery state: the retry ladder below ended and no walk has
-//     EVER succeeded, so the badge stops waiting to be found. Any successful walk clears it.
-// The recovery story (measured on ChatGPT web, both panes, 2026-08-05): after a PAGE refresh
-// the re-render is handed another call's envelope (see the identity note above), which carries
-// no `collection` — every startWalk() trigger no-ops and the widget paints UI with no data,
-// forever. One widget WRITE restored everything, which is the whole diagnosis: the bridge is
-// alive and the engine answers — nothing ever ASKED again. So ask again, twice over: a retry
-// ladder that rebinds from the identity note the first mount wrote down, and this badge, whose
-// tap is also a USER GESTURE (covers a host that gates tool calls until one).
+//   · always           — the shared `system_badge` preference keeps it visible
+//   · forced           — recovery: the retry ladder ended and no walk has EVER succeeded, so the
+//     badge stops waiting to be found. Any successful walk clears it.
+// Recovery: a re-render handed another call's envelope carries no `collection`, so nothing walks
+// and the widget paints with no data, forever — though the bridge and engine are fine. So ask
+// again: the ladder rebinds from the identity note and walks, and the badge's tap does the same
+// (it is also a user gesture, for a host that gates tool calls until one).
 //
-// The other two actions (D-13 ①, Leo 2026-08-06) ride the SAME hover corner — a row of buttons
-// revealed together, not a popup with its own dismissal rules:
-//   · ⚙ settings          — oma.embed("settings") in place, the ONE runner machine every other
-//     in-widget mount already uses. Caveat, measured not guessed: a sandboxed child may not call
-//     control-plane tools (runner.mjs refuseControlPlane), so the embedded settings edits
-//     preferences and data but cannot delete/restore/install apps, and its own thumbnails do not
-//     render (a child may not embed further). Preferences — the reason a user opens settings from
-//     a widget corner — work.
-//   · ⧉ browser           — oma.openLink(viewer URL), the host's ui/open-link; the viewer origin
-//     is already in this widget's redirect_domains (tools/apps.mjs UI_SECURITY). NO VIEWER, NO
-//     ITEM (D-13 ②): with OMA_VIEWER=0 the engine stamps no view base, linkBase() stays relative
-//     and the button is never created — an item that cannot work should not be drawn.
+// The same row also reveals:
+//   · ⚙ settings — oma.embed("settings") in place. As a sandboxed child it cannot call
+//     control-plane tools or embed further: it edits preferences and data, not apps.
+//   · ⧉ browser  — oma.openLink(viewer URL); the viewer origin is in this widget's
+//     redirect_domains. Drawn only when there is an absolute viewer base (none under OMA_VIEWER=0).
 const MOUNT_RETRY_MS = [800, 2500, 7000];
 let sysBadge = null;        // the refresh <button> — the corner's first and default action
 let sysBar = null;          // the corner row that holds it and the menu actions
@@ -595,7 +747,7 @@ function viewerBase() {
 function scheduleMountRecovery() {
   let rung = 0;
   const tick = () => {
-    if (walkedOnce) return;
+    if (walkedOnce || !subscribed()) return;   // a page has nothing to recover
     recoverIdentity();
     if (state.collection) walk();
     rung++;
@@ -637,9 +789,8 @@ function toggleSettingsPanel() {
   document.documentElement.append(wrap);
   const mine = { wrap, handle: null, onKey };
   sysPanel = mine;
-  // The ONE mount machine (oma.embed → the runner): caps-enforced, tokens inherited, and it
-  // keeps itself fresh off our own probe. No deep link — the settings app takes no "focus this
-  // app" argument today, so this is the whole page, not that app's group.
+  // The ONE mount machine (oma.embed → the runner): caps-enforced, tokens inherited, kept fresh
+  // off our own probe. No deep link — the settings app takes no "focus this app" argument.
   window.oma.embed("settings", { into: body, preset: "live", heights: { min: 320, max: 20000 } })
     .then((h) => { if (sysPanel === mine) mine.handle = h; else h.unmount(); })
     .catch((e) => { if (sysPanel === mine) body.textContent = "Couldn't open settings — " + ((e && e.message) || e); });
@@ -661,9 +812,15 @@ function ensureSystemBadge() {
     ".oma-sysbadge{border:0;cursor:pointer;background:#23282b;color:#fff;padding:6px 12px;border-radius:9px;" +
     "font:12.5px/1.45 -apple-system,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3);" +
     "opacity:0;transition:opacity .15s}" +
-    ".oma-sysbar:hover .oma-sysbadge,.oma-sysbar.oma-on .oma-sysbadge,.oma-sysbadge:hover," +
-    ".oma-sysbadge:focus-visible,.oma-sysbadge.oma-on{opacity:1}" +
+    ".oma-sysbar.oma-on .oma-sysbadge,.oma-sysbadge:focus-visible,.oma-sysbadge.oma-on{opacity:1}" +
     "@media (prefers-reduced-motion: reduce){.oma-sysbadge{transition:none}}" +
+    // HIDDEN MEANS NOT THERE. The corner used to wait, invisible, for a hover — on top of the app's own
+    // bottom-right control, which is exactly where apps put their main button: a click on a card's
+    // "open full screen" hit refresh or settings instead (seen in Claude, 2026-10-04), and a touch
+    // screen could never even reveal it. The engine does not cover the app: the corner shows when the
+    // binding is lost (forced) or the user asked for it (system_badge=always), and keyboard focus can
+    // still reach it; otherwise clicks go through to the app.
+    ".oma-sysbar:not(.oma-on),.oma-sysbar:not(.oma-on) .oma-sysbadge:not(:focus-visible){pointer-events:none}" +
     ".oma-syspanel{position:fixed;inset:0;z-index:2147483645;display:flex;flex-direction:column;" +
     "background:var(--color-background-primary,Canvas)}" +
     ".oma-syspanel-bar{display:flex;align-items:center;gap:10px;padding:8px 12px;background:#23282b;color:#fff;" +
@@ -688,7 +845,7 @@ function ensureSystemBadge() {
   const gear = sysButton("⚙", "Open settings");
   gear.onclick = () => toggleSettingsPanel();
   bar.append(b, gear);
-  // D-13 ②: the item EXISTS only when there is a viewer to send the user to.
+  // The item exists only when there is a viewer to send the user to.
   if (viewerBase()) {
     const out = sysButton("⧉", "Open in browser");
     out.onclick = async () => {
@@ -735,29 +892,33 @@ function hideRecoveryBadge() {   // any successful walk ends the state the forci
   updateSystemBadge();
 }
 
-// Internal, for the same reason as the host context below: the ONE caller is the loader document,
-// and an app that had to ask which app it is would be a bug in the app, not a missing API.
-//
-// This was a SUBSCRIPTION until 2026-07-29 — hand it a callback and it would fire when identity
-// eventually arrived. It never could, in the one case it was written for: a re-render bound to
-// another call is handed that call's envelope, which carries no name, so the announcement below
-// returned early and the subscriber waited out its whole window for a message that was never
-// coming. It is a plain question now, answered from what we know and what the host kept for us.
+// Internal (the loader is the one caller): which app is this document? A synchronous question,
+// answered from what we know — and, for a document that is ready before it is told, a bounded wait.
+// Ready no longer implies identity: data is opt-in, so a document that subscribes to nothing (the
+// loader) is ready as soon as prefs are warm, and the host's tool input can land after that —
+// measured 2026-10-02, a second open_app in one claude.ai conversation mounted, read settings, and
+// reported "lost track" with the input still in flight. rememberIdentity() resolves the waiters.
+const identityWaiters = [];
 try {
   window.__OMA_IDENTITY__ = () => {
     const name = toolInput.app || state.app;
     if (name) return name;
-    // Nothing live — but the host may be carrying the note we wrote on a previous mount. This is
-    // what survives a re-render the host binds to the wrong call.
+    // Nothing live — the host may still carry the note a previous mount wrote.
     return recoverIdentity();
   };
+  window.__OMA_AWAIT_IDENTITY__ = (ms) => new Promise((resolve) => {
+    const now = window.__OMA_IDENTITY__();
+    if (now) return resolve(now);
+    const t = setTimeout(() => { const i = identityWaiters.indexOf(done); if (i >= 0) identityWaiters.splice(i, 1); resolve(null); }, ms);
+    const done = (name) => { clearTimeout(t); resolve(name); };
+    identityWaiters.push(done);
+  });
 } catch (_) { /* no window (test rig): the loader is the only caller and it has one */ }
 
-// Deliberately NOT on window.oma: RUNTIME.md is a promise to app authors, and `toolInfo` — a
-// JSON-RPC id plus a tool definition — is engine plumbing, not something an app should be built
-// on. Whether authors should get the useful half (platform, displayMode, locale, timeZone) is a
-// separate API decision that deserves its own thinking, not a passenger on this one. So it rides
-// the same internal __OMA_* channel the loader already uses for app identity.
+// The host context is kept WHOLE and MERGED (host-context-changed delivers partial updates) on the
+// internal __OMA_HOST_CONTEXT__, so the loader's failure surface can report what it was handed
+// (toolInfo names the call that instantiated this widget). Deliberately NOT on window.oma:
+// toolInfo is engine plumbing, not author API.
 function applyTheme(ctx) {
   if (!ctx) return;
   try {
@@ -835,15 +996,11 @@ async function fileBytes(app, path) {
   return { bytes, mime, sha256 };
 }
 
-// The child is a separate document, so it inherits none of our CSS — the system UI kit has to
-// travel with it. We take it from OUR OWN head rather than bundling a second copy: every
-// document that runs this runtime was composed by wrapApp/wrapLoader, and both inject
-// the kit under the same data-oma marker. One copy of the bytes, no build step, no drift.
-// The neutral token FALLBACK sheet, read the same way and for the same reason as the kit. The child
-// had no fallback layer at all before: every token it saw was whatever the parent's computed value
-// happened to be, so a name we now deliberately omit (the per-app theme repair above) would resolve
-// to nothing. With the fallbacks underneath, omitting is safe and the child's cascade matches the
-// parent's shape: fallbacks → host/substituted tokens → kit → theme (pushed) → its own <style>.
+// A child document inherits none of our CSS, so the page base and the neutral token FALLBACK
+// sheet travel with it — read from OUR OWN head (wrapApp/wrapLoader inject both under data-oma
+// markers): one copy of the bytes, no drift. With the fallbacks underneath, a per-app token we
+// withhold from the child is safe, and its cascade matches ours:
+// fallbacks → host/substituted tokens → base → theme (pushed) → its own <style>.
 let fallbackCache = null;
 function ownFallbackCss() {
   if (fallbackCache == null) {
@@ -853,13 +1010,13 @@ function ownFallbackCss() {
   return fallbackCache;
 }
 
-let kitCache = null;
-function ownKitCss() {
-  if (kitCache == null) {
-    const el = document.querySelector('style[data-oma="kit"]');
-    kitCache = el ? el.textContent : "";
+let baseCache = null;
+function ownBaseCss() {
+  if (baseCache == null) {
+    const el = document.querySelector('style[data-oma="base"]');
+    baseCache = el ? el.textContent : "";
   }
-  return kitCache;
+  return baseCache;
 }
 
 // ---- live embeds: parent-side registry so embedded children stay fresh --------------------
@@ -869,24 +1026,13 @@ function ownKitCss() {
 const liveEmbeds = new Set();
 
 // ---- the live pointer: which app the AI last put in front of the user ---------------------
-// The engine pushes it on the SAME SSE frame as `seq` (src/http.mjs /events) — one connection,
-// two axes — and it is the entire input of the `@live` brick further down. Not on `window.oma`:
-// a channel that decides what a page MOUNTS would, on the author API, be an invitation for one
-// widget to replace another. The brick is the only consumer, and it is in this file.
-//
-// It LATCHES and replays on subscribe. The frame the server sends AT CONNECT is the one carrying
-// the app to mount (a display opened hours after the last open must not sit blank), so a brick
-// that mounts a moment after that frame lands would otherwise wait for the next open — which may
-// be tomorrow. Proving the mount always beats the frame is a race nobody should have to win.
-//
-// A SET of subscribers, not one slot: a wall may carry two bricks (a big panel and a strip), and
-// a single slot would let the second one silently take the feed away from the first.
-//
-// SSE is the only carrier. `live_n` exists on the store's own version read for a process that
-// cannot hear the in-process emit, but it is deliberately NOT on the get_data_version TOOL face
-// (opening an app is not a data change), so there is no poll to fall back to — and none is
-// wanted: EventSource reconnects by itself, and a display with no feed is a display showing the
-// last app it was given, which is the right failure.
+// Pushed on the SAME SSE frame as `seq` (http.mjs /events); the sole input of the `@live` brick
+// below. Not on `window.oma`: a channel that decides what a page MOUNTS is not author API.
+// It LATCHES and replays on subscribe: the frame sent AT CONNECT carries the app to mount, and a
+// brick mounting just after it must not wait for the next open. A SET of subscribers, so a
+// second brick on the same wall cannot take the feed from the first.
+// SSE is the only carrier — no poll fallback, by design: EventSource reconnects by itself, and a
+// display without a feed keeps showing the last app it was given.
 let liveSeen = false, liveLast = null;
 const liveCbs = new Set();
 /** cb(pointer|null) on every pointer frame, replayed immediately if one already arrived.
@@ -935,13 +1081,9 @@ function embedLive(opts) {
   stage.style.cssText = "display:block;width:100%;height:100%";
   opts.into.appendChild(stage);
 
-  // THE CHAT FACE — a tile, and nothing else. Two reasons, either one sufficient. (1) The pointer
-  // travels over an SSE stream from the engine's own origin, which a widget inside a chat host
-  // does not have; there is nothing here to listen to. (2) Even if there were: a region that
-  // swaps apps under someone's conversation because the AI opened something elsewhere is not a
-  // feature, it is a page rewriting itself while being read. So: no pointer read, no poll, no
-  // data dependency at all — the brick says what it is and waits for a screen that can host it.
-  // `oma.standalone` is the judge, the same one the kit's stage contract uses.
+  // THE CHAT FACE — a tile, nothing else: inside a chat host there is no pointer stream to hear
+  // (SSE lives on the engine's own origin), and a region swapping apps under a conversation would
+  // be a page rewriting itself while being read. No pointer, no poll, no data.
   if (!SA) {
     stage.appendChild(liveTile("Live region", "Shows the last-opened app on a standalone display."));
     return {
@@ -964,12 +1106,10 @@ function embedLive(opts) {
     stage.textContent = "";
   };
 
-  // EVERY app is mounted through oma.embed, including a local one, which every other path
-  // direct-mounts. A direct mount cannot be undone: app code runs in THIS document, so a classic
-  // script's top-level const/class lands in the shared global lexical scope and the second app to
-  // declare a name dies on redeclaration before its first line runs — and nothing removes the
-  // first app's listeners, timers or observers. An iframe has an unmount; a document does not.
-  // Local apps lose nothing to the runner around them: TIER_CAPS.local grants every capability.
+  // EVERY app is mounted through oma.embed, local ones included: a direct mount cannot be undone
+  // (top-level const/class share the global lexical scope, so the next app dies on redeclaration;
+  // listeners and timers leak). An iframe has an unmount. Local apps lose nothing to the runner:
+  // TIER_CAPS.local grants every capability.
   const go = async (name) => {
     // The same app opened again is not a switch: its data path is already live, and remounting
     // would throw away a scroll position and any open editor for nothing.
@@ -980,28 +1120,22 @@ function embedLive(opts) {
       const sc = (r && r.structuredContent) || {};
       if (dead || mine !== gen) return;
       if (!sc.html) { drop(); wait("Nothing to show", 'The app "' + name + '" is no longer in the registry.'); announce(null); return; }
-      // WALL ② — the inner one. A display never mounts a display. The outer wall (src/tools/
-      // apps.mjs) keeps an open_* door from ever writing a display's name into the pointer; this
-      // one holds when the value got there anyway — a row written before that wall existed, a
-      // store edited by hand, a door written after it. TERMINAL, not retried: the answer will not
-      // improve on a second fetch, and the next pointer frame supersedes it through `gen`.
-      if (sc.declaration && sc.declaration.stage && sc.declaration.stage.display === true) { drop(); idle(); return; }
+      // A live frame never mounts a live frame (`manifest.live_frame`, contracts.mjs liveFrameFor).
+      // The outer wall (tools/apps.mjs) keeps a frame's name out of the pointer; this one holds if
+      // it got there anyway. Terminal, not retried.
+      if (sc.declaration && sc.declaration.live_frame === true) { drop(); idle(); return; }
       drop();
       const handle = await window.oma.embed(name, {
         into: stage,
         html: sc.html,
         caps: sc.caps || {},
         tier: sc.tier == null ? "local" : sc.tier,
-        // Same reason as caps: this brick already fetched get_app_html, so handing the merged network
-        // declaration down saves embed a second identical call. It is the FRAMED app's, not this
-        // wall's — a display shows whatever the AI opened last, and each of those apps reaches
-        // wherever it declared.
+        // Already fetched: saves embed a second call. The FRAMED app's network declaration.
         csp: sc.csp || null,
-        // The binding the ENGINE computed, passed explicitly: embed's own default is the app
-        // NAME, and an app whose rows live in a differently named collection would mount blank.
+        // The binding the ENGINE computed: embed's default is the app NAME, and an app whose rows
+        // live in a differently named collection would mount blank.
         collection: sc.collection || name,
-        // Sizing is the WALL's decision, not the brick's — a region that fills a screen wants
-        // `heights:false` and its own CSS; one sitting in a column wants the default ladder.
+        // Sizing is the WALL's decision, not the brick's.
         ...(opts.heights === undefined ? {} : { heights: opts.heights }),
         ...(opts.fit ? { fit: opts.fit } : {}),
       });
@@ -1011,9 +1145,8 @@ function embedLive(opts) {
     } catch (e) {
       if (dead || mine !== gen) return;
       drop();
-      // KEEP TRYING. Nobody is sitting at this screen to press reload, so a server restart or a
-      // dropped request must heal by itself; a definitive answer (the app is gone, the app is a
-      // display) does not retry. The next pointer change supersedes this loop by moving `gen`.
+      // KEEP TRYING: nobody is at this screen to press reload. Definitive answers (gone, a display)
+      // do not retry; the next pointer change supersedes this loop by moving `gen`.
       wait("Couldn't load " + name, "Retrying…");
       announce(null);
       setTimeout(() => { if (!dead && mine === gen) go(name); }, 5000);
@@ -1048,29 +1181,15 @@ window.oma = {
    *  total, truncated } — total/truncated let an app say "N of M" honestly. */
   get state() { return state; },
   /** cb(state) once the bridge is connected and initial data has arrived — or, if that never
-   *  happens, AFTER A DEADLINE with whatever state we have.
-   *
-   *  It used to wait forever. That is the shape of every silent failure: the caller has no way to
-   *  tell "still coming" from "never coming", so an app whose first paint hangs on ready() shows a
-   *  spinner for the rest of the session. Measured on a page refresh (prod and stg): the bridge
-   *  never delivered, so the loader's entire retry ladder — which lives inside this callback —
-   *  never started, and not one request reached the server.
-   *
-   *  Releasing late with empty state is not a great answer, but it is an ANSWER: the caller runs,
-   *  discovers there is nothing, and can say so. onChange still fires if data arrives afterwards.
-   *  8s is deliberately under the runtime's own 10s per-call bridge deadline, so a callback
-   *  released here still gets a full window for its first call, and above every measured healthy
-   *  handshake (sub-second on all hosts we have readings for). */
+   *  happens, AFTER A DEADLINE with whatever state we have: a late answer the caller can act on
+   *  beats a spinner forever. onChange still fires if data arrives afterwards. 8s sits under the
+   *  10s bridge deadline (a released callback still gets a full window for its first call) and
+   *  above any healthy handshake. */
   ready(cb) {
     if (ready) return cb(state);
     readyCbs.push(cb);
-    // ONE timer at a time, and a new one after each firing. The first version only ever armed one:
-    // it checked `readyDeadline == null`, and the handle was never cleared, so once the deadline had
-    // fired with `ready` still false, every LATER ready(cb) queued behind a spent timer and waited
-    // forever — the exact silent hang this deadline exists to end, reintroduced for anyone
-    // registering after the first 8 seconds. Clearing the handle inside the callback restores the
-    // guarantee to every caller: if the host is still silent, the next registration gets its own
-    // window rather than inheriting an expired one.
+    // ONE timer at a time, re-armed after each firing (the handle is cleared inside), so a
+    // registration after an expired deadline gets its own window instead of waiting forever.
     if (readyDeadline == null) readyDeadline = setTimeout(() => {
       readyDeadline = null;
       if (ready) return;
@@ -1080,42 +1199,37 @@ window.oma = {
       for (const fn of waiting) { try { fn(state); } catch (e) { console.error("[oma] ready callback failed", e); } }
     }, 8000);
   },
-  /** cb(state) after every data change (including your own mutations). */
-  onChange(cb) { changeCbs.push(cb); },
+  /** cb(state) after every data change (including your own mutations). Subscribing is what makes
+   *  the app read its collection at all — without it the app is a page. */
+  onChange(cb) { changeCbs.push(cb); if (changeCbs.length === 1 && live) walk(); },
   // actor:"human" in the writes below is enum-constrained AUDIT metadata, never authorization:
-  // it is caller-chosen and forgeable in direct mode (security-model §1.4); only a
-  // runner-stamped app identity is trustworthy write provenance. `via` is the same
-  // class of metadata — the app's shadow edge for the Data pane, stripped from every
-  // AI-facing read.
+  // it is caller-chosen and forgeable in direct mode; only a runner-stamped app identity is
+  // trustworthy write provenance. `via` is the same class of metadata — the app's shadow edge
+  // for the Data pane, stripped from every AI-facing read.
   /** Add an item. fields is any JSON object your app defines. */
   addItem({ group = "", fields = {}, position } = {}) {
-    // Direct-embed mode can reach interactivity before any toolinput/toolresult has delivered a
-    // binding; sending collection:null just bounces off the server as -32602. Fail loudly and
-    // locally instead — the next poll/toolresult binds and the user's retry succeeds.
+    // A widget can be interactive before any binding arrives; collection:null would bounce off
+    // the server. Fail loudly and locally — the next poll/toolresult binds and a retry succeeds.
     if (!state.collection) {
       omaNotify("⚠ No collection bound yet — try again in a moment.");
       return Promise.reject(new Error("no collection bound yet"));
     }
     return call("data_add_item", { command_id: uuid(), collection: state.collection, group, fields, position, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
-  // Widget mutations are LAST-WRITE-WINS (no expected_version) — the same choice setPref makes and
-  // for the same reason. A live widget is the user rapidly clicking their OWN UI; sending
-  // expected_version made two fast clicks on one item race — the 2nd carried the pre-echo STALE
-  // version, so the store returned a spurious "Version conflict" that surfaced as an error banner
-  // and blocked the interaction. The user is the single writer they can see; their click should
-  // just apply. The rare AI-vs-user race converges via the ack continuity rule + the poll, and the
-  // AI can still request OCC explicitly through the data_* tools when it genuinely needs it.
+  // Widget mutations are LAST-WRITE-WINS (no expected_version), like setPref: two fast clicks on
+  // one item would otherwise race on a stale version into a spurious conflict. AI-vs-user races
+  // converge via the ack continuity rule + the poll; the AI can still request OCC via data_* tools.
   /** Shallow-merge fields into an item (set a key to null to delete it). */
   updateItem(id, fields) {
-    return call("data_update_item", { command_id: uuid(), id, fields, actor: "human", via: viaOf(compName()) }).then(ackOf);
+    return call("data_update_item", { command_id: uuid(), id, ...sharedBinding(), fields, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Move an item to another group (and/or position). */
   moveItem(id, group, position) {
-    return call("data_move_item", { command_id: uuid(), id, group, position, actor: "human", via: viaOf(compName()) }).then(ackOf);
+    return call("data_move_item", { command_id: uuid(), id, ...sharedBinding(), group, position, actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Delete an item. */
   deleteItem(id) {
-    return confirmable("data_delete_item", { command_id: uuid(), id, actor: "human", via: viaOf(compName()) }).then(ackOf);
+    return confirmable("data_delete_item", { command_id: uuid(), id, ...sharedBinding(), actor: "human", via: viaOf(compName()) }).then(ackOf);
   },
   /** Re-read the bound collection (a full paged walk; adopted through the gate). */
   refresh() { return walk(); },
@@ -1133,7 +1247,7 @@ window.oma = {
   onPrefChange(cb) { prefCbs.push(cb); },
   /**
    * Persist one of THIS app's own settings (scalar values only). Own group only —
-   * API-layer scoping, not a security boundary (docs/settings-design.md §8).
+   * API-layer scoping, not a security boundary.
    */
   setPref(key, value) {
     const me = compName();
@@ -1159,20 +1273,14 @@ window.oma = {
     return p.then((r) => {
       const sc = r && r.structuredContent;
       if (r && r.isError || (sc && sc.ok === false)) { omaNotify("⚠ Preference not saved."); return r; }
-      // Staleness is a PER-ROW question, not a per-collection one. Dropping the whole ack because
-      // some other key's write landed first threw away this key's value until the next full
-      // settings sync — and two setPref calls in flight is the ordinary case (a settings form).
-      // applyAck refuses only the rows that are actually superseded (row.version > ack.seq), and
-      // the watermark takes the max, so a late-but-lower ack can never rewind it.
+      // Staleness is PER ROW: applyAck refuses only superseded rows, so concurrent setPref calls
+      // (a settings form) each keep their value, and the watermark only takes the max.
       if (sc && sc.item) {
         const rows = applyAck(prefItems, sc);
         if (rows) {
-          // Merging the row is always safe; MOVING THE WATERMARK is not. lastSettingsVersion is
-          // what get_data_version's settings_version is compared against, so claiming this write's seq
-          // asserts we have seen everything up to it — and a concurrent write by another actor sits
-          // below it, unread. Then the probe finds settings_version equal to what we hold and never
-          // syncs, so that key stays missing until some later settings event. Same inequality the
-          // bound collection uses: only a receipt whose `prev` is inside our mark may advance it.
+          // Merging the row is always safe; MOVING THE WATERMARK is not — another actor's write may
+          // sit below this seq, unread, and the probe would never sync it. Same inequality as the
+          // bound collection: only a receipt whose `prev` is inside our mark may advance it.
           const prev = Number(sc.prev_collection_seq);
           const held = Number(lastSettingsVersion) || 0;
           if (Number.isFinite(prev) && prev <= held) lastSettingsVersion = Math.max(held, Number(sc.seq) || 0);
@@ -1181,40 +1289,28 @@ window.oma = {
         }
       }
       return r;
-    // The pref write bypasses call() (its ack handling is scoped to the BOUND collection), so it
-    // also bypassed the unwrap that lives there — and setPref is declared Promise<OmaAck> like
-    // every other write verb. One `.then` at the end of the chain covers both exits.
+    // Bypassing call() also bypasses its ack unwrap; setPref resolves an OmaAck like every write verb.
     }).then(ackOf);
   },
   /**
-   * Escape hatch: call any tool on the server. SECURITY (security-model §5 v0.3): a full,
-   * unmediated passthrough to every registered MCP tool — tolerable ONLY because direct mode
-   * is local-authored-only; untrusted apps run behind the runner, which filters calls.
+   * Escape hatch: call any tool on the server. SECURITY: a full, unmediated passthrough to every
+   * registered MCP tool — tolerable ONLY because direct mode is local-authored-only; untrusted
+   * apps run behind the runner, which filters calls.
    */
   callTool(rawName, args) {
-    // CANONICALISE FIRST, for the reason the runner guard canonicalises first: seven seats still
-    // answer to a retired spelling so apps saved before the rename keep working, and both of the
-    // rules below match on a name. A call typed with the old spelling has to meet the same rule
-    // as one typed with the new — otherwise the rename is a way around the stamp.
+    // Canonicalise FIRST (as the runner guard does): retired spellings still resolve, and both
+    // rules below match on the name — the old spelling must not be a way around the stamp.
     const name = canonicalToolName(rawName);
     const a = args || {};
-    // A widget's write is a widget's write, whichever door it used. This escape hatch used to
-    // hand the raw tool through unstamped, so the SAME delete that goes through oma.deleteItem
-    // as actor:"human" (and gets the user's confirmation) arrived as an anonymous "agent" write
-    // here and executed immediately — the confirmation guarantee undone by choosing a different
-    // method name, and the ledger's provenance wrong besides (codex review, reproduced).
-    // One policy for one verb, the rule the runner already enforces for embedded children.
+    // A widget's write is a widget's write, whichever door it used: stamped human and sent through
+    // the same confirmation loop as oma.deleteItem — the rule the runner enforces for children.
     if (STAMPED_TOOLS.has(name)) {
       return confirmable(name, { command_id: uuid(), ...a, actor: "human", via: viaOf(compName()) });
     }
-    // apply_data_writes is the MODEL's bulk verb, and an app reaching for it was the widest door of all:
-    // "Clear all" as one batch deleted every row with no confirmation and wrote `agent` beside
-    // each one in an append-only ledger — the deletions are recoverable, the wrong attribution is
-    // not. Stamping it human would not fix that: a batch is all-or-nothing, so one demand inside
-    // it fails the whole call and the state would have to be re-attached per command, a protocol
-    // nothing teaches. So it is refused here, exactly as the runner already refuses it to
-    // sandboxed children — an app loops oma.deleteItem, each row keeps its own pinned demand,
-    // and shellConfirm coalesces a concurrent burst into ONE card (S4) so the user answers once.
+    // apply_data_writes is the MODEL's bulk verb, refused here as the runner refuses it to children.
+    // Unstamped it would delete with no confirmation and record `agent` in an append-only ledger;
+    // stamped, one demand inside the all-or-nothing batch fails the whole call. Apps loop
+    // oma.deleteItem instead — shellConfirm coalesces the burst into ONE card.
     if (name === "apply_data_writes") {
       return Promise.reject(new Error(DATA_BATCH_REFUSAL));
     }
@@ -1245,11 +1341,9 @@ window.oma = {
   },
   /**
    * Call a function THIS app declares (manifest.functions) — data in, data out, no UI touched.
-   * (Returned with W3, reversing the 2026-08-04 A10 retirement exactly on its own condition:
-   * the server seat and its executor exist now, so the verb can succeed.) The runner forces the
-   * callee to this app and stamps via/actor, so a widget can never reach another app's functions
-   * through this door. Resolves the engine's ack body ({ok, result?, writes}) or the typed
-   * failure body ({ok:false, reason, …}) — a refusal is an ANSWER here, not an exception, the
+   * The runner forces the callee to this app and stamps via/actor, so a widget can never reach
+   * another app's functions through this door. Resolves the engine's ack body
+   * ({ok, result?, writes}) or the typed failure body ({ok:false, reason, …}) — a refusal is an ANSWER here, not an exception, the
    * same contract every other data verb keeps.
    */
   callFunction(fn, args) {
@@ -1292,19 +1386,15 @@ window.oma = {
       if (html == null) html = sc.html;
       if (caps == null) caps = sc.caps || {};
       if (tier == null) tier = sc.tier == null ? "local" : sc.tier;
-      // THE MOUNTED APP's network declaration, merged by the engine (manifest.csp ∪ the user's
-      // policy:csp rows) — never this document's. A caller that already fetched get_app_html hands it
-      // down instead, the same way it hands down html/caps; an older engine sends none and the
-      // child gets the floor, which is what it got before this key existed.
+      // THE MOUNTED APP's network declaration (manifest.csp ∪ the user's policy:csp rows), never
+      // this document's. None from the engine ⇒ the child gets the floor.
       if (csp == null) csp = sc.csp || null;
     }
     if (caps == null) caps = {};
     if (tier == null) tier = "local";
-    // A caller-supplied snapshot is a SHARED one: the embedder fetched every collection once and
-    // hands each child its share. childPreviewSnapshot cuts that share and picks the binding by the
-    // engine's own rule — kept there so the embedder does not have to know either, and so the two
-    // preview machines (this one and composePreviewDoc's) cannot drift apart again. An explicit
-    // opts.collection still wins: a caller that names a binding means it.
+    // A caller-supplied snapshot is SHARED (the embedder fetched every collection once):
+    // childPreviewSnapshot cuts this child's share and picks the binding by the engine's rule —
+    // the same rule composePreviewDoc uses. An explicit opts.collection still wins.
     const share = opts.snapshot
       ? childPreviewSnapshot(opts.snapshot.items, { app: n, declaration: opts.declaration, apps: opts.snapshot.apps, tier })
       : null;
@@ -1316,12 +1406,17 @@ window.oma = {
     let prefMap = null, compKeys = {}, settingsIds = new Set();
     let prefVersion = -1;     // settings_version behind prefMap — a slow read must not rewind it
     let dead = false;         // set by unmount(); every in-flight boot/read result checks it
+    // A SHARED child is another account's code: none of THIS user's settings are its to read
+    // (S4 audit T13a). It gets an empty map — oma.pref answers its fallbacks — and the parent does
+    // not even fetch settings on its behalf. A handle-named app is shared whatever tier was passed.
+    const noPrefs = tier === "shared" || n.charAt(0) === "@";
     function rebuildPrefs(rows, ver) {
       if (dead) return;
       if (typeof ver === "number") {
         if (ver < prefVersion) return;   // a boot read that finished LATE is not newer information
         prefVersion = ver;
       }
+      if (noPrefs) rows = [];
       settingsIds = new Set(rows.map((i) => i.id));
       const base = {}, over = {};
       for (const it of rows) {
@@ -1349,36 +1444,25 @@ window.oma = {
           return { base64: btoa(s), mime: f.mime };
         }),
         notify: omaNotify,
-        // engine confirmation demands render in OUR chrome (shellConfirm, W-S)
+        // engine confirmation demands render in OUR chrome
         requestConfirm: shellConfirm,
         uuid,
       },
     });
 
     const frame = document.createElement("iframe");
-    // allow-forms is here for the EVENT, not for the submission. Without it Chrome refuses the
-    // form at `HTMLFormElement::PrepareForSubmission` — BEFORE dispatching `submit` — so an app's
-    // `onsubmit` handler never runs at all and its own `preventDefault()` never gets the chance.
-    // Every add/edit form in the library hangs off that handler (17 of the 23 apps in
-    // `components/` carry a `<form>`, and every single one pairs it with `preventDefault`), so the
-    // whole "add an item" half of every app was dead in any runner-mounted view while the same app
-    // direct-mounted at /view worked (measured 2026-08-15 in Chrome 151: `fired:false` under
-    // `allow-scripts`, `fired:true` under `allow-scripts allow-forms`).
-    // The submission itself stays closed, now by three independent walls instead of one attribute:
-    // the child's own `form-action 'none'`, the embedder's `frame-src 'none'`, and the bridge's
-    // unconditional cancel (runner.mjs BRIDGE) — see the RUNNER_CSP_POLICY note.
+    // allow-forms is for the submit EVENT, not the submission: without it Chrome refuses the form
+    // before dispatching `submit`, so an app's onsubmit (and its preventDefault) never runs. The
+    // submission stays closed by three walls: the child's `form-action 'none'`, the embedder's
+    // `frame-src 'none'`, and the bridge's unconditional cancel (runner.mjs BRIDGE).
     frame.setAttribute("sandbox", "allow-scripts allow-forms");
     // heights:false hands ALL sizing to the embedder's own CSS (scaled thumbnails, preview
     // fit) — no inline size properties to out-specificity a stylesheet. `fit` implies it.
     const H = opts.fit || opts.heights === false ? null : opts.heights || { min: 60, max: 20000 };
     frame.style.cssText = "display:block;border:0;" + (H ? "width:100%;height:" + Math.max(H.min, 140) + "px" : "");
-    // fit: {width} — scale-to-thumbnail, inside the one machine (W4). The settings grid and the
-    // library grid had each grown their own copy of this (a CSS-var scale at 720px vs a JS
-    // transform at 760px — measured drift, two answers to one question), so the machinery lives
-    // here now and the NATURAL WIDTH is the caller's declared argument instead of two hard-coded
-    // constants. The child renders at fit.width; the frame is scaled to fill `into`, whose CSS
-    // keeps owning the visible box (width, aspect, overflow). Pointer behaviour stays the
-    // caller's: an inert thumbnail sets pointer-events:none in its own stylesheet.
+    // fit: {width} — scale-to-thumbnail. The child renders at its natural fit.width; the frame is
+    // scaled to fill `into`, whose CSS keeps owning the visible box. Pointer behaviour stays the
+    // caller's (an inert thumbnail sets pointer-events:none in its own stylesheet).
     let fitObserver = null;
     if (opts.fit && Number(opts.fit.width) > 0) {
       const nat = Number(opts.fit.width);
@@ -1398,18 +1482,14 @@ window.oma = {
       }
     }
 
-    // `changed` exists for the apply-refresh case: an optimistic local apply deliberately does NOT
-    // move childSnap.version, so an UPDATE (same row count, same version) was invisible to the
-    // bridge's own change test and the child's successful click stayed on screen as the old value
-    // until a refresh landed — indefinitely if it failed. The parent knows it just mutated rows;
-    // it says so, instead of the child having to infer it.
+    // `changed` covers the apply-refresh case: an optimistic apply does not move childSnap.version,
+    // so the bridge's own change test cannot see an UPDATE — the parent says so explicitly.
     function push(changed) {
       if (!frame.contentWindow) return;
       frame.contentWindow.postMessage({
         omaRunSnapshot: true,
         ...(changed ? { changed: true } : {}),
         snapshot: { collection: childSnap.collection || coll, items: childSnap.items || [], version: childSnap.version || 0, app: n, host: state.host },
-        toolInput: { app: n, collection: coll },
         prefs: prefMap || {},
         compKeys,
         // The theme layer for THIS child, resolved here: prefMap already merged global with the
@@ -1420,15 +1500,15 @@ window.oma = {
     }
 
     // Prefs + first data, per preset: live walks both in full; inert touches nothing — its
-    // snapshot came with the fixtures. (The readonly preset retired 2026-08-04, elegance A8.)
+    // snapshot came with the fixtures.
     let boot = Promise.resolve();
     if (preset === "live") {
       // Boot results are the OLDEST information this embed will ever have, but they can arrive
       // LAST (a slow first read racing a fast child write). Both legs therefore adopt the same way
       // every other path does — version-monotonically, and never after unmount.
       boot = Promise.allSettled([
-        readCollection("settings").then((s) => rebuildPrefs(s.items || [], s.settings_version))
-          .catch(() => { if (prefMap === null) prefMap = {}; }),
+        (noPrefs ? Promise.resolve() : readCollection("settings").then((s) => rebuildPrefs(s.items || [], s.settings_version)))
+          .catch(() => {}).then(() => { if (prefMap === null) prefMap = {}; }),
         opts.snapshot ? Promise.resolve()
           : readCollection(coll)
               .then((s) => {
@@ -1453,24 +1533,18 @@ window.oma = {
         // rule the top-level widget uses (child clicks redraw with zero extra reads too).
         const sc = (result && result.structuredContent) || (d.method === "refresh" || d.method === "readCollection" ? result : null);
         if (sc && Array.isArray(sc.items)) {
-          // NOTHING a child asked for rebuilds prefs or settingsIds. A child with
-          // cross_collection_read can read `settings` with a {group}/{match} that matches nothing;
-          // taking that as the settings snapshot emptied settingsIds — the set the guard uses to
-          // recognise a foreign settings row — and the next update_item on a remembered row then
-          // walked straight past settings_write:false. The parent already keeps this fresh from
-          // its OWN full walks: boot, the post-ack re-walk below, and onParentPref.
-          // (Same shape as the childSnap rule right underneath: only OUR reads may restate state.)
-          // ONLY a refresh restates the child's own projection. readCollection is the child's
-          // free-form read: it may carry {group}/{match} — a FILTERED subset that happens to name
-          // the bound collection — and adopting it as the snapshot deleted every row outside the
-          // filter, with no poll able to bring them back (the version had already advanced).
+          // NOTHING a child asked for rebuilds prefs or settingsIds: a filtered settings read that
+          // matches nothing would empty the set the guard uses to recognise foreign settings rows
+          // (bypassing settings_write:false). The parent keeps them fresh from its OWN full walks:
+          // boot, the post-ack re-walk below, and onParentPref.
+          // Likewise ONLY a refresh restates the child's projection: readCollection may return a
+          // FILTERED subset, and adopting it would drop every row outside the filter for good.
           if (d.method === "refresh" && sc.collection === coll && (sc.version || 0) >= (childSnap.version || 0))
             childSnap = { ...childSnap, items: sc.items, version: sc.version || 0 };
           push();
         } else if (sc && "ok" in sc) {
-          // Child writes go through the SAME continuity rule as the top-level widget's — this used
-          // to apply every ok:true ack unconditionally, which skipped any concurrent write that had
-          // touched the collection since the child's read (prev_collection_seq was never consulted).
+          // Child writes go through the SAME continuity rule as the top-level widget's, so a
+          // concurrent write since the child's read is never skipped.
           const cd = decideAck({ collection: coll, version: childSnap.version || 0 }, sc);
           if (cd.kind === "apply" || cd.kind === "apply-refresh") {
             const rows = applyAck(childSnap.items || [], sc);
@@ -1534,7 +1608,7 @@ window.oma = {
     // Parent onChange feeds the child two ways: (1) the embedder bound to the SAME collection
     // hands its adopted walks straight through (the loader case — no double fetch); (2) an
     // embedder bound to the SETTINGS collection (the settings app itself) keeps every child's
-    // pref map fresh as the user flips switches (§2.7 parity, without a second fetch).
+    // pref map fresh as the user flips switches, without a second fetch.
     const onParentChange = (s) => {
       if (preset === "inert" || !Array.isArray(s.items)) return;
       // `lastSettingsVersion`, not s.version: prefVersion is on the SETTINGS axis, and s.version is
@@ -1551,7 +1625,7 @@ window.oma = {
     // may have moved — re-walk settings once, debounced across a burst of changed keys.
     let prefT = 0;
     const onParentPref = () => {
-      if (preset === "inert") return;
+      if (preset === "inert" || noPrefs) return;
       clearTimeout(prefT);
       prefT = setTimeout(() => {
         readCollection("settings").then((s2) => { rebuildPrefs(s2.items || [], s2.settings_version); if (!dead) push(); }).catch(() => {});
@@ -1561,59 +1635,36 @@ window.oma = {
     if (preset === "live") liveEmbeds.add(handle);
 
     frame.onload = () => { Promise.race([boot, new Promise((r) => setTimeout(r, 1200))]).then(push, push); };
-    // CONTEXT IS INHERITED, ONE PRESET EXCEPTED. A mounted child sits in whatever this document
-    // sits in: on a standalone page — the viewer, a panel host, a wall built on `@live` — the page
-    // is framed already, and a child that thinks it is in a chat draws the card the kit's stage
-    // contract exists to prevent, floating inside a region that was supposed to be its ground.
-    // `inert` is the exception because it is not a mount at all: it is a PICTURE of an app, and
-    // what the store's grid depicts is the widget as a chat would show it. Its thumbnails are that
-    // card on purpose, and they keep it whichever page the store itself is open on.
-    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), kitCss: ownKitCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE, standalone: !!SA && preset !== "inert", csp });
+    // Context is inherited: on a standalone page the child is told so too, or it draws a chat card
+    // inside a region meant to be its ground. `inert` is the exception — it is a PICTURE of the
+    // widget as a chat shows it, card included.
+    frame.srcdoc = composeChildDoc(html, { tokenCss: tokenCSS(document, childTokenSubstitutes()), baseCss: ownBaseCss(), fallbackCss: ownFallbackCss(), bridge: BRIDGE, standalone: !!SA && preset !== "inert", csp });
     opts.into.appendChild(frame);
     return handle;
   },
-  /** Runtime contract version (RUNTIME.md). Same number in direct mode and behind the runner —
-   *  what differs between them is enforcement, not the shape of this object. An app shipped from
-   *  outside this repo feature-detects with it; one written by the AI never needs to. */
-  get contract() { return RUNTIME_CONTRACT; },
-  /** Arguments of the tool call that mounted this widget (e.g. {app, collection}). */
-  get toolInput() { return toolInput; },
   /** True when running in a plain browser page (no chat attached — sendMessage unavailable). */
   get standalone() { return !!SA; },
   /**
    * Base path for app→app links (e.g. `oma.viewBase + name`). Defaults to the
    * engine viewer's "/view/"; an embedding shell sets standalone.viewBase to its own mount
    * base so links resolve there. Single source of truth — apps never hardcode "/view/".
-   *
-   * Inside a HOST (no standalone config) this used to be the relative default and nothing else,
-   * so the absolute URL the engine knew never reached the widget and every in-widget link was
-   * dead (lane-c finding #8). wrapApp/wrapLoader now stamp the engine's own viewer base into the
-   * document when there is one, and linkBase() is where the two doors meet.
+   * Resolution chain: linkBase().
    */
   get viewBase() { return linkBase(); },
   /**
    * PROPOSE a message into the chat (ui/message). Call ONLY from an explicit user click
    * (e.g. a "Send to AI" button) — never automatically.
    *
-   * ⚠️ The resolved value means THE HOST ACCEPTED THE REQUEST. It does NOT mean the user sent
-   * anything, and an app must never render "done" on the strength of it. Both hosts we have
-   * first-hand readings for MEDIATE it (Leo, live, 2026-07-28):
-   *   · Claude  — the text is placed in the composer, UNSENT. The user still presses send, and
-   *               may never do so; this promise resolved long before that.
-   *   · ChatGPT — a system modal appears ("An app wants to send this prompt", editable, with
-   *               Cancel/Send); pressing Send delivers it with no further confirmation.
-   * Either way the outcome happens after we are done, and nothing on the wire reports it
-   * (see docs/archive/2026-08-14-v05-cleanup/proposal-trusted-user-action.md — the proposal that
-   * would give us one; it was never sent, and archiving it did not decide it), so the honest thing
-   * an app can do is point the user at the chat — which this does, once, on the caller's behalf.
+   * ⚠️ The resolved value means THE HOST ACCEPTED THE REQUEST, not that the user sent anything —
+   * never render "done" on it. Hosts mediate: Claude places the text in the composer UNSENT;
+   * ChatGPT shows an editable Cancel/Send modal. Nothing on the wire reports the outcome.
    */
   sendMessage(text) {
     const t = String(text);
-    // GLOBAL degradation: when the chat channel is unavailable (standalone page) or the host
-    // rejects/fails the call (Codex widget-proxy -32000, openai/codex#28912), fall back to the
-    // CLIPBOARD — the user pastes the text to their AI. Apps just call sendMessage and
-    // never need their own fallback; the success path (Claude Desktop) is untouched. The
-    // degraded result is NOT an exception (isError + degraded tag), so apps don't crash.
+    // GLOBAL degradation: no chat channel (standalone page) or a host that rejects/fails the call
+    // (e.g. Codex widget-proxy -32000) falls back to the CLIPBOARD — the user pastes the text to
+    // their AI. Apps never need their own fallback. The degraded result is NOT an exception
+    // (isError + degraded tag), so apps do not crash.
     const degrade = (why) => {
       let p;
       try { p = navigator.clipboard && navigator.clipboard.writeText ? navigator.clipboard.writeText(t) : Promise.reject(new Error("no clipboard")); }
@@ -1623,77 +1674,76 @@ window.oma = {
         () => { console.warn("[oma] sendMessage degraded (" + why + "); text:", t); omaNotify("Couldn't reach the chat (" + why + ") — the text is in the console."); return { isError: true, degraded: "console" }; });
     };
     if (SA) return degrade("no chat attached");
-    // NOTHING IS SAID ON THE SUCCESS PATH, and that is a decision, not an omission.
-    //
-    // A notice used to fire here on every accepted call: "Check the chat — you may need to confirm
-    // or send it." It was defended as true on every host, on the reasoning that it "still reads
-    // correctly if some host does deliver it straight away". That was an inference, and live testing
-    // (Leo, 2026-07-29) falsified it in both directions at once:
-    //   · desktop — the message had ALREADY been delivered and the banner fired anyway, so the
-    //     healthy path cried wolf;
-    //   · mobile — the banner fired and what arrived in the chat was an EMPTY message, so the one
-    //     sentence the user got was the only part that worked.
-    // A notice that appears when nothing needs doing teaches people to ignore it, which costs more
-    // than the silence it replaced.
-    //
-    // The honest position is that the protocol gives us no completion signal at all — `ui/message`
-    // resolves when the HOST accepts the request, and what the user does next never comes back on
-    // any wire (docs/archive/2026-08-14-v05-cleanup/proposal-trusted-user-action.md). A runtime-level
-    // guess cannot be right on every host, so it is the CALLER's to decide what, if anything, to
-    // show; the JSDoc above says
-    // what the resolved value does and does not mean. Known consequence, recorded in KNOWN-ISSUES:
-    // call sites are fire-and-forget again, so on a host that only stages the text a click can look
-    // like nothing happened.
+    // NOTHING IS SAID ON THE SUCCESS PATH, deliberately: the protocol gives no completion signal,
+    // and a runtime-level notice was wrong on real hosts in both directions. The caller decides
+    // what to show (KNOWN-ISSUES: on a host that only stages the text, a click can look like
+    // nothing happened).
     return hostApp.sendMessage({ role: "user", content: [{ type: "text", text: t }] })
       .then((r) => (r && r.isError ? degrade("host declined") : r))
       .catch((e) => degrade((e && e.message) || "send failed"));
   },
   /**
-   * Open a URL through the host (ui/open-link). The direct counterpart to sendMessage: where
-   * sendMessage PROPOSES something for the AI to maybe do, this DOES the thing — no model, no
-   * authority question, no host trust decision about app-authored text.
+   * Open a URL through the host (ui/open-link). Where sendMessage PROPOSES, this DOES the thing —
+   * no model, no host trust decision about app-authored text. A widget cannot navigate on its own
+   * (its sandbox has no allow-top-navigation / allow-popups).
    *
-   * It exists because the alternative kept failing in both directions. A widget cannot navigate
-   * (the sandbox has no allow-top-navigation and no allow-popups — measured, KNOWN-ISSUES), so
-   * anything link-shaped got routed through "ask the AI to do it", and on ChatGPT the AI then
-   * declines because app-authored text is untrusted tool content (measured 2026-07-28). Both ends
-   * were weak for the same reason, and neither was going to be fixed by trying harder.
-   *
-   * Resolves { ok } rather than throwing: a caller decides what to show, and "the host will not
-   * open links" is a normal answer on some surfaces, not an error the user should read about.
+   * Resolves { ok } rather than throwing: "the host will not open links" is a normal answer on
+   * some surfaces, and the caller decides what to show.
    */
   openLink(url) {
     const u = String(url || "");
     if (!u) return Promise.resolve({ ok: false });
-    // Standalone (browser viewer): no host to ask, and no sandbox in the way either.
-    // Standalone: check what window.open RETURNED. A blocked popup does not throw — it hands back
-    // null — so reporting {ok:true} on "did not throw" told the caller a tab had opened when none
-    // had, and the caller then suppressed its own fallback. `ok` has to mean the thing happened.
-    if (SA) { try { return Promise.resolve({ ok: !!window.open(u, "_blank", "noopener") }); } catch (e) { return Promise.resolve({ ok: false }); } }
+    // Standalone (browser viewer): no host to ask. A blocked popup returns null rather than
+    // throwing, so `ok` is what window.open RETURNED.
+    // Not window.open(u, "_blank", "noopener"): with noopener it returns null even when the tab
+    // opened, so ok was always false. Open, then cut the opener by hand.
+    if (SA) { try { const w = window.open(u, "_blank"); if (w) w.opener = null; return Promise.resolve({ ok: !!w }); } catch (e) { return Promise.resolve({ ok: false }); } }
     return hostApp.openLink({ url: u })
       .then((r) => ({ ok: !(r && r.isError) }))
       .catch(() => ({ ok: false }));
   },
-  // updateContext retired 2026-08-04 (elegance A10): zero executable callers. R2's arbitrated
-  // bridge (oma.updateContext push + TTL'd view_context resource) rebuilds it WITH its host
-  // wiring in the W4 tranche — the verb returns with its consumer, not ahead of it.
+  /** "inline" | "fullscreen" — where the app is shown right now (also <html data-oma-display>). */
+  get display() { return display; },
+  /** The modes this host will actually switch to, e.g. ["inline", "fullscreen"]. A mode missing
+   *  here is one requestDisplay cannot reach — don't offer a button for it. */
+  get displayModes() { return [...displayModes]; },
+  /**
+   * Ask the host to show this app inline or fullscreen (ui/request-display-mode). Call from a user
+   * click. Resolves { ok, mode } — `mode` is where the host actually put us, which may not be what
+   * was asked (the host decides); never throws.
+   */
+  requestDisplay(mode) {
+    const want = String(mode || "");
+    if (SA || !displayModes.includes(want)) return Promise.resolve({ ok: want === display, mode: display });
+    return hostApp.requestDisplayMode({ mode: want })
+      .then((r) => { const got = (r && r.mode) || want; applyDisplay({ displayMode: got }); return { ok: got === want, mode: got }; })
+      .catch(() => ({ ok: false, mode: display }));
+  },
+  /** cb(mode) whenever the display mode changes — by requestDisplay, or by the host (its own
+   *  expand/close controls). */
+  onDisplayChange(cb) { if (typeof cb === "function") displayCbs.push(cb); },
+  /**
+   * What this app can do, named for the AI (ext-apps "App-provided tools"):
+   *   const off = oma.tools.register({ name, description, inputSchema, annotations, run(input) })
+   * `inputSchema` is plain JSON Schema (an object's properties / required); `run` may be async and
+   * returns a string, any JSON value, or an MCP CallToolResult. The AI calls it by name — natively
+   * where the host supports app tools, else through the screen relay. This page only: never
+   * persisted; registering a name again replaces it; `off()` removes it.
+   */
+  tools: { register: (def) => appTools.register(def) },
 };
 
-// INTERNAL bind hook — not author API (elegance A10: `oma.bind` had exactly one caller, the
-// universal loader, and advertising a loader-only handoff as author surface invited misuse).
-// DIRECT MODE ONLY; first wins, like every other writer of state.collection. The loader hands
-// over the binding `get_app_html` computed — it never recomputes it (contracts.mjs
-// defaultCollectionFor stays the one owner of "what does this app open on").
+// INTERNAL bind hook — not author API; the universal loader is the one caller. DIRECT MODE ONLY;
+// first wins, like every other writer of state.collection. The loader hands over the binding
+// `get_app_html` computed — it never recomputes it (contracts.mjs defaultCollectionFor owns that).
 window.__OMA_BIND__ = (collection) => {
   if (typeof collection === "string" && collection && !state.collection) state.collection = collection;
   return state.collection;
 };
 
-// …and the same seam for the HOST LABEL, which used to arrive on a read tool's snapshot and now
-// rides the widget-only channel (get_app_html) instead — the loader already holds that answer by
-// the time it mounts, so it hands it down here. First-wins, exactly like the binding above: a
-// widget's host does not change for its whole life, and the browser viewer has already stamped
-// its own label before this can be called.
+// …and the same seam for the HOST LABEL, which the loader already holds from get_app_html.
+// First-wins like the binding: a widget's host never changes, and the browser viewer stamps its
+// own label before this can be called.
 window.__OMA_HOST__ = (host) => {
   if (typeof host === "string" && host && !state.host) state.host = host;
   return state.host;
@@ -1704,7 +1754,7 @@ window.__OMA_HOST__ = (host) => {
 // probe; a moved GLOBAL seq is then confirmed against OUR collection with one data_changes
 // call — a foreign collection's write costs a probe + one tiny check, never a full walk
 // (and safely advances our mark, so it doesn't re-fire). settings changes are caught from
-// the probe's settings_version — write acks no longer carry settings snapshots. After user
+// the probe's settings_version — write acks carry no settings snapshots. After user
 // activity (a click/keystroke/any widget write) or an observed remote change, the cadence
 // drops to 2s and decays ×1.6 per quiet tick back to the base `widget_poll_seconds`.
 const pollMs = () => {
@@ -1719,7 +1769,7 @@ async function checkOwnChanges() {
   // would walk for a change the ack is about to apply locally (a spurious refresh on the exact
   // path the 0-RTT rule exists for). The ack advances the mark; a genuinely foreign change
   // still surfaces on the next tick.
-  if (pendingWrites > 0) return;
+  if (pendingWrites > 0 || !subscribed()) return;
   const r = await rawCall("data_changes", { collection: state.collection, since: state.version });
   const d = r && !r.isError ? r.structuredContent : null;
   const verdict = decideChanges(d);
@@ -1727,9 +1777,10 @@ async function checkOwnChanges() {
   else if (verdict.kind === "advance") state = { ...state, version: verdict.to };  // all elsewhere — silent
 }
 async function pollTick() {
-  if (ready && document.visibilityState === "visible" && state.collection) {
+  if (ready && document.visibilityState === "visible" && state.collection && subscribed()) {
     try {
-      const r = await rawCall("get_data_version", {});
+      const r = await rawCall("get_data_version", sharedBinding());
+      if (r && r.isError && isNotShared(r)) { noLongerShared(); setTimeout(pollTick, pollMs()); return; }
       const sc = r && !r.isError ? r.structuredContent : null;
       if (!sc || typeof sc.seq !== "number") await walk();  // engine predates get_data_version → old behavior
       else {
@@ -1751,12 +1802,9 @@ document.addEventListener("pointerdown", markActivity, { capture: true, passive:
 document.addEventListener("keydown", markActivity, { capture: true, passive: true });
 
 // ---- broken-mount notice: an uncaught error during the initial window tells the USER what
-// happened and names the explicit recovery path (list_app_checkpoints → restore_app, driven through the
-// AI). The auto-revert that used to ride this signal — a server-side rollback with a per-run
-// budget — was retired 2026-08-04 (elegance B3): it never fired outside tests, and an
-// app-originated report silently rewriting source was the heaviest belt on this face. Earlier
-// parse-time errors arrive via the __OMA_EARLY_ERRORS__ buffer (a classic script installed
-// before any app code runs).
+// happened and names the explicit recovery path (list_app_checkpoints → restore_app, driven
+// through the AI) — never an automatic rollback. Earlier parse-time errors arrive via the
+// __OMA_EARLY_ERRORS__ buffer (a classic script installed before any app code runs).
 {
   const REPORT_WINDOW_MS = 8000;
   const t0 = Date.now();
@@ -1783,37 +1831,24 @@ if (SA) {
   state.host = "browser-viewer";
   prefsPromise = syncPrefs();  // SA.app is already set — even eager consumers are safe
   ensureSystemBadge();         // same corner affordance as in a chat host
-  walk().catch((e) => omaNotify("Failed to load: " + ((e && e.message) || e)));
-  // A VIEWER IS A WINDOW ONTO AN APP, so what does not fit in it has to stay reachable.
-  //
-  // This page's height is the window's (a tab) or the frame's (a panel host sizing it from its
-  // own layout) — never the app's. Seven of the shipped apps declare `html,body{overflow:hidden}`
-  // (habit-streaks, hydration-tally, keep-in-touch, meal-planner, spending-journal on both boxes;
-  // event-countdowns and savings-goals on the body), which is correct advice to a host that gives
-  // the app exactly the height it asked for and false here: the ROOT's overflow is the one the
-  // viewport uses, so `hidden` there means the wheel does nothing and everything below the fold is
-  // gone for good. Measured in a host panel (2026-08-15, habit-streaks at 1712×537): document
-  // 1127px, viewport 537px, not one scrollable element in the tree — 590px of the app unreachable,
-  // and the same reading in a plain 537px-tall tab, so this predates any panel host.
-  //
-  // `auto` and only on the ROOT. It costs nothing when the app fits (no overflow, no scrollbar),
-  // and the body is deliberately left alone: a body with an auto height is a scroll container that
-  // can never scroll, and `position:sticky` binds to it and dies there — the store's and settings'
-  // capsule bars are exactly that shape (see runner.mjs unpinDocumentHeight, which repealed the
-  // same declaration for the same reason). Inline + !important because it is the app's own rule
-  // being overridden, and on <html>, which no app rewrites.
+  goLive();
+  // A viewer's height is the window's or the panel's, never the app's, so what does not fit must
+  // stay reachable — even for apps declaring `html,body{overflow:hidden}` (right for a host that
+  // sizes to the app, wrong here). `auto` on the ROOT only: free when the app fits, and a body
+  // scroll container that can never scroll would kill `position:sticky` bars (as runner.mjs
+  // unpinDocumentHeight notes). Inline + !important on <html>, which no app rewrites.
   try { document.documentElement.style.setProperty("overflow-y", "auto", "important"); } catch (e) { /* no root, no app */ }
   // Viewer SHELL (standalone pages only — host chats render the bare widget): a slim fixed top
   // bar so a browser-opened app has navigation and identity instead of floating raw in the tab.
   // Attached to <html> like omaNotify (apps rewrite body.innerHTML), body pushed down via
   // an injected style so no app content hides underneath.
-  // SA.chrome === false → skip bar AND stage: an embedding shell (hosted /app) owns the chrome,
+  // SA.chrome === false → skip bar AND card: an embedding shell (hosted /app) owns the chrome,
   // and the widget renders bare exactly as it does inside a chat host iframe.
   if (SA.chrome !== false) try {
     const bar = document.createElement("div");
     bar.id = "__oma_viewer_bar";
     const st = document.createElement("style");
-    // The STAGE: a quiet page background with the app centered on one elevated card, so every
+    // The CARD: a quiet page background with the app centered on one elevated card, so every
     // app gets the same framing in the browser regardless of its own internal chrome.
     st.textContent = "#__oma_viewer_bar{position:fixed;top:0;left:0;right:0;z-index:2147483646;display:flex;align-items:center;gap:12px;height:46px;padding:0 16px;box-sizing:border-box;font:13px/1 -apple-system,BlinkMacSystemFont,'Segoe UI',system-ui,sans-serif;color:var(--color-text-primary,CanvasText);background:color-mix(in srgb,var(--color-background-primary,Canvas) 82%,transparent);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);border-bottom:1px solid var(--color-border-secondary,color-mix(in srgb,CanvasText 12%,Canvas))}" +
       "#__oma_viewer_bar a{color:inherit;text-decoration:none;display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:8px}" +
@@ -1838,28 +1873,12 @@ if (SA) {
     else mountBar();
   } catch { /* the bar is cosmetic — never let it break the app */ }
   // ---- app→app links as an INTENT, for a shell that owns where apps open ------------------
-  // SA.navIntent (the /view door: `?nav=intent`) — opt-in, default off.
-  //
-  // An app links to another app the only way a document can: `<a href="{oma.viewBase}{name}">`
-  // (app-store's Open button, the badge's settings link). In a browser tab that is exactly right.
-  // Inside a PANEL HOST it is wrong in a way the link cannot know: the host opened THIS app as a
-  // place — with a conversation, a workspace, a tab of its own — and following the link swaps the
-  // document underneath all of that. The store then keeps browsing inside its own frame, one app
-  // deep, with none of the things the host built around it. Reported from a real panel host
-  // (2026-08-14): "the whole flow is strange" — the container model, quietly bypassed by an anchor.
-  //
-  // So the navigation becomes a REQUEST: preventDefault and tell the embedder which app was
-  // asked for. The message type is the one the hosted shell already listens for
-  // (openmcp:open-app), so an engine now has one way to say "the user wants app X" and every
-  // panel host — a hosted shell, an editor plugin, whatever comes next — reads the same word.
-  //
-  // Three refusals, each for its own reason:
-  //   · parent === window — a top-level tab has nobody to tell, and a preventDefault there would
-  //     turn every in-app link into a dead one;
-  //   · a link that is not to an app under this document's own viewBase — we intercept our own
-  //     navigation vocabulary and nothing else;
-  //   · a modified click (new tab, download, middle button) — the user asked the BROWSER for
-  //     something, and that request is not ours to reinterpret.
+  // SA.navIntent (the /view door: `?nav=intent`) — opt-in, default off. Inside a panel host,
+  // following `<a href="{oma.viewBase}{name}">` would swap this document out from under everything
+  // the host built around the app. Instead: preventDefault and post `openmcp:open-app` (the
+  // message the hosted shell already listens for), so the embedder opens it.
+  // Left alone: a top-level tab (parent === window — nobody to tell, the link must work); links
+  // not to an app under our own viewBase; modified clicks (new tab, download, middle button).
   if (SA.navIntent) try {
     const linkRoot = new URL(linkBase(), location.href).href;
     if (parent !== window) document.addEventListener("click", (e) => {
@@ -1911,62 +1930,78 @@ if (SA) {
   hostApp.ontoolinput = (params) => {
     const a = (params && (params.arguments || params)) || {};
     toolInput = a;
-    // Unconditional, and deliberately so. A guard requiring the envelope to name its app was tried
-    // and REVERTED on 2026-07-29: the reading it was built on turned out to be the model doing
-    // exactly what it was asked ("bind dev-probe to habit-streaks and open it" — its own words),
-    // not a host mis-delivering one. And the guard broke a documented feature on the way, because
-    // the premise was wrong in both directions: the per-app tool `open_<name>` carries ONLY a
-    // collection — its app is in the TOOL name, not the arguments — and its document is already
-    // bound at serve time, so BOTH halves of that guard rejected a binding the AI had explicitly
-    // asked for, silently. That path is live wherever install.mjs turns per-app tools on, i.e.
-    // every Anthropic host.
-    //
-    // The hazard the guard aimed at is real in shape and UNDEMONSTRATED in fact: the host does
-    // hand a widget another call's envelope (measured, verbatim), but every envelope observed
-    // doing so carried no `collection` at all. If a foreign envelope carrying one is ever
-    // measured, the discriminator must be "is this envelope from the tool that opened me"
-    // (hostContext.toolInfo.tool.name) — asking the question directly — not "does it name an app",
-    // which is a proxy that answers wrong for our own per-app opener.
+    // Unconditional on purpose: the per-app opener `open_<name>` carries ONLY a collection (its app
+    // is in the TOOL name) and must bind, so do not guard on the envelope naming an app. Should a
+    // foreign envelope carrying a collection ever appear, discriminate on the opening tool
+    // (hostContext.toolInfo.tool.name) instead.
     if (typeof a.collection === "string" && a.collection) state.collection = a.collection;
     rememberIdentity();          // this is THE channel a re-render replays — write it down
     startWalk();
   };
   hostApp.ontoolresult = (result) => {
     const sc = result && result.structuredContent;
-    // IDENTITY IS NOT DATA — take the labels BEFORE the freshness gate gets a vote.
-    //
-    // state.app / state.host / state.collection used to be assigned only INSIDE adopt(),
-    // past `canAdopt`. But canAdopt exists to stop STALE ROWS from overwriting painted rows
-    // (out-of-order replays, truncation, rewinds), and one of its rules is
-    // `items.length !== total ⇒ refuse`. open_app answers with ZERO rows and the
-    // collection's REAL total — deliberately, the widget fetches its own data — so the moment an
-    // app has a single row, its own opening result is refused and the widget can never learn
-    // which app it is or which host it is on. Measured: `host: null` on ChatGPT web, DIRECT mode,
-    // first open (Leo, 2026-07-29), and it is one half of the "No app specified." a refresh
-    // produces. The host had delivered; we threw it away.
-    //
-    // A label has no "stale enough to be harmful" state: a widget's app identity does not change
-    // for its whole life, and neither does the host it runs in. Binding them to `items` put the
-    // freshness of the DATA in charge of whether the identity could be KNOWN.
-    //
-    // First-wins, like the collection rule this copies: a later result must never rebind a widget
-    // that already knows what it is.
+    // IDENTITY IS NOT DATA — take the labels BEFORE the freshness gate gets a vote. open_app
+    // answers with zero rows and the REAL total, which canAdopt rightly refuses as rows; but a
+    // widget's app/host/collection never change for its life and must not depend on data freshness.
+    // First-wins: a later result never rebinds a widget that already knows what it is.
     if (sc && typeof sc.collection === "string" && !state.collection) state.collection = sc.collection;
     if (sc && typeof sc.app === "string" && !state.app) state.app = sc.app;
     if (sc && typeof sc.host === "string" && !state.host) state.host = sc.host;
-    rememberIdentity();          // N11 may have just learned the name from this very result
+    rememberIdentity();          // may have just learned the name from this very result
     if (sc && Array.isArray(sc.items)) { if (!adopt(sc)) startWalk(); }
     else startWalk();
   };
-  hostApp.onhostcontextchanged = (ctx) => applyTheme(ctx);
+  // The engine relays the AI's screen_read / screen_act (tools/screen.mjs): this widget long-polls
+  // screen_poll, runs the job with screenRead/screenAct, and hands the result back on its next
+  // poll. Stops quietly when the server has no such tool (an older engine) or the host refuses.
+  // "The app on screen" is decided server-side from each widget's report (visible, rendered at,
+  // last touched) — sent on every poll and PINGED on change, since a waiting poll's state can be ~20 s old.
+  const screenRelay = async () => {
+    const session = "s" + Math.random().toString(36).slice(2, 10);
+    const born = Date.now();
+    let touched = 0, relayOn = true;
+    const seen = () => ({ session, app: compName() || "", born, touched, display,
+      visible: document.visibilityState === "visible" && innerWidth > 0 && innerHeight > 0 });
+    const ping = () => { if (relayOn) hostApp.callServerTool({ name: "screen_poll", arguments: { ...seen(), ping: true } }, { timeout: 10_000 }).catch(() => {}); };
+    document.addEventListener("visibilitychange", ping);
+    addEventListener("resize", () => { if (!innerWidth || !innerHeight) ping(); });
+    displayCbs.push(ping);
+    let lastTouchPing = 0;
+    addEventListener("pointerdown", (e) => {
+      if (!e.isTrusted) return;
+      touched = Date.now();
+      if (touched - lastTouchPing > 5000) { lastTouchPing = touched; ping(); }
+    }, true);
+    let done, fails = 0;
+    while (fails < 3) {
+      let r;
+      try { r = await hostApp.callServerTool({ name: "screen_poll", arguments: { ...seen(), ...(done ? { done } : {}) } }, { timeout: 40_000 }); }
+      catch (e) { fails++; await new Promise((ok) => setTimeout(ok, 2000)); continue; }
+      done = undefined;
+      if (!r || r.isError) { fails++; continue; }
+      fails = 0;
+      const job = r.structuredContent && r.structuredContent.job;
+      if (!job) continue;
+      try {
+        const out = job.tool ? await appTools.call(job.tool, job.input)
+          : job.action === "read" ? { content: [{ type: "text", text: screenRead() }] } : await screenAct({ ...job, action: job.action });
+        done = { id: job.id, text: appToolText(out), ...(out.isError ? { isError: true } : {}) };
+      } catch (e) { done = { id: job.id, text: "The app failed: " + ((e && e.message) || e), isError: true }; }
+    }
+    relayOn = false;
+  };
+  hostApp.onhostcontextchanged = (ctx) => { applyTheme(ctx); applyDisplay(ctx); applySafeArea(ctx); };
   hostApp.onerror = (e) => console.error("[oma] bridge error", e);
 
   hostApp.connect().then(() => {
     applyTheme(hostApp.getHostContext());
+    applyDisplay(hostApp.getHostContext());
+    applySafeArea(hostApp.getHostContext());
     prefsPromise = syncPrefs();  // bridge must be connected before callServerTool works
     connected = true;
-    ensureSystemBadge();         // D-13: the hover-corner refresh affordance, on every widget
-    startWalk();                 // binding may have arrived before connect — walk now
+    ensureSystemBadge();         // the system corner (shown when forced or asked for), on every widget
+    goLive();                    // binding may have arrived before connect — walk now (or ready, for a page)
     scheduleMountRecovery();     // and if no binding ever comes (refresh-replay), ask again
+    screenRelay();               // EXPERIMENT: the AI's `screen` actions reach this widget
   }).catch((e) => console.error("[oma] connect failed", e));
 }

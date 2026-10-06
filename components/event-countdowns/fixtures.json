@@ -1,38 +1,123 @@
 {
+  "as_of": "2026-08-06",
   "items": [
     {
-      "id": "1fb8b880-fc83-4098-9416-10d8554ad0e1",
-      "group": "Personal",
+      "id": "7277d1af-9875-4b50-a001-38ab385e5abd",
+      "group": "Family",
       "position": 1,
       "fields": {
-        "title": "Mum’s birthday",
-        "target_date": "2026-09-13",
-        "category": "Personal",
-        "note": "Choose a gift and reserve lunch"
+        "title": "Maya's 7th birthday party",
+        "target_date": "2026-08-09",
+        "category": "Family",
+        "note": "Unicorn cake ordered · pick up Saturday 10am"
       },
       "version": 1
     },
     {
-      "id": "4f8b67ae-3f8d-4ebf-9ae0-7b61365f5f8f",
+      "id": "ff07aae3-07b9-4c93-ae3d-8a8a58833887",
+      "group": "Home",
+      "position": 1,
+      "fields": {
+        "title": "Rental inspection",
+        "target_date": "2026-08-13",
+        "category": "Home",
+        "note": "Fix the bathroom fan and patch the hallway scuff"
+      },
+      "version": 1
+    },
+    {
+      "id": "b1695590-87ca-4ce5-ac34-94479fad39c1",
+      "group": "Work",
+      "position": 1,
+      "fields": {
+        "title": "Board deck due",
+        "target_date": "2026-08-18",
+        "category": "Work",
+        "note": "Draft to Priya by Friday the 14th"
+      },
+      "version": 1
+    },
+    {
+      "id": "e2131491-9fd8-452f-a537-cb78e7e69842",
       "group": "Travel",
       "position": 1,
       "fields": {
         "title": "Weekend in Kyoto",
-        "target_date": "2026-08-10",
+        "target_date": "2026-08-21",
         "category": "Travel",
-        "note": "Book the last night and sketch a food list"
+        "note": "Last night still unbooked — ryokan in Arashiyama?"
       },
       "version": 1
     },
     {
-      "id": "6a3041c2-02fd-4c51-9584-95604d473838",
-      "group": "Work",
+      "id": "f6c43bd6-2d14-4246-a445-e674a5c98989",
+      "group": "Home",
+      "position": 2,
+      "fields": {
+        "title": "Car registration renewal",
+        "target_date": "2026-08-27",
+        "category": "Home",
+        "note": "A$812 · turn off the direct debit first"
+      },
+      "version": 1
+    },
+    {
+      "id": "3e9272ba-4251-4b23-acd1-5db5ee084654",
+      "group": "Family",
+      "position": 2,
+      "fields": {
+        "title": "Mum's 70th",
+        "target_date": "2026-09-13",
+        "category": "Family",
+        "note": "Lunch booked at The Grove · gift still undecided"
+      },
+      "version": 1
+    },
+    {
+      "id": "8decd3d1-c68e-45c7-ac3c-ccdc379d6d65",
+      "group": "Personal",
       "position": 1,
       "fields": {
-        "title": "Product launch",
-        "target_date": "2026-07-27",
+        "title": "Half marathon",
+        "target_date": "2026-10-04",
+        "category": "Personal",
+        "note": "Long run on Sundays · 16 km this week"
+      },
+      "version": 1
+    },
+    {
+      "id": "0bb9b235-1711-4858-a0c7-e4a57341b923",
+      "group": "Personal",
+      "position": 2,
+      "fields": {
+        "title": "Eighth anniversary",
+        "target_date": "2026-11-02",
+        "category": "Personal",
+        "note": ""
+      },
+      "version": 1
+    },
+    {
+      "id": "54da5392-fc52-45bf-a91e-dcdea2339e95",
+      "group": "Admin",
+      "position": 1,
+      "fields": {
+        "title": "Passport renewal",
+        "target_date": "2026-08-04",
+        "category": "Admin",
+        "note": "Photos done, form half filled in"
+      },
+      "version": 1
+    },
+    {
+      "id": "0646fe52-a19a-4918-acca-3f61604770a2",
+      "group": "Work",
+      "position": 2,
+      "fields": {
+        "title": "v3 launch",
+        "target_date": "2026-07-31",
         "category": "Work",
-        "note": "Final checks, release notes, and team briefing"
+        "note": "Retro notes still to write"
       },
       "version": 1
     }

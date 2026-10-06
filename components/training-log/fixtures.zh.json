@@ -1,0 +1,621 @@
+{
+ "as_of": "2026-08-06",
+ "items": [
+  {
+   "id": "952845ab-3b51-514a-b7f1-a2c5f5b170d6",
+   "group": "plan",
+   "position": 1,
+   "fields": {
+    "day": "tue",
+    "focus": "深蹲日",
+    "exercises": [
+     {
+      "name": "杠铃后蹲",
+      "muscle": "股四头肌",
+      "equipment": "杠铃"
+     },
+     {
+      "name": "保加利亚分腿蹲",
+      "muscle": "臀腿",
+      "equipment": "哑铃"
+     },
+     {
+      "name": "悬垂举腿",
+      "muscle": "核心",
+      "equipment": "单杠"
+     }
+    ]
+   },
+   "version": 1,
+   "collection": "training-plan"
+  },
+  {
+   "id": "4fe94f12-8572-53ac-9f04-60214bd8593d",
+   "group": "plan",
+   "position": 2,
+   "fields": {
+    "day": "thu",
+    "focus": "卧推日",
+    "exercises": [
+     {
+      "name": "杠铃卧推",
+      "muscle": "胸部",
+      "equipment": "杠铃"
+     },
+     {
+      "name": "单臂哑铃划船",
+      "muscle": "上背",
+      "equipment": "哑铃"
+     },
+     {
+      "name": "弹力带面拉",
+      "muscle": "后束",
+      "equipment": "弹力带"
+     }
+    ]
+   },
+   "version": 1,
+   "collection": "training-plan"
+  },
+  {
+   "id": "cf445a76-20fe-5fb4-981c-89dd970b80ca",
+   "group": "plan",
+   "position": 3,
+   "fields": {
+    "day": "sat",
+    "focus": "硬拉日",
+    "exercises": [
+     {
+      "name": "杠铃硬拉",
+      "muscle": "后链",
+      "equipment": "杠铃"
+     },
+     {
+      "name": "站姿哑铃推举",
+      "muscle": "肩部",
+      "equipment": "哑铃"
+     },
+     {
+      "name": "高位下拉",
+      "muscle": "背阔肌",
+      "equipment": "器械"
+     }
+    ]
+   },
+   "version": 1,
+   "collection": "training-plan"
+  },
+  {
+   "id": "69fa6b10-71d6-552c-8781-4964baa49ee6",
+   "group": "plan",
+   "position": 4,
+   "fields": {
+    "day": "sun",
+    "focus": "臀腿辅助",
+    "exercises": [
+     {
+      "name": "杠铃臀推",
+      "muscle": "臀部",
+      "equipment": "杠铃"
+     },
+     {
+      "name": "罗马尼亚硬拉",
+      "muscle": "腘绳肌",
+      "equipment": "杠铃"
+     },
+     {
+      "name": "平板支撑",
+      "muscle": "核心",
+      "equipment": "自重"
+     }
+    ]
+   },
+   "version": 1,
+   "collection": "training-plan"
+  },
+  {
+   "id": "3bdbd6c3-50c5-5156-a623-96515f2e7ecd",
+   "group": "session",
+   "position": 1,
+   "fields": {
+    "date": "2026-05-19",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 55kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲每手 8kg 3×10",
+    "feel": "找回感觉，膝盖跟脚尖方向一致"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "5f49e8ac-cbe6-51c1-b202-35da307d1750",
+   "group": "session",
+   "position": 2,
+   "fields": {
+    "date": "2026-05-21",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 32.5kg×5",
+    "volume_note": "卧推 5×5；单臂划船 14kg 3×12",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "88960de9-879f-5586-87da-95e19e86bc9b",
+   "group": "session",
+   "position": 3,
+   "fields": {
+    "date": "2026-05-23",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 75kg×5",
+    "volume_note": "硬拉 3×5；哑铃推举 10kg 3×10；下拉 3×12",
+    "feel": "腰背发力正确"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "a9bd49c9-9392-5781-a8ef-6f9764cf11f1",
+   "group": "session",
+   "position": 4,
+   "fields": {
+    "date": "2026-05-24",
+    "focus": "臀腿辅助",
+    "top_set": "杠铃臀推 60kg×10",
+    "volume_note": "臀推 4×10；罗马尼亚硬拉 40kg 3×10",
+    "feel": "臀部酸爽"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "193753c5-14cf-514a-967d-86073b5c9584",
+   "group": "session",
+   "position": 5,
+   "fields": {
+    "date": "2026-05-26",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 57.5kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×10",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "462520b1-8c45-52e5-8a65-815764c47785",
+   "group": "session",
+   "position": 6,
+   "fields": {
+    "date": "2026-05-28",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 35kg×5",
+    "volume_note": "卧推 5×5；划船 3×12；面拉 3×15",
+    "feel": "顺"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "90c6c616-1e7e-5e00-82e0-7858ecba5df9",
+   "group": "session",
+   "position": 7,
+   "fields": {
+    "date": "2026-05-30",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 80kg×5",
+    "volume_note": "硬拉 3×5；推举 3×10",
+    "feel": "握力开始吃紧"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "560fb7e8-25be-54ed-85b1-4b33f41380c2",
+   "group": "session",
+   "position": 8,
+   "fields": {
+    "date": "2026-06-02",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 60kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×8",
+    "feel": "最后一组有点慢"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "d2621fac-2675-52b7-bda1-b7ea4ef385d9",
+   "group": "session",
+   "position": 9,
+   "fields": {
+    "date": "2026-06-04",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 35kg×5",
+    "volume_note": "卧推 5×5，最后一组只做了 4 个",
+    "feel": "月经第二天，状态一般"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "418e7ef4-e656-52c7-824c-4efb04d0d416",
+   "group": "session",
+   "position": 10,
+   "fields": {
+    "date": "2026-06-06",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 82.5kg×5",
+    "volume_note": "硬拉 3×5，用了镁粉；下拉 3×12",
+    "feel": "顺"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "d219a6d1-2b3c-5d2a-a99b-ff7501fd49da",
+   "group": "session",
+   "position": 11,
+   "fields": {
+    "date": "2026-06-07",
+    "focus": "臀腿辅助",
+    "top_set": "杠铃臀推 65kg×10",
+    "volume_note": "臀推 4×10；平板支撑 3×60 秒",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "4908653b-e241-5961-8cb8-abd05e37e1c0",
+   "group": "session",
+   "position": 12,
+   "fields": {
+    "date": "2026-06-09",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 62.5kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×10；举腿 3×10",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "20cd6202-8f73-5721-9b25-be8f057797f2",
+   "group": "session",
+   "position": 13,
+   "fields": {
+    "date": "2026-06-11",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 37.5kg×5",
+    "volume_note": "卧推 5×5；划船 16kg 3×12",
+    "feel": "顺，有保护"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "edbf0e7a-c992-547d-a38e-ddd91b03cc24",
+   "group": "session",
+   "position": 14,
+   "fields": {
+    "date": "2026-06-16",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 57.5kg×5",
+    "volume_note": "感冒刚好，只做 3×5，降重找节奏",
+    "feel": "保守"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "57267205-1028-5365-9791-9057e4f27970",
+   "group": "session",
+   "position": 15,
+   "fields": {
+    "date": "2026-06-20",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 85kg×5",
+    "volume_note": "硬拉 3×5；推举 12kg 3×8",
+    "feel": "恢复得不错"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "e556eacd-4d41-5d52-8b5f-187a4cc3e079",
+   "group": "session",
+   "position": 16,
+   "fields": {
+    "date": "2026-06-21",
+    "focus": "臀腿辅助",
+    "top_set": "杠铃臀推 70kg×10",
+    "volume_note": "臀推 4×10；罗马尼亚硬拉 45kg 3×10",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "d87a0a51-3dc8-56bd-a826-d552a6774e73",
+   "group": "session",
+   "position": 17,
+   "fields": {
+    "date": "2026-06-23",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 62.5kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×10",
+    "feel": "回到感冒前的重量"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "6d9c6690-d530-5c6b-8422-6bc84a7f4348",
+   "group": "session",
+   "position": 18,
+   "fields": {
+    "date": "2026-06-25",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 37.5kg×5",
+    "volume_note": "卧推 5×5；面拉 3×15",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "90516a01-1f46-57d4-b7aa-ac94c661a1ba",
+   "group": "session",
+   "position": 19,
+   "fields": {
+    "date": "2026-06-27",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 87.5kg×5",
+    "volume_note": "硬拉 3×5；下拉 3×12",
+    "feel": "锁定干净"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "238bef47-c012-506b-bd88-59d1d60a40b9",
+   "group": "session",
+   "position": 20,
+   "fields": {
+    "date": "2026-06-30",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 65kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×10",
+    "feel": "顺"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "8712fc93-a643-5382-adde-87d2782d2e98",
+   "group": "session",
+   "position": 21,
+   "fields": {
+    "date": "2026-07-02",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 40kg×3",
+    "volume_note": "第一次上 40kg，做了 3 次就停；其余组 37.5kg×5",
+    "feel": "有点怕，但推起来了"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "ffc94eae-bea0-5e57-8385-868399bdd86b",
+   "group": "session",
+   "position": 22,
+   "fields": {
+    "date": "2026-07-04",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 87.5kg×5",
+    "volume_note": "硬拉 3×5，第三组腰有点紧就停了",
+    "feel": "保守"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "023d70ba-b772-5879-85dd-63ee5b5501d4",
+   "group": "session",
+   "position": 23,
+   "fields": {
+    "date": "2026-07-05",
+    "focus": "臀腿辅助",
+    "top_set": "杠铃臀推 75kg×10",
+    "volume_note": "臀推 4×10；平板支撑 3×60 秒",
+    "feel": "顺"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "7e8b2ab7-e89d-51a5-82d3-f25ba92a5844",
+   "group": "session",
+   "position": 24,
+   "fields": {
+    "date": "2026-07-07",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 67.5kg×5",
+    "volume_note": "后蹲 5×5；分腿蹲 3×10；举腿 3×12",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "44aa8804-4f4c-50c7-9238-74097a829dcc",
+   "group": "session",
+   "position": 25,
+   "fields": {
+    "date": "2026-07-09",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 40kg×4",
+    "volume_note": "卧推 40kg 4-4-3，其余组 37.5kg",
+    "feel": "吃力"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "c573be8c-98fc-5b41-abe7-aa8e866d8975",
+   "group": "session",
+   "position": 26,
+   "fields": {
+    "date": "2026-07-11",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 90kg×5",
+    "volume_note": "硬拉 3×5；推举 12kg 3×10",
+    "feel": "强"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "d92fb347-2367-599d-a20a-d1221154e9ef",
+   "group": "session",
+   "position": 27,
+   "fields": {
+    "date": "2026-07-14",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 67.5kg×5",
+    "volume_note": "出差回来，保持重量 5×5",
+    "feel": "腿有点软"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "21f55552-44eb-515c-abf5-ce15a96c7f2b",
+   "group": "session",
+   "position": 28,
+   "fields": {
+    "date": "2026-07-18",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 90kg×5",
+    "volume_note": "周四的卧推没去成，今天只练硬拉 3×5",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "94ccb9ca-ea2a-5d8d-96b2-b842b4af77be",
+   "group": "session",
+   "position": 29,
+   "fields": {
+    "date": "2026-07-21",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 70kg×5",
+    "volume_note": "后蹲 5×5 全部完成；分腿蹲 3×10",
+    "feel": "突破 70！"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "f05d4bdd-8e65-53c4-b95a-28cdb971557e",
+   "group": "session",
+   "position": 30,
+   "fields": {
+    "date": "2026-07-23",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 40kg×5",
+    "volume_note": "卧推 40kg 5×5 全部完成；划船 18kg 3×12",
+    "feel": "顺，终于稳住 40"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "daed81fe-2938-51f0-ada6-04b6de251203",
+   "group": "session",
+   "position": 31,
+   "fields": {
+    "date": "2026-07-25",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 92.5kg×5",
+    "volume_note": "硬拉 3×5；下拉 3×12",
+    "feel": "握力稳定，锁定干净"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "7399397f-5d0f-51dc-a223-f4746e64d60d",
+   "group": "session",
+   "position": 32,
+   "fields": {
+    "date": "2026-07-26",
+    "focus": "臀腿辅助",
+    "top_set": "杠铃臀推 80kg×10",
+    "volume_note": "臀推 4×10；罗马尼亚硬拉 50kg 3×10",
+    "feel": "臀部发力很清楚"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "3b116a27-2f60-5af7-90e4-9cb1d6fd5ad4",
+   "group": "session",
+   "position": 33,
+   "fields": {
+    "date": "2026-07-28",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 70kg×5",
+    "volume_note": "后蹲 5×5；举腿 3×12",
+    "feel": "稳"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "4656775f-0ed0-55b2-b6b1-2d088281229f",
+   "group": "session",
+   "position": 34,
+   "fields": {
+    "date": "2026-07-30",
+    "focus": "卧推日",
+    "top_set": "杠铃卧推 40kg×5",
+    "volume_note": "卧推 5×5；面拉 3×15",
+    "feel": "稳，下次试 42.5"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "e8b04ebc-2778-51b7-a290-01c3c16430da",
+   "group": "session",
+   "position": 35,
+   "fields": {
+    "date": "2026-08-01",
+    "focus": "硬拉日",
+    "top_set": "杠铃硬拉 92.5kg×5",
+    "volume_note": "硬拉 3×5，第三组最后一个速度明显下降",
+    "feel": "接近上限，先维持重量"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  },
+  {
+   "id": "b472234d-1c50-5416-b1a4-86eae5486081",
+   "group": "session",
+   "position": 36,
+   "fields": {
+    "date": "2026-08-04",
+    "focus": "深蹲日",
+    "top_set": "杠铃后蹲 72.5kg×5",
+    "volume_note": "后蹲 5×5 全部完成；分腿蹲 3×8",
+    "feel": "保留约 1 次余力"
+   },
+   "version": 1,
+   "collection": "training-sessions"
+  }
+ ]
+}

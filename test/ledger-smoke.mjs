@@ -133,29 +133,22 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
     ui: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "agent" });
   ok("app saves", r.ok === true);
   const row = s2.listApps().find((c) => c.name === "shaped");
-  ok("kind defaults to 'app' — so nothing vanishes from list_apps today",
-    row.kind === "app", JSON.stringify(row.kind));
   ok("visibility defaults to 'listed'", row.visibility === "listed");
   // (kit_version / server_script / principal reservations dropped 2026-08-04, elegance A4 —
   // columns with no writer and no reader; each returns WITH its consumer as a schema bump.)
 
-  // The two values come from DIFFERENT places, and the split is the design: `kind` is something the
-  // author knows about their own app, so it lives in the manifest slot; `visibility` is lifecycle
-  // state (retired, curated, long-tail) that someone else decides later, so it stays a command.
+  // `visibility` is lifecycle state (retired, curated, long-tail) that someone else decides later,
+  // so it is a command field, not part of the author's manifest.
   const shapedUi = "<!DOCTYPE html><html><head></head><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>";
 
   s2.execute({ type: "save_app", command_id: "c2", name: "shaped", actor: "agent",
-    manifest: { manifest_version: 2, kind: "visual" }, visibility: "unlisted" });
+    manifest: { manifest_version: 2 }, visibility: "unlisted" });
   const v = s2.listApps().find((c) => c.name === "shaped");
-  ok("kind arrives from the manifest slot, visibility from the command", v.kind === "visual" && v.visibility === "unlisted");
+  ok("visibility arrives from the command", v.visibility === "unlisted");
 
   s2.execute({ type: "save_app", command_id: "c3", name: "shaped", ui: shapedUi, actor: "agent" });
   const k = s2.listApps().find((c) => c.name === "shaped");
-  ok("a save that omits the manifest slot preserves both (slot inheritance, not a reset)",
-    k.kind === "visual" && k.visibility === "unlisted", JSON.stringify([k.kind, k.visibility]));
-
-  ok("a typo'd kind is refused at the manifest, not stored",
-    s2.execute({ type: "save_app", command_id: "c4", name: "shaped", manifest: { kind: "aap" }, actor: "agent" }).error === "bad_manifest");
+  ok("a save that omits visibility preserves it (not a reset)", k.visibility === "unlisted", JSON.stringify(k.visibility));
 
   // E13b: the closed actor set is what keeps an anonymous write from landing as "human".
   ok("an unknown actor on a DATA write is refused",
@@ -298,9 +291,15 @@ console.log("7b. the door: fresh + v4 + v5 + v6 open; anything older refuses wit
     ok("v4 → current: the store climbed EVERY rung in ONE open", m.db.pragma("user_version", { simple: true }) === SCHEMA_VERSION);
     const cols = (t) => m.db.pragma(`table_info(${t})`).map((c) => c.name);
     ok("the reservations nothing consumed are gone from every table",
-      !cols("item").includes("principal") && !cols("change_event").includes("principal") &&
+      !cols("item").includes("principal") &&
       !cols("app").includes("kit_version") && !cols("app").includes("server_script") && !cols("file").includes("backend"),
       JSON.stringify([cols("app"), cols("change_event")]));
+    // change_event.principal left at v4→v5 as an unfilled reservation and came back at v7→v8 with
+    // a writer. What must NOT come back is v4's value: the rung in between dropped it, so every old
+    // row arrives at v8 with NULL — "no authenticated caller wrote this", never a stale claim.
+    ok("…and v8's principal column holds NULL for every row v4 had stamped",
+      cols("change_event").includes("principal") &&
+      m.db.prepare("SELECT COUNT(*) AS n FROM change_event WHERE principal IS NOT NULL").get().n === 0);
     ok("…and so are the side tables that lost their readers",
       !m.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='ledger_truncation'").get());
     ok("the indexes a DROP COLUMN had to survive are still there",
@@ -556,17 +555,18 @@ console.log("\n11. the manifest slot's tri-state — omit inherits, null clears,
   const st = openStore(DB);
   const cid = () => randomUUID();
   st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", ui: "<p>probe</p>",
-    manifest: { manifest_version: 2, kind: "visual", scene: { category_id: "local-tools" } }, actor: "human" });
+    manifest: { manifest_version: 2, scene: { category_id: "local-tools" } }, actor: "human" });
   let cp = st.getApp("clear-probe");
-  ok("a declared kind and scene materialise as projections", cp.kind === "visual" && JSON.parse(cp.scene).category_id === "local-tools");
+  ok("a declared scene materialises as a projection", JSON.parse(cp.scene).category_id === "local-tools");
   st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", ui: "<p>probe v2</p>", actor: "human" });
   cp = st.getApp("clear-probe");
   ok("an omitted slot INHERITS — a ui-only save never loses the declaration",
-    JSON.parse(cp.manifest).kind === "visual" && cp.kind === "visual" && cp.ui === "<p>probe v2</p>");
+    JSON.parse(cp.manifest).scene.category_id === "local-tools" && JSON.parse(cp.scene).category_id === "local-tools"
+      && cp.ui === "<p>probe v2</p>");
   st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", manifest: null, actor: "human" });
   cp = st.getApp("clear-probe");
-  ok("manifest: null clears ALL projections — manifest and scene to null, kind back to its default",
-    cp.manifest === null && cp.scene === null && cp.kind === "app" && cp.ui === "<p>probe v2</p>");
+  ok("manifest: null clears ALL projections — manifest and scene to null",
+    cp.manifest === null && cp.scene === null && cp.ui === "<p>probe v2</p>");
   const amb = st.execute({ type: "save_app", command_id: cid(), name: "clear-probe", manifest: {}, actor: "human" });
   ok("manifest: {} is refused — one spelling must not carry two meanings",
     amb.ok === false && amb.error === "empty_manifest_use_null", JSON.stringify(amb));

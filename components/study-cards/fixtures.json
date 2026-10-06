@@ -1,79 +1,432 @@
 {
+  "as_of": "2026-08-06",
   "items": [
     {
-      "id": "0d85495e-cdea-405d-b84b-579520021156",
-      "group": "Spanish · Exchange Semester",
+      "id": "77b31965-55ec-4dc0-ae81-3cc039c81b52",
+      "group": "Spanish · Exchange semester",
       "position": 1,
       "fields": {
         "front": "por si acaso",
         "back": "just in case",
-        "deck": "Spanish · Exchange Semester",
-        "ease": 2.35,
-        "interval_days": 1,
-        "last_review": "2026-07-26",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.3,
+        "interval_days": 3,
+        "last_review": "2026-08-01",
         "lapses": 2
       },
       "version": 1,
       "collection": "study-cards"
     },
     {
-      "id": "e6957fa7-4674-4514-b37b-e993f35c6bb0",
-      "group": "Spanish · Exchange Semester",
+      "id": "48273b9f-8233-49f0-a193-3d63003292cc",
+      "group": "Spanish · Exchange semester",
       "position": 2,
-      "fields": {
-        "front": "llevar + time + gerund",
-        "back": "to have been doing something for a length of time",
-        "deck": "Spanish · Exchange Semester",
-        "ease": 2.45,
-        "interval_days": 3,
-        "last_review": "2026-07-24",
-        "lapses": 1
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "d5cf110c-3537-4712-8fcf-4f03bc349fa8",
-      "group": "Spanish · Exchange Semester",
-      "position": 3,
       "fields": {
         "front": "darse cuenta de",
         "back": "to realize; to become aware of",
-        "deck": "Spanish · Exchange Semester",
-        "ease": 2.3,
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.2,
         "interval_days": 2,
-        "last_review": "2026-07-23",
+        "last_review": "2026-08-03",
         "lapses": 3
       },
       "version": 1,
       "collection": "study-cards"
     },
     {
-      "id": "24a8aef8-c96d-408d-bbc3-0e44cedbbf64",
-      "group": "Spanish · Exchange Semester",
+      "id": "45900481-2f5c-4684-ad43-ff50dd274207",
+      "group": "Spanish · Exchange semester",
+      "position": 3,
+      "fields": {
+        "front": "llevar + time + gerund",
+        "back": "to have been doing something for a length of time — Llevo dos años estudiando español.",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.45,
+        "interval_days": 8,
+        "last_review": "2026-08-06",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "5649a14a-cd43-4c24-aa4b-1b955702a752",
+      "group": "Spanish · Exchange semester",
       "position": 4,
       "fields": {
         "front": "acabar de + infinitive",
-        "back": "to have just done something",
-        "deck": "Spanish · Exchange Semester",
+        "back": "to have just done something — Acabo de llegar.",
+        "deck": "Spanish · Exchange semester",
         "ease": 2.65,
-        "interval_days": 7,
-        "last_review": "2026-07-27",
+        "interval_days": 13,
+        "last_review": "2026-08-02",
         "lapses": 0
       },
       "version": 1,
       "collection": "study-cards"
     },
     {
-      "id": "b9d49d56-4180-4559-9fbb-45d688a9b7f3",
-      "group": "Spanish · Exchange Semester",
+      "id": "4994147a-443b-431c-aaeb-ae691d94e0c9",
+      "group": "Spanish · Exchange semester",
       "position": 5,
       "fields": {
         "front": "No me di cuenta de que…",
-        "back": "I did not realize that…",
-        "deck": "Spanish · Exchange Semester",
+        "back": "I didn't realize that…",
+        "deck": "Spanish · Exchange semester",
         "ease": 2.7,
-        "interval_days": 14,
+        "interval_days": 21,
+        "last_review": "2026-07-28",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "f9325d1b-d976-4da8-a5b1-a923cbe3f291",
+      "group": "Spanish · Exchange semester",
+      "position": 6,
+      "fields": {
+        "front": "Quisiera reservar una mesa para dos.",
+        "back": "I'd like to book a table for two.",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.8,
+        "interval_days": 34,
+        "last_review": "2026-07-17",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "3e9e43be-b8bb-4bdb-a185-b14727b31dce",
+      "group": "Spanish · Exchange semester",
+      "position": 7,
+      "fields": {
+        "front": "echar de menos",
+        "back": "to miss (someone or somewhere) — Echo de menos a mi familia.",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.5,
+        "interval_days": 5,
+        "last_review": "2026-08-01",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "4a0f5721-96a9-4dd1-af31-a0f50aafef12",
+      "group": "Spanish · Exchange semester",
+      "position": 8,
+      "fields": {
+        "front": "tener ganas de",
+        "back": "to feel like; to look forward to",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.6,
+        "interval_days": 8,
+        "last_review": "2026-08-04",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "9fa31bdf-f36b-48fe-a344-320767f48ceb",
+      "group": "Spanish · Exchange semester",
+      "position": 9,
+      "fields": {
+        "front": "¿Me podrías echar una mano?",
+        "back": "Could you give me a hand?",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.55,
+        "interval_days": 5,
+        "last_review": "2026-08-06",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "5506dd3c-2493-4e9e-aa68-73ea47d0c0cc",
+      "group": "Spanish · Exchange semester",
+      "position": 10,
+      "fields": {
+        "front": "el empadronamiento",
+        "back": "registering your address at the town hall — you need it for a residence card",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.35,
+        "interval_days": 3,
+        "last_review": "2026-08-05",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "6d6d570a-fcf0-4d6e-a334-153996e90fe0",
+      "group": "Spanish · Exchange semester",
+      "position": 11,
+      "fields": {
+        "front": "ponerse las pilas",
+        "back": "to get your act together (lit. to put your batteries in)",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.3,
+        "interval_days": 2,
+        "last_review": "2026-08-05",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "7e430f00-d05b-4f54-a6e8-f8bbc874ec01",
+      "group": "Spanish · Exchange semester",
+      "position": 12,
+      "fields": {
+        "front": "sin embargo",
+        "back": "however; nevertheless",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.9,
+        "interval_days": 55,
+        "last_review": "2026-07-14",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "b7998a47-d664-49e3-a9db-bcd24884b901",
+      "group": "Spanish · Exchange semester",
+      "position": 13,
+      "fields": {
+        "front": "quedar con alguien",
+        "back": "to arrange to meet someone — He quedado con Lucía a las ocho.",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.5,
+        "interval_days": 0,
+        "last_review": "",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "40e6dcad-9098-45b7-a71f-924e893cc99d",
+      "group": "Spanish · Exchange semester",
+      "position": 14,
+      "fields": {
+        "front": "la fianza",
+        "back": "the deposit on a rental flat",
+        "deck": "Spanish · Exchange semester",
+        "ease": 2.5,
+        "interval_days": 0,
+        "last_review": "",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "c656f314-7352-4fc3-ae99-28fd22a0d295",
+      "group": "Cell biology · Midterm",
+      "position": 1,
+      "fields": {
+        "front": "What does the sodium–potassium pump move per ATP?",
+        "back": "3 Na⁺ out of the cell and 2 K⁺ in.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.2,
+        "interval_days": 3,
+        "last_review": "2026-07-31",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "9de75810-0252-4857-af2c-6a322a3b8e9b",
+      "group": "Cell biology · Midterm",
+      "position": 2,
+      "fields": {
+        "front": "What is helicase doing at the replication fork?",
+        "back": "Breaking the hydrogen bonds between base pairs to unwind the double helix.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.5,
+        "interval_days": 8,
+        "last_review": "2026-08-06",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "c27f6fce-f374-4a66-aff0-a9d38b5eb46a",
+      "group": "Cell biology · Midterm",
+      "position": 3,
+      "fields": {
+        "front": "Why is ATP synthase called a molecular motor?",
+        "back": "Protons flowing through it turn a rotor; the rotation drives ATP formation.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.4,
+        "interval_days": 4,
+        "last_review": "2026-08-01",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "a7cf2bb3-b45a-4674-a1a1-d82d630c424f",
+      "group": "Cell biology · Midterm",
+      "position": 4,
+      "fields": {
+        "front": "What happens when a GPCR activates its G protein?",
+        "back": "The α subunit swaps GDP for GTP and separates from βγ.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.35,
+        "interval_days": 3,
+        "last_review": "2026-08-03",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "63855247-11a7-4464-a3a3-da234e359c35",
+      "group": "Cell biology · Midterm",
+      "position": 5,
+      "fields": {
+        "front": "When is homologous recombination repair available?",
+        "back": "In S and G2 — when a sister chromatid exists to copy from.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.7,
+        "interval_days": 13,
+        "last_review": "2026-07-30",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "fe768534-68b1-4f2c-a3ec-f3c1f61045fb",
+      "group": "Cell biology · Midterm",
+      "position": 6,
+      "fields": {
+        "front": "Which enzyme seals Okazaki fragments?",
+        "back": "DNA ligase.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.8,
+        "interval_days": 21,
+        "last_review": "2026-07-26",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "ad861bcd-4228-4b90-a696-2b4b15838a84",
+      "group": "Cell biology · Midterm",
+      "position": 7,
+      "fields": {
+        "front": "Where does glycolysis happen?",
+        "back": "In the cytosol.",
+        "deck": "Cell biology · Midterm",
+        "ease": 3.0,
+        "interval_days": 42,
+        "last_review": "2026-07-19",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "f0715c99-2452-404a-a0ab-84ec95a40a46",
+      "group": "Cell biology · Midterm",
+      "position": 8,
+      "fields": {
+        "front": "What does p53 do after DNA damage?",
+        "back": "Halts the cell cycle at G1/S for repair — or triggers apoptosis if the damage is too great.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.3,
+        "interval_days": 2,
+        "last_review": "2026-08-05",
+        "lapses": 2
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "8797e4ab-b58b-4a3a-a500-c2248d199378",
+      "group": "Cell biology · Midterm",
+      "position": 9,
+      "fields": {
+        "front": "Rough ER vs. smooth ER",
+        "back": "Rough ER is studded with ribosomes and makes secreted and membrane proteins; smooth ER makes lipids and detoxifies.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.5,
+        "interval_days": 5,
+        "last_review": "2026-08-03",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "6c419e37-eeed-4b32-ae81-6a4bf1b83954",
+      "group": "Cell biology · Midterm",
+      "position": 10,
+      "fields": {
+        "front": "What is the net ATP yield of glycolysis?",
+        "back": "2 ATP per glucose (4 made, 2 invested).",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.6,
+        "interval_days": 8,
+        "last_review": "2026-07-31",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "983f32e5-6e4f-44ea-ad28-224927a633a2",
+      "group": "Cell biology · Midterm",
+      "position": 11,
+      "fields": {
+        "front": "What attaches spindle microtubules to a chromosome?",
+        "back": "The kinetochore, assembled at the centromere.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.5,
+        "interval_days": 3,
+        "last_review": "2026-08-06",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "f41015ca-4d89-4946-adda-5d937bf4ee72",
+      "group": "Cell biology · Midterm",
+      "position": 12,
+      "fields": {
+        "front": "What does cyclin–CDK activity control?",
+        "back": "Progression through the cell-cycle checkpoints.",
+        "deck": "Cell biology · Midterm",
+        "ease": 2.3,
+        "interval_days": 1,
+        "last_review": "2026-08-06",
+        "lapses": 1
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "f805530f-ce51-4cf9-a143-a32692632db6",
+      "group": "Art history · Renaissance",
+      "position": 1,
+      "fields": {
+        "front": "Who painted the Arnolfini Portrait (1434)?",
+        "back": "Jan van Eyck.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.7,
+        "interval_days": 13,
         "last_review": "2026-07-25",
         "lapses": 0
       },
@@ -81,79 +434,15 @@
       "collection": "study-cards"
     },
     {
-      "id": "2a05d96f-690d-42a7-bac1-98938718721b",
-      "group": "Spanish · Exchange Semester",
-      "position": 6,
-      "fields": {
-        "front": "Quisiera reservar una mesa para dos.",
-        "back": "I would like to reserve a table for two.",
-        "deck": "Spanish · Exchange Semester",
-        "ease": 2.8,
-        "interval_days": 42,
-        "last_review": "2026-06-27",
-        "lapses": 0
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "ce0da47b-c21a-4918-b1f5-18831640cc60",
-      "group": "Molecular Biology · Friday Midterm",
-      "position": 1,
-      "fields": {
-        "front": "What does the sodium-potassium pump move per ATP?",
-        "back": "3 Na+ out of the cell and 2 K+ into the cell.",
-        "deck": "Molecular Biology · Friday Midterm",
-        "ease": 2.5,
-        "interval_days": 3,
-        "last_review": "2026-07-24",
-        "lapses": 1
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "2ad32711-1213-4cc0-a0e8-8b490933cf1a",
-      "group": "Molecular Biology · Friday Midterm",
+      "id": "8dcfe606-acfe-4f19-a4bc-6938e763c15b",
+      "group": "Art history · Renaissance",
       "position": 2,
       "fields": {
-        "front": "What is helicase doing at the replication fork?",
-        "back": "Breaking hydrogen bonds to unwind the DNA double helix.",
-        "deck": "Molecular Biology · Friday Midterm",
-        "ease": 2.55,
-        "interval_days": 7,
-        "last_review": "2026-07-20",
-        "lapses": 1
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "bd1d5067-fe46-49dd-9f13-c3890323cc45",
-      "group": "Molecular Biology · Friday Midterm",
-      "position": 3,
-      "fields": {
-        "front": "Why is ATP synthase called a molecular motor?",
-        "back": "Proton flow rotates part of the enzyme and drives ATP formation.",
-        "deck": "Molecular Biology · Friday Midterm",
-        "ease": 2.4,
-        "interval_days": 7,
-        "last_review": "2026-07-17",
-        "lapses": 2
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "40b6ec0f-cb12-470c-9317-cfb7a4f95013",
-      "group": "Molecular Biology · Friday Midterm",
-      "position": 4,
-      "fields": {
-        "front": "What changes after a GPCR activates its G protein?",
-        "back": "GDP on the alpha subunit is exchanged for GTP.",
-        "deck": "Molecular Biology · Friday Midterm",
-        "ease": 2.75,
-        "interval_days": 21,
+        "front": "What is sfumato?",
+        "back": "Soft, smoky transitions between tones with no hard outlines — Leonardo's signature.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.6,
+        "interval_days": 8,
         "last_review": "2026-07-27",
         "lapses": 0
       },
@@ -161,80 +450,96 @@
       "collection": "study-cards"
     },
     {
-      "id": "71175688-6a53-4745-bc65-6d5d57bb8fe4",
-      "group": "Molecular Biology · Friday Midterm",
-      "position": 5,
-      "fields": {
-        "front": "When is homologous recombination most available?",
-        "back": "In S and G2, when a sister chromatid can serve as a template.",
-        "deck": "Molecular Biology · Friday Midterm",
-        "ease": 2.9,
-        "interval_days": 70,
-        "last_review": "2026-06-02",
-        "lapses": 0
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "934e180f-8575-44e6-9598-fe6ada64d016",
-      "group": "Modern History · Archive Essay",
-      "position": 1,
-      "fields": {
-        "front": "Why did the Marshall Plan deepen early Cold War tension?",
-        "back": "Moscow read US economic aid as a strategy for political influence in Europe.",
-        "deck": "Modern History · Archive Essay",
-        "ease": 2.35,
-        "interval_days": 1,
-        "last_review": "2026-07-25",
-        "lapses": 2
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "2a8458a2-13fc-4cfe-bc1f-855429d2286c",
-      "group": "Modern History · Archive Essay",
-      "position": 2,
-      "fields": {
-        "front": "Primary source vs. secondary source",
-        "back": "A primary source comes from the period; a secondary source interprets it later.",
-        "deck": "Modern History · Archive Essay",
-        "ease": 2.6,
-        "interval_days": 14,
-        "last_review": "2026-07-25",
-        "lapses": 0
-      },
-      "version": 1,
-      "collection": "study-cards"
-    },
-    {
-      "id": "8d85ae82-35c7-4011-981a-16df0adca3e2",
-      "group": "Modern History · Archive Essay",
+      "id": "e8493b74-63e6-462f-a8ab-8bd46846375c",
+      "group": "Art history · Renaissance",
       "position": 3,
       "fields": {
-        "front": "What did the Bandung Conference signal in 1955?",
-        "back": "Newly independent states wanted cooperation outside the US-Soviet bloc system.",
-        "deck": "Modern History · Archive Essay",
-        "ease": 2.5,
-        "interval_days": 20,
-        "last_review": "2026-07-05",
+        "front": "Where is Masaccio's Holy Trinity?",
+        "back": "Santa Maria Novella, Florence — an early showcase of linear perspective.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.4,
+        "interval_days": 5,
+        "last_review": "2026-08-01",
         "lapses": 1
       },
       "version": 1,
       "collection": "study-cards"
     },
     {
-      "id": "aabdf6b7-f9a0-46fe-9d30-29e131635f63",
-      "group": "Modern History · Archive Essay",
+      "id": "5748b28d-9739-477b-ae84-6b279ee5bd1e",
+      "group": "Art history · Renaissance",
       "position": 4,
       "fields": {
-        "front": "What limited détente by the late 1970s?",
-        "back": "Regional conflicts, arms competition, domestic opposition, and the Soviet invasion of Afghanistan.",
-        "deck": "Modern History · Archive Essay",
-        "ease": 2.95,
-        "interval_days": 90,
-        "last_review": "2026-05-22",
+        "front": "Who designed the dome of Florence Cathedral?",
+        "back": "Filippo Brunelleschi (completed 1436).",
+        "deck": "Art history · Renaissance",
+        "ease": 2.9,
+        "interval_days": 34,
+        "last_review": "2026-07-22",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "9dac26f4-c93c-4911-ae9b-35acd3cfe2fe",
+      "group": "Art history · Renaissance",
+      "position": 5,
+      "fields": {
+        "front": "What does contrapposto describe?",
+        "back": "A figure's weight on one leg, so the hips and shoulders tilt in opposite directions.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.6,
+        "interval_days": 21,
+        "last_review": "2026-07-23",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "9bb8da6d-254d-4518-a952-434ca4ac7ee5",
+      "group": "Art history · Renaissance",
+      "position": 6,
+      "fields": {
+        "front": "Who commissioned the Sistine Chapel ceiling?",
+        "back": "Pope Julius II — Michelangelo painted it 1508–1512.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.75,
+        "interval_days": 13,
+        "last_review": "2026-07-31",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "605392e0-3b76-49d0-aca1-67159a56f09f",
+      "group": "Art history · Renaissance",
+      "position": 7,
+      "fields": {
+        "front": "Chiaroscuro",
+        "back": "Strong contrast of light and dark used to model volume.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.5,
+        "interval_days": 8,
+        "last_review": "2026-08-02",
+        "lapses": 0
+      },
+      "version": 1,
+      "collection": "study-cards"
+    },
+    {
+      "id": "22fdbe2f-345d-41ea-a59e-ab2ed6388faf",
+      "group": "Art history · Renaissance",
+      "position": 8,
+      "fields": {
+        "front": "What is a predella?",
+        "back": "The row of small panels along the base of an altarpiece.",
+        "deck": "Art history · Renaissance",
+        "ease": 2.5,
+        "interval_days": 0,
+        "last_review": "",
         "lapses": 0
       },
       "version": 1,

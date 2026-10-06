@@ -3,1787 +3,1246 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="A running log of spending with categories, totals, and monthly views.">
-  <meta name="oma-category" content="Money">
-  <title>Spending journal</title>
+<meta name="description" content="Where your money went this month: a category ring, a pace check against last month, and the day-by-day ledger of purchases. Your AI logs them; you can add one by hand in a line.">
+<meta name="oma-category" content="Money">
+<title>Spending journal</title>
 <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-ink-7:color-mix(in oklab,var(--color-text-primary) 7%,transparent);--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
   :root {
     color-scheme: light dark;
-    --accent: var(--color-text-info, var(--color-ring-primary));
-    --positive: var(--color-text-success, var(--color-ring-primary));
-    --caution: var(--color-text-warning, var(--color-ring-primary));
-    --negative: var(--color-text-danger, var(--color-ring-primary));
+    /* The app's one colour of its own: a warm copper, the colour of coins and receipts. */
+    --sj: light-dark(#7d3c98, #d3a4ee);
+    --sj-soft: color-mix(in oklab, var(--sj) 10%, transparent);
+    --sj-line: color-mix(in oklab, var(--sj) 30%, transparent);
   }
 
-  * { box-sizing: border-box; }
-
-  /* No body rule. Padding, ground and the frame are the kit's stage contract now
-     (components/_system.css, keyed on .k-stage below); colour, font and margin the kit already
-     set for every app. The `overflow: hidden` that used to sit on the root was worse than
-     decoration: in a fixed-height frame it killed the scroll wheel and hid the rest of the
-     journal below the fold. */
-
-  button, input, select {
-    color: inherit;
-    font: inherit;
-  }
-
+  button, input, select { font: inherit; color: inherit; }
   button { cursor: pointer; }
 
-  /* The root is `.k-stage` now: the kit owns its width and draws exactly one card in a chat,
-     while standalone hosts get no second bezel. Nothing from the old `.shell` rule was
-     load-bearing for the journal's internal layout, so the whole private frame is gone. */
-
-  .topbar {
-    position: relative;
-    z-index: 2;
-    min-height: 68px;
+  /* ── app bar ─────────────────────────────────────────────────────────── */
+  .sj-mark {
+    color: var(--sj);
+    background: var(--sj-soft);
+    border: 1px solid var(--sj-line);
   }
-
-  /* `.topbar` is `.k-appbar` now: the row, gaps, padding, mark box, title scale and chat-only
-     rule come from the kit. The mark keeps its paint because identity is content, not chrome. */
-  .brand-mark {
-    border: 1px solid color-mix(in oklab, var(--accent) 26%, var(--color-border-primary));
-    background: linear-gradient(
-      145deg,
-      color-mix(in oklab, var(--accent) 17%, transparent),
-      color-mix(in oklab, var(--positive) 7%, transparent)
-    );
-    color: var(--accent);
-  }
-
-  .brand-mark svg,
-  .ai-button svg,
-  .add-button svg,
-  .empty-icon svg {
+  .sj-mark svg,
+  .ico {
     fill: none;
     stroke: currentColor;
+    stroke-width: 1.7;
     stroke-linecap: round;
     stroke-linejoin: round;
-    stroke-width: 1.8;
   }
+  .ico { width: 16px; height: 16px; flex: none; }
+  .ask { flex: none; }
+  .ask .ico { color: var(--sj); }
 
-  .ai-button svg,
-  .add-button svg,
-  .empty-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  /* The app had no error surface, so the asynchronous assistant hand-off could only fail
-     silently. This is the same minimal strip used by the golden samples. */
-  .error-strip {
-    display: flex;
-    align-items: center;
-    gap: 8px;
+  .err {
     margin: 10px 16px 0;
     padding: 8px 10px;
-    border: 1px solid color-mix(in oklab, var(--negative) 34%, var(--color-border-secondary));
     border-radius: var(--border-radius-md, 8px);
-    color: var(--negative);
-    background: color-mix(in oklab, var(--negative) 8%, transparent);
-    font-size: 12px;
+    color: var(--color-text-danger);
+    background: color-mix(in oklab, var(--color-text-danger) 9%, transparent);
+    font-size: var(--font-text-sm-size, 12.5px);
   }
-  .error-strip[hidden] { display: none; }
 
-  .top-actions {
+  /* ── signature: where the money went ─────────────────────────────────── */
+  .where {
+    padding: 14px 16px 18px;
+  }
+  .period {
     display: flex;
-    gap: 8px;
-    margin-left: auto;
-  }
-
-  .btn {
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    min-height: 36px;
-    padding: 8px 12px;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md);
-    background: var(--color-background-primary);
-    color: var(--color-text-primary);
-    font-size: var(--font-text-sm-size, 13px);
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .period h2 {
+    margin: 0;
+    font-size: 15px;
     font-weight: 650;
-    line-height: 1;
-    white-space: nowrap;
+    letter-spacing: -.01em;
   }
-
-  .btn.ghost {
-    background: color-mix(in oklab, var(--color-background-primary) 88%, transparent);
-  }
-
-  .ai-button svg {
-    width: 17px;
-    height: 17px;
-    color: var(--accent);
-  }
-
-  .overview {
+  .step {
     display: grid;
-    grid-template-columns: minmax(250px, .8fr) minmax(360px, 1.2fr);
-    align-items: center;
-    gap: 16px;
-    padding: 12px 16px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--accent) 5%, var(--color-background-secondary));
-    font-variant-numeric: tabular-nums;
-  }
-
-  .overview-main {
-    min-width: 0;
-  }
-
-  .eyebrow-row,
-  .card-heading,
-  .ledger-heading {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .eyebrow {
-    color: var(--color-text-secondary);
-    font-size: var(--font-text-sm-size, 13px);
-    font-weight: 650;
-  }
-
-  .currency-pill {
-    padding: 3px 7px;
-    border: 1px solid color-mix(in oklab, var(--accent) 20%, var(--color-border-secondary));
+    width: 28px;
+    height: 28px;
+    place-items: center;
+    padding: 0;
+    border: 1px solid var(--color-border-secondary);
     border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--accent) 8%, transparent);
-    color: var(--accent);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 800;
-    letter-spacing: .05em;
+    background: transparent;
+    color: var(--color-text-secondary);
   }
-
-  .month-total {
-    display: block;
-    margin: 6px 0 3px;
-    font-size: clamp(30px, 4.5vw, 40px);
-    font-weight: 760;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: -.055em;
-    line-height: 1;
-  }
-
-  .month-meta {
-    min-height: 18px;
+  .step:hover:not(:disabled) { color: var(--color-text-primary); background: var(--k-ink-4); }
+  .step:disabled { opacity: .35; cursor: default; }
+  .period .fx {
+    margin-left: auto;
     color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
+    font-size: 12px;
+    text-align: right;
   }
 
-  .stat-strip {
+  .split {
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 12px;
+    grid-template-columns: 212px minmax(0, 1fr);
+    align-items: center;
+    gap: 28px;
   }
 
-  .mini-stat {
-    min-width: 0;
-    padding: 4px 0 4px 12px;
-    border-left: 1px solid color-mix(in oklab, var(--accent) 18%, var(--color-border-secondary));
-  }
-
-  .mini-label {
-    display: block;
-    margin-bottom: 3px;
-    overflow: hidden;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    font-weight: 700;
-    letter-spacing: .05em;
-    text-overflow: ellipsis;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .mini-value {
-    display: block;
-    overflow: hidden;
-    font-size: var(--font-text-sm-size, 12px);
-    font-variant-numeric: tabular-nums;
-    font-weight: 750;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .breakdown-card {
-    display: grid;
-    grid-template-columns: 156px minmax(0, 1fr);
-    min-height: 186px;
-    min-width: 0;
-    padding: 14px;
-    border: 1px solid color-mix(in oklab, var(--accent) 13%, var(--color-border-primary));
-    border-radius: var(--border-radius-lg);
-    background: color-mix(in oklab, var(--color-background-primary) 94%, transparent);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .donut-side {
-    display: flex;
-    min-width: 0;
-    flex-direction: column;
-    justify-content: center;
-    padding-right: 14px;
-    border-right: 1px solid var(--color-border-secondary);
-  }
-
-  .card-heading {
-    justify-content: space-between;
-    margin-bottom: 7px;
-  }
-
-  .card-title,
-  .ledger-title,
-  .quick-title {
-    font-weight: 760;
-    letter-spacing: -.012em;
-  }
-
-  .card-note {
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-  }
-
-  .donut-wrap {
+  .ring {
     position: relative;
-    width: 124px;
-    height: 124px;
-    margin: 0 auto;
+    width: 212px;
+    aspect-ratio: 1;
   }
-
-  .donut {
+  .ring svg {
     display: block;
     width: 100%;
     height: 100%;
-    overflow: visible;
     transform: rotate(-90deg);
+    overflow: visible;
   }
-
-  .donut-track,
-  .donut-segment {
+  .ring circle {
     fill: none;
-    stroke-width: 11;
+    stroke-width: 18;
   }
-
-  .donut-track {
-    stroke: color-mix(in oklab, var(--color-text-tertiary) 11%, transparent);
-  }
-
-  .donut-segment {
-    stroke-linecap: butt;
-  }
-
-  .donut-center {
+  .ring .track { stroke: var(--k-ink-7); }
+  .ring .seg { cursor: pointer; }
+  .ring .seg.dim { opacity: .28; }
+  .ring-mid {
     position: absolute;
     inset: 0;
     display: grid;
     place-content: center;
+    gap: 2px;
     text-align: center;
     pointer-events: none;
   }
-
-  .donut-share {
-    font-size: 22px;
-    font-variant-numeric: tabular-nums;
-    font-weight: 780;
-    letter-spacing: -.04em;
-    line-height: 1;
-  }
-
-  .donut-label {
-    max-width: 72px;
-    margin-top: 4px;
-    overflow: hidden;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
+  .total {
+    font-size: 30px;
     font-weight: 700;
-    text-overflow: ellipsis;
+    letter-spacing: -.035em;
+    line-height: 1.05;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-
-  .category-side {
-    min-width: 0;
-    padding-left: 14px;
+  .total small {
+    font-size: .56em;
+    font-weight: 600;
+    letter-spacing: 0;
+    color: var(--color-text-secondary);
+  }
+  .total-sub {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
   }
 
-  .category-rows {
-    max-height: none;
-    overflow: visible;
-    padding: 1px 3px 1px 0;
-    scrollbar-color: var(--color-border-primary) transparent;
-    scrollbar-width: thin;
+  .pace {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    margin: 0 0 12px;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    line-height: 1.4;
   }
+  .pace b { color: var(--color-text-primary); font-weight: 650; }
+  .pace .ico { margin-top: 1px; color: var(--sj); }
+  .pace:empty { display: none; }
 
-  .category-row {
-    display: block;
-    width: 100%;
-    margin: 0 0 5px;
-    padding: 6px 7px;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-sm);
+  .legend {
+    display: grid;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+  .cat {
+    position: relative;
+    display: grid;
+    grid-template-columns: 10px minmax(0, 1fr) auto 38px;
+    align-items: center;
+    gap: 10px;
+    padding: 6px 8px;
+    margin: 0 -8px;
+    width: calc(100% + 16px);
+    border: 0;
+    border-radius: var(--border-radius-sm, 6px);
     background: transparent;
     text-align: left;
   }
-
-  .category-row[aria-pressed="true"] {
-    border-color: color-mix(in oklab, var(--cat) 30%, var(--color-border-primary));
-    background: color-mix(in oklab, var(--cat) 8%, transparent);
+  .cat:hover { background: var(--k-ink-4); }
+  .cat[aria-pressed="true"] { background: var(--sj-soft); }
+  .cat .sw {
+    width: 10px;
+    height: 10px;
+    border-radius: 3px;
+    background: var(--c);
   }
-
-  .category-main,
-  .category-meta {
-    display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 8px;
-  }
-
-  .category-name {
+  .cat .nm {
     min-width: 0;
-    overflow: hidden;
-    font-size: var(--font-text-sm-size, 12px);
-    font-weight: 720;
-    text-overflow: ellipsis;
+    font-size: 13.5px;
+    font-weight: 550;
+    overflow-wrap: anywhere;
+  }
+  .cat .nm b { font-weight: inherit; }
+  .cat .nm span {
+    margin-left: 6px;
+    color: var(--color-text-tertiary);
+    font-size: 11.5px;
+    font-weight: 450;
+  }
+  .cat .amt {
+    font-size: 13.5px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
     white-space: nowrap;
   }
-
-  .category-name::before {
-    display: inline-block;
-    width: 7px;
-    height: 7px;
-    margin-right: 6px;
-    border-radius: 50%;
-    background: var(--cat);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--cat) 10%, transparent);
-    content: "";
-    vertical-align: 1px;
-  }
-
-  .category-amount {
-    flex: none;
-    font-size: var(--font-text-sm-size, 12px);
+  .cat .pct {
+    color: var(--color-text-tertiary);
+    font-size: 12px;
     font-variant-numeric: tabular-nums;
-    font-weight: 760;
+    text-align: right;
   }
-
-  .category-meta {
-    margin-top: 3px;
-    color: var(--color-text-tertiary);
-    font-size: 9px;
+  .pip {
+    position: absolute;
+    right: 50px;
+    top: -8px;
+    color: var(--sj);
+    font-size: 12px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
+    pointer-events: none;
+    opacity: 0;
   }
-
-  .bar-track {
-    height: 3px;
-    margin-top: 4px;
-    overflow: hidden;
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-text-tertiary) 11%, transparent);
+  .none {
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-size: 13px;
+    line-height: 1.5;
   }
+  .none .k-btn { margin-top: 8px; }
 
-  .bar-fill {
-    width: var(--width);
-    height: 100%;
-    border-radius: inherit;
-    background: var(--cat);
-    transform-origin: left;
+  /* ── quick add: one line, the rest on request ────────────────────────── */
+  .log {
+    border-top: 1px solid var(--color-border-secondary);
+    padding: 14px 16px 16px;
   }
-
-  .breakdown-empty {
+  .qa {
     display: grid;
-    min-height: 105px;
-    place-items: center;
-    padding: 12px;
-    color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
-    line-height: 1.45;
-    text-align: center;
-  }
-
-  .quick-add {
-    padding: 13px 14px 14px;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-background-tertiary) 58%, var(--color-background-primary));
-  }
-
-  .quick-heading {
-    display: flex;
-    align-items: center;
+    grid-template-columns: minmax(0, 1fr) 104px 150px 36px auto;
+    grid-template-areas: "m a c more add";
     gap: 8px;
-    margin-bottom: 10px;
+    align-items: center;
+  }
+  .qa .merchant { grid-area: m; }
+  .qa .amount { grid-area: a; }
+  .qa .catin { grid-area: c; }
+  .qa .more { grid-area: more; }
+  .qa .add { grid-area: add; }
+  .qa .k-field { width: 100%; min-width: 0; height: 36px; }
+  .qa .add {
+    height: 36px;
+    background: var(--sj);
+    color: light-dark(#fff, #1e0f26);
+    font-weight: 650;
+  }
+  .qa .more {
+    width: 36px;
+    height: 36px;
+    padding: 0;
+    justify-content: center;
+  }
+  .qa .more[aria-expanded="true"] { color: var(--sj); border-color: var(--sj-line); }
+  .qa-more {
+    display: grid;
+    grid-template-columns: 150px 150px 96px minmax(0, 1fr);
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .qa-more .k-field { width: 100%; min-width: 0; height: 36px; }
+  .qa-more label {
+    display: grid;
+    gap: 3px;
+    min-width: 0;
+    color: var(--color-text-tertiary);
+    font-size: 11.5px;
   }
 
-  .quick-heading::before {
+  /* ── the ledger ──────────────────────────────────────────────────────── */
+  .led-head {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    margin: 18px 0 4px;
+  }
+  .led-head h3 {
+    margin: 0;
+    font-size: 13.5px;
+    font-weight: 650;
+  }
+  .led-head .k-mut { font-variant-numeric: tabular-nums; }
+  .led-head .k-chip { margin-left: auto; }
+  .ledger {
+    max-height: 430px;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+    scrollbar-width: thin;
+  }
+  .day {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 10px 0 5px;
+    border-bottom: 1px solid var(--color-border-secondary);
+    background: var(--k-surface, var(--color-background-primary));
+    color: var(--color-text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .day span:last-child { font-variant-numeric: tabular-nums; font-weight: 500; }
+  .row {
+    position: relative;
+    display: grid;
+    grid-template-columns: 8px minmax(0, 1fr) auto 28px;
+    align-items: center;
+    gap: 10px;
+    min-height: 50px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--color-border-secondary);
+  }
+  .row .sw {
     width: 8px;
     height: 8px;
     border-radius: 50%;
-    background: var(--positive);
-    box-shadow: 0 0 0 4px color-mix(in oklab, var(--positive) 10%, transparent);
-    content: "";
+    background: var(--c, var(--color-text-tertiary));
   }
-
-  .quick-hint {
-    margin-left: auto;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-  }
-
-  .quick-grid {
-    display: grid;
-    grid-template-columns: minmax(155px, 1.35fr) minmax(92px, .65fr) 86px minmax(125px, 1fr) minmax(125px, .9fr) 138px;
-    gap: 8px;
-  }
-
-  .field {
-    display: flex;
+  .row .who {
     min-width: 0;
-    flex-direction: column;
-    gap: 4px;
-  }
-
-  .field label {
-    padding-left: 2px;
-    color: var(--color-text-tertiary);
-    font-size: 9px;
-    font-weight: 750;
-    letter-spacing: .055em;
-    text-transform: uppercase;
-  }
-
-  .field input,
-  .field select {
-    width: 100%;
-    min-width: 0;
-    height: 37px;
-    padding: 8px 9px;
-    border: 1px solid var(--color-border-primary);
-    border-radius: var(--border-radius-md);
-    outline: none;
-    background: var(--color-background-primary);
-    font-size: var(--font-text-sm-size, 13px);
-  }
-
-  .field input::placeholder {
-    color: var(--color-text-tertiary);
-  }
-
-  .form-footer {
-    display: grid;
-    grid-column: 1 / -1;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 8px;
-  }
-
-  .note-field {
-    position: relative;
-  }
-
-  .note-field input {
-    padding-left: 32px;
-  }
-
-  .note-glyph {
-    position: absolute;
-    left: 10px;
-    bottom: 10px;
-    color: var(--color-text-tertiary);
     font-size: 14px;
-    pointer-events: none;
+    font-weight: 550;
+    overflow-wrap: anywhere;
   }
-
-  .add-button {
-    display: inline-flex;
-    min-width: 132px;
-    height: 37px;
-    align-items: center;
-    justify-content: center;
-    align-self: end;
-    gap: 7px;
-    padding: 8px 14px;
-    border: 0;
-    border-radius: var(--border-radius-md);
-    background: var(--color-background-inverse);
-    color: var(--color-text-inverse);
-    box-shadow: var(--shadow-sm);
-    font-size: var(--font-text-sm-size, 13px);
-    font-weight: 760;
-  }
-
-  .add-button svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .insights {
-    padding: 16px 14px 0;
-  }
-
-  .ledger {
-    padding: 16px 14px 14px;
-  }
-
-  .ledger-heading {
-    min-height: 28px;
-    margin-bottom: 7px;
-  }
-
-  .entry-count {
+  .row .meta {
+    margin-top: 2px;
     color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
+    font-size: 12px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
   }
-
-  .filter-chip {
-    display: inline-flex;
-    align-items: center;
-    gap: 5px;
-    margin-left: auto;
-    padding: 4px 8px;
-    border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--color-border-primary));
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--accent) 8%, transparent);
-    color: var(--accent);
-    font-size: 10px;
-    font-weight: 750;
-  }
-
-  .filter-chip[hidden] { display: none; }
-
-  .entry-list {
-    max-height: none;
-    overflow: visible;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-md);
-    background: var(--color-background-primary);
-    scrollbar-color: var(--color-border-primary) transparent;
-    scrollbar-width: thin;
-  }
-
-  .entry {
-    --cat: var(--accent);
-    position: relative;
-    display: grid;
-    grid-template-columns: 9px minmax(0, 1fr) auto auto;
-    align-items: center;
-    gap: 10px;
-    min-height: 58px;
-    padding: 9px 10px;
-    border-bottom: 1px solid var(--color-border-secondary);
-  }
-
-  .entry:last-child { border-bottom: 0; }
-
-  .entry-dot {
-    width: 7px;
-    height: 28px;
-    border-radius: var(--border-radius-full, 999px);
-    background: var(--cat);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--cat) 8%, transparent);
-  }
-
-  .entry-copy { min-width: 0; }
-
-  .merchant-line {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 7px;
-  }
-
-  .merchant {
-    min-width: 0;
-    overflow: hidden;
-    font-weight: 740;
-    letter-spacing: -.01em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .entry-category {
-    flex: none;
-    max-width: 125px;
-    overflow: hidden;
-    padding: 2px 6px;
-    border: 1px solid color-mix(in oklab, var(--cat) 22%, var(--color-border-secondary));
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--cat) 7%, transparent);
-    color: var(--color-text-secondary);
-    font-size: 9px;
-    font-weight: 700;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .entry-meta {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 5px;
-    margin-top: 4px;
-    overflow: hidden;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-    white-space: nowrap;
-  }
-
-  .entry-meta .note {
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .meta-dot::before {
-    content: "·";
-  }
-
-  .entry-amount {
-    min-width: 92px;
-    color: var(--color-text-primary);
+  .row .amt {
+    font-size: 14px;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
-    font-weight: 780;
-    text-align: right;
     white-space: nowrap;
   }
-
-  .delete-button {
-    width: 31px;
-    min-width: 31px;
-    height: 30px;
+  .row .amt em {
+    margin-left: 4px;
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    font-style: normal;
+    font-weight: 500;
+  }
+  .row .x {
+    display: grid;
+    width: 28px;
+    height: 28px;
+    place-items: center;
     padding: 0;
-    border: 1px solid transparent;
-    border-radius: var(--border-radius-sm);
+    border: 0;
+    border-radius: var(--border-radius-sm, 6px);
     background: transparent;
     color: var(--color-text-tertiary);
-    font-size: 17px;
-    line-height: 1;
+    opacity: 0;
   }
-
-  .empty-state {
-    display: grid;
-    min-height: 150px;
-    place-items: center;
-    padding: 25px;
-    color: var(--color-text-secondary);
-    line-height: 1.5;
+  .row:hover .x,
+  .row .x:focus-visible { opacity: 1; }
+  .row .x:hover { color: var(--color-text-danger); background: color-mix(in oklab, var(--color-text-danger) 9%, transparent); }
+  @media (hover: none) { .row .x { opacity: .7; } }
+  .row.pending .amt { color: var(--color-text-secondary); }
+  .row.gone { opacity: .35; pointer-events: none; }
+  .empty-led {
+    padding: 22px 0 8px;
+    color: var(--color-text-tertiary);
+    font-size: 13px;
     text-align: center;
   }
 
-  .empty-icon {
-    display: grid;
-    width: 42px;
-    height: 42px;
-    margin: 0 auto 9px;
-    place-items: center;
-    border: 1px dashed color-mix(in oklab, var(--accent) 35%, var(--color-border-primary));
-    border-radius: 50%;
-    background: color-mix(in oklab, var(--accent) 7%, transparent);
-    color: var(--accent);
-  }
-
-  .empty-state strong {
-    display: block;
-    margin-bottom: 3px;
-    color: var(--color-text-primary);
-  }
-
-  .empty-state span {
-    display: block;
-    max-width: 390px;
-    color: var(--color-text-tertiary);
-    font-size: var(--font-text-sm-size, 12px);
-  }
-
-  button:focus-visible,
-  input:focus-visible,
-  select:focus-visible {
-    outline: 2px solid var(--color-ring-primary);
-    outline-offset: 2px;
-  }
-
-  .field input:focus,
-  .field select:focus {
-    border-color: var(--color-ring-primary);
-    box-shadow: 0 0 0 3px color-mix(in oklab, var(--color-ring-primary) 11%, transparent);
-  }
-
+  /* ── motion: a purchase lands in its category ────────────────────────── */
   @media (prefers-reduced-motion: no-preference) {
-    .ai-button,
-    .add-button,
-    .category-row,
-    .entry,
-    .entry-category,
-    .delete-button {
+    .ring .seg {
       transition:
-        transform 180ms cubic-bezier(.2,.8,.3,1),
-        border-color 180ms cubic-bezier(.2,.8,.3,1),
-        background-color 180ms cubic-bezier(.2,.8,.3,1),
-        box-shadow 180ms cubic-bezier(.2,.8,.3,1);
+        stroke-dasharray 650ms var(--k-ease),
+        stroke-dashoffset 650ms var(--k-ease),
+        stroke 400ms var(--k-ease),
+        opacity 200ms;
     }
+    .ring .seg.land { animation: seg-land 700ms var(--k-spring); }
+    .cat.land { animation: cat-land 1400ms var(--k-ease); }
+    .cat.land .sw { animation: sw-pop 520ms var(--k-spring); }
+    .cat.land .pip { animation: pip-up 1300ms var(--k-ease); }
+    .row.new { animation: row-in 520ms var(--k-spring) both; }
+    .row.new .sw { animation: sw-pop 520ms var(--k-spring) 120ms both; }
+    .qa .add:active { transform: scale(.95); }
 
-    .ai-button:hover,
-    .add-button:hover {
-      transform: translateY(-1px);
-      box-shadow: var(--shadow-md, var(--shadow-sm));
+    @keyframes seg-land {
+      0% { stroke-width: 18; }
+      40% { stroke-width: 28; }
+      100% { stroke-width: 18; }
     }
-
-    .category-row:hover {
-      background: color-mix(in oklab, var(--cat) 6%, transparent);
-      transform: translateX(2px);
+    @keyframes cat-land {
+      0%, 35% { background: color-mix(in oklab, var(--sj) 16%, transparent); }
+      100% { background: transparent; }
     }
-
-    .entry:hover {
-      z-index: 1;
-      background: color-mix(in oklab, var(--color-text-primary) 3%, transparent);
-      transform: translateX(2px);
-    }
-
-    .entry-category:hover {
-      background: color-mix(in oklab, var(--cat) 12%, transparent);
-    }
-
-    .delete-button:hover {
-      border-color: color-mix(in oklab, var(--negative) 18%, var(--color-border-secondary));
-      background: color-mix(in oklab, var(--negative) 7%, transparent);
-      color: var(--negative);
-    }
-
-    .ai-button:active,
-    .add-button:active,
-    .category-row:active,
-    .entry-category:active,
-    .delete-button:active {
-      transform: scale(.975);
-    }
-
-    .donut-segment {
-      animation: donut-in 720ms cubic-bezier(.2,.8,.3,1) both;
-      animation-delay: var(--delay);
-    }
-
-    .bar-fill {
-      animation: bar-in 620ms cubic-bezier(.2,.8,.3,1) both;
-      animation-delay: var(--delay);
-    }
-
-    .entry {
-      animation: entry-in 340ms cubic-bezier(.2,.8,.3,1) both;
-      animation-delay: var(--delay);
-    }
-
-    .add-button.saved {
-      animation: save-pop 440ms cubic-bezier(.34,1.56,.64,1);
-    }
-
-    @keyframes donut-in {
-      from { stroke-dasharray: 0 100; opacity: .35; }
-    }
-
-    @keyframes bar-in {
-      from { transform: scaleX(0); opacity: .4; }
-    }
-
-    @keyframes entry-in {
-      from { opacity: 0; transform: translateY(5px); }
-    }
-
-    @keyframes save-pop {
-      0% { transform: scale(1); }
-      45% { transform: scale(1.055); }
+    @keyframes sw-pop {
+      0% { transform: scale(.3); }
+      60% { transform: scale(1.5); }
       100% { transform: scale(1); }
     }
-  }
-
-  @media (max-width: 760px) {
-    .overview {
-      grid-template-columns: 1fr;
-      gap: 12px;
+    @keyframes pip-up {
+      0% { opacity: 0; transform: translateY(10px); }
+      20% { opacity: 1; transform: translateY(0); }
+      75% { opacity: 1; }
+      100% { opacity: 0; transform: translateY(-8px); }
     }
-
-    .breakdown-card {
-      grid-template-columns: 140px minmax(0, 1fr);
-    }
-
-    .quick-grid {
-      grid-template-columns: repeat(3, minmax(0, 1fr));
-    }
-
-    .form-footer {
-      grid-column: 1 / -1;
-    }
-
-    .merchant-field {
-      grid-column: span 2;
+    @keyframes row-in {
+      from { opacity: 0; transform: translateY(-6px); background: var(--sj-soft); }
     }
   }
 
-  @media (max-width: 640px) {
-    .ai-button {
-      min-height: 36px;
-      padding: 8px 9px;
-    }
-
-    .ai-button span { display: none; }
-
-    .overview { padding: 9px; }
-
-    .breakdown-card {
-      grid-template-columns: 118px minmax(0, 1fr);
-      padding: 11px;
-    }
-
-    .donut-side { padding-right: 9px; }
-
-    .donut-wrap {
-      width: 102px;
-      height: 102px;
-    }
-
-    .category-side { padding-left: 9px; }
-
-    .category-rows { max-height: none; }
-
-    .quick-add {
-      padding: 11px;
-    }
-
-    .quick-hint { display: none; }
-
-    .quick-grid {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .merchant-field { grid-column: 1 / -1; }
-
-    .form-footer {
+  /* ── narrow ──────────────────────────────────────────────────────────── */
+  @media (max-width: 600px) {
+    .ask span { display: none; }
+    .ask { padding: 7px 9px; }
+    .split {
       grid-template-columns: 1fr;
+      gap: 16px;
     }
-
-    .add-button {
-      width: 100%;
+    .ring {
+      width: 200px;
+      margin: 0 auto;
     }
-
-    .ledger {
-      padding: 10px;
+    .qa {
+      grid-template-columns: 92px minmax(0, 1fr) 36px auto;
+      grid-template-areas: "m m m m" "a c more add";
     }
-
-    .entry {
-      grid-template-columns: 7px minmax(0, 1fr) auto;
-      gap: 8px;
-      padding: 9px 8px;
-    }
-
-    .entry-amount {
-      min-width: 72px;
-      font-size: var(--font-text-sm-size, 12px);
-    }
-
-    .delete-button {
-      position: absolute;
-      right: 5px;
-      bottom: 2px;
-      width: 24px;
-      min-width: 24px;
-      height: 23px;
-      font-size: 14px;
-    }
-
-    .entry-meta {
-      max-width: calc(100% - 23px);
-    }
+    .qa-more { grid-template-columns: 1fr 1fr; }
   }
 </style>
 </head>
 <body>
-<main id="shell" class="shell k-stage" aria-label="Spending journal">
-  <header class="topbar k-appbar">
-    <div class="brand-mark k-appmark" aria-hidden="true">
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M7 3.5h10v17l-2-1.5-2 1.5-2-1.5-2 1.5-2-1.5z"></path>
-        <path d="M9.5 8h5M9.5 11.5h2M14 11.5h.5M9.5 15h2.5M14 15h.5"></path>
+<main class="k-stage" id="app" aria-label="Spending journal">
+  <header class="k-appbar">
+    <span class="k-appmark sj-mark" aria-hidden="true">
+      <svg viewBox="0 0 24 24">
+        <path d="M6.5 3.5h11v17l-2.2-1.4-2.1 1.4-2.2-1.4-2.2 1.4-2.3-1.4z"></path>
+        <path d="M9.5 8.5h5M9.5 12h5M9.5 15.5h2.5"></path>
       </svg>
-    </div>
-    <div class="identity k-appcopy">
-      <div class="kicker k-eyebrow">PERSONAL LEDGER</div>
-      <h1>Spending journal</h1>
-    </div>
-    <div class="top-actions">
-      <button class="btn ghost ai-button" id="askAI" type="button" aria-label="Ask AI where my money went">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M12 3l1.15 3.65L17 8l-3.85 1.35L12 13l-1.15-3.65L7 8l3.85-1.35L12 3Z"></path>
-          <path d="M18.5 13l.72 2.28L21.5 16l-2.28.72L18.5 19l-.72-2.28L15.5 16l2.28-.72L18.5 13ZM6 13l.58 1.92L8.5 15.5l-1.92.58L6 18l-.58-1.92-1.92-.58 1.92-.58L6 13Z"></path>
-        </svg>
-        <span>Where did my money go?</span>
-      </button>
-    </div>
+    </span>
+    <div class="k-appcopy"><h1 data-t="appName">Spending journal</h1></div>
+    <button class="k-btn sec ask" id="ask" type="button">
+      <svg class="ico" viewBox="0 0 24 24" aria-hidden="true">
+        <path d="M12 3.5l1.3 4 4 1.3-4 1.3-1.3 4-1.3-4-4-1.3 4-1.3z"></path>
+        <path d="M18 14.5l.6 1.9 1.9.6-1.9.6-.6 1.9-.6-1.9-1.9-.6 1.9-.6z"></path>
+      </svg>
+      <span data-t="ask">Where did it go?</span>
+    </button>
   </header>
 
-  <div class="error-strip" id="errorStrip" role="status" aria-live="polite" hidden>
-    <span id="errorText"></span>
-  </div>
+  <div class="err" id="err" role="status" aria-live="polite" hidden></div>
 
-  <section class="overview" aria-label="This month overview">
-    <div class="overview-main">
-      <div class="eyebrow-row">
-        <span class="eyebrow" id="monthLabel">This month</span>
-        <span class="currency-pill" id="currencyPill">USD</span>
-      </div>
-      <strong class="month-total" id="monthTotal" aria-live="polite">—</strong>
-      <div class="month-meta" id="monthMeta">Loading your journal…</div>
+  <section class="where" aria-labelledby="periodLabel">
+    <div class="period">
+      <button class="step" id="prev" type="button" aria-label="Previous month">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M14.5 6l-6 6 6 6"></path></svg>
+      </button>
+      <h2 id="periodLabel">—</h2>
+      <button class="step" id="next" type="button" aria-label="Next month">
+        <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M9.5 6l6 6-6 6"></path></svg>
+      </button>
+      <span class="fx" id="fx"></span>
     </div>
-    <div class="stat-strip">
-      <div class="mini-stat">
-        <span class="mini-label">Purchases</span>
-        <span class="mini-value" id="purchaseCount">0</span>
+    <div class="split">
+      <div class="ring">
+        <svg viewBox="0 0 200 200" id="ringSvg" role="img" aria-label="">
+          <circle class="track" cx="100" cy="100" r="82" pathLength="100"></circle>
+          <g id="segs"></g>
+        </svg>
+        <div class="ring-mid">
+          <div class="total" id="total" aria-live="polite">—</div>
+          <div class="total-sub" id="totalSub"></div>
+        </div>
       </div>
-      <div class="mini-stat">
-        <span class="mini-label">Average</span>
-        <span class="mini-value" id="averageSpend">—</span>
-      </div>
-      <div class="mini-stat">
-        <span class="mini-label">Top category</span>
-        <span class="mini-value" id="topCategory">—</span>
+      <div class="side">
+        <p class="pace" id="pace"></p>
+        <ul class="legend" id="legend"></ul>
       </div>
     </div>
   </section>
 
-  <section class="quick-add" aria-labelledby="quickTitle">
-    <div class="quick-heading">
-      <span class="quick-title" id="quickTitle">Quick add</span>
-      <span class="quick-hint">Everyday purchase · saved to this journal</span>
-    </div>
-    <form id="addForm">
-      <div class="quick-grid">
-        <div class="field merchant-field">
-          <label for="merchant">Merchant</label>
-          <input id="merchant" name="merchant" autocomplete="off" placeholder="e.g. Corner Market" required>
-        </div>
-        <div class="field">
-          <label for="amount">Amount</label>
-          <input id="amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0.00" required>
-        </div>
-        <div class="field">
-          <label for="currency">Currency</label>
-          <select id="currency" name="currency" required>
-            <option value="AUD">AUD</option>
-            <option value="USD">USD</option>
-            <option value="EUR">EUR</option>
-            <option value="GBP">GBP</option>
-            <option value="CAD">CAD</option>
-            <option value="NZD">NZD</option>
-            <option value="JPY">JPY</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="category">Category</label>
-          <input id="category" name="category" list="categoryOptions" autocomplete="off" placeholder="e.g. Groceries" required>
-          <datalist id="categoryOptions">
-            <option value="Groceries"></option>
-            <option value="Dining"></option>
-            <option value="Transport"></option>
-            <option value="Shopping"></option>
-            <option value="Entertainment"></option>
-            <option value="Bills"></option>
-            <option value="Health"></option>
-            <option value="Travel"></option>
-            <option value="Other"></option>
-          </datalist>
-        </div>
-        <div class="field">
-          <label for="paymentMethod">Payment</label>
-          <select id="paymentMethod" name="payment_method" required>
-            <option value="Card">Card</option>
-            <option value="Apple Pay">Apple Pay</option>
-            <option value="Cash">Cash</option>
-            <option value="Bank transfer">Bank transfer</option>
-            <option value="Other">Other</option>
-          </select>
-        </div>
-        <div class="field">
-          <label for="purchaseDate">Date</label>
-          <input id="purchaseDate" name="date" type="date" required>
-        </div>
-        <div class="form-footer">
-          <div class="field note-field">
-            <label for="note">Note · optional</label>
-            <span class="note-glyph" aria-hidden="true">✎</span>
-            <input id="note" name="note" autocomplete="off" placeholder="What was this for?">
-          </div>
-          <button class="add-button" id="addButton" type="submit">
-            <svg viewBox="0 0 24 24" aria-hidden="true">
-              <path d="M12 5v14M5 12h14"></path>
-            </svg>
-            Add purchase
-          </button>
-        </div>
-      </div>
+  <section class="log" aria-labelledby="ledTitle">
+    <form class="qa" id="qa" autocomplete="off">
+      <input class="k-field merchant" id="fMerchant" required aria-label="Merchant" placeholder="Where — e.g. Corner Market">
+      <input class="k-field amount" id="fAmount" type="number" min="0.01" step="0.01" inputmode="decimal" required aria-label="Amount" placeholder="0.00">
+      <input class="k-field catin" id="fCat" list="catList" required aria-label="Category" placeholder="Category">
+      <datalist id="catList"></datalist>
+      <button class="k-btn sec more" id="moreBtn" type="button" aria-expanded="false" aria-controls="qaMore" aria-label="More details">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8h10M18 8h2M4 16h3M11 16h9"></path><circle cx="16" cy="8" r="2"></circle><circle cx="9" cy="16" r="2"></circle></svg>
+        </button>
+        <button class="k-btn add" id="addBtn" type="submit">
+          <svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"></path></svg>
+          <span data-t="add">Add</span>
+        </button>
     </form>
-  </section>
-
-  <section class="insights" aria-label="Spending by category">
-    <article class="breakdown-card">
-      <div class="donut-side">
-        <div class="card-heading">
-          <span class="card-title">Category split</span>
-        </div>
-        <div class="donut-wrap">
-          <svg class="donut" id="donut" viewBox="0 0 120 120" role="img" aria-label="No spending to chart">
-            <circle class="donut-track" cx="60" cy="60" r="46" pathLength="100"></circle>
-            <g id="donutSegments"></g>
-          </svg>
-          <div class="donut-center">
-            <span class="donut-share" id="donutShare">0%</span>
-            <span class="donut-label" id="donutLabel">top share</span>
-          </div>
-        </div>
-      </div>
-      <div class="category-side">
-        <div class="card-heading">
-          <span class="card-title">Running totals</span>
-          <span class="card-note" id="breakdownCurrency">USD</span>
-        </div>
-        <div class="category-rows" id="categoryRows"></div>
-      </div>
-    </article>
-  </section>
-
-  <section class="ledger" aria-labelledby="ledgerTitle">
-    <div class="ledger-heading">
-      <span class="ledger-title" id="ledgerTitle">Recent entries</span>
-      <span class="entry-count" id="entryCount">Newest first</span>
-      <button class="filter-chip" id="clearFilter" type="button" hidden></button>
+    <div class="qa-more" id="qaMore" hidden>
+      <label><span data-t="date">Date</span><input class="k-field" id="fDate" type="date" form="qa" required></label>
+      <label><span data-t="payment">Paid with</span><select class="k-field" id="fPay" form="qa"></select></label>
+      <label><span data-t="currency">Currency</span><select class="k-field" id="fCur" form="qa"></select></label>
+      <label><span data-t="note">Note</span><input class="k-field" id="fNote" form="qa" placeholder=""></label>
     </div>
-    <div class="entry-list" id="entryList" aria-live="polite"></div>
+
+    <div class="led-head">
+      <h3 id="ledTitle" data-t="purchases">Purchases</h3>
+      <span class="k-mut" id="ledCount"></span>
+      <button class="k-chip on" id="clearCat" type="button" hidden></button>
+    </div>
+    <div class="ledger" id="ledger" aria-live="polite"></div>
   </section>
 </main>
 
 <script type="module">
-  const byId = (id) => document.getElementById(id);
-  const SVG_NS = "http://www.w3.org/2000/svg";
-  const STRINGS = {
+  const $ = (id) => document.getElementById(id);
+  const SVG = "http://www.w3.org/2000/svg";
+  const motionOK = () => matchMedia("(prefers-reduced-motion: no-preference)").matches;
+
+  const STR = {
     en: {
-      shellAria: "Spending journal",
-      kicker: "PERSONAL LEDGER",
       appName: "Spending journal",
-      askAI: "Where did my money go?",
-      askAria: "Ask AI where my money went",
-      purchases: "Purchases",
-      average: "Average",
-      topCategory: "Top category",
-      quickAdd: "Quick add",
-      quickHint: "Everyday purchase · saved to this journal",
-      merchant: "Merchant",
-      merchantPlaceholder: "e.g. Corner Market",
-      amount: "Amount",
-      currency: "Currency",
-      category: "Category",
-      categoryPlaceholder: "e.g. Groceries",
-      payment: "Payment",
+      ask: "Where did it go?",
+      askAria: "Ask the AI where my money went",
+      add: "Add",
       date: "Date",
-      optionalNote: "Note · optional",
-      notePlaceholder: "What was this for?",
-      addPurchase: "Add purchase",
-      spendingByCategory: "Spending by category",
-      categorySplit: "Category split",
-      runningTotals: "Running totals",
-      topShare: "top share",
-      noSpendingChart: "No spending to chart",
-      addPurchaseToReveal: "Add a purchase to reveal your category mix.",
-      filterByCategory: (category) => `Filter entries by ${category}`,
-      purchase: "purchase",
-      purchasesPlural: "purchases",
-      recentEntries: "Recent entries",
-      newestFirst: "Newest first",
-      entry: "entry",
-      entries: "entries",
+      payment: "Paid with",
+      currency: "Currency",
+      note: "Note",
+      notePh: "Optional",
+      merchantPh: "Where — e.g. Corner Market",
+      catPh: "Category",
+      merchantAria: "Merchant",
+      amountAria: "Amount",
+      catAria: "Category",
+      more: "More details",
+      prev: "Previous month",
+      next: "Next month",
+      purchases: "Purchases",
+      soFar: "so far",
+      spentIn: (m) => `spent in ${m}`,
+      count: (n) => `${n} ${n === 1 ? "purchase" : "purchases"}`,
+      share: (c, p) => `${c}, ${p} percent`,
+      paceLess: (d, m, day) => `<b>${d} less</b> than ${m} by day ${day}.`,
+      paceMore: (d, m, day) => `<b>${d} more</b> than ${m} by day ${day}.`,
+      paceSame: (m, day) => `Right on ${m}'s pace by day ${day}.`,
+      vsLess: (d, m) => `<b>${d} less</b> than ${m}.`,
+      vsMore: (d, m) => `<b>${d} more</b> than ${m}.`,
+      nothingMonth: (m) => `Nothing logged in ${m} yet.`,
+      seeMonth: (m) => `See ${m}`,
+      firstTime: "Nothing logged yet. Tell the AI “I spent $12 on lunch at Yuzu Corner”, or add one below.",
+      otherCur: (n) => `+ ${n} in ${n === 1 ? "another currency" : "other currencies"}`,
+      today: "Today",
+      yesterday: "Yesterday",
       noDate: "No date",
-      unknownMerchant: "Unknown merchant",
-      paymentUnset: "Payment method not set",
-      showCategoryPurchases: (category) => `Show ${category} purchases`,
-      deleteEntry: (merchant) => `Delete ${merchant}`,
-      filteredEmptyTitle: "Nothing in this category yet",
-      filteredEmptyBody: "Clear the category filter to see every purchase.",
-      clearJournalTitle: "Your journal is clear",
-      clearJournalBody: "Add a purchase above, or ask the AI to record a few purchases from your notes.",
-      loading: "Loading your journal…",
-      firstPurchase: "Your first purchase will start the story",
-      across: (count, noun) => `Across ${count} ${noun} this month`,
-      shown: (shown, noun, other, currencies) => `${shown} ${noun} shown · ${other} in other ${currencies}`,
-      currencyOption: { Card: "Card", "Apple Pay": "Apple Pay", Cash: "Cash", "Bank transfer": "Bank transfer", Other: "Other" },
+      emptyCat: "Nothing in this category this month.",
+      clearCat: (c) => `${c} ×`,
+      del: (m) => `Delete ${m}`,
+      saveFailed: "That purchase didn't save — try again.",
+      delFailed: "Couldn't delete that one.",
       askFailed: "Couldn't reach the assistant — try again.",
+      pays: ["Card", "Apple Pay", "Cash", "Bank transfer"],
+      cats: ["Groceries", "Dining", "Transport", "Household", "Health", "Shopping", "Bills", "Entertainment", "Travel"],
     },
     zh: {
-      shellAria: "消费手账",
-      kicker: "个人账本",
       appName: "消费手账",
-      askAI: "帮我看看钱都花去哪了",
-      askAria: "让 AI 分析我的消费去向",
-      purchases: "消费笔数",
-      average: "平均金额",
-      topCategory: "主要分类",
-      quickAdd: "快速记一笔",
-      quickHint: "日常消费 · 保存到这本手账",
-      merchant: "商家",
-      merchantPlaceholder: "例如：街角市场",
-      amount: "金额",
-      currency: "货币",
-      category: "分类",
-      categoryPlaceholder: "例如：买菜",
-      payment: "支付方式",
+      ask: "钱去哪了？",
+      askAria: "让 AI 分析我的钱都花去哪了",
+      add: "记一笔",
       date: "日期",
-      optionalNote: "备注 · 可选",
-      notePlaceholder: "这笔消费是做什么的？",
-      addPurchase: "添加消费",
-      spendingByCategory: "按分类查看消费",
-      categorySplit: "分类占比",
-      runningTotals: "分类累计",
-      topShare: "最高占比",
-      noSpendingChart: "暂无消费可绘制",
-      addPurchaseToReveal: "添加一笔消费，就能看到你的分类构成。",
-      filterByCategory: (category) => `按 ${category} 筛选账目`,
-      purchase: "笔消费",
-      purchasesPlural: "笔消费",
-      recentEntries: "最近账目",
-      newestFirst: "按时间倒序",
-      entry: "笔账目",
-      entries: "笔账目",
+      payment: "支付方式",
+      currency: "货币",
+      note: "备注",
+      notePh: "可不填",
+      merchantPh: "在哪花的 · 例如：楼下便利店",
+      catPh: "分类",
+      merchantAria: "商家",
+      amountAria: "金额",
+      catAria: "分类",
+      more: "更多信息",
+      prev: "上个月",
+      next: "下个月",
+      purchases: "流水",
+      soFar: "本月至今",
+      spentIn: (m) => `${m}共花费`,
+      count: (n) => `${n} 笔`,
+      share: (c, p) => `${c}，占 ${p}%`,
+      paceLess: (d, m, day) => `到 ${day} 号，比${m}同期<b>少花 ${d}</b>。`,
+      paceMore: (d, m, day) => `到 ${day} 号，比${m}同期<b>多花 ${d}</b>。`,
+      paceSame: (m, day) => `到 ${day} 号，和${m}同期持平。`,
+      vsLess: (d, m) => `比${m}<b>少花 ${d}</b>。`,
+      vsMore: (d, m) => `比${m}<b>多花 ${d}</b>。`,
+      nothingMonth: (m) => `${m}还没有记账。`,
+      seeMonth: (m) => `看看${m}`,
+      firstTime: "还没有记账。跟 AI 说一句「午饭在小满面馆花了 28 块」，或在下面手动记一笔。",
+      otherCur: (n) => `另有 ${n} 笔其他货币`,
+      today: "今天",
+      yesterday: "昨天",
       noDate: "没有日期",
-      unknownMerchant: "未知商家",
-      paymentUnset: "未设置支付方式",
-      showCategoryPurchases: (category) => `显示 ${category} 消费`,
-      deleteEntry: (merchant) => `删除 ${merchant}`,
-      filteredEmptyTitle: "这个分类还没有账目",
-      filteredEmptyBody: "清除分类筛选，就能查看全部消费。",
-      clearJournalTitle: "手账还是空的",
-      clearJournalBody: "在上方添加一笔消费，或让 AI 根据你的记录补上几笔。",
-      loading: "正在加载你的手账…",
-      firstPurchase: "记下第一笔消费，故事就开始了",
-      across: (count, noun) => "本月共 " + count + " " + noun,
-      shown: (shown, noun, other, currencies) => "显示 " + shown + " " + noun + " · 另有 " + other + " " + currencies,
-      currencyOption: { Card: "银行卡", "Apple Pay": "Apple Pay", Cash: "现金", "Bank transfer": "银行转账", Other: "其他" },
+      emptyCat: "这个月这一类还没有消费。",
+      clearCat: (c) => `${c} ×`,
+      del: (m) => `删除 ${m}`,
+      saveFailed: "这笔没存上，请再试一次。",
+      delFailed: "没能删除这一笔。",
       askFailed: "没能联系上助手，请重试。",
+      pays: ["微信支付", "支付宝", "银行卡", "现金"],
+      cats: ["餐饮", "买菜", "交通", "居家", "购物", "娱乐", "健康", "通讯", "旅行"],
     },
   };
-  const palette = [
-    "var(--color-text-info, var(--color-ring-primary))",
-    "var(--color-text-success, var(--color-ring-primary))",
-    "var(--color-text-warning, var(--color-ring-primary))",
-    "var(--color-text-danger, var(--color-ring-primary))",
-    "var(--color-ring-primary)",
-    "var(--color-text-secondary)"
-  ];
 
-  let lastState = null;
-  let lastModel = null;
-  let activeCategory = null;
-  let seedStarted = false;
-  let formInitialized = false;
-  let formCurrencyMatchedToData = false;
+  // ── time: facts are stored, judgments are computed here from the clock ──
+  const pad = (n) => String(n).padStart(2, "0");
+  const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
+  const validDate = (s) => /^\d{4}-\d{2}-\d{2}/.test(String(s || "")) && !isNaN(dateOnly(s));
+  const monthKeyOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}`;
+  const shiftMonth = (key, by) => { const [y, m] = key.split("-").map(Number); return monthKeyOf(new Date(y, m - 1 + by, 1)); };
+  const daysIn = (key) => { const [y, m] = key.split("-").map(Number); return new Date(y, m, 0).getDate(); };
 
-  const element = (tag, className, text) => {
-    const node = document.createElement(tag);
-    if (className) node.className = className;
-    if (text !== undefined) node.textContent = text;
-    return node;
-  };
+  const loc = () => { const v = oma.pref("locale", "auto"); return v === "auto" ? navigator.language : v; };
+  const lang = () => String(loc()).toLowerCase().startsWith("zh") ? "zh" : "en";
+  const T = () => STR[lang()];
+  const cur3 = (v, fb) => { const c = String(v || "").trim().toUpperCase(); return /^[A-Z]{3}$/.test(c) ? c : fb; };
+  const prefCur = () => cur3(oma.pref("currency", ""), lang() === "zh" ? "CNY" : "USD");
 
-  const localISO = (date) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
-
-  const preferredCurrency = () => {
-    const code = String(oma.pref("currency", "USD") || "").trim().toUpperCase();
-    return /^[A-Z]{3}$/.test(code) ? code : "USD";
-  };
-
-  const itemCurrency = (value) => {
-    const code = String(value || "").trim().toUpperCase();
-    return /^[A-Z]{3}$/.test(code) ? code : preferredCurrency();
-  };
-
-  const locale = () => {
-    const value = oma.pref("locale", "auto");
-    return value === "auto" ? navigator.language : value;
-  };
-
-  const language = () => String(locale()).toLowerCase().startsWith("zh") ? "zh" : "en";
-  const copy = () => STRINGS[language()];
-
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-  // card; absent = a widget in someone's conversation, where the card is ours to draw.
-  if (oma.standalone) document.body.classList.add("standalone");
-
-  const errorStrip = byId("errorStrip");
-  const errorText = byId("errorText");
-  let errorTimer = null;
-  function showError(message) {
-    clearTimeout(errorTimer);
-    errorText.textContent = message;
-    errorStrip.hidden = false;
-    errorTimer = setTimeout(() => { errorStrip.hidden = true; }, 7000);
-  }
-  function clearError() {
-    clearTimeout(errorTimer);
-    errorStrip.hidden = true;
-  }
-
-  const localizeChrome = () => {
-    const c = copy();
-    document.documentElement.lang = language() === "zh" ? "zh-CN" : "en";
-    document.title = c.appName;
-    byId("shell")?.setAttribute("aria-label", c.shellAria);
-    document.querySelector(".kicker").textContent = c.kicker;
-    document.querySelector(".identity h1").textContent = c.appName;
-    const askAI = byId("askAI");
-    askAI.setAttribute("aria-label", c.askAria);
-    askAI.querySelector("span").textContent = c.askAI;
-    const miniLabels = document.querySelectorAll(".mini-label");
-    [c.purchases, c.average, c.topCategory].forEach((label, index) => {
-      if (miniLabels[index]) miniLabels[index].textContent = label;
-    });
-    byId("quickTitle").textContent = c.quickAdd;
-    document.querySelector(".quick-hint").textContent = c.quickHint;
-    const labels = {
-      merchant: c.merchant,
-      amount: c.amount,
-      currency: c.currency,
-      category: c.category,
-      paymentMethod: c.payment,
-      purchaseDate: c.date,
-      note: c.optionalNote,
-    };
-    for (const [id, label] of Object.entries(labels)) {
-      const node = document.querySelector(`label[for="${id}"]`);
-      if (node) node.textContent = label;
-    }
-    byId("merchant").placeholder = c.merchantPlaceholder;
-    byId("category").placeholder = c.categoryPlaceholder;
-    byId("note").placeholder = c.notePlaceholder;
-    byId("addButton").lastChild.textContent = " " + c.addPurchase;
-    document.querySelector(".insights").setAttribute("aria-label", c.spendingByCategory);
-    document.querySelectorAll(".card-title")[0].textContent = c.categorySplit;
-    document.querySelectorAll(".card-title")[1].textContent = c.runningTotals;
-    document.querySelector(".ledger-title").textContent = c.recentEntries;
-    const paymentOptions = c.currencyOption;
-    for (const option of byId("paymentMethod").options) {
-      option.textContent = paymentOptions[option.value] || option.value;
-    }
-  };
-
-  const money = (amount, currency) =>
-    new Intl.NumberFormat(locale(), {
-      style: "currency",
-      currency,
-      currencyDisplay: "narrowSymbol",
-      maximumFractionDigits: currency === "JPY" ? 0 : 2
-    }).format(Number(amount) || 0);
-
-  const monthName = (date) =>
-    new Intl.DateTimeFormat(locale(), { month: "long", year: "numeric" }).format(date);
-
-  const displayDate = (value) => {
-    if (!value) return copy().noDate;
-    const parts = String(value).slice(0, 10).split("-");
-    if (parts.length !== 3) return String(value);
-    const [year, month, day] = parts;
-    const preference = oma.pref("date_format", "auto");
-    if (preference === "yyyy-mm-dd") return `${year}-${month}-${day}`;
-    if (preference === "dd/mm/yyyy") return `${day}/${month}/${year}`;
-    if (preference === "mm/dd/yyyy") return `${month}/${day}/${year}`;
-    const parsed = new Date(`${year}-${month}-${day}T12:00:00`);
-    return Number.isFinite(parsed.getTime())
-      ? new Intl.DateTimeFormat(locale(), { day: "numeric", month: "short" }).format(parsed)
-      : String(value);
-  };
-
-  const categoryColor = (name) => {
-    let hash = 0;
-    for (const character of String(name)) hash = ((hash << 5) - hash + character.charCodeAt(0)) | 0;
-    return palette[Math.abs(hash) % palette.length];
-  };
-
-  const normalizedCategory = (item) => {
-    const value = String(item.fields.category || item.group || "Uncategorized").trim();
-    return value || "Uncategorized";
-  };
-
-  const normalizedEntry = (item) => {
-    const fields = item.fields || {};
-    const amount = Math.max(0, Number(fields.amount) || 0);
-    return {
-      item,
-      merchant: String(fields.merchant || copy().unknownMerchant).trim() || copy().unknownMerchant,
-      amount,
-      currency: itemCurrency(fields.currency),
-      date: String(fields.date || ""),
-      category: normalizedCategory(item),
-      paymentMethod: String(fields.payment_method || copy().paymentUnset).trim(),
-      note: String(fields.note || "").trim()
-    };
-  };
-
-  const buildModel = (state) => {
-    const now = new Date();
-    const monthKey = localISO(now).slice(0, 7);
-    const entries = state.items.map(normalizedEntry).sort((a, b) => {
-      const dateOrder = b.date.localeCompare(a.date);
-      return dateOrder || (b.item.position || 0) - (a.item.position || 0);
-    });
-
-    const monthEntries = entries.filter((entry) => entry.date.slice(0, 7) === monthKey && entry.amount > 0);
-    const currencyTotals = new Map();
-    const currencyCounts = new Map();
-
-    for (const entry of monthEntries) {
-      currencyTotals.set(entry.currency, (currencyTotals.get(entry.currency) || 0) + entry.amount);
-      currencyCounts.set(entry.currency, (currencyCounts.get(entry.currency) || 0) + 1);
-    }
-
-    const preferred = preferredCurrency();
-    const rankedCurrencies = [...currencyTotals.keys()].sort((a, b) => {
-      const countOrder = (currencyCounts.get(b) || 0) - (currencyCounts.get(a) || 0);
-      return countOrder || (currencyTotals.get(b) || 0) - (currencyTotals.get(a) || 0);
-    });
-    const currency = currencyTotals.has(preferred) || !rankedCurrencies.length ? preferred : rankedCurrencies[0];
-    const visibleMonthEntries = monthEntries.filter((entry) => entry.currency === currency);
-    const total = visibleMonthEntries.reduce((sum, entry) => sum + entry.amount, 0);
-    const categoryMap = new Map();
-
-    for (const entry of visibleMonthEntries) {
-      if (!categoryMap.has(entry.category)) {
-        categoryMap.set(entry.category, { name: entry.category, total: 0, count: 0 });
-      }
-      const category = categoryMap.get(entry.category);
-      category.total += entry.amount;
-      category.count += 1;
-    }
-
-    const categories = [...categoryMap.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
-    const otherCurrencyCount = monthEntries.length - visibleMonthEntries.length;
-
-    return {
-      now,
-      entries,
-      monthEntries,
-      visibleMonthEntries,
-      currencyTotals,
-      currencyCounts,
-      currency,
-      total,
-      categories,
-      otherCurrencyCount,
-      monthLabel: monthName(now)
-    };
-  };
-
-  const renderDonut = (model) => {
-    const group = byId("donutSegments");
-    group.replaceChildren();
-
-    let offset = 0;
-    model.categories.forEach((category, index) => {
-      const percentage = model.total ? (category.total / model.total) * 100 : 0;
-      const visibleArc = model.categories.length === 1
-        ? 99.5
-        : Math.max(.45, percentage - Math.min(.75, percentage * .12));
-      const circle = document.createElementNS(SVG_NS, "circle");
-      circle.setAttribute("class", "donut-segment");
-      circle.setAttribute("cx", "60");
-      circle.setAttribute("cy", "60");
-      circle.setAttribute("r", "46");
-      circle.setAttribute("pathLength", "100");
-      circle.setAttribute("stroke-dasharray", `${visibleArc} ${100 - visibleArc}`);
-      circle.setAttribute("stroke-dashoffset", String(-offset));
-      circle.style.stroke = categoryColor(category.name);
-      circle.style.setProperty("--delay", `${index * 55}ms`);
-      group.appendChild(circle);
-      offset += percentage;
-    });
-
-    const top = model.categories[0];
-    const share = top && model.total ? Math.round((top.total / model.total) * 100) : 0;
-    byId("donutShare").textContent = `${share}%`;
-    byId("donutLabel").textContent = top ? top.name : copy().topShare;
-    byId("donut").setAttribute(
-      "aria-label",
-      top
-        ? language() === "zh"
-          ? `${top.name} 占比最高，为 ${share}%`
-          : `${top.name} is the largest category at ${share} percent`
-        : copy().noSpendingChart
-    );
-  };
-
-  const renderCategories = (model) => {
-    const container = byId("categoryRows");
-    container.replaceChildren();
-
-    if (!model.categories.length) {
-      container.appendChild(
-        element("div", "breakdown-empty", copy().addPurchaseToReveal)
-      );
-      return;
-    }
-
-    model.categories.forEach((category, index) => {
-      const percentage = model.total ? (category.total / model.total) * 100 : 0;
-      const row = element("button", "category-row");
-      row.type = "button";
-      row.setAttribute("aria-pressed", String(activeCategory === category.name));
-      row.setAttribute("aria-label", copy().filterByCategory(category.name));
-      row.style.setProperty("--cat", categoryColor(category.name));
-
-      const main = element("div", "category-main");
-      main.append(
-        element("span", "category-name", category.name),
-        element("span", "category-amount", money(category.total, model.currency))
-      );
-
-      const meta = element("div", "category-meta");
-      meta.append(
-        element("span", "", `${category.count} ${category.count === 1 ? copy().purchase : copy().purchasesPlural}`),
-        element("span", "", `${Math.round(percentage)}%`)
-      );
-
-      const track = element("div", "bar-track");
-      const fill = element("div", "bar-fill");
-      fill.style.setProperty("--width", `${percentage}%`);
-      fill.style.setProperty("--delay", `${index * 45}ms`);
-      track.appendChild(fill);
-      row.append(main, meta, track);
-      row.onclick = () => {
-        activeCategory = activeCategory === category.name ? null : category.name;
-        render(lastState);
-      };
-      container.appendChild(row);
-    });
-  };
-
-  const emptyState = (filtered) => {
-    const empty = element("div", "empty-state");
-    const content = element("div");
-    const icon = element("div", "empty-icon");
-    icon.innerHTML = `
-      <svg viewBox="0 0 24 24" aria-hidden="true">
-        <path d="M6 3.5h10l2 2V20H6z"></path>
-        <path d="M9 9h6M9 13h6M9 17h3"></path>
-      </svg>`;
-    const title = element("strong", "", filtered ? copy().filteredEmptyTitle : copy().clearJournalTitle);
-    const message = element(
-      "span",
-      "",
-      filtered
-        ? copy().filteredEmptyBody
-        : copy().clearJournalBody
-    );
-    content.append(icon, title, message);
-    empty.appendChild(content);
-    return empty;
-  };
-
-  const renderEntries = (model) => {
-    const list = byId("entryList");
-    list.replaceChildren();
-
-    const filteredEntries = activeCategory
-      ? model.entries.filter((entry) => entry.category === activeCategory)
-      : model.entries;
-
-    byId("entryCount").textContent = filteredEntries.length
-      ? `${filteredEntries.length} ${filteredEntries.length === 1 ? copy().entry : copy().entries} · ${copy().newestFirst}`
-      : copy().newestFirst;
-
-    const clearFilter = byId("clearFilter");
-    clearFilter.hidden = !activeCategory;
-    clearFilter.textContent = activeCategory ? `${activeCategory} ×` : "";
-
-    if (!filteredEntries.length) {
-      list.appendChild(emptyState(Boolean(activeCategory)));
-      return;
-    }
-
-    filteredEntries.forEach((entry, index) => {
-      const row = element("article", "entry");
-      row.style.setProperty("--cat", categoryColor(entry.category));
-      row.style.setProperty("--delay", `${Math.min(index, 8) * 28}ms`);
-
-      const marker = element("span", "entry-dot");
-      marker.setAttribute("aria-hidden", "true");
-
-      const copyBlock = element("div", "entry-copy");
-      const merchantLine = element("div", "merchant-line");
-      const merchant = element("span", "merchant", entry.merchant);
-      const category = element("button", "entry-category", entry.category);
-      category.type = "button";
-      category.setAttribute("aria-label", copy().showCategoryPurchases(entry.category));
-      category.onclick = () => {
-        activeCategory = entry.category;
-        render(lastState);
-      };
-      merchantLine.append(merchant, category);
-
-      const meta = element("div", "entry-meta");
-      meta.append(
-        element("span", "", displayDate(entry.date)),
-        element("span", "meta-dot", ""),
-        element("span", "", entry.paymentMethod || copy().paymentUnset)
-      );
-      if (entry.note) {
-        meta.append(
-          element("span", "meta-dot", ""),
-          element("span", "note", entry.note)
-        );
-      }
-      copyBlock.append(merchantLine, meta);
-
-      const amount = element("div", "entry-amount", money(entry.amount, entry.currency));
-      const remove = element("button", "delete-button", "×");
-      remove.type = "button";
-      remove.setAttribute("aria-label", copy().deleteEntry(entry.merchant));
-      remove.onclick = () => oma.deleteItem(entry.item.id);
-
-      row.append(marker, copyBlock, amount, remove);
-      list.appendChild(row);
-    });
-  };
-
-  function render(state) {
-    if (!state) return;
-    lastState = state;
-    const model = buildModel(state);
-    lastModel = model;
-
-    // A localized preview can contain a deliberately authored currency that is
-    // different from the account preference. Match the quick-add form to the
-    // ledger the first time real entries arrive, then leave later user choices
-    // alone instead of resetting the select on every state change.
-    if (!formCurrencyMatchedToData && model.visibleMonthEntries.length) {
-      ensureCurrencyOption(model.currency);
-      formCurrencyMatchedToData = true;
-    }
-
-    if (activeCategory && !model.entries.some((entry) => entry.category === activeCategory)) {
-      activeCategory = null;
-    }
-
-    byId("monthLabel").textContent = model.monthLabel;
-    byId("currencyPill").textContent = model.currency;
-    byId("breakdownCurrency").textContent = model.currency;
-    byId("monthTotal").textContent = money(model.total, model.currency);
-    byId("purchaseCount").textContent = String(model.visibleMonthEntries.length);
-    byId("averageSpend").textContent = model.visibleMonthEntries.length
-      ? money(model.total / model.visibleMonthEntries.length, model.currency)
-      : "—";
-    byId("topCategory").textContent = model.categories[0]?.name || "—";
-
-    const visibleCount = model.visibleMonthEntries.length;
-    byId("monthMeta").textContent = model.otherCurrencyCount
-      ? copy().shown(
-          visibleCount,
-          visibleCount === 1 ? copy().purchase : copy().purchasesPlural,
-          model.otherCurrencyCount,
-          model.otherCurrencyCount === 1 ? (language() === "zh" ? "种货币" : "currency") : (language() === "zh" ? "种货币" : "currencies"),
-        )
-      : visibleCount
-        ? copy().across(visibleCount, visibleCount === 1 ? copy().purchase : copy().purchasesPlural)
-        : copy().firstPurchase;
-
-    renderDonut(model);
-    renderCategories(model);
-    renderEntries(model);
-  }
-
-  const ensureCurrencyOption = (code) => {
-    const select = byId("currency");
-    if (![...select.options].some((option) => option.value === code)) {
-      select.appendChild(new Option(code, code));
-    }
-    select.value = code;
-  };
-
-  const initializeForm = () => {
-    if (formInitialized) return;
-    formInitialized = true;
-    ensureCurrencyOption(preferredCurrency());
-    byId("purchaseDate").value = localISO(new Date());
-  };
-
-  const seedDate = (daysBack) => {
-    const now = new Date();
-    now.setDate(Math.max(1, now.getDate() - daysBack));
-    return localISO(now);
-  };
-
-  async function seed() {
-    const currency = preferredCurrency();
-    const multiplier = currency === "JPY" ? 100 : 1;
-    const samples = [
-      {
-        merchant: "Green Leaf Grocer",
-        amount: 36.45 * multiplier,
-        date: seedDate(0),
-        category: "Groceries",
-        payment_method: "Card",
-        note: "Fruit, vegetables and pantry basics"
-      },
-      {
-        merchant: "Morning Tide Café",
-        amount: 8.9 * multiplier,
-        date: seedDate(2),
-        category: "Dining",
-        payment_method: "Apple Pay",
-        note: "Coffee and breakfast"
-      },
-      {
-        merchant: "Metro Transit",
-        amount: 24 * multiplier,
-        date: seedDate(4),
-        category: "Transport",
-        payment_method: "Card",
-        note: "Weekly travel top-up"
-      },
-      {
-        merchant: "Cloud Nine Cinema",
-        amount: 18.5 * multiplier,
-        date: seedDate(7),
-        category: "Entertainment",
-        payment_method: "Apple Pay",
-        note: "Friday night film"
-      },
-      {
-        merchant: "Harbour Pharmacy",
-        amount: 14.2 * multiplier,
-        date: seedDate(10),
-        category: "Health",
-        payment_method: "Card",
-        note: "Everyday essentials"
-      }
-    ];
-
-    for (const sample of samples) {
-      await oma.addItem({
-        group: sample.category,
-        fields: {
-          merchant: sample.merchant,
-          amount: sample.amount,
-          currency,
-          date: sample.date,
-          category: sample.category,
-          payment_method: sample.payment_method,
-          note: sample.note
-        }
-      });
-    }
-  }
-
-  byId("clearFilter").onclick = () => {
-    activeCategory = null;
-    render(lastState);
-  };
-
-  byId("addForm").onsubmit = (event) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    if (!form.reportValidity()) return;
-
-    const merchantInput = byId("merchant");
-    const amountInput = byId("amount");
-    const categoryInput = byId("category");
-    const noteInput = byId("note");
-    const merchant = merchantInput.value.trim().replace(/\s+/g, " ");
-    const amount = Math.round(Number(amountInput.value) * 100) / 100;
-    const categoryRaw = categoryInput.value.trim().replace(/\s+/g, " ");
-    const category = categoryRaw
-      ? categoryRaw.charAt(0).toUpperCase() + categoryRaw.slice(1)
-      : "";
-    const currency = itemCurrency(byId("currency").value);
-    const date = byId("purchaseDate").value;
-    const paymentMethod = byId("paymentMethod").value;
-    const note = noteInput.value.trim();
-
-    if (!merchant || !category || !date || !Number.isFinite(amount) || amount <= 0) return;
-
-    oma.addItem({
-      group: category,
-      fields: {
-        merchant,
-        amount,
-        currency,
-        date,
-        category,
-        payment_method: paymentMethod,
-        note
-      }
-    });
-
-    merchantInput.value = "";
-    amountInput.value = "";
-    noteInput.value = "";
-    const addButton = byId("addButton");
-    addButton.classList.remove("saved");
-    void addButton.offsetWidth;
-    addButton.classList.add("saved");
-    setTimeout(() => addButton.classList.remove("saved"), 500);
-    merchantInput.focus();
-  };
-
-  // Clipboard fallback keeps this useful in standalone. It is a degraded channel, not a failed
-  // request, so only a non-degraded `isError` result reaches the error strip.
-  const askAIButton = byId("askAI");
-  askAIButton.onclick = async () => {
-    clearError();
-    askAIButton.disabled = true;
+  const money = (n, c, whole) => {
     try {
-      const model = lastModel || buildModel(lastState || oma.state);
-      const categorySummary = model.categories.length
-        ? model.categories.map((category) => `${category.name}: ${money(category.total, model.currency)}`).join(", ")
-        : "no categorized purchases yet";
-      const recentSummary = model.visibleMonthEntries.length
-        ? model.visibleMonthEntries.slice(0, 12).map((entry) =>
-            `${entry.date} — ${entry.merchant}, ${money(entry.amount, entry.currency)} (${entry.category})`
-          ).join("; ")
-        : "no purchases in the main currency this month";
-      const otherCurrencies = [...model.currencyTotals.entries()]
-        .filter(([currency]) => currency !== model.currency)
-        .map(([currency, total]) => `${money(total, currency)} in ${currency}`)
-        .join(", ");
+      return new Intl.NumberFormat(loc(), {
+        style: "currency", currency: c, currencyDisplay: "narrowSymbol",
+        minimumFractionDigits: whole ? 0 : undefined,
+        maximumFractionDigits: whole ? 0 : undefined,
+      }).format(Number(n) || 0);
+    } catch { return `${c} ${(Number(n) || 0).toFixed(2)}`; }
+  };
+  const monthName = (key, withYear) => {
+    const [y, m] = key.split("-").map(Number);
+    const sameYear = y === today().getFullYear();
+    return new Intl.DateTimeFormat(loc(), withYear || !sameYear ? { month: "long", year: "numeric" } : { month: "long" }).format(new Date(y, m - 1, 1));
+  };
+  const dayLabel = (iso) => {
+    if (!validDate(iso)) return T().noDate;
+    const d = dateOnly(iso);
+    const diff = Math.round((today() - d) / 86400000);
+    if (diff === 0) return T().today;
+    if (diff === 1) return T().yesterday;
+    const f = oma.pref("date_format", "auto");
+    const [y, m, dd] = String(iso).slice(0, 10).split("-");
+    if (f === "yyyy-mm-dd") return `${y}-${m}-${dd}`;
+    if (f === "dd/mm/yyyy") return `${dd}/${m}/${y}`;
+    if (f === "mm/dd/yyyy") return `${m}/${dd}/${y}`;
+    return new Intl.DateTimeFormat(loc(), { weekday: "short", month: "short", day: "numeric" }).format(d);
+  };
 
-      const result = await oma.sendMessage(
-        `Analyze my spending journal for ${model.monthLabel}. ` +
-        `In ${model.currency}, I spent ${money(model.total, model.currency)} across ` +
-        `${model.visibleMonthEntries.length} purchases. Category totals: ${categorySummary}. ` +
-        `Purchases: ${recentSummary}. ` +
-        `${otherCurrencies ? `Other currencies recorded separately: ${otherCurrencies}. ` : ""}` +
-        `Please surface patterns, likely spending leaks, anything unusual, and three practical suggestions. ` +
-        `Do not convert or combine different currencies.`
-      );
-      if (result && result.isError === true && !result.degraded) showError(copy().askFailed);
-    } catch (error) {
-      showError(String(error?.message || error || copy().askFailed));
-    } finally {
-      askAIButton.disabled = false;
+  // ── state kept outside render(): a re-render can arrive at any moment ──
+  let latest = { items: [] };
+  let known = null;              // ids already on screen — anything else arriving is "new"
+  let viewMonth = null;          // null = follow the current month
+  let catFilter = null;
+  let pending = [];              // optimistic purchases: { tmp, fields }
+  const deleting = new Set();
+  const segNodes = new Map();
+  const catNodes = new Map();
+  const rowNodes = new Map();
+  let shownTotal = null;
+  let drawn = false;
+
+  // ── one model, one source: every number on screen is derived from it ──
+  const entryOf = (it, isPending) => {
+    const f = it.fields || {};
+    const cat = String(f.category || it.group || "").trim() || (lang() === "zh" ? "未分类" : "Uncategorized");
+    return {
+      id: it.id,
+      pending: !!isPending,
+      merchant: String(f.merchant || "").trim() || "—",
+      amount: Math.max(0, Number(f.amount) || 0),
+      currency: cur3(f.currency, prefCur()),
+      date: validDate(f.date) ? String(f.date).slice(0, 10) : "",
+      cat,
+      pay: String(f.payment_method || "").trim(),
+      note: String(f.note || "").trim(),
+    };
+  };
+
+  function model() {
+    const all = [
+      ...latest.items.map((it) => entryOf(it, false)),
+      ...pending.map((p) => entryOf({ id: p.tmp, fields: p.fields }, true)),
+    ];
+    const nowKey = monthKeyOf(today());
+    const month = viewMonth || nowKey;
+    const dated = all.filter((e) => e.date);
+    const monthsWithData = [...new Set(dated.map((e) => e.date.slice(0, 7)))].sort();
+    const inMonth = (key) => dated.filter((e) => e.date.startsWith(key) && e.amount > 0);
+    const rows = inMonth(month);
+
+    // The ring adds up ONE currency; others are listed, never converted.
+    const byCur = new Map();
+    for (const e of rows) byCur.set(e.currency, (byCur.get(e.currency) || 0) + 1);
+    const pc = prefCur();
+    const ranked = [...byCur.keys()].sort((a, b) => byCur.get(b) - byCur.get(a));
+    const currency = byCur.has(pc) || !ranked.length ? (ranked.length ? pc : dominantCurrency(dated, pc)) : ranked[0];
+    const counted = rows.filter((e) => e.currency === currency);
+    const total = counted.reduce((s, e) => s + e.amount, 0);
+
+    const cats = new Map();
+    for (const e of counted) {
+      const c = cats.get(e.cat) || { name: e.cat, total: 0, count: 0 };
+      c.total += e.amount;
+      c.count += 1;
+      cats.set(e.cat, c);
+    }
+    const categories = [...cats.values()].sort((a, b) => b.total - a.total || a.name.localeCompare(b.name));
+    categories.forEach((c, i) => { c.rank = i; c.color = shade(i, categories.length); });
+
+    // Pace: the current month against the previous one up to the same day; a past month against its predecessor whole.
+    const prevKey = shiftMonth(month, -1);
+    const isNow = month === nowKey;
+    const day = today().getDate();
+    const prevRows = inMonth(prevKey).filter((e) => e.currency === currency);
+    const prevTotal = prevRows
+      .filter((e) => !isNow || Number(e.date.slice(8, 10)) <= Math.min(day, daysIn(prevKey)))
+      .reduce((s, e) => s + e.amount, 0);
+    // A comparison is only honest if the journal already existed at the start of that month:
+    // a first month that begins on the 22nd is not "a cheap month".
+    const firstDate = dated.map((e) => e.date).sort()[0] || "";
+    const prevCovered = !!firstDate && firstDate <= `${prevKey}-07`;
+
+    const earliest = monthsWithData[0] || nowKey;
+    const latestKey = [nowKey, monthsWithData[monthsWithData.length - 1] || nowKey].sort().pop();
+    const lastDataMonth = [...monthsWithData].reverse().find((k) => k < month) || null;
+    const undated = isNow ? all.filter((e) => !e.date) : [];
+
+    return {
+      all, month, isNow, day, rows, undated, currency, counted, total, categories,
+      prevKey, prevHas: prevCovered && prevRows.length > 0, prevTotal,
+      canPrev: month > earliest, canNext: month < latestKey, lastDataMonth,
+      otherCount: rows.length - counted.length,
+    };
+  }
+
+  function dominantCurrency(entries, fb) {
+    const n = new Map();
+    for (const e of entries) n.set(e.currency, (n.get(e.currency) || 0) + 1);
+    return [...n.entries()].sort((a, b) => b[1] - a[1])[0]?.[0] || fb;
+  }
+
+  // One accent, stepped by rank: the biggest slice is the full colour, the tail fades toward the page.
+  function shade(i, n) {
+    const pct = n <= 1 ? 100 : Math.round(100 - (i / Math.max(n - 1, 1)) * 78);
+    return `color-mix(in oklab, var(--sj) ${pct}%, var(--color-background-primary))`;
+  }
+
+  // ── the ring ────────────────────────────────────────────────────────────
+  function renderRing(m, landed) {
+    const g = $("segs");
+    const gap = m.categories.length > 1 ? 0.7 : 0;
+    let start = 0;
+    const live = new Set();
+    for (const c of m.categories) {
+      live.add(c.name);
+      const share = m.total ? (c.total / m.total) * 100 : 0;
+      const len = Math.max(0.35, share - gap);
+      let seg = segNodes.get(c.name);
+      if (!seg) {
+        seg = document.createElementNS(SVG, "circle");
+        seg.setAttribute("class", "seg");
+        seg.setAttribute("cx", "100");
+        seg.setAttribute("cy", "100");
+        seg.setAttribute("r", "82");
+        seg.setAttribute("pathLength", "100");
+        seg.style.strokeDasharray = `0 100`;
+        seg.style.strokeDashoffset = `${-start}`;
+        seg.addEventListener("click", () => toggleCat(seg.dataset.cat));
+        seg.addEventListener("animationend", () => seg.classList.remove("land"));
+        segNodes.set(c.name, seg);
+      }
+      seg.dataset.cat = c.name;
+      g.appendChild(seg);
+      seg.style.stroke = c.color;
+      seg.classList.toggle("dim", !!catFilter && catFilter !== c.name);
+      const dash = `${len} ${100 - len}`;
+      const off = `${-start}`;
+      if (!drawn && motionOK()) {
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          seg.style.strokeDasharray = dash;
+          seg.style.strokeDashoffset = off;
+        }));
+      } else {
+        seg.style.strokeDasharray = dash;
+        seg.style.strokeDashoffset = off;
+      }
+      if (landed.has(c.name)) {
+        seg.classList.remove("land");
+        void seg.getBBox();
+        seg.classList.add("land");
+      }
+      start += share;
+    }
+    for (const [name, seg] of segNodes) {
+      if (!live.has(name)) { seg.remove(); segNodes.delete(name); }
+    }
+    $("ringSvg").setAttribute("aria-label", m.categories.map((c) => T().share(c.name, Math.round((c.total / m.total) * 100))).join("; ") || "—");
+  }
+
+  function setTotal(m) {
+    const el = $("total");
+    const target = m.total;
+    const paint = (v) => {
+      const parts = new Intl.NumberFormat(loc(), { style: "currency", currency: m.currency, currencyDisplay: "narrowSymbol" }).formatToParts(v);
+      el.replaceChildren();
+      let tail = "";
+      let head = "";
+      let inFrac = false;
+      for (const p of parts) {
+        if (p.type === "decimal" || p.type === "fraction") inFrac = true;
+        if (inFrac && (p.type === "decimal" || p.type === "fraction")) tail += p.value;
+        else head += p.value;
+      }
+      el.append(head);
+      if (tail && target >= 0) el.append(Object.assign(document.createElement("small"), { textContent: tail }));
+    };
+    const from = shownTotal;
+    shownTotal = target;
+    if (from === null || from === target || !motionOK() || !drawn) { paint(target); return; }
+    const t0 = performance.now();
+    const step = (t) => {
+      const k = Math.min(1, (t - t0) / 600);
+      const e = 1 - Math.pow(1 - k, 3);
+      paint(from + (target - from) * e);
+      if (k < 1 && shownTotal === target) requestAnimationFrame(step);
+      else if (shownTotal === target) paint(target);
+    };
+    requestAnimationFrame(step);
+  }
+
+  // ── the legend (and the pace sentence above it) ─────────────────────────
+  function renderLegend(m, landed, landedAmt) {
+    const ul = $("legend");
+    const live = new Set();
+    for (const c of m.categories) {
+      live.add(c.name);
+      let li = catNodes.get(c.name);
+      if (!li) {
+        li = document.createElement("li");
+        const b = document.createElement("button");
+        b.type = "button";
+        b.className = "cat";
+        b.innerHTML = `<span class="sw"></span><span class="nm"><b></b><span></span></span><span class="amt"></span><span class="pct"></span><span class="pip"></span>`;
+        b.onclick = () => toggleCat(c.name);
+        b.addEventListener("animationend", (ev) => { if (ev.target === b) b.classList.remove("land"); });
+        li.append(b);
+        catNodes.set(c.name, li);
+      }
+      const b = li.firstChild;
+      b.style.setProperty("--c", c.color);
+      b.setAttribute("aria-pressed", String(catFilter === c.name));
+      b.querySelector(".nm b").textContent = c.name;
+      b.querySelector(".nm span").textContent = T().count(c.count);
+      b.querySelector(".amt").textContent = money(c.total, m.currency);
+      const pct = (c.total / m.total) * 100;
+      b.querySelector(".pct").textContent = pct > 0 && pct < 1 ? "<1%" : `${Math.round(pct)}%`;
+      ul.appendChild(li);
+      if (landed.has(c.name)) {
+        b.querySelector(".pip").textContent = "+" + money(landedAmt.get(c.name) || 0, m.currency);
+        b.classList.remove("land");
+        void b.offsetWidth;
+        b.classList.add("land");
+      }
+    }
+    for (const [name, li] of catNodes) {
+      if (!live.has(name)) { li.remove(); catNodes.delete(name); }
+    }
+
+    // Nothing to split: say so, and offer the way to where the data is.
+    let none = ul.parentNode.querySelector(".none");
+    if (!m.categories.length) {
+      if (!none) {
+        none = document.createElement("div");
+        none.className = "none";
+        ul.after(none);
+      }
+      const anyData = m.all.length > 0;
+      none.replaceChildren(anyData ? T().nothingMonth(monthName(m.month)) : T().firstTime);
+      if (anyData && m.lastDataMonth) {
+        const btn = Object.assign(document.createElement("button"), { type: "button", className: "k-btn sec", textContent: T().seeMonth(monthName(m.lastDataMonth)) });
+        btn.onclick = () => { viewMonth = m.lastDataMonth; render(); };
+        none.append(document.createElement("br"), btn);
+      }
+    } else if (none) {
+      none.remove();
+    }
+
+    const pace = $("pace");
+    if (!m.categories.length || !m.prevHas) {
+      pace.replaceChildren();
+    } else {
+      const prevName = monthName(m.prevKey);
+      const diff = m.total - m.prevTotal;
+      const d = money(Math.abs(diff), m.currency, true);
+      let text;
+      if (Math.abs(diff) < Math.max(1, m.prevTotal * 0.02)) text = m.isNow ? T().paceSame(prevName, m.day) : "";
+      else if (m.isNow) text = diff < 0 ? T().paceLess(d, prevName, m.day) : T().paceMore(d, prevName, m.day);
+      else text = diff < 0 ? T().vsLess(d, prevName) : T().vsMore(d, prevName);
+      const icon = diff > 0
+        ? `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 17l6-6 4 4 6-7"></path><path d="M15 8h5v5"></path></svg>`
+        : `<svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7l6 6 4-4 6 7"></path><path d="M15 16h5v-5"></path></svg>`;
+      pace.innerHTML = text ? `${icon}<span>${text}</span>` : "";
+    }
+  }
+
+  // ── the ledger: rows are kept by id so nothing re-enters on a refresh ────
+  function fillRow(row, e, m) {
+    const c = m.categories.find((x) => x.name === e.cat);
+    row.style.setProperty("--c", e.currency === m.currency && c ? c.color : "var(--color-text-tertiary)");
+    row.classList.toggle("pending", e.pending);
+    row.classList.toggle("gone", deleting.has(e.id));
+    row.querySelector(".who").textContent = e.merchant;
+    row.querySelector(".meta").textContent = [e.cat, e.pay, e.note].filter(Boolean).join(" · ");
+    const amt = row.querySelector(".amt");
+    amt.textContent = money(e.amount, e.currency);
+    if (e.currency !== m.currency) amt.append(Object.assign(document.createElement("em"), { textContent: e.currency }));
+    const x = row.querySelector(".x");
+    x.setAttribute("aria-label", T().del(e.merchant));
+    x.hidden = e.pending;
+  }
+
+  function makeRow(e) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="sw" aria-hidden="true"></span><div><div class="who"></div><div class="meta"></div></div><span class="amt"></span>` +
+      `<button class="x" type="button"><svg class="ico" viewBox="0 0 24 24" aria-hidden="true"><path d="M7 7l10 10M17 7L7 17"></path></svg></button>`;
+    row.querySelector(".x").onclick = () => removeEntry(row.dataset.id);
+    row.addEventListener("animationend", (ev) => { if (ev.target === row) row.classList.remove("new"); });
+    return row;
+  }
+
+  function renderLedger(m, fresh) {
+    const box = $("ledger");
+    const list = [...m.rows, ...m.undated]
+      .filter((e) => !catFilter || e.cat === catFilter)
+      .sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.pending - a.pending));
+    const parts = [];
+    let day = null;
+    let dayHead = null;
+    let dayTotal = 0;
+    const closeDay = () => {
+      if (dayHead) dayHead.lastChild.textContent = dayTotal ? money(dayTotal, m.currency) : "";
+    };
+    const used = new Set();
+    for (const e of list) {
+      if (e.date !== day) {
+        closeDay();
+        day = e.date;
+        dayTotal = 0;
+        dayHead = document.createElement("div");
+        dayHead.className = "day";
+        dayHead.append(Object.assign(document.createElement("span"), { textContent: dayLabel(e.date) }), document.createElement("span"));
+        parts.push(dayHead);
+      }
+      if (e.currency === m.currency) dayTotal += e.amount;
+      let row = rowNodes.get(e.id);
+      if (!row) {
+        row = makeRow(e);
+        rowNodes.set(e.id, row);
+        if (fresh.has(e.id)) row.classList.add("new");
+      }
+      row.dataset.id = e.id;
+      fillRow(row, e, m);
+      used.add(e.id);
+      parts.push(row);
+    }
+    closeDay();
+    for (const id of [...rowNodes.keys()]) if (!used.has(id) && !m.all.some((e) => e.id === id)) rowNodes.delete(id);
+    if (!list.length && (m.rows.length || catFilter)) {
+      parts.push(Object.assign(document.createElement("div"), { className: "empty-led", textContent: T().emptyCat }));
+    }
+    const top = box.scrollTop;
+    box.replaceChildren(...parts);
+    box.scrollTop = top;
+
+    $("ledCount").textContent = list.length ? T().count(list.length) : "";
+    document.querySelector(".led-head").hidden = !list.length && !catFilter;
+    const chip = $("clearCat");
+    chip.hidden = !catFilter;
+    chip.textContent = catFilter ? T().clearCat(catFilter) : "";
+  }
+
+  // ── render: everything from one model, updated in place ─────────────────
+  function render(state) {
+    if (state) latest = state;
+    reconcile();
+    const m = model();
+
+    // What is new since the last paint — the purchase that "lands".
+    const fresh = new Set();
+    const landed = new Set();
+    const landedAmt = new Map();
+    if (known) {
+      for (const e of m.all) {
+        if (known.has(e.id)) continue;
+        fresh.add(e.id);
+        if (e.date.startsWith(m.month) && e.currency === m.currency && e.amount > 0) {
+          landed.add(e.cat);
+          landedAmt.set(e.cat, (landedAmt.get(e.cat) || 0) + e.amount);
+        }
+      }
+    }
+    known = new Set(m.all.map((e) => e.id));
+
+    if (catFilter && !m.categories.some((c) => c.name === catFilter) && !m.rows.some((e) => e.cat === catFilter)) catFilter = null;
+
+    $("periodLabel").textContent = monthName(m.month, true);
+    $("prev").disabled = !m.canPrev;
+    $("next").disabled = !m.canNext;
+    $("fx").textContent = m.otherCount ? T().otherCur(m.otherCount) : "";
+    $("totalSub").textContent = m.isNow ? `${T().soFar} · ${T().count(m.counted.length)}` : T().count(m.counted.length);
+    setTotal(m);
+    renderRing(m, landed);
+    renderLegend(m, landed, landedAmt);
+    renderLedger(m, fresh);
+    fillPickers(m);
+    drawn = true;
+  }
+
+  // A store snapshot that already carries an optimistic purchase retires it (the node moves with it).
+  function reconcile() {
+    if (!pending.length) return;
+    const ids = new Set(latest.items.map((it) => it.id));
+    pending = pending.filter((p) => {
+      if (p.id && ids.has(p.id)) {
+        adopt(p);
+        return false;
+      }
+      return true;
+    });
+  }
+  function adopt(p) {
+    const node = rowNodes.get(p.tmp);
+    if (node && !rowNodes.has(p.id)) rowNodes.set(p.id, node);
+    rowNodes.delete(p.tmp);
+    if (known) { known.delete(p.tmp); known.add(p.id); }
+  }
+
+  function toggleCat(name) {
+    catFilter = catFilter === name ? null : name;
+    render();
+  }
+
+  // ── pickers for the quick add, fed by what this journal already uses ────
+  function fillPickers(m) {
+    const byFreq = (key) => {
+      const n = new Map();
+      for (const e of m.all) if (e[key]) n.set(e[key], (n.get(e[key]) || 0) + 1);
+      return [...n.entries()].sort((a, b) => b[1] - a[1]).map(([k]) => k);
+    };
+    const cats = [...new Set([...byFreq("cat"), ...T().cats])];
+    const dl = $("catList");
+    if (dl.dataset.sig !== cats.join("|")) {
+      dl.replaceChildren(...cats.map((c) => new Option(c)));
+      dl.dataset.sig = cats.join("|");
+    }
+    const pays = [...new Set([...byFreq("pay"), ...T().pays])];
+    const sel = $("fPay");
+    if (sel.dataset.sig !== pays.join("|")) {
+      const keep = sel.value;
+      sel.replaceChildren(...pays.map((p) => new Option(p, p)));
+      sel.value = pays.includes(keep) && sel.dataset.touched ? keep : pays[0];
+      sel.dataset.sig = pays.join("|");
+    }
+    const curs = [...new Set([m.currency, prefCur(), ...byFreq("currency"), "USD", "EUR", "GBP", "CNY", "JPY", "AUD", "CAD"])];
+    const cs = $("fCur");
+    if (cs.dataset.sig !== curs.join("|")) {
+      const keep = cs.value;
+      cs.replaceChildren(...curs.map((c) => new Option(c, c)));
+      cs.value = cs.dataset.touched && curs.includes(keep) ? keep : m.currency;
+      cs.dataset.sig = curs.join("|");
+    }
+  }
+
+  // ── writes: the same shape the AI writes — group = category ──────────────
+  $("qa").onsubmit = async (ev) => {
+    ev.preventDefault();
+    const form = $("qa");
+    if (!form.reportValidity()) return;
+    const merchant = $("fMerchant").value.trim().replace(/\s+/g, " ");
+    const amount = Math.round(Number($("fAmount").value) * 100) / 100;
+    const raw = $("fCat").value.trim().replace(/\s+/g, " ");
+    const category = raw ? raw.charAt(0).toUpperCase() + raw.slice(1) : "";
+    // Details closed = today, computed now (a field filled at mount goes stale past midnight).
+    const date = ($("qaMore").hidden ? "" : $("fDate").value) || isoOf(today());
+    if (!merchant || !category || !(amount > 0)) return;
+    const fields = {
+      merchant,
+      amount,
+      currency: cur3($("fCur").value, prefCur()),
+      date,
+      category,
+      payment_method: $("fPay").value,
+      note: $("fNote").value.trim(),
+    };
+
+    // Show it landing now; the store's answer confirms or takes it back.
+    const p = { tmp: "tmp-" + Math.random().toString(36).slice(2), fields, id: null };
+    pending.push(p);
+    const month = date.slice(0, 7);
+    if (month !== (viewMonth || monthKeyOf(today()))) viewMonth = month === monthKeyOf(today()) ? null : month;
+    render();
+    $("fMerchant").value = "";
+    $("fAmount").value = "";
+    $("fNote").value = "";
+    $("fMerchant").focus();
+
+    let ack = null;
+    try { ack = await oma.addItem({ group: category, fields }); } catch { ack = null; }
+    if (ack && ack.ok !== false && ack.id) {
+      p.id = ack.id;
+      if (latest.items.some((it) => it.id === ack.id)) { pending = pending.filter((x) => x !== p); adopt(p); }
+      render();
+    } else {
+      pending = pending.filter((x) => x !== p);
+      rowNodes.delete(p.tmp);
+      showError(T().saveFailed);
+      render();
     }
   };
 
-  oma.ready((state) => {
-    localizeChrome();
-    initializeForm();
-    render(state);
-    // App Store apps install EMPTY — sample data lives only in the oma-fixtures block (store preview).
-  });
+  async function removeEntry(id) {
+    if (!id || deleting.has(id)) return;
+    deleting.add(id);
+    render();
+    let ack = null;
+    try { ack = await oma.deleteItem(id); } catch { ack = null; }
+    deleting.delete(id);
+    if (!ack || ack.ok === false) {
+      if (ack && ack.reason && !/cancel/i.test(String(ack.reason))) showError(T().delFailed);
+    }
+    render();
+  }
 
-  oma.onChange(render);
+  // ── chrome ──────────────────────────────────────────────────────────────
+  let errTimer = null;
+  function showError(msg) {
+    clearTimeout(errTimer);
+    $("err").textContent = msg;
+    $("err").hidden = false;
+    errTimer = setTimeout(() => { $("err").hidden = true; }, 7000);
+  }
 
-  oma.onPrefChange(() => {
-    localizeChrome();
-    if (lastState) render(lastState);
-  });
+  function localize() {
+    const t = T();
+    document.documentElement.lang = lang() === "zh" ? "zh-CN" : "en";
+    document.title = t.appName;
+    $("app").setAttribute("aria-label", t.appName);
+    for (const el of document.querySelectorAll("[data-t]")) el.textContent = t[el.dataset.t];
+    $("ask").setAttribute("aria-label", t.askAria);
+    $("fMerchant").placeholder = t.merchantPh;
+    $("fMerchant").setAttribute("aria-label", t.merchantAria);
+    $("fAmount").setAttribute("aria-label", t.amountAria);
+    $("fCat").placeholder = t.catPh;
+    $("fCat").setAttribute("aria-label", t.catAria);
+    $("fNote").placeholder = t.notePh;
+    $("moreBtn").setAttribute("aria-label", t.more);
+    $("prev").setAttribute("aria-label", t.prev);
+    $("next").setAttribute("aria-label", t.next);
+  }
+
+  $("moreBtn").onclick = () => {
+    const open = $("qaMore").hidden;
+    $("qaMore").hidden = !open;
+    $("moreBtn").setAttribute("aria-expanded", String(open));
+  };
+  $("fPay").onchange = () => { $("fPay").dataset.touched = "1"; };
+  $("fCur").onchange = () => { $("fCur").dataset.touched = "1"; };
+  $("prev").onclick = () => { viewMonth = shiftMonth(viewMonth || monthKeyOf(today()), -1); catFilter = null; render(); };
+  $("next").onclick = () => {
+    const next = shiftMonth(viewMonth || monthKeyOf(today()), 1);
+    viewMonth = next === monthKeyOf(today()) ? null : next;
+    catFilter = null;
+    render();
+  };
+  $("clearCat").onclick = () => { catFilter = null; render(); };
+
+  // The hand-off: a proposal with the month's facts, never converting currencies.
+  $("ask").onclick = async () => {
+    const m = model();
+    const cats = m.categories.map((c) => `${c.name}: ${money(c.total, m.currency)} (${c.count})`).join(", ") || "none yet";
+    const list = m.counted.slice(0, 40).map((e) => `${e.date} ${e.merchant} ${money(e.amount, e.currency)} [${e.cat}]`).join("; ");
+    const pace = m.prevHas
+      ? `${monthName(m.prevKey, true)}${m.isNow ? ` up to day ${m.day}` : ""}: ${money(m.prevTotal, m.currency)}. `
+      : "";
+    $("ask").disabled = true;
+    try {
+      const r = await oma.sendMessage(
+        `Look at my spending journal for ${monthName(m.month, true)}${m.isNow ? " so far" : ""}. ` +
+        `In ${m.currency}: ${money(m.total, m.currency)} across ${m.counted.length} purchases. ` +
+        `By category: ${cats}. ${pace}Purchases: ${list || "none"}. ` +
+        (m.otherCount ? `${m.otherCount} more purchases are in other currencies — keep them separate, don't convert. ` : "") +
+        `Where did the money go, what stands out, and what are two or three practical things I could change?`
+      );
+      if (r && r.isError === true && !r.degraded) showError(T().askFailed);
+    } catch {
+      showError(T().askFailed);
+    } finally {
+      $("ask").disabled = false;
+    }
+  };
+
+  if (oma.standalone) document.body.classList.add("standalone");
+  $("fDate").value = isoOf(today());
+  oma.ready((s) => { localize(); render(s); });
+  oma.onChange((s) => render(s));
+  oma.onPrefChange(() => { localize(); render(); });
 </script>
 </body>
 </html>

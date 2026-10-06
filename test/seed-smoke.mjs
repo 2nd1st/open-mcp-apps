@@ -1,21 +1,19 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
 // test/seed-smoke.mjs — proves seed.mjs stores the FILE's bytes and is idempotent across runs,
-// and that the system UI kit reaches apps by INJECTION rather than by being baked into
-// stored source. The kit used to be spliced in at seed time through a per-file marker, which
-// meant (a) only the three marker-bearing system apps ever had it and (b) a kit edit
-// needed a re-seed to land. Both properties are inverted now and pinned below.
-// Uses its OWN temp OMA_DB and restores components/_system.css byte-exact in a finally block.
+// that what the engine adds to every document is the page BASE only (the tokens' companion:
+// reset, font, [hidden], safe-area defaults — no layout, no component classes), and that every
+// shipped app carries the CSS for the classes it uses itself.
+// Uses its OWN temp OMA_DB.
 // Run: node test/seed-smoke.mjs
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, unlinkSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { openStore } from "../src/store.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "seed-smoke.db");
-const CSS = join(ROOT, "components", "_system.css");
 const rmdb = () => { for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f); };
 
 let pass = 0, fail = 0;
@@ -27,20 +25,9 @@ const versions = () => {
   s.close();
   return v;
 };
-// KIT_CSS caches on first read, so every kit observation runs in a FRESH process.
-const wrapped = () => execFileSync("node", ["-e",
-  'import("./src/shell.mjs").then(m=>{const d=m.wrapApp("<p>x</p>");process.stdout.write(JSON.stringify({kit:/<style data-oma="kit">/.test(d),probe:d.includes("SEED_SMOKE_KIT_PROBE"),loader:/<style data-oma="kit">/.test(m.wrapLoader())}))})',
-], { cwd: ROOT, encoding: "utf-8" });
-
-// The kit as a WIDGET receives it — same fresh-process rule as wrapped(), since KIT_CSS caches.
-const kitDoc = () => execFileSync("node", ["-e",
-  'import("./src/shell.mjs").then(m=>process.stdout.write(m.wrapApp("<p>x</p>")))',
-], { cwd: ROOT, encoding: "utf-8" });
-
-// Capture the ORIGINAL bytes; restore them ONLY if the file still holds our probe write —
-// a concurrent editor's change must never be clobbered by the restore.
-const cssOriginal = readFileSync(CSS, "utf-8");
-const cssProbed = cssOriginal + "\n/* SEED_SMOKE_KIT_PROBE */\n";
+const { wrapApp, wrapLoader, BASE_CSS } = await import("../src/shell.mjs");
+const baseOf = (doc) => /<style data-oma="base">([\s\S]*?)<\/style>/.exec(doc)?.[1] ?? null;
+const appFiles = readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")));
 rmdb();
 try {
   console.log("1. seed is idempotent across runs (same temp db)");
@@ -60,35 +47,60 @@ try {
   const stored = (() => { const s = openStore(DB); const h = s.getApp("settings").ui; s.close(); return h; })();
   ok("a seeded app's stored ui equals its source file byte-for-byte",
     stored === readFileSync(join(ROOT, "components", "settings", "ui.html"), "utf-8"));
-  ok("no stored app carries a kit <style> or the retired marker",
-    !stored.includes('data-oma="kit"') && !stored.includes("@OMA_SYSTEM_CSS"));
+  ok("no stored app carries an engine <style> or the retired marker",
+    !stored.includes('data-oma="base"') && !stored.includes('data-oma="kit"') && !stored.includes("@OMA_SYSTEM_CSS"));
   ok("the marker is gone from every shipped app file",
-    readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")))
-      .every((n) => !readFileSync(join(ROOT, "components", n, "ui.html"), "utf-8").includes("@OMA_SYSTEM_CSS")));
+    appFiles.every((n) => !readFileSync(join(ROOT, "components", n, "ui.html"), "utf-8").includes("@OMA_SYSTEM_CSS")));
 
-  console.log("3. the kit reaches EVERY document by injection, with no re-seed");
-  const before = JSON.parse(wrapped());
-  ok("wrapApp injects the kit for any app", before.kit);
-  ok("wrapLoader injects it too (the universal-loader document)", before.loader);
-  ok("…and does not yet contain the probe", !before.probe);
-  writeFileSync(CSS, cssProbed);            // edit the kit — nothing re-seeded, nothing rebuilt
-  const after = JSON.parse(wrapped());
-  ok("a kit edit is live in the very next rendered document", after.probe);
+  console.log("3. the engine adds the page BASE to every document — and nothing that lays out");
+  const appDoc = wrapApp("<p>x</p>");
+  const loaderDoc = wrapLoader();
+  ok("wrapApp injects the base, byte-for-byte BASE_CSS", baseOf(appDoc) === BASE_CSS);
+  ok("wrapLoader injects it too (the universal-loader document)", baseOf(loaderDoc) === BASE_CSS);
+  ok("no kit layer ships any more: no data-oma=\"kit\" tag, no .k-* selector in the base",
+    ![appDoc, loaderDoc].some((d) => d.includes('data-oma="kit"') || /\.k-[a-z]/.test(baseOf(d) ?? "")));
+  // Every declaration the base makes, by property. The allowed set IS the contract: a reset, the
+  // host font and colour, [hidden], the safe-area defaults. A padding, a width, a frame — any
+  // property outside it — is the engine laying out an app, which is the app's job.
+  const declsOf = (css) => [...css.matchAll(/([^{}]+)\{([^}]*)\}/g)].flatMap(([, sel, body]) =>
+    body.split(";").map((d) => d.trim()).filter(Boolean)
+      .map((d) => [sel.trim(), d.slice(0, d.indexOf(":")).trim(), d.slice(d.indexOf(":") + 1).trim()]));
+  const decls = declsOf(BASE_CSS);
+  ok(`the base declares something (${decls.length} declarations) — the checks below are non-vacuous`, decls.length >= 6);
+  const ALLOWED = new Set(["box-sizing", "margin", "font-family", "font-size", "color", "display",
+    "--oma-safe-top", "--oma-safe-right", "--oma-safe-bottom", "--oma-safe-left"]);
+  const stray = decls.filter(([, prop]) => !ALLOWED.has(prop));
+  ok("…and only reset / font / colour / [hidden] / safe-area properties", stray.length === 0);
+  if (stray.length) console.log("      stray: " + stray.map((d) => d.join(" ")).join(" | "));
+  ok("…body margin is 0 and nothing pads it",
+    decls.some(([sel, p, v]) => sel === "body" && p === "margin" && v === "0") &&
+    !decls.some(([sel, p]) => sel === "body" && p.startsWith("padding")));
+  ok("…display appears only to keep [hidden] hidden",
+    decls.some(([, p]) => p === "display") &&
+    decls.filter(([, p]) => p === "display").every(([sel, , v]) => sel === "[hidden]" && /none\s*!important/.test(v)));
+  ok("…every --oma-safe-* side defaults to 0px", ["top", "right", "bottom", "left"]
+    .every((side) => decls.some(([sel, p, v]) => sel === ":root" && p === `--oma-safe-${side}` && v === "0px")));
 
-  // The kit sets `display` on ten classes, and each of them silently outranks the UA's
-  // [hidden]{display:none} — so `el.hidden = true` on a .k-btn left the button on screen with no
-  // error to see. Read off the CSS that ACTUALLY REACHES a widget, not the file on disk: a rule
-  // that does not ship is not a fix. The first assertion is the detector proving it can find
-  // something, so a regex that stops matching reads as broken instead of as clean.
-  const kit = /<style data-oma="kit">([\s\S]*?)<\/style>/.exec(kitDoc())?.[1] || "";
-  const setsDisplay = [...kit.matchAll(/([^{}]+)\{[^}]*display\s*:/g)]
-    .map((m) => m[1].trim()).filter((sel) => !sel.includes("[hidden]"));
-  ok(`the shipped kit really does set display (${setsDisplay.length} selector(s)) — detector is non-vacuous`,
-    setsDisplay.length > 0);
-  ok("…and `hidden` beats every one of them", /\[hidden\]\s*\{[^}]*display\s*:\s*none\s*!important/.test(kit));
+  console.log("3b. every shipped app carries the CSS for the k-* classes it uses");
+  // The engine ships no component classes, so an app that names `.k-btn` in its markup and has no
+  // rule for it renders that button as a bare browser default. Static markup only (class="…"),
+  // which is where every one of these apps puts its frame.
+  const unstyled = [];
+  let classesSeen = 0;
+  for (const n of appFiles) {
+    const ui = readFileSync(join(ROOT, "components", n, "ui.html"), "utf-8");
+    const css = [...ui.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]).join("\n");
+    const markup = ui.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
+    const used = new Set([...markup.matchAll(/\sclass="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/)).filter((c) => /^k-[a-z]/.test(c)));
+    classesSeen += used.size;
+    for (const c of used) if (!new RegExp(`\\.${c}(?![\\w-])`).test(css)) unstyled.push(`${n}: .${c}`);
+  }
+  ok(`k-* classes found in shipped markup (${classesSeen}) — the check below is non-vacuous`, classesSeen > 20);
+  ok("…and each one has a rule in its own app's <style>", unstyled.length === 0);
+  if (unstyled.length) console.log("      unstyled: " + unstyled.join(", "));
   seed();
   const v3 = versions();
-  ok("…and moves NO app version (the kit is not part of stored source)",
+  ok("…and re-seeding moves NO app version (nothing is baked into stored source)",
     Object.keys(v2).every((n) => v3[n] === v2[n]));
 
   console.log("4. seed never overwrites a NON-SEED app that holds a system name");
@@ -150,9 +162,6 @@ try {
     ok("…and the seeder said it left it untouched", /library — not ours \(author=agent\)/.test(log5b));
   }
 } finally {
-  const now = readFileSync(CSS, "utf-8");
-  if (now === cssProbed) writeFileSync(CSS, cssOriginal); // undo only OUR probe write
-  else if (now !== cssOriginal) console.log("  ! _system.css changed externally mid-test — left untouched");
   rmdb();
 }
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILURES"}: ${pass} passed, ${fail} failed`);

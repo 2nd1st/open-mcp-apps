@@ -200,11 +200,7 @@
       }
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "local-tools"
-  },
-  "stage": {
-    "width": "wide"
   }
 }

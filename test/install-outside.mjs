@@ -53,7 +53,7 @@ const CLOSE = "</" + S + ">";
 //
 // The script reference is written the way a BUNDLER writes it — `type="module"`, in <head>,
 // before the mount point — because that is the shape the door actually receives and the one that
-// used to arrive broken (see §2's module/stage assertions).
+// used to arrive broken (see §2's module/body assertions).
 const TEMPLATE = `<!DOCTYPE html><html><head><meta charset="UTF-8">
 <link rel="stylesheet" media="all" href="oma-asset:app.css">
 <${S} type="module" crossorigin src="oma-asset:app.js">${CLOSE}
@@ -64,14 +64,11 @@ ${CLOSE}
 </body></html>`;
 // Both bundles carry the byte sequence that would break out of the tag they are inlined into —
 // the escape is not decoration, it is the difference between an app and an injection. The JS also
-// carries the literal characters `<body>`: a bundle is TEXT, and the one rewrite that used to
-// reach into it (the stage class) turned that text into a syntax error.
+// carries the literal characters `<body>`: a bundle is TEXT, and any rewrite keyed on a tag name
+// that reaches into it turns that text into a syntax error.
 const BUNDLE_JS = `const o = window.oma; o.ready(function(s){ document.getElementById("root").textContent = "items: " + s.items.length; });\nexport const mounted = "the <body> element";\n// literal close: ${CLOSE} and ${"</SCRIPT>"}`;
 const BUNDLE_CSS = `#root { color: var(--color-text-primary); }\n/* literal close: </style> */`;
-const MANIFEST = { manifest_version: 2, kind: "app", collections: { outside: {} },
-  // A declared stage width is what makes stampStage run at all — without one it no-ops and the
-  // seam order it belongs to is untested.
-  stage: { width: "column" },
+const MANIFEST = { manifest_version: 2, collections: { outside: {} },
   functions: { tally: { description: "count the rows" } } };
 
 writeFileSync(join(TMP, "ui.html"), TEMPLATE);
@@ -126,18 +123,17 @@ const escaped = (doc) => doc.includes("<\\/" + S) && doc.includes("<\\/SCRIPT") 
 const keptModule = (doc) => /<script data-oma="asset" data-oma-asset="app\.js" type="module">/.test(doc)
   && /<style data-oma="asset" data-oma-asset="app\.css" media="all">/.test(doc)
   && !/crossorigin/.test(doc);
-// THE BUNDLE IS NOT REWRITTEN. The stage class belongs on the app's own <body>; the bundle merely
-// contains those characters, and a document that stamped THEM shipped a broken string literal.
+// THE BUNDLE IS NOT REWRITTEN. It contains the characters `<body>`, and a serve step that rewrote
+// THEM shipped a broken string literal.
 const bundleIntact = (doc) => doc.includes(`"the <body> element"`);
-// …and it lands on the REAL body, which is the one the mount point is inside. Asserting only the
-// class would pass on the broken document too — the bundle's rewritten string contains those same
-// characters, which is exactly how a stamp that hit the wrong tag could read as a stamp that worked.
-const stagedBody = (doc) => doc.includes(`<body class="stage-column"><div id="root">`);
+// …and the app's own <body> arrives exactly as the template wrote it: the engine writes nothing
+// onto the app's markup (no width class, no frame) — layout is the app's.
+const ownBody = (doc) => doc.includes(`</head><body><div id="root">`);
 
 const client = new Client({ name: "install-outside", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node", args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "outside-test", OMA_DYNAMIC_TOOLS: "1", OMA_VIEWER: "0" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "outside-test", OMA_VIEWER: "0" },
 }));
 const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
 
@@ -147,16 +143,16 @@ const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
   ok("SEAM ui:// resource — bundle inlined, no oma-asset: left", inlined(doc), doc.slice(0, 400));
   ok("...with the close-tag escape applied in both languages", escaped(doc));
   ok("...keeping type=module and media, dropping the fetch attributes", keptModule(doc), doc.slice(0, 500));
-  ok("...with the bundle's own bytes untouched by the stage stamp", bundleIntact(doc));
-  ok("...and the class on the app's real body", stagedBody(doc));
+  ok("...with the bundle's own bytes untouched", bundleIntact(doc));
+  ok("...and the app's own <body>, nothing written onto it", ownBody(doc));
 }
 { // SEAM 2 — get_app_html, what the universal loader mounts (and what oma.embed hands the runner).
   const r = await client.callTool({ name: "get_app_html", arguments: { name: "outside-app" } });
   const doc = r.structuredContent.html;
   ok("SEAM get_app_html — bundle inlined, no oma-asset: left", inlined(doc), doc.slice(0, 400));
   ok("...keeping type=module and media, dropping the fetch attributes", keptModule(doc), doc.slice(0, 500));
-  ok("...with the bundle's own bytes untouched by the stage stamp", bundleIntact(doc));
-  ok("...and the class on the app's real body", stagedBody(doc));
+  ok("...with the bundle's own bytes untouched", bundleIntact(doc));
+  ok("...and the app's own <body>, nothing written onto it", ownBody(doc));
 }
 { // …and the one read that must NOT inline: source is source.
   const r = await client.callTool({ name: "get_app", arguments: { name: "outside-app" } });
@@ -215,21 +211,19 @@ const version = () => { const s = openStore(DB); const v = s.getApp("outside-app
     r.isError === true, textOf(r).slice(0, 200));
 }
 {
-  // The manifest slot is part of the build too (install-app.mjs --manifest), so the one verb that
+  // The manifest slot is part of the build too (install-app.mjs --manifest), so a save that
   // writes ONLY that slot is refused on the same grounds. Pinned because it is a CONSEQUENCE of
   // where the gate sits, and a consequence nobody asserted is a consequence someone will "fix".
-  // Its own fixture: promote_app short-circuits on an app already kind "app", and a test that
-  // green-lit on THAT would be asserting nothing at all.
-  {
-    const store = openStore(DB);
-    store.execute({ type: "save_app", command_id: randomUUID(), name: "outside-visual",
-      ui: `<html><body><div id="root"></div><${S} src="oma-asset:app.js">${CLOSE}</body></html>`,
-      manifest: { manifest_version: 2, kind: "visual" }, description: "", actor: "human", host: "outside-test" });
-    store.close();
-  }
-  const r = await client.callTool({ name: "promote_app", arguments: { name: "outside-visual" } });
-  ok("promote_app — manifest-only, and refused on the same grounds (the declaration is a build file)",
-    r.isError === true && /built_outside/.test(textOf(r)), textOf(r).slice(0, 200));
+  // The declaration is a LEGAL one (the installed manifest with one key changed), so the gate is
+  // the only thing that can refuse it.
+  const v = version();
+  const r = await client.callTool({ name: "save_app", arguments: {
+    command_id: randomUUID(), name: "outside-app",
+    manifest: { ...MANIFEST, collections: { outside: {}, more: {} } }, description: "", expected_version: v,
+  } });
+  ok("a manifest-only save is refused on the same grounds (the declaration is a build file)",
+    r.isError === true && /built_outside/.test(textOf(r)), textOf(r).slice(0, 300));
+  ok("...and nothing was written", version() === v);
 }
 await client.close();
 
@@ -265,8 +259,8 @@ try {
   ok("SEAM /view — bundle inlined, no oma-asset: left", inlined(doc), doc.slice(0, 400));
   ok("...and it is the SECOND build being served (no stale copy anywhere)", doc.includes("// build 2"));
   ok("...keeping type=module and media, dropping the fetch attributes", keptModule(doc), doc.slice(0, 500));
-  ok("...with the bundle's own bytes untouched by the stage stamp", bundleIntact(doc));
-  ok("...and the class on the app's real body", stagedBody(doc));
+  ok("...with the bundle's own bytes untouched", bundleIntact(doc));
+  ok("...and the app's own <body>, nothing written onto it", ownBody(doc));
   // The runtime module the shell injects must come BEFORE the app's, or `window.oma` is undefined
   // exactly when the bundle's top level runs. Both are modules, and modules run in document order.
   ok("...with the engine's runtime module ahead of the app's",
@@ -302,8 +296,8 @@ try {
 // builds the document around it. It picks where to inject by finding the first <head>, over a
 // string that by then already CONTAINS the bundle. React's development build says "<head>" in an
 // error message, so the whole shell went inside a JS string literal: measured, byte 846,769 of a
-// 1.5 MB document, `Invalid or unexpected token`, blank card. Same species as the stage stamp, a
-// second consumer, found by grepping the bundles for the other two structural tags.
+// 1.5 MB document, `Invalid or unexpected token`, blank card — found by grepping the bundles for
+// the structural tags.
 console.log("\n5a. a FRAGMENT template whose bundle merely MENTIONS <head> and <html>");
 {
   const FRAG = `<link rel="stylesheet" href="oma-asset:frag.css">
@@ -316,7 +310,7 @@ console.log("\n5a. a FRAGMENT template whose bundle merely MENTIONS <head> and <
   writeFileSync(join(TMP, "frag.css"), `#root { color: var(--color-text-primary); }`);
   writeFileSync(join(TMP, "frag-ui.html"), FRAG);
   writeFileSync(join(TMP, "frag-manifest.json"),
-    JSON.stringify({ manifest_version: 2, kind: "app", collections: { fragdata: {} }, stage: { width: "wide" } }));
+    JSON.stringify({ manifest_version: 2, collections: { fragdata: {} } }));
   install([join(TMP, "frag-ui.html"), "--name", "frag-app", "--db", DB, "--update",
     "--manifest", join(TMP, "frag-manifest.json"),
     "--asset", join(TMP, "frag.js"), "--asset", join(TMP, "frag.css")]);
@@ -329,8 +323,8 @@ console.log("\n5a. a FRAGMENT template whose bundle merely MENTIONS <head> and <
   ok("…and every structural tag the bundle merely MENTIONS is still text",
     doc.includes(`the <style> tag to the <head> or`)
       && doc.includes(`expected <html> to be the root, and <body> to hold it`));
-  ok("…with the stage class on the body wrapApp built (a fragment has none of its own)",
-    /<body class="stage-wide">/.test(doc), (doc.match(/<body[^>]*>/) || [""])[0]);
+  ok("…and the body wrapApp built around the fragment is a bare <body>",
+    /<\/head><body><link rel="stylesheet"|<\/head><body><style data-oma="asset"/.test(doc), (doc.match(/<body[^>]*>/) || [""])[0]);
 }
 
 } finally {

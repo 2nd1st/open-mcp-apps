@@ -1,7 +1,8 @@
 {
+  "as_of": "2026-08-06",
   "items": [
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313101",
+      "id": "wonder-01",
       "group": "Sky",
       "position": 1,
       "version": 1,
@@ -19,7 +20,7 @@
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313102",
+      "id": "wonder-02",
       "group": "Sky",
       "position": 2,
       "version": 1,
@@ -32,12 +33,12 @@
         "try_it": "Add one or two drops of milk to a clear glass of water and shine a flashlight through it from the side. Look at the beam from the side, not into the light.",
         "try_note": "Ask an adult to help with the glass and wipe up any spills.",
         "related_prompt": "Explain why sunsets look red using the same idea that makes the sky blue.",
-        "explored": false,
+        "explored": true,
         "rank": 2
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313103",
+      "id": "wonder-03",
       "group": "Sky",
       "position": 3,
       "version": 1,
@@ -55,9 +56,9 @@
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313104",
+      "id": "wonder-04",
       "group": "Animals",
-      "position": 1,
+      "position": 4,
       "version": 1,
       "fields": {
         "question": "How do birds know where to go?",
@@ -73,9 +74,9 @@
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313105",
+      "id": "wonder-05",
       "group": "Plants",
-      "position": 1,
+      "position": 5,
       "version": 1,
       "fields": {
         "question": "Why do leaves change color?",
@@ -86,14 +87,14 @@
         "try_it": "Collect only fallen leaves and arrange them from green to yellow, orange, red, and brown. Revisit the same tree a week later and compare.",
         "try_note": "Leave living leaves on the tree and wash your hands after handling plants.",
         "related_prompt": "Why do some trees turn red while others mostly turn yellow?",
-        "explored": false,
+        "explored": true,
         "rank": 5
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313106",
+      "id": "wonder-06",
       "group": "Everyday",
-      "position": 1,
+      "position": 6,
       "version": 1,
       "fields": {
         "question": "Why can I hear the ocean in a shell?",
@@ -109,9 +110,9 @@
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313107",
+      "id": "wonder-07",
       "group": "Everyday",
-      "position": 2,
+      "position": 7,
       "version": 1,
       "fields": {
         "question": "Why can I see my breath when it is cold?",
@@ -127,9 +128,9 @@
       }
     },
     {
-      "id": "20f4aa20-7685-4f1b-b79d-f0e631313108",
+      "id": "wonder-08",
       "group": "Plants",
-      "position": 2,
+      "position": 8,
       "version": 1,
       "fields": {
         "question": "How does a seed know which way is up?",
@@ -142,6 +143,78 @@
         "related_prompt": "How can a root sense gravity when it has no eyes or ears?",
         "explored": false,
         "rank": 8
+      }
+    },
+    {
+      "id": "wonder-09",
+      "group": "Sky",
+      "position": 9,
+      "version": 1,
+      "fields": {
+        "question": "Why is the sunset orange when the sky was blue all day?",
+        "short_answer": "At sunset, sunlight crosses far more air to reach you. Most of the blue is scattered away along that long path, so the light that gets through is mostly orange and red.",
+        "category": "Sky",
+        "scene": "blue-sky",
+        "big_idea": "The same scattering that makes the day sky blue removes blue from light that has travelled a long way.",
+        "try_it": "Shine a flashlight through a clear glass of water with a few drops of milk stirred in. From the side the water looks faintly blue; looking at the light straight through the glass, it looks orange.",
+        "try_note": "Use a small torch, not a laser, and never look at the Sun itself.",
+        "related_prompt": "Compare noon and sunset light paths through the atmosphere with a simple drawing.",
+        "explored": true,
+        "rank": 9
+      }
+    },
+    {
+      "id": "wonder-10",
+      "group": "Animals",
+      "position": 10,
+      "version": 1,
+      "fields": {
+        "question": "How do bees find their way back to the hive?",
+        "short_answer": "Honeybees use the Sun as a compass, correcting for how it moves through the day, and they learn landmarks near the hive. They can even read the pattern of polarized light in patches of blue sky.",
+        "category": "Animals",
+        "scene": "migration",
+        "big_idea": "A moving Sun can still be a compass if you also keep track of time.",
+        "try_it": "Watch a flowering bush for ten minutes and note which direction the bees leave in. Check again an hour later and see whether the flight line stays the same.",
+        "try_note": "Keep a calm distance of a few steps and don't swat at bees.",
+        "related_prompt": "Explain the honeybee waggle dance and how it encodes direction.",
+        "explored": false,
+        "rank": 10
+      }
+    },
+    {
+      "id": "wonder-11",
+      "group": "Plants",
+      "position": 11,
+      "version": 1,
+      "fields": {
+        "question": "Do sunflowers really follow the Sun?",
+        "short_answer": "Young sunflowers do. Their stems grow a little faster on the east side during the day and on the west side at night, so the heads swing west and back again. Once they bloom, most stop and face east.",
+        "category": "Plants",
+        "scene": "seed-direction",
+        "big_idea": "Plants can move by growing unevenly, and an internal clock helps time it.",
+        "try_it": "Put a pot of young bean or sunflower seedlings on a sunny windowsill and mark which way the tips lean in the morning and in the evening.",
+        "try_note": "",
+        "related_prompt": "Why would facing east help a mature sunflower attract bees?",
+        "explored": false,
+        "rank": 11
+      }
+    },
+    {
+      "id": "wonder-12",
+      "group": "Everyday",
+      "position": 12,
+      "version": 1,
+      "fields": {
+        "question": "Why does my voice sound strange on a recording?",
+        "short_answer": "When you speak, you hear yourself through the air and through the bones of your head, which carry low sounds well. A recording only captures the air part, so it sounds thinner than the voice you are used to.",
+        "category": "Everyday",
+        "scene": "shell-sound",
+        "big_idea": "What you hear depends on the path the sound takes to your ears.",
+        "try_it": "Hum with your mouth closed, then plug your ears with your fingers and hum again. The hum gets louder because more of it reaches you through bone.",
+        "try_note": "",
+        "related_prompt": "How do bone-conduction headphones use this same idea?",
+        "explored": false,
+        "rank": 12
       }
     }
   ]

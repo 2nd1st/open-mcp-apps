@@ -10,7 +10,7 @@ Hard contract checklist:
 [x] 8. Every write uses oma.callTool; every conversation CTA uses oma.sendMessage only after a click; visible errors are never swallowed.
 [x] 9. No srcdoc and no literal script-closing sequence inside JSON or JavaScript strings.
 
-Acceptance notes: three tabs remain usable at 500px; all three collections self-fetch with data_list(limit:500), onChange refresh, and a 30-second fallback poll. Character follows the centered portrait/pill/key-value profile grammar. Memories are a vertical list with stationery-style inline expansion. About You preserves all seven kinds and edits inline. Light pearl mist is primary; dark is a charcoal pearl variant without a purple-black starfield.
+Acceptance notes: three tabs remain usable at 500px; all three collections self-fetch with data_list(limit:500), onChange refresh, and a 30-second fallback poll. Character follows the centered portrait/pill/key-value profile grammar. Memories are a vertical list with stationery-style inline expansion. About You preserves all seven kinds and edits inline. Structure is the host tokens in both themes; rose (light-dark) is the one accent.
 45-day check from 2026-07-27: 2026-09-10 is 46 days after the latest 2026-07-26 memory, so the live status becomes the longing state. The 2026-08-18 birthday rolls forward to 2027-08-18 and shows 342 days remaining, rather than staying overdue.
 -->
 <!DOCTYPE html>
@@ -19,60 +19,98 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Companion · Shared Memory</title>
-<meta name="description" content="A pearl-light relationship memory palace for an AI companion. Personalize companion-profile only from genuine knowledge, keep all seven companion-knows categories accurate, and after meaningful conversations add a companion-memories row containing both a third-person summary and the companion's private first-person thought. Never invent personal facts. Portrait replacements should be original vertical 2:3 near-half-body art with a pearl-white mist background and warm-gold detail.">
+<meta name="description" content="A pearl-light relationship memory palace for an AI companion.">
 <meta name="oma-category" content="People">
 
 <style>
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-ok:var(--color-text-success,#2e9e5b);--k-warn:var(--color-text-warning,#b98200);--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-ink-7:color-mix(in oklab,var(--color-text-primary) 7%,transparent);--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-s2:8px;--k-s3:12px;--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}.k-stagger>*,.k-pop,.k-skel{animation:none!important}}
+  .k-sub,.k-mut{font-size:var(--font-text-sm-size,12.5px)}
+  .k-mut{color:var(--color-text-tertiary)}
+  .k-num{font-variant-numeric:tabular-nums}
+  .k-row{display:flex;align-items:center;gap:var(--k-s2)}
+  .k-grow{flex:1;min-width:0}
+  .k-icon{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.5;stroke-linecap:round;stroke-linejoin:round;vertical-align:-3px}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-chip{display:inline-flex;align-items:center;gap:5px;border-radius:var(--border-radius-full,999px);border:1px solid var(--color-border-secondary);background:transparent;color:var(--color-text-secondary);padding:2px 10px;font:inherit;font-size:11.5px;font-weight:550;cursor:pointer;transition:background var(--k-t-fast),color var(--k-t-fast),border-color var(--k-t-fast),transform var(--k-t) var(--k-spring)}
+  .k-chip:hover{background:var(--k-ink-4);color:var(--color-text-primary)}
+  .k-chip:active{transform:scale(.93)}
+  .k-chip.on{background:color-mix(in oklab,var(--k-accent) 10%,transparent);border-color:color-mix(in oklab,var(--k-accent) 28%,transparent);color:var(--k-accent)}
+  .k-chip.static{cursor:default}
+  .k-chip.static:hover{background:transparent;color:var(--color-text-secondary)}
+  .k-chip.static:active{transform:none}
+  .k-badge{display:inline-flex;align-items:center;gap:4px;border-radius:var(--border-radius-full,999px);padding:1px 8px;font-size:11px;font-weight:600;background:var(--k-ink-4);color:var(--color-text-secondary)}
+  .k-badge.info{background:color-mix(in oklab,var(--k-accent) 10%,transparent);color:var(--k-accent)}
+  .k-badge.ok{background:color-mix(in oklab,var(--k-ok) 12%,transparent);color:var(--k-ok)}
+  .k-badge.warn{background:color-mix(in oklab,var(--k-warn) 14%,transparent);color:var(--k-warn)}
+  .k-badge.bad{background:color-mix(in oklab,var(--k-bad) 12%,transparent);color:var(--k-bad)}
+  .k-tabs{display:inline-flex;gap:2px;padding:3px;background:var(--color-background-secondary);border-radius:var(--border-radius-md,10px)}
+  .k-tab{display:inline-flex;align-items:center;gap:6px;border:none;background:transparent;color:var(--color-text-secondary);cursor:pointer;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:550;padding:5px 12px;border-radius:var(--border-radius-sm,7px);transition:background var(--k-t) var(--k-ease),color var(--k-t)}
+  .k-tab.on{background:var(--color-background-primary);color:var(--color-text-primary);box-shadow:var(--shadow-sm)}
+  .k-switch{appearance:none;width:34px;height:20px;margin:0;position:relative;border-radius:999px;background:var(--color-background-tertiary);border:1px solid var(--color-border-primary);cursor:pointer;transition:background var(--k-t) var(--k-ease),border-color var(--k-t)}
+  .k-switch::after{content:"";position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;background:var(--color-background-primary);box-shadow:var(--shadow-sm);transition:translate var(--k-t) var(--k-spring)}
+  .k-switch:checked{background:var(--k-accent);border-color:var(--k-accent)}
+  .k-switch:checked::after{translate:14px 0}
+  .k-field{padding:6px 10px;border-radius:var(--border-radius-md,10px);border:1px solid var(--color-border-primary);background:transparent;color:inherit;font:inherit;font-size:var(--font-text-sm-size,12.5px);transition:border-color var(--k-t-fast),box-shadow var(--k-t-fast)}
+  .k-field::placeholder{color:var(--color-text-tertiary)}
+  .k-field:focus{outline:none;border-color:var(--k-accent);box-shadow:0 0 0 3px color-mix(in oklab,var(--k-accent) 10%,transparent)}
+  .k-empty{display:grid;place-items:center;gap:var(--k-s2);text-align:center;padding:36px 16px;color:var(--color-text-tertiary)}
+  .k-empty>svg{width:64px;height:64px;stroke-width:1.5}
+  .k-empty b{color:var(--color-text-secondary);font-weight:600}
+  .k-skel{color:transparent;border-radius:var(--border-radius-sm,7px);background:linear-gradient(100deg,var(--k-ink-4) 40%,var(--k-ink-7) 50%,var(--k-ink-4) 60%) 0 0/300% 100%;animation:k-shimmer 1.4s linear infinite}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  @keyframes k-shimmer{to{background-position:-300% 0}}
+  .k-stage{max-width:760px;margin-inline:auto;overflow-x:clip}
+
+  /* Structure is the host's (backgrounds, text, borders come straight from tokens); rose is this
+     app's one identity colour — on the portrait ring, the primary action, the badges and marks. */
   :root {
     color-scheme: light dark;
-    --cp-page: color-mix(in oklab, var(--color-background-primary) 93%, var(--color-background-warning, var(--color-background-secondary)));
-    --cp-mist: color-mix(in oklab, var(--color-background-primary) 84%, var(--color-background-info, var(--color-background-secondary)));
-    --cp-pearl: color-mix(in oklab, var(--color-background-primary) 96%, var(--color-text-primary));
-    --cp-glass: color-mix(in oklab, var(--color-background-primary) 72%, transparent);
-    --cp-paper: color-mix(in oklab, var(--color-background-primary) 92%, var(--color-background-warning, var(--color-background-secondary)));
-    --cp-paper-deep: color-mix(in oklab, var(--color-background-secondary) 70%, var(--color-background-primary));
-    --cp-ink: color-mix(in oklab, var(--color-text-primary) 90%, var(--color-text-warning, var(--color-text-primary)));
-    --cp-soft: color-mix(in oklab, var(--color-text-secondary) 88%, var(--color-text-primary));
-    --cp-faint: color-mix(in oklab, var(--color-text-tertiary) 86%, var(--color-text-warning, var(--color-text-secondary)));
-    --cp-line: color-mix(in oklab, var(--color-border-secondary) 72%, var(--color-text-warning, var(--color-border-primary)));
-    --cp-metal: color-mix(in oklab, var(--color-border-primary) 54%, var(--color-text-warning, var(--color-text-primary)));
-    --cp-gold: color-mix(in oklab, var(--color-text-warning, var(--color-text-primary)) 70%, var(--color-text-primary));
-    --cp-gold-soft: color-mix(in oklab, var(--color-background-warning, var(--color-background-secondary)) 62%, var(--color-background-primary));
-    --cp-rose: color-mix(in oklab, var(--color-background-danger) 24%, var(--color-background-primary));
-    --cp-red: color-mix(in oklab, var(--color-text-danger) 84%, var(--color-text-primary));
-    --cp-cool: color-mix(in oklab, var(--color-text-info, var(--color-text-secondary)) 58%, var(--color-text-primary));
-    --cp-shadow: color-mix(in oklab, var(--color-text-primary) 16%, transparent);
+    --ca: light-dark(#b8325a, #f59ab4);
+    --ca-on: light-dark(#ffffff, #3a0a1a);
+    --k-accent: var(--ca);
+    --k-accent-bg: color-mix(in oklab, var(--ca) 10%, transparent);
+    --k-accent-brd: color-mix(in oklab, var(--ca) 30%, transparent);
+    --cp-page: var(--color-background-primary);
+    --cp-mist: var(--color-background-secondary);
+    --cp-pearl: var(--color-background-primary);
+    --cp-glass: var(--color-background-primary);
+    --cp-paper: var(--color-background-primary);
+    --cp-paper-deep: var(--color-background-secondary);
+    --cp-ink: var(--color-text-primary);
+    --cp-soft: var(--color-text-secondary);
+    --cp-faint: var(--color-text-tertiary);
+    --cp-line: var(--color-border-secondary);
+    --cp-metal: var(--color-border-primary);
+    --cp-gold: var(--ca);
+    --cp-gold-soft: color-mix(in oklab, var(--ca) 10%, var(--color-background-primary));
+    --cp-rose: color-mix(in oklab, var(--ca) 12%, var(--color-background-primary));
+    --cp-red: var(--color-text-danger);
     --cp-shadow-soft: color-mix(in oklab, var(--color-text-primary) 8%, transparent);
-  }
-
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --cp-page: color-mix(in oklab, var(--color-background-primary) 86%, var(--color-text-primary));
-      --cp-mist: color-mix(in oklab, var(--color-background-secondary) 82%, var(--color-background-primary));
-      --cp-pearl: color-mix(in oklab, var(--color-background-secondary) 91%, var(--color-text-warning, var(--color-text-secondary)));
-      --cp-glass: color-mix(in oklab, var(--color-background-secondary) 74%, transparent);
-      --cp-paper: color-mix(in oklab, var(--color-background-secondary) 88%, var(--color-background-warning, var(--color-background-primary)));
-      --cp-paper-deep: color-mix(in oklab, var(--color-background-tertiary, var(--color-background-secondary)) 76%, var(--color-background-primary));
-      --cp-ink: color-mix(in oklab, var(--color-text-primary) 93%, var(--color-text-warning, var(--color-text-primary)));
-      --cp-soft: color-mix(in oklab, var(--color-text-secondary) 92%, var(--color-text-primary));
-      --cp-faint: color-mix(in oklab, var(--color-text-tertiary) 84%, var(--color-text-warning, var(--color-text-secondary)));
-      --cp-line: color-mix(in oklab, var(--color-border-secondary) 78%, var(--color-text-warning, var(--color-border-primary)));
-      --cp-metal: color-mix(in oklab, var(--color-border-primary) 64%, var(--color-text-warning, var(--color-text-primary)));
-      --cp-gold-soft: color-mix(in oklab, var(--color-background-warning, var(--color-background-secondary)) 22%, var(--color-background-secondary));
-      --cp-rose: color-mix(in oklab, var(--color-background-danger) 18%, var(--color-background-secondary));
-      --cp-shadow: color-mix(in oklab, var(--color-text-primary) 30%, transparent);
-      --cp-shadow-soft: color-mix(in oklab, var(--color-text-primary) 18%, transparent);
-    }
   }
 
   [hidden] { display: none !important; }
 
   * { box-sizing: border-box; }
 
-  /* The kit owns document width, margin, padding, font and ground now. Keep only this app's ink
-     colour: the pearl palette is content paint, not stage chrome. Removing `overflow-x:hidden` is
-     also what lets the stage contract's root `overflow-x:clip` do its job without making the page
-     a dead-end scroll container. */
+  /* Width comes from `.k-stage` above, whose `overflow-x:clip` keeps the page itself the scroll
+     container. Body keeps only this app's ink colour. */
   body { color: var(--cp-ink); }
 
   button,
@@ -81,51 +119,20 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   button { letter-spacing: 0; }
 
-  /* `.companion` is `.k-stage` now: the kit draws the one card in chat and no card on a screen it
-     owns. Keep position/isolation because the two pearl glows below are still this app's artwork;
-     the frame itself (width, border, radius, shadow, background and overflow) belongs to the kit. */
-  .companion { position: relative; isolation: isolate; }
-
-  .companion::before,
-  .companion::after {
-    position: absolute;
-    z-index: -1;
-    border-radius: var(--border-radius-full, 999px);
-    content: "";
-    pointer-events: none;
-    filter: blur(4px);
-  }
-
-  .companion::before {
-    width: 118px;
-    height: 118px;
-    top: 96px;
-    left: -34px;
-    background: radial-gradient(circle, color-mix(in oklab, var(--cp-pearl) 82%, transparent), transparent 68%);
-  }
-
-  .companion::after {
-    width: 156px;
-    height: 156px;
-    right: -58px;
-    bottom: 78px;
-    background: radial-gradient(circle, color-mix(in oklab, var(--cp-gold-soft) 58%, transparent), transparent 70%);
-  }
+  .companion { position: relative; }
 
   .companion.compact .tab-shell,
   .companion.compact .panel-body { padding-inline: var(--k-s3, 12px); }
 
-  /* `.app-bar` is `.k-appbar` now — row, gaps, padding, mark box, title/eyebrow scale and the
-     chat-only rule all come from the kit. Its minimum height remains an app-specific rhythm. */
+  /* `.app-bar` is a `.k-appbar` (rules above); its minimum height is this app's own rhythm. */
   .app-bar { min-height: 62px; }
 
-  /* The mark keeps its PAINT and loses its box: the metal ring, pearl fill and inset glow are this
-     app's face, and the stage contract strips frames, never faces. */
+  /* The mark's box comes from `.k-appbar .k-appmark`; the metal ring, pearl fill and inset glow
+     are this app's face. */
   .app-mark {
-    border: 1px solid var(--cp-metal);
-    background: color-mix(in oklab, var(--cp-pearl) 78%, transparent);
-    color: var(--cp-gold);
-    box-shadow: inset 0 0 0 4px color-mix(in oklab, var(--cp-glass) 68%, transparent);
+    border: 1px solid var(--k-accent-brd);
+    background: var(--k-accent-bg);
+    color: var(--ca);
   }
 
   .app-mark svg {
@@ -136,17 +143,12 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     stroke-linejoin: round;
   }
 
-  .eyebrow {
-    font-family: var(--font-mono);
-  }
-
   .memory-badge {
     margin-left: auto;
-    border: 1px solid color-mix(in oklab, var(--cp-gold) 36%, var(--cp-line));
-    background: color-mix(in oklab, var(--cp-gold-soft) 54%, var(--cp-pearl));
-    color: var(--cp-gold);
-    font-family: ui-serif, Georgia, serif;
-    font-weight: 600;
+    border: 1px solid var(--k-accent-brd);
+    background: var(--k-accent-bg);
+    color: var(--ca);
+    font-weight: 650;
     white-space: nowrap;
   }
 
@@ -155,20 +157,19 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .status-strip {
     padding: 8px 16px;
     border-bottom: 1px solid color-mix(in oklab, var(--cp-line) 70%, transparent);
-    background: color-mix(in oklab, var(--color-background-danger) 28%, var(--cp-glass));
+    background: color-mix(in oklab, var(--color-text-danger) 8%, var(--cp-glass));
     color: var(--color-text-danger);
     font-size: 12px;
     line-height: 1.45;
   }
 
   .status-strip.ok {
-    background: color-mix(in oklab, var(--color-background-success) 28%, var(--cp-glass));
+    background: color-mix(in oklab, var(--color-text-success) 8%, var(--cp-glass));
     color: var(--color-text-success);
   }
 
   .tab-shell {
     padding: 9px 16px 0;
-    background: color-mix(in oklab, var(--cp-glass) 68%, transparent);
   }
 
   .companion-tabs {
@@ -209,13 +210,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     display: grid;
     justify-items: center;
     padding: 8px 10px 14px;
-    /* The companion's four-layer pearl gradient used to be the card frame. Keep that face on the
-       hero band so it survives when `.k-stage` correctly stops drawing a frame on a full screen. */
-    background:
-      radial-gradient(circle at 12% 9%, color-mix(in oklab, var(--cp-gold-soft) 64%, transparent) 0 5%, transparent 15%),
-      radial-gradient(circle at 88% 18%, color-mix(in oklab, var(--cp-rose) 66%, transparent) 0 7%, transparent 20%),
-      radial-gradient(circle at 62% 70%, color-mix(in oklab, var(--cp-mist) 74%, transparent) 0 9%, transparent 23%),
-      linear-gradient(148deg, var(--cp-page), var(--cp-mist));
     text-align: center;
   }
 
@@ -233,13 +227,27 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     border-radius: var(--border-radius-full, 999px);
   }
 
+  /* The ring is the bond: a rose arc drawn around the portrait to the bond score (0–99). */
   .portrait-ring {
-    border: 1px solid var(--cp-metal);
-    box-shadow:
-      0 18px 42px var(--cp-shadow-soft),
-      inset 0 0 0 6px color-mix(in oklab, var(--cp-pearl) 72%, transparent),
-      inset 0 0 0 7px color-mix(in oklab, var(--cp-metal) 48%, transparent);
+    border: 1px solid var(--cp-line);
   }
+
+  .bond-arc {
+    position: absolute;
+    inset: -7px;
+    width: calc(100% + 14px);
+    height: calc(100% + 14px);
+    rotate: -90deg;
+    pointer-events: none;
+  }
+
+  .bond-arc circle {
+    fill: none;
+    stroke-width: 3;
+  }
+
+  .bond-arc .track { stroke: color-mix(in oklab, var(--ca) 14%, transparent); }
+  .bond-arc .fill { stroke: var(--ca); stroke-linecap: round; }
 
   .portrait-medallion {
     inset: 8px;
@@ -261,7 +269,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .portrait-fallback {
     color: var(--cp-gold);
-    background: linear-gradient(160deg, var(--cp-pearl), var(--cp-mist));
+    background: var(--cp-mist);
   }
 
   .portrait-fallback .face { fill: color-mix(in oklab, var(--cp-rose) 48%, var(--cp-pearl)); }
@@ -278,11 +286,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     width: 38px;
     height: 38px;
     place-items: center;
-    border: 1px solid var(--cp-metal);
+    border: 1px solid var(--ca);
     border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--cp-paper) 86%, transparent);
-    color: var(--cp-gold);
-    box-shadow: 0 7px 18px var(--cp-shadow-soft);
+    background: var(--ca);
+    color: var(--ca-on);
+    box-shadow: 0 4px 12px var(--cp-shadow-soft);
   }
 
   .portrait-seal svg {
@@ -304,10 +312,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin: 0;
     overflow-wrap: anywhere;
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 31px;
-    font-weight: 540;
-    letter-spacing: 0;
+    font-size: 32px;
+    font-weight: 740;
+    letter-spacing: -.035em;
     line-height: 1.05;
   }
 
@@ -329,24 +336,24 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .identity-pills .k-chip {
     min-height: 27px;
     border-color: var(--cp-line);
-    background: color-mix(in oklab, var(--cp-glass) 86%, transparent);
+    background: var(--cp-glass);
     color: var(--cp-soft);
-    font-size: 10px;
+    font-size: 11px;
   }
 
   .identity-pills .k-chip:first-child {
-    border-color: color-mix(in oklab, var(--cp-gold) 46%, var(--cp-line));
-    color: var(--cp-gold);
+    border-color: var(--k-accent-brd);
+    background: var(--k-accent-bg);
+    color: var(--ca);
   }
 
   .status-line {
     max-width: 37em;
     margin: 13px auto 0;
     color: var(--cp-soft);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 15px;
-    font-style: italic;
-    line-height: 1.6;
+    font-size: 16px;
+    font-weight: 500;
+    line-height: 1.55;
   }
 
   .status-line::before,
@@ -374,9 +381,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .key-value strong {
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 19px;
-    font-weight: 560;
+    font-size: 20px;
+    font-weight: 720;
+    letter-spacing: -.02em;
     font-variant-numeric: tabular-nums;
   }
 
@@ -384,16 +391,14 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin-top: 2px;
     overflow-wrap: anywhere;
     color: var(--cp-faint);
-    font-family: var(--font-mono);
-    font-size: 8px;
-    text-transform: uppercase;
+    font-size: 11px;
   }
 
   .persona {
     max-width: 570px;
     margin: 10px auto 0;
     color: var(--cp-faint);
-    font-size: 11px;
+    font-size: 12px;
     line-height: 1.55;
     text-align: center;
   }
@@ -427,35 +432,33 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .section-heading h2 {
     margin: 0;
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 22px;
-    font-weight: 560;
-    letter-spacing: 0;
+    font-size: 20px;
+    font-weight: 720;
+    letter-spacing: -.02em;
   }
 
   .section-heading p {
     margin: 3px 0 0;
     color: var(--cp-faint);
-    font-size: 10px;
+    font-size: 11.5px;
     line-height: 1.4;
   }
 
   .collection-count {
     color: var(--cp-gold);
-    font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 11.5px;
+    font-weight: 650;
     font-variant-numeric: tabular-nums;
-    text-transform: uppercase;
   }
 
   .recap-button {
     width: 100%;
     min-height: 45px;
     justify-content: center;
-    border-color: color-mix(in oklab, var(--cp-gold) 54%, var(--cp-line)) !important;
-    background: color-mix(in oklab, var(--cp-gold-soft) 72%, var(--cp-paper)) !important;
-    color: var(--cp-ink) !important;
-    box-shadow: 0 9px 22px var(--cp-shadow-soft);
+    border-color: var(--ca) !important;
+    background: var(--ca) !important;
+    color: var(--ca-on) !important;
+    font-size: 13px;
   }
 
   .scene-grid {
@@ -476,22 +479,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     padding: 9px 10px;
     overflow: hidden;
     border: 1px solid var(--cp-line);
-    background: color-mix(in oklab, var(--cp-glass) 82%, transparent);
+    background: var(--cp-glass);
     color: var(--cp-ink);
     text-align: left;
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
     cursor: pointer;
-  }
-
-  .scene-action::after {
-    position: absolute;
-    width: 28px;
-    height: 28px;
-    right: -14px;
-    bottom: -14px;
-    border-radius: var(--border-radius-full, 999px);
-    content: "";
-    background: color-mix(in oklab, var(--cp-rose) 72%, transparent);
   }
 
   .scene-icon {
@@ -499,8 +491,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     width: 30px;
     height: 30px;
     place-items: center;
-    border: 1px solid var(--cp-metal);
+    border: 1px solid var(--k-accent-brd);
     border-radius: var(--border-radius-full, 999px);
+    background: var(--k-accent-bg);
     color: var(--cp-gold);
   }
 
@@ -521,7 +514,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .scene-copy strong {
     overflow-wrap: anywhere;
-    font-size: 12px;
+    font-size: 12.5px;
     font-weight: 650;
     line-height: 1.3;
   }
@@ -530,7 +523,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin-top: 2px;
     overflow-wrap: anywhere;
     color: var(--cp-faint);
-    font-size: 9px;
+    font-size: 11px;
     line-height: 1.35;
   }
 
@@ -541,10 +534,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .topic-label {
     display: block;
     margin-bottom: 6px;
-    color: var(--cp-faint);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    text-transform: uppercase;
+    color: var(--cp-soft);
+    font-size: 12px;
+    font-weight: 650;
   }
 
   .topic-list {
@@ -560,7 +552,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     min-height: 31px;
     flex: 0 1 auto;
     border-color: var(--cp-line);
-    background: color-mix(in oklab, var(--cp-paper) 76%, transparent);
+    background: var(--cp-paper);
     color: var(--cp-soft);
     white-space: normal;
   }
@@ -585,7 +577,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     cursor: pointer;
   }
 
-  .memory-row:hover { background: color-mix(in oklab, var(--cp-glass) 72%, transparent); }
+  .memory-row:hover { background: color-mix(in oklab, var(--ca) 5%, transparent); }
 
   .memory-date {
     position: relative;
@@ -594,12 +586,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     min-height: 48px;
     place-items: center;
     align-content: center;
-    border: 1px solid var(--cp-metal);
-    background:
-      repeating-linear-gradient(104deg, transparent 0 7px, color-mix(in oklab, var(--cp-metal) 9%, transparent) 7px 8px),
-      linear-gradient(145deg, color-mix(in oklab, var(--cp-pearl) 84%, var(--cp-paper)), var(--cp-paper));
+    border: 1px solid var(--k-accent-brd);
+    background: var(--k-accent-bg);
     color: var(--cp-gold);
-    box-shadow: inset 0 0 0 3px color-mix(in oklab, var(--cp-pearl) 40%, transparent), 0 3px 9px var(--cp-shadow-soft);
     clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
   }
 
@@ -610,17 +599,14 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .memory-date span { display: block; }
 
   .memory-date strong {
-    font-family: ui-serif, Georgia, serif;
     font-size: 19px;
-    font-weight: 560;
+    font-weight: 720;
     line-height: 1;
   }
 
   .memory-date span {
     margin-top: 3px;
-    font-family: var(--font-mono);
-    font-size: 8px;
-    text-transform: uppercase;
+    font-size: 10px;
   }
 
   .memory-copy { min-width: 0; }
@@ -629,9 +615,8 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     display: -webkit-box;
     overflow: hidden;
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 14px;
-    font-weight: 560;
+    font-size: 13.5px;
+    font-weight: 640;
     line-height: 1.4;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -642,7 +627,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin-top: 3px;
     overflow: hidden;
     color: var(--cp-faint);
-    font-size: 10px;
+    font-size: 11.5px;
     line-height: 1.4;
     -webkit-box-orient: vertical;
     -webkit-line-clamp: 2;
@@ -652,9 +637,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     display: grid;
     gap: 4px;
     justify-items: end;
-    font-family: var(--font-mono);
-    font-size: 7px;
-    text-transform: uppercase;
+    font-size: 10.5px;
   }
 
   .memory-pill {
@@ -662,30 +645,26 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     min-height: 18px;
     align-items: center;
     padding: 2px 6px;
-    border: 1px solid color-mix(in oklab, var(--cp-gold) 28%, var(--cp-line));
+    border: 1px solid var(--cp-line);
     border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--cp-gold-soft) 34%, var(--cp-pearl));
-    color: color-mix(in oklab, var(--cp-gold) 82%, var(--cp-soft));
-    font-weight: 700;
+    background: var(--cp-paper);
+    color: var(--cp-soft);
+    font-weight: 650;
     line-height: 1;
   }
 
   .new-label {
-    border-color: color-mix(in oklab, var(--cp-red) 30%, var(--cp-line));
-    background: color-mix(in oklab, var(--cp-rose) 58%, var(--cp-pearl));
-    color: color-mix(in oklab, var(--cp-red) 72%, var(--cp-ink));
-    font-weight: 800;
+    border-color: var(--ca);
+    background: var(--ca);
+    color: var(--ca-on);
+    font-weight: 750;
   }
 
-  .mood-tender {
-    border-color: color-mix(in oklab, var(--cp-red) 20%, var(--cp-line));
-    background: color-mix(in oklab, var(--cp-rose) 44%, var(--cp-pearl));
+  .mood-tender,
+  .mood-close {
+    border-color: var(--k-accent-brd);
+    color: var(--ca);
   }
-
-  .mood-bright { background: color-mix(in oklab, var(--cp-gold-soft) 64%, var(--cp-pearl)); }
-  .mood-protective { background: color-mix(in oklab, var(--cp-paper-deep) 30%, var(--cp-gold-soft)); }
-  .mood-quiet { background: color-mix(in oklab, var(--cp-paper) 64%, var(--cp-pearl)); }
-  .mood-close { border-color: color-mix(in oklab, var(--cp-gold) 44%, var(--cp-line)); }
 
   .memory-chevron {
     width: 16px;
@@ -701,15 +680,10 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin: 10px 6px 16px 70px;
     padding: 19px 20px 17px;
     overflow: hidden;
-    border: 1px solid var(--cp-metal);
-    background:
-      repeating-linear-gradient(180deg, transparent 0 27px, color-mix(in oklab, var(--cp-line) 31%, transparent) 27px 28px),
-      linear-gradient(
-        150deg,
-        color-mix(in oklab, var(--cp-paper) 88%, var(--color-background-warning, var(--cp-paper))),
-        color-mix(in oklab, var(--cp-pearl) 90%, var(--color-background-warning, var(--cp-paper)))
-      );
-    box-shadow: 0 15px 34px var(--cp-shadow-soft);
+    border: 1px solid var(--cp-line);
+    border-left: 3px solid var(--ca);
+    background: var(--cp-paper);
+    box-shadow: 0 8px 22px var(--cp-shadow-soft);
     clip-path: polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 12px 100%, 0 calc(100% - 12px));
   }
 
@@ -725,16 +699,14 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .letter-head strong {
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
-    font-size: 17px;
-    font-weight: 560;
+    font-size: 16px;
+    font-weight: 700;
   }
 
   .letter-head span {
     color: var(--cp-gold);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    text-transform: uppercase;
+    font-size: 11.5px;
+    font-weight: 600;
   }
 
   .letter-close,
@@ -752,24 +724,21 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
   .letter-block h3 {
     margin: 0 0 5px;
     color: var(--cp-gold);
-    font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 12px;
+    font-weight: 650;
     letter-spacing: 0;
-    text-transform: uppercase;
   }
 
   .letter-block p {
     margin: 0;
     color: var(--cp-soft);
-    font-family: ui-serif, Georgia, serif;
     font-size: 14px;
-    line-height: 1.72;
+    line-height: 1.65;
   }
 
   .letter-signature {
     margin: 15px 0 0;
     color: var(--cp-ink);
-    font-family: ui-serif, Georgia, serif;
     font-size: 13px;
     font-style: italic;
     text-align: right;
@@ -779,12 +748,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .about-section {
     border-top: 1px solid var(--cp-line);
-    background: color-mix(in oklab, var(--cp-glass) 42%, transparent);
   }
 
   .about-section.must {
-    border: 1px solid color-mix(in oklab, var(--cp-gold) 48%, var(--cp-line));
-    background: color-mix(in oklab, var(--cp-gold-soft) 34%, var(--cp-glass));
+    border: 1px solid var(--k-accent-brd);
+    background: color-mix(in oklab, var(--ca) 5%, var(--cp-glass));
     clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
   }
 
@@ -799,11 +767,10 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .about-count {
     min-width: 23px;
-    border: 1px solid color-mix(in oklab, var(--cp-gold) 30%, var(--cp-line));
-    background: color-mix(in oklab, var(--cp-gold-soft) 48%, var(--cp-pearl));
+    border: 1px solid var(--k-accent-brd);
+    background: var(--k-accent-bg);
     color: var(--cp-gold);
-    font-family: ui-serif, Georgia, serif;
-    font-weight: 600;
+    font-weight: 650;
     text-align: center;
   }
 
@@ -833,14 +800,14 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
   .about-title strong {
     color: var(--cp-ink);
-    font-size: 12px;
+    font-size: 13px;
     font-weight: 650;
   }
 
   .about-title span {
     margin-top: 1px;
     color: var(--cp-faint);
-    font-size: 9px;
+    font-size: 11px;
   }
 
   .about-body {
@@ -860,14 +827,14 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     padding: 6px 7px 6px 10px;
     border: 1px solid var(--cp-line);
     border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--cp-paper) 72%, transparent);
+    background: var(--cp-paper);
     color: var(--cp-soft);
   }
 
   .know-pill > span {
     min-width: 0;
     overflow-wrap: anywhere;
-    font-size: 10px;
+    font-size: 12px;
     line-height: 1.4;
   }
 
@@ -894,7 +861,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     margin: 0;
     overflow-wrap: anywhere;
     color: var(--cp-soft);
-    font-size: 11px;
+    font-size: 12.5px;
     line-height: 1.55;
   }
 
@@ -904,12 +871,15 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     align-items: center;
     margin-top: 6px;
     color: var(--cp-gold);
-    font-family: var(--font-mono);
-    font-size: 9px;
+    font-size: 11.5px;
+    font-weight: 600;
     font-variant-numeric: tabular-nums;
   }
 
   .know-date.soon { color: var(--cp-red); }
+
+  .know-row.removing,
+  .know-pill.removing { opacity: .4; pointer-events: none; }
 
   .know-actions {
     display: flex;
@@ -934,9 +904,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     gap: 9px;
     margin: 3px 0 6px;
     padding: 12px;
-    border: 1px solid var(--cp-metal);
-    background: linear-gradient(150deg, var(--cp-paper), var(--cp-pearl));
-    box-shadow: 0 10px 24px var(--cp-shadow-soft);
+    border: 1px solid var(--k-accent-brd);
+    background: var(--cp-paper);
+    box-shadow: 0 8px 20px var(--cp-shadow-soft);
     clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
   }
 
@@ -944,13 +914,13 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     display: grid;
     gap: 5px;
     color: var(--cp-faint);
-    font-size: 10px;
+    font-size: 11.5px;
   }
 
   .inline-edit .k-field {
     width: 100%;
     border-color: var(--cp-line);
-    background: color-mix(in oklab, var(--cp-glass) 78%, transparent);
+    background: var(--cp-glass);
     color: var(--cp-ink);
   }
 
@@ -972,13 +942,13 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     align-items: center;
     justify-content: space-between;
     color: var(--cp-faint);
-    font-size: 10px;
+    font-size: 11.5px;
     line-height: 1.45;
   }
 
   .companion .k-empty {
     border-color: var(--cp-line);
-    background: color-mix(in oklab, var(--cp-glass) 72%, transparent);
+    background: var(--cp-glass);
     color: var(--cp-soft);
   }
 
@@ -1021,6 +991,15 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     .topic-list .k-chip:active,
     .recap-button:active,
     .know-actions .k-btn:active { transform: scale(.98); }
+
+    .bond-arc .fill { transition: stroke-dasharray 900ms var(--k-spring, ease); }
+    .know-row.saved,
+    .know-pill.saved { animation: ca-saved 900ms var(--k-ease, ease); }
+
+    @keyframes ca-saved {
+      0% { box-shadow: 0 0 0 0 color-mix(in oklab, var(--ca) 45%, transparent); background: color-mix(in oklab, var(--ca) 14%, transparent); }
+      100% { box-shadow: 0 0 0 8px transparent; }
+    }
 
     @keyframes panel-in {
       from { opacity: 0; transform: translateY(4px); }
@@ -1073,7 +1052,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         <svg viewBox="0 0 24 24"><path d="M12 3.5c1.7 2.8 4.3 5.1 7.4 6.2-3.1 1.1-5.7 3.4-7.4 6.2-1.7-2.8-4.3-5.1-7.4-6.2C7.7 8.6 10.3 6.3 12 3.5zM18.1 15.6c.6 1.2 1.5 2.1 2.7 2.7-1.2.5-2.1 1.5-2.7 2.7-.5-1.2-1.5-2.2-2.7-2.7 1.2-.6 2.2-1.5 2.7-2.7z"/></svg>
       </div>
       <div class="identity k-appcopy">
-        <p class="eyebrow k-eyebrow" data-i18n="app.eyebrow">SHARED MEMORY</p>
         <h1 class="app-name" data-i18n="app.name">Companion</h1>
       </div>
       <span class="k-badge memory-badge k-num" id="memoryCountBadge" data-label="0 memories" aria-label="0 memories"></span>
@@ -1112,6 +1090,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
           <section class="character-hero">
             <div class="portrait-wrap" id="portraitWrap">
               <div class="portrait-ring"></div>
+              <svg class="bond-arc" viewBox="0 0 100 100" aria-hidden="true"><circle class="track" cx="50" cy="50" r="48.5"></circle><circle class="fill" id="bondArc" cx="50" cy="50" r="48.5" pathLength="100" stroke-dasharray="0 100"></circle></svg>
               <div class="portrait-medallion">
                 <!-- Baked default: original 2:3 near-half-body gpt-image portrait on pearl-white mist. A profile item image_data overrides it; portrait file paths remain supported. -->
                 <img class="portrait-image" id="portraitImage" alt="">
@@ -1201,7 +1180,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
     const STR = {
       en: {
-        "app.eyebrow": "SHARED MEMORY",
         "app.name": "Companion",
         "app.meta": "A private shared-memory space for an AI companion, grounded only in genuine conversations and remembered facts.",
         "tab.character": "Character",
@@ -1315,7 +1293,6 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         "prompt.know": "As {name}, help me correct or add what you know about me in the \"{section}\" section of companion-knows. Ask for the missing detail instead of guessing, preserve my meaning when you write it, and make the wording first-person from your perspective."
       },
       zh: {
-        "app.eyebrow": "共同记忆",
         "app.name": "情感陪伴",
         "app.meta": "一个只依据真实对话与确切记忆建立的私人 AI 陪伴空间。",
         "tab.character": "角色",
@@ -1464,6 +1441,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     let refreshQueued = false;
     let statusTimer = 0;
     let portraitEpoch = 0;
+    let portraitKey = null;
+    let renderedSig = "";
+    let savedFlashId = "";
+    const removing = new Set();
+    const drafts = new Map();   // id → {text, date, starred}: an open edit survives any refresh
 
     const dateOnly = (iso) => { const [y, m, d] = String(iso).slice(0, 10).split("-").map(Number); return new Date(y, m - 1, d); };
     const today    = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
@@ -1613,7 +1595,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
           latestData = fixture && fixture.profiles.length + fixture.memories.length + fixture.knows.length > 0
             ? fixture
             : { profiles, memories, knows };
-          render();
+          // Nothing changed? Leave the page alone: no rebuilt lists, no restarted portrait, no lost draft.
+          const sig = dataSig();
+          if (sig !== renderedSig) render();
         }
       })().finally(() => { refreshTask = null; });
       return refreshTask;
@@ -1625,6 +1609,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         document.getElementById("characterLoading").hidden = true;
         showError(String(error?.message || error || t("error.read")));
       });
+    }
+
+    function dataSig() {
+      const pack = (list) => list.map((item) => [item.id, item.version, item.fields]);
+      return JSON.stringify([pack(latestData.profiles), pack(latestData.memories), pack(latestData.knows)]);
     }
 
     function sortByDate(items, direction = "latest") {
@@ -1771,7 +1760,12 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       document.getElementById("knownMetric").textContent = formatNumber(knows.length);
       document.getElementById("personaText").textContent = persona;
       document.getElementById("portraitWrap").classList.toggle("breathe", Boolean(oma.pref("portrait_motion", true)));
-      void loadPortrait(profile);
+      const nextPortraitKey = `${profile?.fields?.image_data || ""}|${profile?.fields?.portrait || ""}`;
+      if (nextPortraitKey !== portraitKey) {
+        portraitKey = nextPortraitKey;
+        void loadPortrait(profile);
+      }
+      document.getElementById("bondArc").style.strokeDasharray = `${relation.score} ${100 - relation.score}`;
 
       const topicList = document.getElementById("topicList");
       topicList.innerHTML = "";
@@ -1918,6 +1912,11 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       const kind = String(item.fields.kind || "");
       const compact = kind === "like" || kind === "dislike" || kind === "observation";
       const node = el("div", compact ? "know-pill" : `know-row${item.fields.starred ? " starred" : ""}`);
+      if (removing.has(item.id)) node.classList.add("removing");
+      if (savedFlashId === item.id) {
+        node.classList.add("saved");
+        savedFlashId = "";
+      }
       if (compact) {
         node.append(el("span", "", String(item.fields.text || "")), itemActions(item));
         return node;
@@ -1951,7 +1950,9 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       textarea.name = "text";
       textarea.required = true;
       textarea.maxLength = 600;
-      textarea.value = String(item.fields.text || "");
+      const draft = drafts.get(item.id);
+      textarea.value = draft ? draft.text : String(item.fields.text || "");
+      textarea.oninput = () => rememberDraft();
       textLabel.append(textarea);
       form.append(textLabel);
       if (item.fields.kind === "date") {
@@ -1961,7 +1962,8 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
         input.name = "date";
         input.type = "date";
         input.required = true;
-        input.value = String(item.fields.date_value || "").slice(0, 10);
+        input.value = draft ? draft.date : String(item.fields.date_value || "").slice(0, 10);
+        input.oninput = () => rememberDraft();
         dateLabel.append(input);
         form.append(dateLabel);
       }
@@ -1969,37 +1971,52 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       const star = el("input", "k-switch");
       star.name = "starred";
       star.type = "checkbox";
-      star.checked = Boolean(item.fields.starred);
+      star.checked = draft ? draft.starred : Boolean(item.fields.starred);
+      star.onchange = () => rememberDraft();
+      function rememberDraft() {
+        drafts.set(item.id, { text: textarea.value, date: form.elements.date ? form.elements.date.value : "", starred: star.checked });
+      }
       starLabel.append(star, el("span", "k-grow", t("edit.starred")));
       const footer = el("footer", "edit-footer");
       const cancel = el("button", "k-btn ghost", t("action.cancel"));
       cancel.type = "button";
       cancel.onclick = () => {
         editingItemId = "";
+        drafts.delete(item.id);
         renderAbout(latestData.knows, profileOf());
       };
       const save = el("button", "k-btn", t("action.save"));
       save.type = "submit";
       footer.append(cancel, save);
       form.append(starLabel, footer);
+      // Optimistic: the corrected line takes its place at once and glows; a refusal puts the old
+      // line back and reopens the editor with what was typed.
       form.onsubmit = async (event) => {
         event.preventDefault();
         if (!form.reportValidity()) return;
-        save.disabled = true;
         clearError();
+        const fields = {
+          text: textarea.value.trim(),
+          date_value: item.fields.kind === "date" ? form.elements.date.value : "",
+          starred: star.checked
+        };
+        rememberDraft();
+        const before = latestData.knows;
+        latestData = { ...latestData, knows: before.map((row) => row.id === item.id ? { ...row, fields: { ...row.fields, ...fields } } : row) };
+        editingItemId = "";
+        savedFlashId = item.id;
+        renderAbout(latestData.knows, profileOf());
+        renderCharacter(profileOf(), latestData.memories, latestData.knows);
         try {
-          await updateKnowledge(item, {
-            text: textarea.value.trim(),
-            date_value: item.fields.kind === "date" ? form.elements.date.value : "",
-            starred: star.checked
-          });
-          editingItemId = "";
-          await refreshCollections();
+          await updateKnowledge(item, fields);
+          drafts.delete(item.id);
           showStatus(t("action.saved"));
+          requestRefresh();
         } catch (error) {
+          latestData = { ...latestData, knows: before };
+          editingItemId = item.id;
+          renderAbout(latestData.knows, profileOf());
           showError(String(error?.message || t("error.write")));
-        } finally {
-          save.disabled = false;
         }
       };
       return form;
@@ -2043,6 +2060,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     }
 
     function render() {
+      renderedSig = dataSig();
       applyTranslations();
       document.getElementById("app").classList.toggle("compact", oma.pref("density", "comfortable") === "compact");
       const profile = profileOf();
@@ -2092,9 +2110,19 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       return sendAsUser(t("prompt.reflect", { name, date: toISO(today()) }), button);
     }
 
+    // randomUUID only exists in a secure context; a sandboxed host frame is not always one.
+    function commandId() {
+      if (globalThis.crypto && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+      const bytes = crypto.getRandomValues(new Uint8Array(16));
+      bytes[6] = (bytes[6] & 15) | 64;
+      bytes[8] = (bytes[8] & 63) | 128;
+      const hex = [...bytes].map((b) => b.toString(16).padStart(2, "0")).join("");
+      return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
+    }
+
     async function updateKnowledge(item, fields) {
       const result = await oma.callTool("data_update_item", {
-        command_id: crypto.randomUUID(),
+        command_id: commandId(),
         id: item.id,
         expected_version: item.version,
         fields,
@@ -2106,7 +2134,7 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
 
     async function deleteKnowledge(item) {
       const result = await oma.callTool("data_delete_item", {
-        command_id: crypto.randomUUID(),
+        command_id: commandId(),
         id: item.id,
         expected_version: item.version,
         actor: "human"
@@ -2115,18 +2143,25 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
       if (error) throw new Error(error);
     }
 
+    // The row dims at once while the engine asks (confirm_delete) and removes; it leaves on
+    // success and comes back to full strength on a refusal or a cancelled confirmation.
     async function removeKnowledge(button, item) {
-      button.disabled = true;
       clearError();
+      removing.add(item.id);
+      button.closest(".know-row, .know-pill")?.classList.add("removing");
       try {
         await deleteKnowledge(item);
+        removing.delete(item.id);
         if (editingItemId === item.id) editingItemId = "";
-        await refreshCollections();
+        drafts.delete(item.id);
+        latestData = { ...latestData, knows: latestData.knows.filter((row) => row.id !== item.id) };
+        render();
         showStatus(t("action.deleted"));
+        requestRefresh();
       } catch (error) {
+        removing.delete(item.id);
+        button.closest(".know-row, .know-pill")?.classList.remove("removing");
         showError(String(error?.message || t("error.write")));
-      } finally {
-        button.disabled = false;
       }
     }
 
@@ -2141,13 +2176,12 @@ Acceptance notes: three tabs remain usable at 500px; all three collections self-
     document.getElementById("retryButton").onclick = () => requestRefresh(latestState);
 
     void nextOccurrence;
-    // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-    // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-    // card; absent = a widget in someone's conversation, where the card is ours to draw.
+    // `standalone` = the browser viewer or a panel host, which frame the page already; absent = a
+    // widget in someone's conversation. The `body:not(.standalone) .k-appbar` rule above reads it.
     if (oma.standalone) document.body.classList.add("standalone");
     oma.ready(requestRefresh);
     oma.onChange(requestRefresh);
-    oma.onPrefChange(render);
+    oma.onPrefChange(() => render());
     setInterval(requestRefresh, 30000);
   </script>
 </body>

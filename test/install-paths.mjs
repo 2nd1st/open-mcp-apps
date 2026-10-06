@@ -301,7 +301,7 @@ console.log("\n5. the retired workaround key is cleaned out of entries that alre
   ok("…and the entry is otherwise intact", read().args?.[0].endsWith("src/server.mjs"), JSON.stringify(read()));
   ok("…and the run SAYS which key it removed", /removed env: OMA_DYNAMIC_TOOLS=1/.test(out),
     "a run that edits your settings and reports nothing is the defect this whole file is about");
-  ok("…and points at how to put it back", /README/.test(out) && /Configuration/.test(out), out.slice(-400));
+  ok("…and points at what replaced it (pinning, README → Configuration)", /pin it/.test(out) && /README/.test(out) && /Configuration/.test(out), out.slice(-400));
   // Matched against the host's own summary line, not the whole run: `seed.mjs` prints `= <app>
   // unchanged` for every app it did not need to reseed, so a bare search for that word answers a
   // different question than the one being asked.
@@ -455,7 +455,7 @@ if (process.platform === "win32") {
   ok("…and hands the user's own key straight back", entry().env.HTTPS_PROXY === PROXY, JSON.stringify(entry().env));
   ok("…and the entry still points at this clone", /server\.mjs/.test(entry().args.join(" ")), JSON.stringify(entry()));
   ok("…and the run SAYS which key it removed", /removed env: OMA_DYNAMIC_TOOLS=1/.test(out), out.slice(-700));
-  ok("…and points at how to put it back", /README/.test(out) && /Configuration/.test(out), out.slice(-700));
+  ok("…and points at what replaced it (pinning, README → Configuration)", /pin it/.test(out) && /README/.test(out) && /Configuration/.test(out), out.slice(-700));
   ok("…and reports THAT HOST as `updated`", /Codex: updated/.test(out) && !/Codex: unchanged/.test(out), out.slice(-700));
   ok("once cleaned, the entry is current again", /already current/.test(checkLine()), checkLine().trim());
 }

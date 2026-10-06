@@ -21,3 +21,6 @@ test/repro/
 
 # harness worktrees for parallel agents (Agent tool isolation: worktree) — full repo copies, never tracked
 .claude/worktrees/
+
+# per-app lab bench (local engine db, scripts, screenshots) while building an app
+components/*/.lab/

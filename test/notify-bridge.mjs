@@ -19,21 +19,22 @@ const ok = (name, cond, note) => (cond
   : (fail++, console.log("  ✗ " + name + (note ? "\n      " + note : ""))));
 const tick = () => new Promise((r) => setTimeout(r, 0));
 
-function rig({ dynamicTools = false, apps = [], failing = false } = {}) {
+function rig({ syncTools, apps = [], failing = false } = {}) {
   const sent = [];
   const known = new Set(apps);
   const send = (label) => (arg) => {
     sent.push(arg ? `${label}:${arg.uri}` : label);
     return failing ? Promise.reject(new Error("Not connected")) : Promise.resolve();
   };
-  const store = { events: new EventEmitter() };
+  const store = { events: new EventEmitter(), sv: 0 };
+  store.dataVersion = () => ({ settings_version: store.sv });
   const server = { server: {
     sendResourceListChanged: send("resources_list_changed"),
     sendToolListChanged: send("tools_list_changed"),
     sendResourceUpdated: send("resource_updated"),
     onclose: undefined,
   } };
-  const release = bridgeInvalidations(store, server, { dynamicTools, hasApp: (n) => known.has(n) });
+  const release = bridgeInvalidations(store, server, { hasApp: (n) => known.has(n), syncTools });
   const change = (type, name) => store.events.emit("change", { seq: 1, type, name });
   return { sent, store, server, release, change, known };
 }
@@ -91,18 +92,33 @@ console.log("\n3. a burst costs ONE flush per kind");
   ok("a quiet tick sends nothing (the pending set really was cleared)", r.sent.length === before);
 }
 
-console.log("\n4. tools/list_changed is opt-in — the prompt cache is not collateral");
+console.log("\n4. the tool list — the bridge only asks syncTools; it never declares a change itself");
 {
   const off = rig({ apps: [] });
   off.change("save_app", "x");
   await tick();
-  ok("with the per-app openers OFF, the tool surface is never declared changed",
+  ok("without syncTools (dynamicTools:false), the tool surface is never declared changed",
     !off.sent.includes("tools_list_changed"), off.sent.join());
-  const on = rig({ apps: [], dynamicTools: true });
+
+  let syncs = 0;
+  const on = rig({ apps: [], syncTools: () => { syncs++; } });
   on.change("save_app", "x");
   await tick();
-  ok("…and WITH them on, it is — because then the surface really did move",
-    on.sent.includes("tools_list_changed") && on.sent.includes("resources_list_changed"), on.sent.join());
+  ok("an app-plane write runs syncTools once…", syncs === 1, String(syncs));
+  ok("…and the bridge itself still sends no tools/list_changed (an opener that moved is announced by the SDK)",
+    !on.sent.includes("tools_list_changed") && on.sent.includes("resources_list_changed"), on.sent.join());
+
+  syncs = 0;
+  for (let i = 0; i < 5; i++) on.change("add_item", "");
+  await tick();
+  ok("data writes that leave settings alone do not sync", syncs === 0, String(syncs));
+
+  on.store.sv = 7;
+  for (let i = 0; i < 5; i++) on.change("update_item", "");
+  await tick();
+  ok("a burst that moved the settings sub-version syncs exactly once", syncs === 1, String(syncs));
+  await tick();
+  ok("…and a quiet tick after it does not sync again", syncs === 1, String(syncs));
 }
 
 console.log("\n5. ownership — the bridge dies with its connection");

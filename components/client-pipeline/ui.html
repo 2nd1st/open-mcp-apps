@@ -7,200 +7,149 @@
 <meta name="oma-category" content="Work">
 <title>Client Pipeline</title>
 <style>
-  * { box-sizing: border-box; }
-  :root {
-    color-scheme: light dark;
-    --accent: var(--color-text-info, var(--color-ring-primary));
-    --danger: var(--color-text-danger, var(--color-ring-primary));
-    --positive: var(--color-text-success, var(--color-ring-primary));
-    --warning: var(--color-text-warning, var(--accent));
-    --accent-wash: color-mix(in oklab, var(--accent) 9%, transparent);
+  /* Shared primitives (.k-*) — this app's own copy; nothing here comes from the engine. */
+  :root{--k-accent:var(--color-text-info,var(--color-ring-primary,#3b6cf6));--k-bad:var(--color-text-danger,#e5484d);--k-ink-4:color-mix(in oklab,var(--color-text-primary) 4%,transparent);--k-accent-bg:color-mix(in oklab,var(--k-accent) 10%,transparent);--k-accent-brd:color-mix(in oklab,var(--k-accent) 28%,transparent);--k-t-fast:120ms;--k-t:180ms;--k-ease:cubic-bezier(.2,.8,.3,1);--k-spring:cubic-bezier(.34,1.56,.64,1);--k-surface:var(--color-background-primary)}
+  @media (prefers-reduced-motion:reduce){:root{--k-t-fast:0ms;--k-t:0ms}}
+  .k-btn{display:inline-flex;align-items:center;gap:6px;border:1px solid transparent;border-radius:var(--border-radius-md,10px);padding:6px 12px;font:inherit;font-size:var(--font-text-sm-size,12.5px);font-weight:600;cursor:pointer;background:var(--color-background-inverse);color:var(--color-text-inverse);transition:transform var(--k-t-fast) var(--k-ease),opacity var(--k-t-fast),background var(--k-t-fast)}
+  .k-btn:hover{opacity:.9}
+  .k-btn:active{transform:scale(.96)}
+  .k-btn:disabled{opacity:.45;cursor:default;transform:none}
+  .k-btn.sec{background:transparent;color:var(--color-text-primary);border-color:var(--color-border-primary)}
+  .k-btn.ghost{background:transparent;color:var(--color-text-secondary)}
+  :is(.k-btn.sec,.k-btn.ghost):hover{background:var(--k-ink-4);color:var(--color-text-primary);opacity:1}
+  .k-btn.danger{background:transparent;color:var(--k-bad);border-color:color-mix(in oklab,var(--k-bad) 30%,transparent)}
+  .k-btn.danger:hover{background:color-mix(in oklab,var(--k-bad) 10%,transparent);opacity:1}
+  :is(.k-btn,.k-tab,.k-chip,.k-switch,.k-field):focus-visible{outline:2px solid var(--color-ring-primary,var(--k-accent));outline-offset:1px}
+  .k-appbar{display:flex;align-items:center;gap:11px;padding:13px 16px}
+  .k-appbar .k-appmark{display:grid;width:34px;height:34px;flex:none;place-items:center;border-radius:11px}
+  .k-appbar .k-appmark svg{width:18px;height:18px}
+  .k-appbar .k-appcopy{min-width:0;flex:1}
+  .k-appbar .k-eyebrow{display:block;margin:0;color:var(--color-text-tertiary);font-size:9.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}
+  .k-appbar h1{margin:1px 0 0;font-size:15px;font-weight:650;letter-spacing:-.015em}
+  body:not(.standalone) .k-appbar{border-bottom:1px solid var(--color-border-secondary);background:var(--k-surface)}
+  .k-stage{max-width:1120px;margin-inline:auto;overflow-x:clip}
+
+  /* The signature is THE PIPE: every open client is a length of it, in stage order — lead,
+     proposal, active, overdue — sized by what they are worth. Money leaves the pipe at the right
+     end into "collected". The big number, the stage sums and the two lists all come from one
+     model() pass over the same rows. Structure is the host's; emerald is this app's one colour. */
+  .cp {
+    --cp: light-dark(#1b7f3a, #6fd68f);
+    --k-accent: var(--cp);
+    --k-accent-bg: color-mix(in oklab, var(--cp) 10%, transparent);
+    --k-accent-brd: color-mix(in oklab, var(--cp) 30%, transparent);
+    --danger: var(--color-text-danger, #c2410c);
+    --warning: var(--color-text-warning, var(--cp));
     --danger-wash: color-mix(in oklab, var(--danger) 8%, transparent);
-    --positive-wash: color-mix(in oklab, var(--positive) 9%, transparent);
   }
-  /* No body or root rule. Padding, ground, width and the one chat frame are the kit's stage
-     contract now; the old `.app` positioning context existed only for the identity ring, which
-     belongs to the overview content band below instead of to the frame around the whole app. */
-  .topbar {
-    position: relative;
-    z-index: 1;
-    min-height: 66px;
-  }
-  /* `.topbar` is `.k-appbar` now: row, gaps, padding, the mark's box and the title/eyebrow scale
-     come from the kit, along with the rule drawn only when this app is a card in a chat. The mark
-     keeps its paint because identity is content, and stripping a frame must not strip a face. */
-  .brand-mark {
-    border: 1px solid color-mix(in oklab, var(--accent) 24%, var(--color-border-primary));
-    background: linear-gradient(145deg, color-mix(in oklab, var(--accent) 15%, transparent), color-mix(in oklab, var(--positive) 6%, transparent));
-    color: var(--accent);
-  }
-  .brand-mark svg {
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.7;
-  }
-  .sync-state {
-    display: inline-flex;
-    min-height: 28px;
-    align-items: center;
-    gap: 7px;
-    margin-left: auto;
-    padding: 5px 9px;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-full, 999px);
-    background: color-mix(in oklab, var(--color-background-primary) 78%, transparent);
-    color: var(--color-text-secondary);
-    font-size: 11px;
-    font-weight: 650;
-    white-space: nowrap;
-  }
-  .sync-state::before {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: var(--positive);
-    box-shadow: 0 0 0 3px var(--positive-wash);
-    content: "";
-  }
-  .overview {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: minmax(230px, 1.5fr) repeat(3, minmax(92px, .72fr));
-    align-items: stretch;
-    overflow: clip;
-    border-bottom: 1px solid var(--color-border-secondary);
-    background: linear-gradient(110deg, color-mix(in oklab, var(--accent) 8%, var(--color-background-secondary)), color-mix(in oklab, var(--positive) 3%, var(--color-background-secondary)));
-    font-variant-numeric: tabular-nums;
-  }
-  /* The 230px ring is this app's face, not the deleted card chrome. It lives on the first content
-     band now; clip, not hidden, keeps the arc inside that band without making it a scroll
-     container. */
-  .overview::before {
-    position: absolute;
-    top: -112px;
-    right: -54px;
-    z-index: 0;
-    width: 230px;
-    height: 230px;
-    border: 30px solid color-mix(in oklab, var(--accent) 6%, transparent);
-    border-radius: var(--border-radius-full, 999px);
-    content: "";
-    pointer-events: none;
-  }
-  .overview > * { position: relative; z-index: 1; }
-  .overview-lead {
-    min-width: 0;
-    padding: 16px 18px;
-  }
-  .overview-label,
-  .metric-label {
-    color: var(--color-text-tertiary);
-    font: 700 9px/1.25 var(--font-mono);
-    letter-spacing: .08em;
-    text-transform: uppercase;
-  }
-  .pipeline-value {
-    margin-top: 6px;
-    overflow: hidden;
-    font-size: clamp(28px, 5vw, 38px);
-    font-weight: 780;
-    line-height: .95;
-    letter-spacing: -.055em;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .pipeline-note {
-    margin-top: 7px;
-    color: var(--color-text-secondary);
+  button { font: inherit; color: inherit; }
+
+  /* ── app bar ── */
+  .cp-mark { color: var(--cp); border: 1px solid var(--k-accent-brd); background: var(--k-accent-bg); }
+  .cp-mark svg, svg.i { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.7; }
+  .cp-bar .k-btn.sec { margin-left: auto; flex: none; }
+  .cp-bar .k-btn svg { width: 15px; height: 15px; }
+
+  .error-strip {
+    margin: 12px 18px 0;
+    padding: 8px 10px;
+    border: 1px solid color-mix(in oklab, var(--danger) 32%, var(--color-border-secondary));
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--danger-wash);
+    color: var(--danger);
     font-size: 12px;
   }
-  .metric {
-    display: grid;
-    min-width: 0;
-    align-content: center;
-    gap: 5px;
-    padding: 14px 16px;
-    border-left: 1px solid var(--color-border-secondary);
+  .error-strip[hidden] { display: none; }
+
+  /* ── hero: the number and the pipe ── */
+  .hero { padding: 22px 22px 20px; border-bottom: 1px solid var(--color-border-secondary); }
+  .hero-top { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 10px 28px; }
+  .lead-num { min-width: 0; }
+  .lead-label { color: var(--color-text-secondary); font-size: 12.5px; font-weight: 600; }
+  .pipeline-value {
+    margin-top: 4px;
+    font-size: clamp(34px, 7vw, 48px);
+    font-weight: 780;
+    line-height: .95;
+    letter-spacing: -.05em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
   }
-  .metric strong {
-    font-size: 21px;
-    line-height: 1;
-    letter-spacing: -.035em;
-  }
-  .metric.danger strong { color: var(--danger); }
-  .metric.positive strong { color: var(--positive); }
-  .workspace {
-    position: relative;
-    z-index: 1;
-    display: grid;
-    grid-template-columns: minmax(0, 1.45fr) minmax(250px, .9fr);
-    gap: 18px;
-    padding: 17px;
-  }
-  .section { min-width: 0; }
-  .section-head {
+  .pipeline-note { margin-top: 8px; color: var(--color-text-secondary); font-size: 12.5px; }
+  .pipeline-note b { color: var(--danger); font-weight: 700; }
+  .collected { margin-left: auto; text-align: right; }
+  .collected .lead-label { color: var(--color-text-tertiary); }
+  .collected-value { margin-top: 4px; color: var(--cp); font-size: 22px; font-weight: 740; letter-spacing: -.03em; font-variant-numeric: tabular-nums; }
+  .collected-note { margin-top: 3px; color: var(--color-text-tertiary); font-size: 11.5px; }
+
+  .pipe-wrap { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; margin-top: 18px; }
+  .pipe {
     display: flex;
-    min-height: 28px;
-    align-items: center;
-    gap: 10px;
-    margin-bottom: 9px;
+    gap: 3px;
+    height: 30px;
+    min-width: 0;
+    padding: 3px;
+    border: 1.5px solid var(--color-border-primary);
+    border-radius: var(--border-radius-full, 999px);
   }
-  .section-head h2 {
-    margin: 0;
-    font-size: 13px;
-    letter-spacing: -.005em;
+  .seg {
+    position: relative;
+    min-width: 8px;
+    border-radius: 3px;
+    background: var(--cp);
   }
+  .seg:first-child { border-top-left-radius: 999px; border-bottom-left-radius: 999px; }
+  .seg:last-child { border-top-right-radius: 999px; border-bottom-right-radius: 999px; }
+  .seg.lead { background: color-mix(in oklab, var(--cp) 22%, transparent); }
+  .seg.proposal { background: color-mix(in oklab, var(--cp) 48%, transparent); }
+  .seg.active { background: var(--cp); }
+  .seg.overdue { background: var(--danger); }
+  .pipe-empty { flex: 1; border: 1.5px dashed var(--color-border-secondary); border-radius: 999px; }
+  .pipe-out { display: grid; width: 30px; height: 30px; place-items: center; color: var(--cp); }
+  .pipe-out svg { width: 22px; height: 22px; }
+
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 18px; margin: 12px 0 0; padding: 0; list-style: none; }
+  .legend li { display: inline-flex; align-items: baseline; gap: 6px; color: var(--color-text-secondary); font-size: 12px; white-space: nowrap; }
+  .legend .sw { width: 9px; height: 9px; flex: none; align-self: center; border-radius: 3px; }
+  .legend b { color: var(--color-text-primary); font-weight: 680; font-variant-numeric: tabular-nums; }
+  .legend .n { color: var(--color-text-tertiary); font-size: 11px; }
+
+  /* ── the two lists ── */
+  .workspace { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(250px, 1fr); gap: 18px; padding: 17px; }
+  .section { min-width: 0; }
+  .section-head { display: flex; flex-wrap: wrap; min-height: 28px; align-items: center; gap: 4px 10px; margin-bottom: 9px; }
+  .section-head h2 { margin: 0; font-size: 14px; font-weight: 700; letter-spacing: -.01em; }
   .section-count {
     display: inline-grid;
-    min-width: 21px;
-    height: 21px;
+    min-width: 22px;
+    height: 22px;
     place-items: center;
     padding: 0 6px;
     border-radius: var(--border-radius-full, 999px);
     background: var(--color-background-secondary);
     color: var(--color-text-secondary);
-    font: 700 10px/1 var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
+    font-variant-numeric: tabular-nums;
   }
-  .section-count.alert {
-    background: var(--danger-wash);
-    color: var(--danger);
-  }
-  .section-note {
-    margin-left: auto;
-    color: var(--color-text-tertiary);
-    font-size: 10.5px;
-    white-space: nowrap;
-  }
-  .attention-list,
-  .steady-list { display: grid; gap: 9px; }
-  .attention-card {
+  .section-count.alert { background: var(--danger-wash); color: var(--danger); }
+  .section-note { margin-left: auto; color: var(--color-text-tertiary); font-size: 11.5px; }
+  .list { display: grid; gap: 9px; }
+
+  .card {
     position: relative;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
-    gap: 11px 14px;
-    min-height: 112px;
-    padding: 13px 14px 12px 16px;
+    gap: 10px 14px;
+    padding: 13px 14px 12px;
     overflow: hidden;
-    border: 1px solid color-mix(in oklab, var(--danger) 22%, var(--color-border-secondary));
-    border-radius: var(--border-radius-lg);
-    background: linear-gradient(105deg, var(--danger-wash), transparent 58%);
+    border: 1px solid var(--color-border-secondary);
+    border-radius: var(--border-radius-lg, 12px);
+    background: var(--color-background-primary);
   }
-  .attention-card::before {
-    position: absolute;
-    inset: 0 auto 0 0;
-    width: 3px;
-    background: var(--danger);
-    content: "";
-  }
-  .client-id {
-    display: flex;
-    min-width: 0;
-    align-items: center;
-    gap: 10px;
-  }
+  .card.late { border-color: color-mix(in oklab, var(--danger) 24%, var(--color-border-secondary)); background: var(--danger-wash); }
+  .card.late::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--danger); content: ""; }
+  .client-id { display: flex; min-width: 0; align-items: center; gap: 10px; }
   .avatar {
     display: grid;
     width: 32px;
@@ -211,489 +160,579 @@
     border-radius: var(--border-radius-full, 999px);
     background: var(--color-background-primary);
     color: var(--color-text-secondary);
-    font: 700 10px/1 var(--font-mono);
+    font-size: 11px;
+    font-weight: 700;
   }
   .client-copy { min-width: 0; }
-  .client-copy strong,
-  .client-copy span {
-    display: block;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-  .client-copy strong { font-size: 13px; }
-  .client-copy span {
-    margin-top: 2px;
-    color: var(--color-text-tertiary);
-    font-size: 11px;
-  }
-  .amount {
-    align-self: center;
-    font-size: 17px;
-    font-weight: 760;
-    letter-spacing: -.03em;
-    text-align: right;
-    white-space: nowrap;
-  }
-  .action-row {
+  .client-copy strong { display: block; font-size: 13.5px; font-weight: 680; overflow-wrap: anywhere; }
+  .client-copy .who { display: block; margin-top: 2px; color: var(--color-text-tertiary); font-size: 11.5px; overflow-wrap: anywhere; }
+  .amount { align-self: center; font-size: 17px; font-weight: 760; letter-spacing: -.03em; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .detail {
     display: flex;
     grid-column: 1 / -1;
     min-width: 0;
+    flex-wrap: wrap;
     align-items: center;
-    gap: 8px;
+    gap: 6px 8px;
     padding-top: 10px;
-    border-top: 1px solid color-mix(in oklab, var(--danger) 14%, var(--color-border-secondary));
+    border-top: 1px solid var(--color-border-secondary);
   }
+  .card.late .detail { border-top-color: color-mix(in oklab, var(--danger) 16%, var(--color-border-secondary)); }
+  .step { display: flex; flex: 1 1 180px; min-width: 0; align-items: flex-start; gap: 7px; color: var(--color-text-secondary); font-size: 12px; line-height: 1.35; }
+  .step svg { width: 14px; height: 14px; flex: none; margin-top: 1px; color: var(--color-text-tertiary); }
+  .step small { display: block; margin-top: 3px; color: var(--color-text-tertiary); font-size: 11px; }
   .status {
     display: inline-flex;
     min-height: 23px;
     align-items: center;
     gap: 5px;
-    padding: 3px 7px;
+    padding: 3px 8px;
     border-radius: var(--border-radius-full, 999px);
-    font-size: 10px;
-    font-weight: 720;
+    font-size: 11px;
+    font-weight: 680;
     white-space: nowrap;
   }
-  .status svg {
-    width: 12px;
-    height: 12px;
-    fill: none;
-    stroke: currentColor;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 2;
-  }
-  .status.overdue {
-    background: var(--danger-wash);
-    color: var(--danger);
-  }
-  .status.ready {
-    background: var(--accent-wash);
-    color: var(--accent);
-  }
-  .status.chased {
-    margin-left: auto;
-    background: var(--positive-wash);
-    color: var(--positive);
-  }
-  .steady-card {
-    padding: 12px 13px;
-    border: 1px solid var(--color-border-secondary);
-    border-radius: var(--border-radius-lg);
-    background: var(--color-background-primary);
-  }
-  .steady-top {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: 12px;
-    align-items: start;
-  }
-  .stage {
-    display: inline-flex;
-    width: max-content;
-    min-height: 22px;
-    align-items: center;
-    margin-top: 2px;
-    padding: 3px 7px;
-    border-radius: var(--border-radius-full, 999px);
-    background: var(--color-background-secondary);
-    color: var(--color-text-secondary);
-    font-size: 10px;
-    font-weight: 720;
-    text-transform: capitalize;
-  }
-  .stage.active {
-    background: var(--positive-wash);
-    color: var(--positive);
-  }
-  .stage.proposal {
-    background: color-mix(in oklab, var(--warning) 9%, transparent);
-    color: var(--warning);
-  }
-  .steady-detail {
-    display: flex;
-    align-items: flex-start;
-    gap: 7px;
-    margin-top: 11px;
-    padding-top: 10px;
-    border-top: 1px solid var(--color-border-secondary);
-    color: var(--color-text-secondary);
-    font-size: 11px;
-    line-height: 1.35;
-  }
-  .steady-detail svg {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 auto;
-    margin-top: 1px;
-    fill: none;
-    stroke: var(--color-text-tertiary);
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.7;
-  }
-  .steady-date {
-    display: block;
-    margin-top: 4px;
-    color: var(--color-text-tertiary);
-    font-size: 10px;
-  }
+  .status svg { width: 12px; height: 12px; stroke-width: 2; }
+  .status.overdue { background: color-mix(in oklab, var(--danger) 12%, transparent); color: var(--danger); }
+  .status.ready { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+  .status.chased { background: var(--k-accent-bg); color: var(--cp); }
+  .stage { display: inline-flex; margin-top: 5px; padding: 2px 8px; border-radius: var(--border-radius-full, 999px); font-size: 11px; font-weight: 680; }
+  .stage.lead { background: var(--color-background-secondary); color: var(--color-text-secondary); }
+  .stage.proposal { background: color-mix(in oklab, var(--warning) 11%, transparent); color: var(--warning); }
+  .stage.active { background: var(--k-accent-bg); color: var(--cp); }
+  .acts { display: flex; gap: 6px; margin-left: auto; }
+  .acts .k-btn { padding: 5px 10px; font-size: 11.5px; }
+  .acts .k-btn.paid { background: var(--cp); border-color: var(--cp); color: light-dark(#ffffff, #06230f); }
+  .acts .k-btn svg { width: 13px; height: 13px; stroke-width: 2; }
+
   .empty {
     grid-column: 1 / -1;
-    padding: 34px 20px;
+    padding: 28px 18px;
     border: 1px dashed var(--color-border-primary);
-    border-radius: var(--border-radius-lg);
+    border-radius: var(--border-radius-lg, 12px);
     color: var(--color-text-tertiary);
+    font-size: 12.5px;
+    line-height: 1.5;
     text-align: center;
   }
-  .app-foot {
+
+  /* ── undo line after "paid" ── */
+  .undo {
     display: flex;
     align-items: center;
-    justify-content: center;
-    gap: 8px;
-    padding: 10px 17px;
-    border-top: 1px solid var(--color-border-secondary);
-    background: color-mix(in oklab, var(--color-background-secondary) 70%, transparent);
-    color: var(--color-text-tertiary);
-    font-size: 10.5px;
-    text-align: center;
+    gap: 10px;
+    margin: 0 17px 16px;
+    padding: 9px 12px;
+    border: 1px solid var(--k-accent-brd);
+    border-radius: var(--border-radius-md, 10px);
+    background: var(--k-accent-bg);
+    font-size: 12.5px;
   }
-  /* The frame is gone, so the filled band, icon and rule stay together as a deliberate page
-     endcap rather than leaving a lone separator at the bottom of the content. */
-  .app-foot svg {
-    width: 14px;
-    height: 14px;
-    flex: 0 0 auto;
-    fill: none;
-    stroke: var(--accent);
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    stroke-width: 1.7;
-  }
-  .app-foot strong { color: var(--color-text-secondary); }
+  .undo[hidden] { display: none; }
+  .undo svg { width: 16px; height: 16px; color: var(--cp); flex: none; }
+  .undo .k-btn { margin-left: auto; padding: 4px 10px; font-size: 11.5px; }
 
-  @media (max-width: 720px) {
-    .overview { grid-template-columns: minmax(200px, 1.35fr) repeat(3, minmax(76px, .65fr)); }
-    .overview-lead { padding-inline: 15px; }
-    .metric { padding-inline: 11px; }
-    .workspace { grid-template-columns: minmax(0, 1.3fr) minmax(220px, .85fr); gap: 12px; padding: 14px; }
-    .attention-card { padding-inline: 13px; }
-    .status { padding-inline: 6px; }
+  @media (prefers-reduced-motion: no-preference) {
+    .cp.live .seg { transition: flex-grow 520ms var(--k-ease), background-color var(--k-t) var(--k-ease); }
+    .seg.leaving { animation: cp-out 620ms var(--k-ease) forwards; }
+    .card.leaving { animation: cp-card 520ms var(--k-ease) forwards; }
+    .collected-value.bump { animation: cp-bump 620ms var(--k-spring); }
+    @keyframes cp-out { 0% { transform: none; } 45% { transform: translateX(10px) scaleY(1.2); opacity: 1; } 100% { transform: translateX(28px) scaleY(.5); opacity: 0; } }
+    @keyframes cp-card { to { opacity: 0; transform: translateX(14px); } }
+    @keyframes cp-bump { 0% { transform: scale(1); } 40% { transform: scale(1.14); } 100% { transform: scale(1); } }
   }
-  @media (max-width: 570px) {
-    .sync-state { padding-inline: 7px; }
-    .sync-state span { display: none; }
-    .overview { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    .overview-lead { grid-column: 1 / -1; padding: 14px 15px 13px; border-bottom: 1px solid var(--color-border-secondary); }
-    .pipeline-value { font-size: 31px; }
-    .overview-label, .metric-label { font-size: 9.5px; }
-    .metric { min-height: 65px; padding: 11px 12px; border-left: 0; }
-    .metric + .metric { border-left: 1px solid var(--color-border-secondary); }
-    .metric strong { font-size: 19px; }
+
+  @media (max-width: 640px) {
     .workspace { grid-template-columns: 1fr; padding: 14px; }
-    .section-note { display: none; }
-    .client-copy span, .steady-detail { font-size: 11.5px; }
-    .steady-date { font-size: 10.5px; }
-    .status { min-height: 26px; font-size: 10.5px; }
-    .status.chased { margin-left: 0; }
-    .action-row { flex-wrap: wrap; }
-    .app-foot { padding-inline: 14px; }
+    .hero { padding: 18px 15px 17px; }
+    .collected { margin-left: 0; text-align: left; }
+    .undo { margin-inline: 14px; }
   }
-  @media (max-width: 390px) {
-    .metric { padding-inline: 9px; }
-    .metric-label { font-size: 8px; }
-    .attention-card { grid-template-columns: minmax(0, 1fr); }
-    .attention-card .amount { position: absolute; top: 18px; right: 13px; }
-    .client-id { padding-right: 78px; }
+  @media (max-width: 420px) {
+    .cp-bar .k-btn .lbl { display: none; }
+    .section-note { margin-left: 0; flex-basis: 100%; }
+    .acts { margin-left: 0; }
   }
-  [data-density="compact"] .workspace { gap: 12px; padding: 13px; }
 </style>
 </head>
 <body>
-<main class="app k-stage">
-  <header class="topbar k-appbar">
-    <div class="brand-mark k-appmark" aria-hidden="true">
+<main class="cp k-stage">
+  <header class="cp-bar k-appbar">
+    <span class="cp-mark k-appmark" aria-hidden="true">
       <svg viewBox="0 0 24 24"><path d="M4 19V8m6 11V4m6 15v-7m4 7H2"></path><path d="m3 10 7-6 6 8 5-5"></path></svg>
-    </div>
-    <div class="identity k-appcopy">
-      <div class="eyebrow k-eyebrow" id="eyebrow">Money in motion</div>
-      <h1 id="app-title">Client Pipeline</h1>
-    </div>
-    <div class="sync-state" id="sync-state" aria-label="Synced with your AI"><span id="sync-label">Synced with your AI</span></div>
+    </span>
+    <div class="k-appcopy"><h1 id="app-title">Client Pipeline</h1></div>
+    <button id="askBtn" class="k-btn sec" type="button">
+      <svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"><path d="m12 3 .8 3.2A6.5 6.5 0 0 0 17.5 11l3.2.8-3.2.8a6.5 6.5 0 0 0-4.7 4.7L12 20.5l-.8-3.2a6.5 6.5 0 0 0-4.7-4.7l-3.2-.8 3.2-.8a6.5 6.5 0 0 0 4.7-4.8L12 3Z"/></svg>
+      <span class="lbl" id="askLbl">Draft reminders</span>
+    </button>
   </header>
 
-  <section id="overview" class="overview" aria-label="Pipeline summary"></section>
+  <div class="error-strip" id="error" role="status" aria-live="polite" hidden></div>
 
-  <div id="workspace" class="workspace" aria-live="polite"></div>
+  <section class="hero" id="hero" aria-label="Pipeline">
+    <div class="hero-top">
+      <div class="lead-num">
+        <div class="lead-label" id="lblOpen">In the pipe</div>
+        <div class="pipeline-value" id="total">$0</div>
+        <div class="pipeline-note" id="note"></div>
+      </div>
+      <div class="collected">
+        <div class="lead-label" id="lblCollected">Collected</div>
+        <div class="collected-value" id="collected">$0</div>
+        <div class="collected-note" id="collectedNote"></div>
+      </div>
+    </div>
+    <div class="pipe-wrap">
+      <div class="pipe" id="pipe" role="img"></div>
+      <span class="pipe-out" aria-hidden="true"><svg class="i" viewBox="0 0 24 24"><path d="M4 12h13m-4-5 5 5-5 5"></path></svg></span>
+    </div>
+    <ul class="legend" id="legend"></ul>
+  </section>
 
-  <footer class="app-foot">
-    <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3 9.8 8.2 4.5 10.5l5.3 2.3L12 18l2.2-5.2 5.3-2.3-5.3-2.3L12 3Z"></path></svg>
-    <span><strong id="shared-label">Shared context:</strong> <span id="shared-copy">update this app here or ask your AI to do it.</span></span>
-  </footer>
+  <div class="workspace" aria-live="polite">
+    <section class="section" aria-labelledby="attention-heading">
+      <div class="section-head">
+        <h2 id="attention-heading">Needs your attention</h2>
+        <span class="section-count alert" id="countLate">0</span>
+        <span class="section-note" id="noteLate"></span>
+      </div>
+      <div class="list" id="listLate"></div>
+    </section>
+    <section class="section" aria-labelledby="steady-heading">
+      <div class="section-head">
+        <h2 id="steady-heading">Moving forward</h2>
+        <span class="section-count" id="countSteady">0</span>
+      </div>
+      <div class="list" id="listSteady"></div>
+    </section>
+  </div>
+
+  <div class="undo" id="undo" role="status" hidden>
+    <svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>
+    <span id="undoText"></span>
+    <button class="k-btn ghost" type="button" id="undoBtn">Undo</button>
+  </div>
 </main>
 
 <script type="module">
   const oma = window.oma;
   const $ = (id) => document.getElementById(id);
+  const STAGES = ["lead", "proposal", "active", "overdue"];
   const STR = {
     en: {
-      eyebrow: "Money in motion",
       title: "Client Pipeline",
-      metaDescription: "A client pipeline that makes overdue invoices and the next follow-up impossible to miss.",
-      synced: "Synced with your AI",
-      snapshot: "Snapshot · {date}",
-      overviewAria: "Pipeline summary",
-      openPipeline: "Open pipeline",
-      acrossOpen: "Across {count} open client",
-      acrossOpenMany: "Across {count} open clients",
-      overdue: "Overdue",
-      draftsReady: "Drafts ready",
-      chasedToday: "Chased today",
-      chasedDate: "Chased · {date}",
+      ask: "Draft reminders",
+      inPipe: "In the pipe",
+      acrossOne: "{count} open client",
+      acrossMany: "{count} open clients",
+      lateSum: "{amount} overdue",
+      collected: "Collected",
+      collectedNote: "{count} paid",
+      collectedNone: "Nothing paid yet",
+      pipeAria: "Open pipeline by stage: {list}",
       needsAttention: "Needs your attention",
-      followupsPrepared: "Follow-ups prepared",
       movingForward: "Moving forward",
+      noteLate: "{drafts} drafts ready · {chased} chased today",
+      noteLateOne: "{drafts} draft ready · {chased} chased today",
       draftReady: "Draft ready",
+      chasedToday: "Chased today",
+      chasedOn: "Chased {date}",
       dayOverdue: "{count} day overdue",
       daysOverdue: "{count} days overdue",
-      due: "Due",
-      quoted: "Quoted",
+      dueToday: "Due today",
+      due: "Due {date}",
+      quoted: "Quoted {date}",
       noNextStep: "No next step yet",
-      nothingOverdue: "Nothing overdue.",
+      nothingOverdue: "Nothing overdue. Every invoice is on time.",
       noOtherOpen: "No other open clients.",
-      empty: "Add the people you are selling to or waiting to be paid by.",
+      empty: "No clients yet. Tell the AI who you are quoting, working for, or waiting to be paid by — “add Kite & Co, $1,900 proposal sent Friday.”",
       untitled: "Untitled",
-      sharedLabel: "Shared context:",
-      sharedCopy: "update this app here or ask your AI to do it.",
-      stage: { active: "Active", proposal: "Proposal", lead: "Lead", paid: "Paid", open: "Open" },
+      markPaid: "Paid",
+      markPaidAria: "Mark {name} paid",
+      logChase: "Chased",
+      logChaseAria: "Log a reminder sent to {name} today",
+      paidUndo: "{name} paid · {amount} collected",
+      undo: "Undo",
+      failed: "Could not save that change. Try again.",
+      askFailed: "Could not reach the chat. Try again.",
+      promptLate: "Please draft short, polite payment reminders for these overdue invoices (from my Client Pipeline):\n{list}",
+      promptPlan: "Look at my Client Pipeline and suggest the next follow-up for each open client:\n{list}",
+      stage: { lead: "Lead", proposal: "Proposal", active: "Active", overdue: "Overdue" },
     },
     zh: {
-      eyebrow: "回款与推进",
       title: "客户管道",
-      metaDescription: "把逾期回款、跟进草稿和每位客户的下一步放在同一条清晰管道里。",
-      synced: "已与 AI 同步",
-      snapshot: "快照 · {date}",
-      overviewAria: "客户管道概览",
-      openPipeline: "进行中的金额",
-      acrossOpen: "共 {count} 位进行中客户",
-      acrossOpenMany: "共 {count} 位进行中客户",
-      overdue: "已逾期",
-      draftsReady: "草稿已就绪",
-      chasedToday: "今天已跟进",
-      chasedDate: "已跟进 · {date}",
+      ask: "起草催款",
+      inPipe: "管道里的钱",
+      acrossOne: "{count} 位进行中客户",
+      acrossMany: "{count} 位进行中客户",
+      lateSum: "逾期 {amount}",
+      collected: "已回款",
+      collectedNote: "{count} 位已付款",
+      collectedNone: "还没有回款",
+      pipeAria: "按阶段的进行中金额：{list}",
       needsAttention: "需要你处理",
-      followupsPrepared: "跟进内容已准备",
       movingForward: "正在推进",
+      noteLate: "{drafts} 份草稿已就绪 · 今天已跟进 {chased} 位",
+      noteLateOne: "{drafts} 份草稿已就绪 · 今天已跟进 {chased} 位",
       draftReady: "草稿已就绪",
+      chasedToday: "今天已跟进",
+      chasedOn: "{date} 已跟进",
       dayOverdue: "已逾期 {count} 天",
       daysOverdue: "已逾期 {count} 天",
-      due: "到期",
-      quoted: "报价",
+      dueToday: "今天到期",
+      due: "{date} 到期",
+      quoted: "{date} 报价",
       noNextStep: "还没有下一步",
-      nothingOverdue: "目前没有逾期项目。",
+      nothingOverdue: "没有逾期，每张账单都准时。",
       noOtherOpen: "暂无其他进行中的客户。",
-      empty: "把正在洽谈或等待回款的客户添加进来。",
+      empty: "还没有客户。告诉 AI 你在给谁报价、给谁做项目、在等谁回款——比如“加上远山律所，报价 1.2 万，周五发的”。",
       untitled: "未命名",
-      sharedLabel: "共享上下文：",
-      sharedCopy: "你可以在这里更新，也可以直接让 AI 代你处理。",
-      stage: { active: "执行中", proposal: "提案中", lead: "线索", paid: "已付款", open: "进行中" },
+      markPaid: "已收款",
+      markPaidAria: "将 {name} 标为已付款",
+      logChase: "已催",
+      logChaseAria: "记录今天已提醒 {name}",
+      paidUndo: "{name} 已付款 · 回款 {amount}",
+      undo: "撤销",
+      failed: "没能保存这次修改，请重试。",
+      askFailed: "没能连到对话，请重试。",
+      promptLate: "请帮我给这些逾期账单起草简短、客气的催款消息（来自我的客户管道）：\n{list}",
+      promptPlan: "看看我的客户管道，给每位进行中的客户建议下一步跟进：\n{list}",
+      stage: { lead: "线索", proposal: "提案中", active: "执行中", overdue: "已逾期" },
     },
   };
-  let currentState = { items: [] };
   const lang = () => {
     const preferred = String(oma.pref("locale", "auto") || "auto");
     const resolved = preferred === "auto" ? navigator.language : preferred;
     return resolved.toLowerCase().startsWith("zh") ? "zh" : "en";
   };
-  const t = (key, vars = {}) => {
-    const value = key.split(".").reduce((node, part) => node?.[part], STR[lang()]) ?? key;
-    return String(value).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
-  };
-  const icons = {
-    draft: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"></path><path d="M14 3v6h6M8 14h8M8 17h5"></path></svg>',
-    check: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>',
-    arrow: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg>',
-  };
-
-  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
-    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
-  })[char]);
-  const dateOnly = (value) => {
-    if (!value) return null;
-    const [year, month, day] = String(value).slice(0, 10).split("-").map(Number);
-    return new Date(year, month - 1, day);
-  };
   const locale = () => {
     const preferred = oma.pref("locale", "auto");
     return preferred === "auto" ? navigator.language : preferred;
   };
-  // `currency` is a free-text field on a client row, so it is whatever the AI or the user typed.
-  // Intl.NumberFormat throws RangeError on anything that is not an ISO-4217 code, and the throw
-  // lands inside render — one row spelled "dollars" and the whole app is a white rectangle.
-  // Same shape as bill-calendar: normalise to three uppercase letters, and still catch.
+  const t = (key, vars = {}) => {
+    const value = key.split(".").reduce((node, part) => node?.[part], STR[lang()]) ?? key.split(".").reduce((node, part) => node?.[part], STR.en) ?? key;
+    return String(value).replace(/\{(\w+)\}/g, (_, name) => vars[name] ?? "");
+  };
+  const icons = {
+    draft: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9Z"></path><path d="M14 3v6h6M8 14h8M8 17h5"></path></svg>',
+    check: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="m5 12 4 4L19 6"></path></svg>',
+    arrow: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M5 12h14m-5-5 5 5-5 5"></path></svg>',
+    bell: '<svg class="i" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 16V11a6 6 0 0 1 12 0v5l1.5 2h-15Z"></path><path d="M10 20.5a2 2 0 0 0 4 0"></path></svg>',
+  };
+  const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[char]);
+  const dateOnly = (value) => {
+    const m = String(value || "").slice(0, 10).match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])) : null;
+  };
+  const today = () => { const n = new Date(); return new Date(n.getFullYear(), n.getMonth(), n.getDate()); };
+  const todayIso = () => { const d = today(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+  const daysUntil = (iso) => { const d = dateOnly(iso); return d ? Math.round((d - today()) / 86400000) : null; };
+  // `currency` is free text on a row; Intl throws on anything that is not ISO-4217, and a throw
+  // inside render would blank the app. Normalise to three letters, and still catch.
   const safeCurrency = (value) => String(value || "USD").trim().toUpperCase().slice(0, 3) || "USD";
   const fmtMoney = (value, currency = "USD") => {
     const amount = Number(value) || 0;
     const code = safeCurrency(currency);
     try {
-      return new Intl.NumberFormat(locale(), {
-        style: "currency",
-        currency: code,
-        maximumFractionDigits: 0,
-      }).format(amount);
+      return new Intl.NumberFormat(locale(), { style: "currency", currency: code, maximumFractionDigits: 0 }).format(amount);
     } catch {
       return `${code} ${Math.round(amount)}`;
     }
   };
   const fmtDate = (value) => {
     const date = dateOnly(value);
-    return date ? new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(date) : "—";
+    if (!date) return "—";
+    const mode = oma.pref("date_format", "auto");
+    const y = date.getFullYear(), m = String(date.getMonth() + 1).padStart(2, "0"), d = String(date.getDate()).padStart(2, "0");
+    if (mode === "yyyy-mm-dd") return `${y}-${m}-${d}`;
+    if (mode === "dd/mm/yyyy") return `${d}/${m}/${y}`;
+    if (mode === "mm/dd/yyyy") return `${m}/${d}/${y}`;
+    return new Intl.DateTimeFormat(locale(), { month: "short", day: "numeric" }).format(date);
   };
-  const localIso = (date = new Date()) => {
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
+  const initials = (name) => {
+    const s = String(name || "?").trim();
+    if (/^[一-鿿]/.test(s)) return s.slice(0, 1);
+    return s.split(/\s+/).filter((word) => /[\p{L}\p{N}]/u.test(word[0] || "")).slice(0, 2).map((word) => word[0]).join("").toUpperCase() || "?";
   };
-  const referenceContext = (items) => {
-    const actualIso = localIso();
-    const fixture = items.length > 0 && items.every((item) => /^(?:fx-|landing-client-)/.test(String(item.id || "")));
-    const fixtureDates = items
-      .flatMap((item) => [item.fields?.last_chased, item.fields?.invoice_due, item.fields?.quote_date])
-      .map((value) => String(value || "").slice(0, 10))
-      .filter((value) => /^\d{4}-\d{2}-\d{2}$/.test(value))
-      .sort();
-    const iso = fixture && fixtureDates.length
-      ? items.map((item) => String(item.fields?.last_chased || "").slice(0, 10)).filter(Boolean).sort().at(-1) || fixtureDates.at(-1)
-      : actualIso;
-    return { iso, snapshot: fixture && iso !== actualIso };
-  };
-  const daysLate = (value, referenceIso) => {
-    const due = dateOnly(value);
-    const reference = dateOnly(referenceIso);
-    return due && reference ? Math.max(0, Math.round((reference - due) / 86400000)) : 0;
-  };
-  const initials = (name) => String(name || "?")
-    .split(/\s+/)
-    .filter((word) => /[\p{L}\p{N}]/u.test(word[0] || ""))
-    .slice(0, 2)
-    .map((word) => word[0])
-    .join("")
-    .toUpperCase();
 
-  function applyStaticCopy(context) {
-    const language = lang();
-    document.documentElement.lang = language === "zh" ? "zh-CN" : "en";
-    document.title = t("title");
-    $("eyebrow").textContent = t("eyebrow");
-    $("app-title").textContent = t("title");
-    $("overview").setAttribute("aria-label", t("overviewAria"));
-    $("shared-label").textContent = t("sharedLabel");
-    $("shared-copy").textContent = t("sharedCopy");
-    const syncLabel = context.snapshot ? t("snapshot", { date: fmtDate(context.iso) }) : t("synced");
-    $("sync-label").textContent = syncLabel;
-    $("sync-state").setAttribute("aria-label", syncLabel);
+  // ── state outside render: writes the ack has not confirmed yet ──
+  let current = { items: [] };
+  const pending = new Map();   // id → fields we wrote and wait to see come back
+  const leaving = new Set();   // ids whose card / segment is playing its exit
+  let undoTimer = 0;
+  let undoOf = null;           // { id, stage, name, amount }
+
+  const withPending = (item) => pending.has(item.id) ? { ...item, fields: { ...item.fields, ...pending.get(item.id) } } : item;
+  // Overdue is a JUDGMENT: a row marked overdue, or an active invoice whose due date has passed.
+  const isLate = (f) => f.stage === "overdue" || (f.stage === "active" && daysUntil(f.invoice_due) !== null && daysUntil(f.invoice_due) < 0);
+  const stageOf = (f) => isLate(f) ? "overdue" : STAGES.includes(f.stage) ? f.stage : "lead";
+
+  function model() {
+    const items = (current.items || []).map(withPending).sort((a, b) => a.position - b.position);
+    const open = items.filter((item) => item.fields.stage !== "paid");
+    const paid = items.filter((item) => item.fields.stage === "paid");
+    const late = open.filter((item) => isLate(item.fields))
+      .sort((a, b) => String(a.fields.invoice_due || "").localeCompare(String(b.fields.invoice_due || "")));
+    const steady = open.filter((item) => !isLate(item.fields))
+      .sort((a, b) => STAGES.indexOf(stageOf(b.fields)) - STAGES.indexOf(stageOf(a.fields)) || a.position - b.position);
+    const currency = (open[0] || paid[0])?.fields.currency || "USD";
+    const sum = (rows) => rows.reduce((acc, item) => acc + (Number(item.fields.amount) || 0), 0);
+    const byStage = STAGES.map((stage) => {
+      const rows = open.filter((item) => stageOf(item.fields) === stage);
+      return { stage, rows, total: sum(rows) };
+    });
+    const chased = open.filter((item) => String(item.fields.last_chased || "").slice(0, 10) === todayIso()).length;
+    const drafts = late.filter((item) => /draft|草稿/i.test(item.fields.next_step || "")).length;
+    return { items, open, paid, late, steady, currency, total: sum(open), lateTotal: sum(late), paidTotal: sum(paid), byStage, chased, drafts };
   }
 
-  function attentionCard(item, context) {
+  function cardHtml(item) {
     const f = item.fields;
-    const late = daysLate(f.invoice_due, context.iso);
-    const chasedOnReference = String(f.last_chased || "").slice(0, 10) === context.iso;
-    const draftReady = /draft|草稿/i.test(f.next_step || "");
-    const chasedLabel = context.snapshot ? t("chasedDate", { date: fmtDate(context.iso) }) : t("chasedToday");
-    return `<article class="attention-card">
+    const late = isLate(f);
+    const stage = stageOf(f);
+    const name = f.name || f.company || t("untitled");
+    const who = [f.contact, f.company && f.company !== f.name ? f.company : ""].filter(Boolean).join(" · ");
+    const chasedIso = String(f.last_chased || "").slice(0, 10);
+    const chasedToday = chasedIso === todayIso();
+    let when = "";
+    if (f.invoice_due) {
+      const d = daysUntil(f.invoice_due);
+      when = d < 0 ? t(d === -1 ? "dayOverdue" : "daysOverdue", { count: -d }) : d === 0 ? t("dueToday") : t("due", { date: fmtDate(f.invoice_due) });
+    } else if (f.quote_date) {
+      when = t("quoted", { date: fmtDate(f.quote_date) });
+    }
+    const chips = late
+      ? [`<span class="status overdue">${escapeHtml(when)}</span>`,
+         /draft|草稿/i.test(f.next_step || "") ? `<span class="status ready">${icons.draft}${escapeHtml(t("draftReady"))}</span>` : "",
+         chasedIso ? `<span class="status chased">${icons.check}${escapeHtml(chasedToday ? t("chasedToday") : t("chasedOn", { date: fmtDate(chasedIso) }))}</span>` : ""].join("")
+      : "";
+    const acts = `<div class="acts">
+        ${late && !chasedToday ? `<button class="k-btn sec" type="button" data-chase="${escapeHtml(item.id)}" aria-label="${escapeHtml(t("logChaseAria", { name }))}">${icons.bell}${escapeHtml(t("logChase"))}</button>` : ""}
+        ${late || stage === "active" ? `<button class="k-btn ${late ? "paid" : "sec"}" type="button" data-paid="${escapeHtml(item.id)}" aria-label="${escapeHtml(t("markPaidAria", { name }))}">${icons.check}${escapeHtml(t("markPaid"))}</button>` : ""}
+      </div>`;
+    return `<article class="card${late ? " late" : ""}" data-id="${escapeHtml(item.id)}">
       <div class="client-id">
-        <span class="avatar" aria-hidden="true">${escapeHtml(initials(f.name))}</span>
+        <span class="avatar" aria-hidden="true">${escapeHtml(initials(name))}</span>
         <div class="client-copy">
-          <strong>${escapeHtml(f.name || t("untitled"))}</strong>
-          <span>${escapeHtml(f.contact || f.company || "")}</span>
+          <strong>${escapeHtml(name)}</strong>
+          ${who ? `<span class="who">${escapeHtml(who)}</span>` : ""}
+          ${late ? "" : `<span class="stage ${stage}">${escapeHtml(t(`stage.${stage}`))}</span>`}
         </div>
       </div>
       <div class="amount">${fmtMoney(f.amount, f.currency)}</div>
-      <div class="action-row">
-        <span class="status overdue">${escapeHtml(t(late === 1 ? "dayOverdue" : "daysOverdue", { count: late }))}</span>
-        ${draftReady ? `<span class="status ready">${icons.draft}${escapeHtml(t("draftReady"))}</span>` : ""}
-        ${chasedOnReference ? `<span class="status chased">${icons.check}${escapeHtml(chasedLabel)}</span>` : ""}
+      <div class="detail">
+        ${chips}
+        ${late ? "" : `<div class="step">${icons.arrow}<span>${escapeHtml(f.next_step || t("noNextStep"))}${when ? `<small>${escapeHtml(when)}</small>` : ""}</span></div>`}
+        ${late && f.next_step && !/draft|草稿/i.test(f.next_step) ? `<div class="step">${icons.arrow}<span>${escapeHtml(f.next_step)}</span></div>` : ""}
+        ${acts}
       </div>
     </article>`;
   }
 
-  function steadyCard(item) {
-    const f = item.fields;
-    const date = f.invoice_due || f.quote_date;
-    const dateLabel = f.invoice_due ? t("due") : t("quoted");
-    const stage = ["active", "proposal", "lead", "paid"].includes(f.stage) ? f.stage : "open";
-    return `<article class="steady-card">
-      <div class="steady-top">
-        <div class="client-copy">
-          <strong>${escapeHtml(f.name || t("untitled"))}</strong>
-          <span>${escapeHtml(f.contact || f.company || "")}</span>
-          <span class="stage ${escapeHtml(stage)}">${escapeHtml(t(`stage.${stage}`))}</span>
-        </div>
-        <div class="amount">${fmtMoney(f.amount, f.currency)}</div>
-      </div>
-      <div class="steady-detail">
-        ${icons.arrow}
-        <span>${escapeHtml(f.next_step || t("noNextStep"))}<small class="steady-date">${escapeHtml(dateLabel)} ${fmtDate(date)}</small></span>
-      </div>
-    </article>`;
+  // Keyed, in place: an unchanged card keeps its element, so nothing replays and exits finish.
+  function patchList(host, items, emptyText) {
+    const byId = new Map([...host.querySelectorAll(":scope > .card")].map((el) => [el.dataset.id, el]));
+    const next = [];
+    for (const item of items) {
+      const sig = JSON.stringify([item.fields, lang(), todayIso(), oma.pref("date_format", "auto")]);
+      let el = byId.get(item.id);
+      if (!el || (el.dataset.sig !== sig && !leaving.has(item.id))) {
+        const tpl = document.createElement("template");
+        tpl.innerHTML = cardHtml(item).trim();
+        const fresh = tpl.content.firstElementChild;
+        fresh.dataset.sig = sig;
+        if (el) el.replaceWith(fresh);
+        el = fresh;
+      }
+      el.classList.toggle("leaving", leaving.has(item.id));
+      byId.delete(item.id);
+      next.push(el);
+    }
+    for (const el of byId.values()) el.remove();
+    host.querySelector(":scope > .empty")?.remove();
+    next.forEach((el, index) => { if (host.children[index] !== el) host.insertBefore(el, host.children[index] || null); });
+    if (!items.length) host.insertAdjacentHTML("beforeend", `<div class="empty">${escapeHtml(emptyText)}</div>`);
   }
+
+  function patchPipe(m) {
+    const pipe = $("pipe");
+    const rows = m.byStage.flatMap((s) => s.rows);
+    const shown = rows.concat((current.items || []).map(withPending).filter((item) => leaving.has(item.id) && !rows.includes(item)));
+    const byId = new Map([...pipe.querySelectorAll(":scope > .seg")].map((el) => [el.dataset.id, el]));
+    pipe.querySelector(":scope > .pipe-empty")?.remove();
+    const next = shown.map((item) => {
+      let el = byId.get(item.id);
+      if (!el) {
+        el = document.createElement("span");
+        el.dataset.id = item.id;
+      }
+      byId.delete(item.id);
+      const stage = leaving.has(item.id) && item.fields.stage === "paid" ? (el.dataset.stage || "active") : stageOf(item.fields);
+      el.className = `seg ${stage}${leaving.has(item.id) ? " leaving" : ""}`;
+      el.dataset.stage = stage;
+      el.style.flexGrow = String(Math.max(Number(item.fields.amount) || 0, 1));
+      el.title = `${item.fields.name || t("untitled")} · ${fmtMoney(item.fields.amount, item.fields.currency)}`;
+      return el;
+    });
+    for (const el of byId.values()) el.remove();
+    next.forEach((el, index) => { if (pipe.children[index] !== el) pipe.insertBefore(el, pipe.children[index] || null); });
+    if (!next.length) pipe.insertAdjacentHTML("beforeend", '<span class="pipe-empty"></span>');
+    pipe.setAttribute("aria-label", t("pipeAria", {
+      list: m.byStage.filter((s) => s.rows.length).map((s) => `${t(`stage.${s.stage}`)} ${fmtMoney(s.total, m.currency)}`).join(", ") || "—",
+    }));
+  }
+
+  const swatch = { lead: "color-mix(in oklab, var(--cp) 22%, transparent)", proposal: "color-mix(in oklab, var(--cp) 48%, transparent)", active: "var(--cp)", overdue: "var(--danger)" };
 
   function render(state) {
-    currentState = state || { items: [] };
-    const items = (currentState.items || []).slice().sort((a, b) => a.position - b.position);
-    const context = referenceContext(items);
-    applyStaticCopy(context);
-    const open = items.filter((item) => item.fields.stage !== "paid");
-    const overdue = open.filter((item) => item.fields.stage === "overdue");
-    const steady = open.filter((item) => item.fields.stage !== "overdue");
-    const chased = open.filter((item) => String(item.fields.last_chased || "").slice(0, 10) === context.iso).length;
-    const drafts = overdue.filter((item) => /draft|草稿/i.test(item.fields.next_step || "")).length;
-    const total = open.reduce((sum, item) => sum + (Number(item.fields.amount) || 0), 0);
-    const currency = open[0]?.fields.currency || "USD";
-    const chasedMetric = context.snapshot ? t("chasedDate", { date: fmtDate(context.iso) }) : t("chasedToday");
+    if (state) current = state;
+    for (const [id, fields] of pending) {
+      const item = (current.items || []).find((row) => row.id === id);
+      if (!item || Object.entries(fields).every(([k, v]) => item.fields[k] === v)) pending.delete(id);
+    }
+    const m = model();
+    document.documentElement.lang = lang() === "zh" ? "zh-CN" : "en";
+    document.title = t("title");
+    $("app-title").textContent = t("title");
+    $("askLbl").textContent = t("ask");
+    $("lblOpen").textContent = t("inPipe");
+    $("lblCollected").textContent = t("collected");
+    $("attention-heading").textContent = t("needsAttention");
+    $("steady-heading").textContent = t("movingForward");
+    $("undoBtn").textContent = t("undo");
 
-    $("overview").innerHTML = `<div class="overview-lead">
-      <div class="overview-label">${escapeHtml(t("openPipeline"))}</div>
-      <div class="pipeline-value">${fmtMoney(total, currency)}</div>
-      <div class="pipeline-note">${escapeHtml(t(open.length === 1 ? "acrossOpen" : "acrossOpenMany", { count: open.length }))}</div>
-    </div>
-    <div class="metric danger"><span class="metric-label">${escapeHtml(t("overdue"))}</span><strong>${overdue.length}</strong></div>
-    <div class="metric"><span class="metric-label">${escapeHtml(t("draftsReady"))}</span><strong>${drafts}</strong></div>
-    <div class="metric positive"><span class="metric-label">${escapeHtml(chasedMetric)}</span><strong>${chased}</strong></div>`;
+    $("total").textContent = fmtMoney(m.total, m.currency);
+    $("note").innerHTML = escapeHtml(t(m.open.length === 1 ? "acrossOne" : "acrossMany", { count: m.open.length }))
+      + (m.lateTotal ? ` · <b>${escapeHtml(t("lateSum", { amount: fmtMoney(m.lateTotal, m.currency) }))}</b>` : "");
+    const collected = fmtMoney(m.paidTotal, m.currency);
+    const cv = $("collected");
+    if (cv.textContent !== collected) {
+      const grew = cv.dataset.v !== undefined && m.paidTotal > Number(cv.dataset.v);
+      cv.textContent = collected;
+      cv.dataset.v = String(m.paidTotal);
+      if (grew) { cv.classList.remove("bump"); void cv.offsetWidth; cv.classList.add("bump"); }
+    }
+    $("collectedNote").textContent = m.paid.length ? t("collectedNote", { count: m.paid.length }) : t("collectedNone");
 
-    if (!items.length) {
-      $("workspace").innerHTML = `<div class="empty">${escapeHtml(t("empty"))}</div>`;
-      return;
+    patchPipe(m);
+    const legendSig = JSON.stringify([lang(), m.byStage.map((s) => [s.rows.length, s.total]), m.currency]);
+    if ($("legend").dataset.sig !== legendSig) {
+      $("legend").dataset.sig = legendSig;
+      $("legend").innerHTML = m.byStage.filter((s) => s.rows.length).map((s) =>
+        `<li><span class="sw" style="background:${swatch[s.stage]}"></span>${escapeHtml(t(`stage.${s.stage}`))} <b>${escapeHtml(fmtMoney(s.total, m.currency))}</b><span class="n">× ${s.rows.length}</span></li>`).join("");
     }
 
-    $("workspace").innerHTML = `<section class="section" aria-labelledby="attention-heading">
-      <div class="section-head">
-        <h2 id="attention-heading">${escapeHtml(t("needsAttention"))}</h2>
-        <span class="section-count alert">${overdue.length}</span>
-        <span class="section-note">${escapeHtml(t("followupsPrepared"))}</span>
-      </div>
-      <div class="attention-list">${overdue.map((item) => attentionCard(item, context)).join("") || `<div class="empty">${escapeHtml(t("nothingOverdue"))}</div>`}</div>
-    </section>
-    <section class="section" aria-labelledby="steady-heading">
-      <div class="section-head">
-        <h2 id="steady-heading">${escapeHtml(t("movingForward"))}</h2>
-        <span class="section-count">${steady.length}</span>
-      </div>
-      <div class="steady-list">${steady.map(steadyCard).join("") || `<div class="empty">${escapeHtml(t("noOtherOpen"))}</div>`}</div>
-    </section>`;
+    const lateShown = m.late.concat(m.items.filter((item) => leaving.has(item.id) && item.fields.stage === "paid" && $("listLate").querySelector(`[data-id="${CSS.escape(item.id)}"]`)));
+    const steadyShown = m.steady.concat(m.items.filter((item) => leaving.has(item.id) && item.fields.stage === "paid" && $("listSteady").querySelector(`[data-id="${CSS.escape(item.id)}"]`)));
+    $("countLate").textContent = m.late.length;
+    $("countSteady").textContent = m.steady.length;
+    $("noteLate").textContent = m.late.length ? t(m.drafts === 1 ? "noteLateOne" : "noteLate", { drafts: m.drafts, chased: m.chased }) : "";
+    if (!m.items.length) {
+      patchList($("listLate"), [], t("empty"));
+      patchList($("listSteady"), [], t("noOtherOpen"));
+    } else {
+      patchList($("listLate"), lateShown, t("nothingOverdue"));
+      patchList($("listSteady"), steadyShown, t("noOtherOpen"));
+    }
   }
 
-  // WHICH CONTEXT AM I IN — the one signal the kit's stage contract reads. `standalone` = the
-  // browser viewer or a panel host, both of which frame the page already, so the kit draws no
-  // card; absent = a widget in someone's conversation, where the card is ours to draw.
-  if (oma.standalone) document.body.classList.add("standalone");
+  function showError(text) {
+    $("error").textContent = text;
+    $("error").hidden = false;
+  }
 
-  oma.ready(render);
+  async function write(id, fields) {
+    pending.set(id, { ...(pending.get(id) || {}), ...fields });
+    $("error").hidden = true;
+    let ack = null;
+    try {
+      ack = await oma.updateItem(id, fields);
+    } catch (error) {
+      ack = null;
+    }
+    if (!ack || ack.ok === false) {
+      pending.delete(id);
+      leaving.delete(id);
+      showError(t("failed"));
+      render();
+      return false;
+    }
+    return true;
+  }
+
+  function showUndo(info) {
+    undoOf = info;
+    $("undoText").textContent = t("paidUndo", { name: info.name, amount: fmtMoney(info.amount, info.currency) });
+    $("undo").hidden = false;
+    clearTimeout(undoTimer);
+    undoTimer = setTimeout(() => { $("undo").hidden = true; undoOf = null; }, 8000);
+  }
+
+  document.addEventListener("click", (event) => {
+    const paidBtn = event.target.closest("[data-paid]");
+    if (paidBtn) {
+      const id = paidBtn.dataset.paid;
+      const item = (current.items || []).map(withPending).find((row) => row.id === id);
+      if (!item || leaving.has(id)) return;
+      paidBtn.disabled = true;
+      leaving.add(id);
+      const was = { id, stage: item.fields.stage, name: item.fields.name || t("untitled"), amount: item.fields.amount, currency: item.fields.currency };
+      write(id, { stage: "paid" }).then((ok) => { if (ok) showUndo(was); });
+      render();
+      const reduced = matchMedia("(prefers-reduced-motion: reduce)").matches;
+      setTimeout(() => { leaving.delete(id); render(); }, reduced ? 200 : 640);
+      return;
+    }
+    const chaseBtn = event.target.closest("[data-chase]");
+    if (chaseBtn) {
+      chaseBtn.disabled = true;
+      write(chaseBtn.dataset.chase, { last_chased: todayIso() });
+      render();
+    }
+  });
+
+  $("undoBtn").onclick = () => {
+    if (!undoOf) return;
+    const { id, stage } = undoOf;
+    undoOf = null;
+    clearTimeout(undoTimer);
+    $("undo").hidden = true;
+    write(id, { stage });
+    render();
+  };
+
+  const askBtn = $("askBtn");
+  askBtn.onclick = async () => {
+    const m = model();
+    const rows = m.late.length ? m.late : m.open;
+    const list = rows.slice(0, 12).map((item) => {
+      const f = item.fields;
+      const bits = [fmtMoney(f.amount, f.currency), f.contact, f.invoice_due ? `due ${f.invoice_due}` : "", f.last_chased ? `last chased ${f.last_chased}` : "", f.next_step].filter(Boolean);
+      return `- ${f.name || t("untitled")}: ${bits.join("; ")}`;
+    }).join("\n");
+    askBtn.disabled = true;
+    try {
+      const r = await oma.sendMessage(t(m.late.length ? "promptLate" : "promptPlan", { list: list || "-" }));
+      if (r && r.isError === true && !r.degraded) showError(t("askFailed"));
+    } catch (error) {
+      showError(t("askFailed"));
+    } finally {
+      askBtn.disabled = false;
+    }
+  };
+
+  if (oma.standalone) document.body.classList.add("standalone");
+  oma.ready((state) => {
+    render(state);
+    // Transitions switch on after the first paint: the pipe opens where it is; motion is saved for "paid".
+    requestAnimationFrame(() => requestAnimationFrame(() => document.querySelector(".cp").classList.add("live")));
+  });
   oma.onChange(render);
   oma.onPrefChange?.(({ key }) => {
-    if (key === "locale" || key === "date_format") render(currentState);
+    if (key === "locale" || key === "date_format") render();
   });
 </script>
 </body>

@@ -50,13 +50,13 @@ const TOOL_REGISTRATION_ALLOWED = [
 //   build        — provenance stamped in by the image build. Not a toggle; never branched on.
 //   platform     — not ours; set by the OS or a host.
 const FLAGS = {
+  OMA_APP_STORE_DIRS: { kind: "product",  why: "extra App Store source folders (the oma-store repo, a team's own store), searched before the built-in components/ — the store's content lives outside the engine and this is how an install points at it" },
   OMA_BUILD:          { kind: "build",    why: "commit SHA baked in by the image build; reported to the host in the MCP server info so a deployment can be told apart from a checkout" },
   OMA_BUILD_FILE:     { kind: "build",    why: "path to the same SHA, for images that resolve it at build time — discoverable via `docker inspect`, unlike a value injected inline in CMD" },
   OMA_DB:             { kind: "product",  why: "database location override (tests, multi-tenant hosts)" },
   OMA_HOST:           { kind: "product",  why: "host label when clientInfo.name is unavailable" },
   // OMA_FILE_BACKEND retired 2026-08-04 (elegance A3): one local backend, one instantiation —
   // the remote seam went with it and returns with its first real caller.
-  OMA_DYNAMIC_TOOLS:  { kind: "product",  why: "opt-in per-app open_<name> tools; DEFAULT OFF because every save_app would invalidate the whole conversation's prompt cache" },
   OMA_FUNCTIONS:      { kind: "product",  why: "kill-switch (OMA_FUNCTIONS=0) for the call_function seat on the LOCAL entrypoints, where it defaults ON. Read only by server.mjs/http.mjs on purpose: createEngine itself defaults the seat OFF, so an embedding/hosted consumer never inherits same-process execution — a multi-tenant plane opts in explicitly or not at all (functions.mjs header, §2.5-D)" },
   // OMA_QUERY retired 2026-08-04 with the dormant data_query seat (elegance review A5): the
   // 145K-token aggregate incident stays real, and the seat returns SLIM (count/sum/group_by,

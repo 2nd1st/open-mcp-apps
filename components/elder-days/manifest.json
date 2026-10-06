@@ -27,9 +27,6 @@
     "date_format",
     "density"
   ],
-  "stage": {
-    "width": "column"
-  },
   "collections": {
     "elder-meds": {
       "label_field": "name",
@@ -102,7 +99,6 @@
       "strict": true
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "local-tools"
   }

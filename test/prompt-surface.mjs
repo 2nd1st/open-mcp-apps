@@ -66,7 +66,7 @@ const canon = (v) =>
 const stdioParams = () => ({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "prompt-surface", OMA_DYNAMIC_TOOLS: "", OMA_VIEWER: "0" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "prompt-surface", OMA_VIEWER: "0" },
 });
 const client = new Client({ name: "prompt-surface", version: "1.0.0" });
 await client.connect(new StdioClientTransport(stdioParams()));

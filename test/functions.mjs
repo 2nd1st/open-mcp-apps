@@ -22,6 +22,7 @@
 // Run: node test/functions.mjs
 
 import { openStore, manifestShapeError } from "../src/store.mjs";
+import { BASICS_GATE } from "./guide-gate.mjs";
 import { extractFunctionBodies, functionsJoinError, makeFunctionHost, runFunctionBody, FnAbort,
          FN_TIME_BUDGET_MS, FN_TIME_TIMER_MAX_MS, FN_WRITE_BUDGET, FN_READ_BUDGET,
          MAX_FUNCTION_RESULT, MAX_FUNCTIONS, MAX_CONCURRENT_FUNCTION_CALLS } from "../src/functions.mjs";
@@ -701,10 +702,9 @@ console.log("14. the guide follows the SEAT — no host teaches a tool it does n
   const basicsOff = await chapter(false);
   ok("the basics directory line follows too — it does not point at a chapter for a missing pillar",
     !/\{topic: "functions"\} — exposing/.test(basicsOff) && /no functions on this host/.test(basicsOff));
-  // 25,900: the same gate server-smoke states, moved by the same mechanical amount and for the
-  // same reason — the seven verb-leading renames made several names the chapter mentions longer.
-  ok("…and basics stays under its byte gate on both seats", basicsOff.length < 25_900
-    && (await chapter(true)).length < 25_900, `off is ${basicsOff.length}`);
+  // The same gate server-smoke states (one number, test/guide-gate.mjs).
+  ok("…and basics stays under its byte gate on both seats", basicsOff.length < BASICS_GATE
+    && (await chapter(true)).length < BASICS_GATE, `off is ${basicsOff.length}`);
 }
 
 rmSync(dir, { recursive: true, force: true });

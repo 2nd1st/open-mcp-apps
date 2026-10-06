@@ -48,11 +48,7 @@
       }
     }
   },
-  "kind": "app",
   "scene": {
     "category_id": "dev-artifacts"
-  },
-  "stage": {
-    "width": "wide"
   }
 }

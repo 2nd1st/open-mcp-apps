@@ -58,7 +58,7 @@ const client = new Client({ name: "write-ack", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "write-ack", OMA_DYNAMIC_TOOLS: "" },
+  env: { ...process.env, OMA_DB: DB, OMA_HOST: "write-ack" },
 }));
 const callTool = (name, args) => client.callTool({ name, arguments: args });
 const rows = async () => (await callTool("data_list", { collection: COLL, limit: 100 })).structuredContent;
