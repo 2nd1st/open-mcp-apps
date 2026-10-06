@@ -19,13 +19,16 @@ import { isHandle, handleOf, notShared, sharedLocked, provenanceLine } from "../
 import { sharedScopeOf } from "../store.mjs";
 import { sliceHash, locateNode, applyRangeEdits } from "../edit-range.mjs";
 import { makeFunctionHost } from "../functions.mjs";
-import { editTelemetry } from "../edit-telemetry.mjs";
 import { skillLine, skillProvenance, skillAuthor } from "../skill.mjs";
 
 // Advice, never a refusal (contracts READ_WINDOW): said when an app's document stops fitting one read.
+// Measured 2026-10-06 (Claude + ChatGPT, 40K–170K apps): both edit big apps willingly and small edits
+// read only the part they touch; the cost is a REWORK, which reads the whole app first — about once on
+// Claude, about eight times over on ChatGPT. So the advice is about cost, not about being refused.
 const sizeAdvice = (name, size) => `"${name}" is ${size.toLocaleString()} chars — past one get_app read ` +
-  `(${READ_WINDOW.toLocaleString()}). An AI reads an app this size in pieces and is slow to change what it ` +
-  `never sees whole. Keep an app to one job; a bigger one splits into apps that share the collection.`;
+  `(${READ_WINDOW.toLocaleString()}). Small edits stay cheap, but a rework reads the whole app first (on ` +
+  `some hosts several times), so every big change costs more as it grows. Keep an app to one job; a ` +
+  `bigger one splits into apps that share the collection.`;
 
 // "Does this document actually talk to the API?" — the shapes a real app reaches it by.
 // The original test was the literal `oma.` alone, which fired on working code: `const OMA =
@@ -173,21 +176,6 @@ export function register(ctx) {
   const LOADER_DOC = wrapLoader({ viewBase: viewRoot });
   const LOADER_URI = loaderUriFor(LOADER_DOC + JSON.stringify(cspPolicy.base));
 
-  // R1 tripwire data source (W-E): one JSONL line per editing event, sidecar next to the DB.
-  // recordEdit still returns a count when a REPORT_EVERY boundary is crossed; NOBODY READS IT
-  // any more. It used to be spliced into edit_app's success ack — an internal counter, a local
-  // script path and a maintainer's name, in the model's context, on somebody else's machine.
-  // The tripwire is our instrument and the file beside the DB is where it belongs; a tool result
-  // is the user's. (The count stays in the return value rather than being deleted because the
-  // boundary crossing is what the sidecar's own reader looks for.)
-  //
-  // …and it is now a SEAT, off by one option. The measurement exists to decide OUR question (is a
-  // source-graph rewrite worth building?), which makes it a reasonable thing to collect on a
-  // machine the user owns and an unreasonable thing to collect on somebody's behalf without
-  // saying so. A deployment that would have to write it into a privacy policy can decline
-  // instead, and declining has to mean the file is never created — not that it is written and
-  // ignored — so the no-op replaces the recorder rather than guarding each call site.
-  const recordEdit = ctx.telemetry === false ? () => null : editTelemetry(store.dataDir);
 
 
   // ---------------------------------------------------------------- widget security declaration
@@ -641,37 +629,31 @@ export function register(ctx) {
     {
       title: "List apps",
       annotations: RO,
-      description: "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with visibility.",
-      // Two params: name (the "open my X" lookup — exact match, so a registry of any size answers
-      // in one call) and visibility (what is retired or long-tail).
+      description: "List UI apps in the registry (reusable across all chats) — pass name to look one up.",
+      // One param: name (the "open my X" lookup — exact match, so a registry of any size answers
+      // in one call). A `visibility` filter (featured/listed/unlisted/archived) lived here until
+      // 0.8.1; nothing has written those values since archive_app's seat left (2026-08-04), so an
+      // old store's archived row now lists like any other app — it was always openable by name,
+      // and hiding it with no way left to unarchive would strand it.
       inputSchema: {
         name: z.string().optional().describe("exact app name — the fastest way to answer \"open my X\""),
-        visibility: z.enum(["featured", "listed", "unlisted", "archived", "any"]).optional().describe("default featured+listed; archived/unlisted are retired or long-tail"),
       },
     },
     async (a = {}) => {
-      // An exact-name lookup is explicit intent: the defaults exist to scope BROWSING, and letting
-      // them veto a lookup makes the tool report that an existing app does not exist.
-      // Filters the caller actually passed still apply.
-      const all = store.listApps({
-        name: a.name,
-        visibilities: a.visibility === "any" ? undefined : a.visibility ? [a.visibility] : a.name ? undefined : ["featured", "listed"],
-      });
+      const all = store.listApps({ name: a.name });
       const comps = all;
       const own = comps.filter((c) => !SEEDED_APPS.has(c.name));
       // Apps OTHER accounts shared with the caller, after the caller's own — only from the caller's
-      // grants (the router), under the same name/visibility filters, as `@owner/app` rows that say
+      // grants (the router), under the same name filter, as `@owner/app` rows that say
       // who shared them and what the caller may do. None on a local install.
       const shared = [];
       if (route) {
-        const wanted = a.visibility === "any" ? null : a.visibility ? [a.visibility] : a.name ? null : ["featured", "listed"];
         for (const m of await route.session().all())
           for (const s of m.face.scope().apps) {
             const name = handleOf(m.alias, s.app);
             if (a.name && a.name !== name) continue;
-            if (wanted && !wanted.includes(s.visibility)) continue;
             shared.push({ name, version: s.version, description: s.description, author: s.author, ui_size: s.ui_size,
-              visibility: s.visibility, locked: true, ...(s.has_skill ? { has_skill: true } : {}),
+              locked: true, ...(s.has_skill ? { has_skill: true } : {}),
               shared: { from: m.ownerLabel, role: s.role, collections: s.collections.map((c) => handleOf(m.alias, c)) } });
           }
       }
@@ -709,12 +691,9 @@ export function register(ctx) {
       // data the model is looking at when it decides.
       // A filtered list must never read as the whole registry. `total` says how many matched,
       // before the rows — the same reason a page reports the collection's size and not its own length.
-      const scoped = a.name || a.visibility;
-      const head = scoped ? `${all.length + shared.length} match:` : null;
+      const head = a.name ? `${all.length + shared.length} match:` : null;
       const empty = a.name
         ? `No app named "${a.name}". Call list_apps with no arguments to see what exists.`
-        : scoped
-        ? "Nothing matches that filter. Call list_apps with no arguments (or visibility:\"any\") to widen."
         : "Registry is empty. Call get_app_guide, then save_app to create the first one.";
       const text = comps.length
         ? [head, comps.map(line).join("\n"), own.length ? null :
@@ -837,7 +816,7 @@ export function register(ctx) {
     {
       title: "Save app",
       annotations: WRITE,
-      description: "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
+      description: "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete HTML document (contract in get_app_guide; window.oma, loads only from the guide's CDN allowlist or manifest.csp, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene, csp; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
       inputSchema: {
         name: z.string().describe("app name, ^[a-z][a-z0-9-]{0,31}$ (e.g. 'kanban', 'habit-tracker')"),
         ui: z.string().optional().describe("complete self-contained HTML document using window.oma; omit on update to keep the current one"),
@@ -991,11 +970,6 @@ export function register(ctx) {
       const sizeNote = r.prev_size == null
         ? `${r.size.toLocaleString()} chars.`
         : `${r.prev_size.toLocaleString()} → ${r.size.toLocaleString()} chars.`;
-      // A ui rewrite over an EXISTING app is the "full rewrite" the R1 tripwire divides by: every
-      // one of these is an edit that did not go through edit_app. Creations are not edits, and a
-      // manifest-only save touches no document — both skip.
-      if (!r.created && a.ui !== undefined) recordEdit({ host: hostName(), app: a.name, mode: "rewrite", edits: 1,
-        req_bytes: a.ui.length, changed_bytes: a.ui.length, doc_bytes: r.size, outcome: "ok" });
       const lines = [
         `Saved "${a.name}" v${r.version}${r.created ? " (new app)" : " (updated)"} — ${sizeNote}`,
         ...notes,
@@ -1018,7 +992,7 @@ export function register(ctx) {
     {
       title: "Edit app source",
       annotations: WRITE,
-      description: "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The #oma-manifest block is re-read on save.",
+      description: "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The manifest and skill slots are kept.",
       inputSchema: {
         ...cmdArgs,
         // `app`, not `name` — save_app/get_app take `name`, and the split is
@@ -1068,18 +1042,10 @@ export function register(ctx) {
         return fail(`"${a.app}" was built outside this store: its ui is a template that loads bundled assets ` +
           `(oma-asset:…), so editing it here would desynchronise the template from the build that made it. ` +
           `Source lives outside this store; rebuild and re-install with install-app.mjs. NOTHING was applied.`);
-      // Telemetry wrapper: every exit path of the apply below records ONE line (the R1 tripwire
-      // counts failures as first-class data — a structural-ambiguity error unrecorded is a
-      // tripwire that can never fire). `tel` closes over the request's fixed facts.
       const edits = Array.isArray(a.edits) ? a.edits : [];
       const rangeEdits = edits.filter((e) => e && (e.offset != null || e.length != null || e.expect_hash != null));
       const stringEdits = edits.filter((e) => e && !(e.offset != null || e.length != null || e.expect_hash != null));
-      const mode = rangeEdits.length && stringEdits.length ? "mixed" : rangeEdits.length ? "range" : "string";
-      const changed = edits.reduce((s, e) => s + Math.max(e?.old_string?.length ?? e?.length ?? 0, e?.new_string?.length ?? 0), 0);
-      const tel = (outcome) => recordEdit({ host: hostName(), app: a.app, mode, edits: edits.length,
-        req_bytes: JSON.stringify(a.edits ?? "").length, changed_bytes: changed, doc_bytes: comp.ui.length, outcome });
       if (comp.version !== a.expected_version) {
-        tel("version_conflict");
         return toMcp(answer.fail("version_conflict", { name: a.app, expected_version: comp.version },
           `"${a.app}" is at v${comp.version}, not v${a.expected_version} — re-read the region you are editing and re-apply.`), { isError: true });
       }
@@ -1087,7 +1053,6 @@ export function register(ctx) {
       for (let i = 0; i < rangeEdits.length; i++) {
         const e = rangeEdits[i];
         if (e.offset == null || e.length == null || !e.expect_hash) {
-          tel("bad_range");
           return fail(`Edit ${edits.indexOf(e)}: a range edit needs ALL of offset, length and expect_hash (get_app returns all three). NOTHING was applied.`);
         }
       }
@@ -1096,16 +1061,16 @@ export function register(ctx) {
       let html = comp.ui;
       if (rangeEdits.length) {
         const r = applyRangeEdits(html, rangeEdits);
-        if (!r.ok) { tel(r.error); return fail(`${r.detail}. NOTHING was applied.`); }
+        if (!r.ok) return fail(`${r.detail}. NOTHING was applied.`);
         html = r.html;
       }
       for (let i = 0; i < stringEdits.length; i++) {
         const e = stringEdits[i] || {};
         const oldS = String(e.old_string ?? "");
-        if (!oldS) { tel("empty_old_string"); return fail(`Edit ${edits.indexOf(e)}: old_string is empty. NOTHING was applied.`); }
+        if (!oldS) return fail(`Edit ${edits.indexOf(e)}: old_string is empty. NOTHING was applied.`);
         const n = html.split(oldS).length - 1;
-        if (n === 0) { tel("no_match"); return fail(`Edit ${edits.indexOf(e)}: old_string not found (0 matches) — read that region again (get_app with offset) and match it exactly, including whitespace. NOTHING was applied.`); }
-        if (n > 1 && !e.replace_all) { tel("multi_match"); return fail(`Edit ${edits.indexOf(e)}: old_string matches ${n} times — add surrounding context to pin ONE occurrence, or set replace_all: true. NOTHING was applied.`); }
+        if (n === 0) return fail(`Edit ${edits.indexOf(e)}: old_string not found (0 matches) — read that region again (get_app with offset) and match it exactly, including whitespace. NOTHING was applied.`);
+        if (n > 1 && !e.replace_all) return fail(`Edit ${edits.indexOf(e)}: old_string matches ${n} times — add surrounding context to pin ONE occurrence, or set replace_all: true. NOTHING was applied.`);
         html = e.replace_all ? html.split(oldS).join(String(e.new_string ?? "")) : html.replace(oldS, String(e.new_string ?? ""));
       }
       // The apply is pure and the save is OCC-guarded, so read→apply→save is transaction-equivalent:
@@ -1118,18 +1083,15 @@ export function register(ctx) {
       });
       if (!r.ok) {
         if (r.conflict) {
-          tel("version_conflict");
           return toMcp(answer.fail("version_conflict", { name: a.app, expected_version: r.expected },
             `Version conflict: "${a.app}" moved to v${r.expected} while editing — re-read and re-apply. NOTHING was applied.`), { isError: true });
         }
-        tel(r.error || "store_error");
         return fail(r.error === "bad_manifest" ? `The edited document's declaration is invalid: ${r.detail}. NOTHING was applied — fix the edit and retry.`
           : `${failNote(r)} NOTHING was applied.`);
       }
       if (r.idempotent)
         return toMcp(answer.ack({ ok: true, name: a.app, version: r.version, applied: edits.length, note: "already applied (idempotent replay)" },
           `Already applied — "${a.app}" is at v${r.version} from this same command_id.`));
-      tel("ok");
       return toMcp(answer.ack(
         { ok: true, name: a.app, version: r.version, size: r.size, prev_size: r.prev_size ?? null,
           applied: edits.length, manifest_action: r.manifest_action, ...(r.note ? { note: r.note } : {}) },
@@ -1141,12 +1103,8 @@ export function register(ctx) {
     },
   );
 
-  // archive_app's SEAT retired 2026-08-04 (elegance B2, Leo: remove now, re-add when an entry
-  // exists). The CONCEPT stays signed (visibility 'archived', the store's archive_app command,
-  // its ledger vocabulary and replay semantics — all intact and tested in ledger-smoke): today no
-  // surface offers an archive action, so the seat was 1,171 resident bytes with only tests as
-  // callers. The day settings grows an Archive button, the seat hooks straight back onto the
-  // store command — one release-time cache break, same as any seat arrival.
+  // archive_app: seat retired 2026-08-04 (elegance B2); the store command, its undo branch and
+  // the visibility values behind it followed on 2026-10-06 (0.8.1) — nothing could reach them.
 
   // call_function — the function pillar's single dispatcher (W3). The seat returned WITH its
   // executor (the 2026-07-27 retirement's own condition: a registered tool whose only behaviour

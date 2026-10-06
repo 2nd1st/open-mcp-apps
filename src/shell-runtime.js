@@ -22,7 +22,7 @@ import "./zod-jitless.js";
 import { App, applyDocumentTheme, applyHostStyleVariables, applyHostFonts } from "@modelcontextprotocol/ext-apps";
 import { decideAck, applyAck, ackOf, canAdopt, walkPages, decideProbe, decideChanges, viaOf, themeVars, childPreviewSnapshot, coercePref, withConfirmation, afterAppScripts, fitFrame, createAppTools, serveAppTools, appToolText, THEME_KEY_PREFIX, WALK_LIMIT, APP_READER_META } from "./runtime-core.mjs";
 import { makeGuard, composeChildDoc, tokenCSS, BRIDGE, readFileParts, unpinDocumentHeight } from "./runner.mjs";
-import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL, canonicalToolName } from "./tool-policy.mjs";
+import { STAMPED_TOOLS as STAMPED_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
 
 // Standalone mode: set by the browser viewer (http.mjs /view/<name>) when there is NO MCP
 // host — tool calls go over plain fetch to the local /rpc endpoint instead of the bridge.
@@ -1298,9 +1298,9 @@ window.oma = {
    * apps run behind the runner, which filters calls.
    */
   callTool(rawName, args) {
-    // Canonicalise FIRST (as the runner guard does): retired spellings still resolve, and both
-    // rules below match on the name — the old spelling must not be a way around the stamp.
-    const name = canonicalToolName(rawName);
+    // Trimmed first (as the runner guard does): both rules below match on the name, so a padded
+    // spelling must not be a way around the stamp.
+    const name = String(rawName == null ? "" : rawName).trim();
     const a = args || {};
     // A widget's write is a widget's write, whichever door it used: stamped human and sent through
     // the same confirmation loop as oma.deleteItem — the rule the runner enforces for children.

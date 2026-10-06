@@ -28,36 +28,11 @@
 // qualification: nothing running behind the runner (any non-local tier, and every embedded child
 // regardless of tier) can reach these names.
 // The `app_store_*` prefix reserves the future SaaS app-publishing namespace up front.
-// ── retired tool names, and the one table that knows them ────────────────────────────────────
-// Seven seats were renamed to lead with a verb before the first directory submission (the last
-// window where a rename is not a breaking change to a published metadata contract). The old names
-// are still REGISTERED — an app saved in a user's store months ago calls `data_version` in its
-// poll loop, and that app must keep working — but they are never LISTED, so nothing written from
-// today's tool list learns them.
-//
-// The table is here, and not next to the registrations, because THREE readers need it and each
-// would otherwise keep its own copy: the engine (to register the alias beside the seat and to hide
-// it from tools/list) and the two runtimes' guards (to canonicalise a name BEFORE deciding what it
-// is allowed to do). That last one is the load-bearing reason. Every guard below matches on a
-// name; a widget that reached for a retired spelling would slip past a check written against the
-// current one, which turns a rename into a hole. Canonicalise first, then decide.
-export const TOOL_ALIASES = {
-  get_app_html: "app_html",
-  list_app_checkpoints: "app_history",
-  apply_data_writes: "data_batch",
-  get_data_version: "data_version",
-  list_data_collections: "data_collections",
-  get_ui_preference_schema: "ui_prefs_schema",
-  preview_app_store_entry: "app_store_preview",
-};
-const RETIRED_TO_CURRENT = new Map(Object.entries(TOOL_ALIASES).map(([now, then]) => [then, now]));
-/** The current name for `name`: a retired spelling maps to its seat, anything else passes through
- *  (trimmed). Case-folded on lookup for the same reason isControlPlaneTool folds — a re-cased
- *  variant must not be a different tool to a guard than it is to the server. */
-export function canonicalToolName(name) {
-  const t = String(name == null ? "" : name).trim();
-  return RETIRED_TO_CURRENT.get(t.toLowerCase()) || t;
-}
+// (Retired tool names: seven seats were renamed before the first directory submission and the old
+// spellings stayed registered-but-unlisted as a bridge — TOOL_ALIASES + canonicalToolName here.
+// The bridge was removed in 0.8.1, 2026-10-06: the one first-party caller, the settings app, had
+// moved to the current names, and nothing had been announced publicly that would have taught an
+// app the old ones. A retired spelling is now simply an unknown tool.)
 
 export const CONTROL_PLANE_TOOLS = [
   "security_set",
@@ -68,7 +43,6 @@ export const CONTROL_PLANE_TOOLS = [
   "preview_app_store_entry",
   "save_app",
   "edit_app",      // same wall as save: a child that can edit source can rewrite any app
-  "archive_app",   // seat retired 2026-08-04, name still reserved: the store command exists and the seat returns with a settings entry
   "delete_app",
   "restore_app",
   // Also on the HOST gate (engine.mjs WIDGET_CALLABLE), and that is the intended reading of the
@@ -76,11 +50,14 @@ export const CONTROL_PLANE_TOOLS = [
   // the host may forward it; an app embedded inside another app may not install anything.
   "install_from_app_store",
 ];
-// render_health left the list 2026-08-04 with its seat AND its store action (elegance B3):
-// unlike archive_app there is nothing behind the name any more.
+// render_health left the list 2026-08-04 with its seat AND its store action (elegance B3);
+// archive_app followed on 2026-10-06 (0.8.1) when its store command went too.
 // call_function is deliberately NOT here: it is a data-plane verb (a widget calling its own
-// app's function is a designed path). Its caller-binding lands with the function pillar's
-// runner wiring; until that flag exists the engine-side seat refuses every call anyway.
+// app's function is a designed path). Its caller-binding: oma.callFunction stamps `app` as the
+// widget itself, and for any child behind the runner makeGuard re-forces it (runner.mjs), so a
+// sandboxed child reaches only its own app's functions.
+// The seat itself is live wherever createEngine gets `functions` (on by default in the local
+// entry points; OMA_FUNCTIONS=0 turns it off).
 
 // The same-policy-two-runtimes sets (W4 consolidation). Both runtimes stamp a widget's
 // destructive/write calls as the human acts they are, and both refuse apply_data_writes — but each
@@ -96,13 +73,12 @@ export const STAMPED_TOOLS = [...DATA_WRITE_TOOLS, "file_delete"];
  *  need per-row calls. */
 export const DATA_BATCH_REFUSAL = "apply_data_writes is not available to apps — delete or write one row at a time (oma.deleteItem / oma.addItem), so each destructive row can be confirmed on its own.";
 
-/** True if `name` is a control-plane tool no app may call. Canonicalises first (so a retired
- *  spelling is judged as the seat it names), then normalizes (trim+lowercase) so a padded or
- *  re-cased variant can't slip past, and matches the reserved `app_store_*`.
+/** True if `name` is a control-plane tool no app may call. Normalizes (trim+lowercase) so a
+ *  padded or re-cased variant can't slip past, and matches the reserved `app_store_*`.
  *  `_`-prefixed names are internal RPC methods (undo, the Data pane's ledger view — served by
  *  the /rpc transport only, never registered as MCP tools): a sandboxed child must not reach
  *  them through a passthrough either, so they are control-plane by prefix. */
 export function isControlPlaneTool(name) {
-  const t = canonicalToolName(name).toLowerCase();
+  const t = String(name == null ? "" : name).trim().toLowerCase();
   return CONTROL_PLANE_TOOLS.indexOf(t) !== -1 || t.indexOf("app_store_") === 0 || t.indexOf("_") === 0;
 }

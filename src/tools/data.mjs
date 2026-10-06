@@ -15,7 +15,7 @@ import { skillPointer } from "../skill.mjs";
 const inCollection = z.string().optional().describe("the item's collection, if known — the write is refused unless the row is in it");
 
 export function register(ctx) {
-  const { server, store, hostName, run, toResult, toStale, toFull, toPage, toAck, toConflict, toFail, renderItems, failNote, fail } = ctx;
+  const { server, store, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail } = ctx;
   const { route, caller } = ctx;
 
   // ── shared collections (`@owner/name`) ────────────────────────────────────────────────────

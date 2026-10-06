@@ -133,7 +133,7 @@ const ownBody = (doc) => doc.includes(`</head><body><div id="root">`);
 const client = new Client({ name: "install-outside", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node", args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "outside-test", OMA_VIEWER: "0" },
+  env: { ...process.env, OMA_DB: DB, OMA_VIEWER: "0" },
 }));
 const textOf = (r) => (r.content || []).map((c) => c.text || "").join("\n");
 

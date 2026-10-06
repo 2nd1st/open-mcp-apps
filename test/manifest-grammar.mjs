@@ -21,6 +21,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { readDeclaration, MAX_DECLARATION_BYTES, DECLARATION_OPEN } from "../src/manifest-block.mjs";
 import { FIXTURES } from "./rig/manifest-fixtures.mjs";
+import { appDir } from "./rig/shipped-apps.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GOLDEN = join(ROOT, "test", "golden", "manifest-grammar.json");
@@ -88,14 +89,14 @@ console.log("\n4. real apps — the shipped corpus is BLOCK-FREE (W-N), and its 
 // The grammar above is the MIGRATION's reader now: no shipped document may carry a block (the
 // v6 save guard would refuse it), and every shipped declaration is a manifest.json sibling.
 for (const name of ["dashboard", "bill-calendar", "keep-in-touch", "settings"]) {
-  const ui = readFileSync(join(ROOT, "components", name, "ui.html"), "utf8");
+  const ui = readFileSync(join(appDir(name), "ui.html"), "utf8");
   const r = readDeclaration(ui);
   ok(`${name}/ui.html carries no declaration block`, r.state === "absent", r.state);
 }
 // Five of the shipped manifests declare no `settings` key at all — which is exactly the case a
 // consumer-side `Array.isArray(m.settings)` gate used to drop on the floor.
 const noSettings = ["bill-calendar", "habit-streaks", "keep-in-touch", "savings-goals", "spending-journal"]
-  .filter((n) => { const m = JSON.parse(readFileSync(join(ROOT, "components", n, "manifest.json"), "utf8")); return m.settings === undefined; });
+  .filter((n) => { const m = JSON.parse(readFileSync(join(appDir(n), "manifest.json"), "utf8")); return m.settings === undefined; });
 ok("a declaration with no `settings` key is still a declaration (5 shipped apps rely on it)", noSettings.length === 5, `saw ${noSettings.length}`);
 
 console.log("\n5. bounds");

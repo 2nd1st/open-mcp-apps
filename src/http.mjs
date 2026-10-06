@@ -36,8 +36,8 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 
 // ONE viewer per process. These are assigned by startViewer() rather than at import time, because
 // the embedded case (src/server.mjs) MUST hand us ITS store: two openStore() handles in one
-// process would be two file channels, and a chunked upload begun on one would be invisible to the
-// other (see the memoization note above openFileChannel in engine.mjs). Importing this module
+// process would be two file channels, each running its own orphan sweep over one folder (see the
+// memoization note above openFileChannel in files.mjs). Importing this module
 // therefore has to be free of side effects — nothing binds, nothing opens, until asked.
 let store = null;
 let PORT = Number(process.env.PORT || 8787);
@@ -78,7 +78,7 @@ const INDEX_CSP = "default-src 'none'; style-src 'unsafe-inline'; img-src data:;
 // App documents have no size cap; this number is TRANSPORT SELF-DEFENCE, not policy. It exists so
 // an unauthenticated POST cannot make this process hold an unbounded string in memory — it is not
 // a statement about how big an app is allowed to be, and it must stay comfortably above anything a
-// real save_app or file chunk sends.
+// real save_app or file_write sends.
 const MAX_BODY_BYTES = 64 * 1024 * 1024;
 // The body stays BYTES until it is whole: a network chunk can end inside a multi-byte character,
 // and decoding chunk by chunk turned each half into U+FFFD (an AI's long Chinese write was stored
@@ -315,7 +315,7 @@ const server = http.createServer(async (req, res) => {
       // The second of the three serve-time seams (the other two are the per-app ui:// resource and
       // get_app_html, both in tools/apps.mjs): an app built outside the chat stores a template and its
       // bundle separately, and a document leaving the store is where they become one. The channel
-      // is memoised per store, so this is the SAME upload/ref table the engine's file_* tools use —
+      // is memoised per store, so this is the SAME channel the engine's file_* tools use —
       // not a second view of the file plane.
       return html(res, 200, wrapApp(
         await resolveAssets(comp.ui, appAssetReader(openFileChannel(store), view[1])), {
@@ -482,7 +482,11 @@ function note(line) { try { console.error(`[oma] ${line}`); } catch {} }
 // Standalone: `node src/http.mjs` (npm run serve). OMA_VIEWER is deliberately NOT read here —
 // it means "do not start a viewer I did not ask for", and running this file IS asking.
 if (process.argv[1] && resolvePath(process.argv[1]) === fileURLToPath(import.meta.url)) {
-  const v = await startViewer();
+  // Seed the system apps before serving — same reason and same call as src/server.mjs. Imported
+  // lazily so that importing this module (server.mjs does, for startViewer) stays side-effect free.
+  const own = openStore();
+  (await import("../seed.mjs")).seedAtStart(own);
+  const v = await startViewer({ store: own });
   // ADOPTED is not LISTENING, and the difference is the whole point of these lines. When another
   // open-mcp-apps process already holds the port, startViewer hands back ITS url so a host with no
   // link to give still has one — correct for the embedded case, and a lie here: this process bound

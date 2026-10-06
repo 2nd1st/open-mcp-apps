@@ -9,12 +9,13 @@ import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { spawn } from "node:child_process";
 import { connect } from "node:net";
 import { randomUUID } from "node:crypto";
-import { unlinkSync, existsSync, readFileSync, readdirSync } from "node:fs";
+import { unlinkSync, existsSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, basename } from "node:path";
 import Database from "better-sqlite3";
 import { openStore } from "../src/store.mjs";
 import { wrapApp } from "../src/shell.mjs";
+import { shippedApps } from "./rig/shipped-apps.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "http-smoke.db");
@@ -23,13 +24,14 @@ const DB = join(ROOT, "test", "http-smoke.db");
 const PORT = Number(process.env.OMA_TEST_PORT) || 18931;
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
-{ // seed — v6 layout: components/<name>/ui.html (+ manifest.json as the manifest slot)
+{ // seed — every shipped app (system apps from components/, store apps from the installed
+  // @openmcp-app/oma-store package); v6 layout: <name>/ui.html (+ manifest.json as the manifest slot)
   const store = openStore(DB);
-  for (const name of readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")))) {
+  for (const { name, dir } of shippedApps()) {
     let manifest = null;
-    try { manifest = JSON.parse(readFileSync(join(ROOT, "components", name, "manifest.json"), "utf-8")); } catch { /* none */ }
+    try { manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf-8")); } catch { /* none */ }
     store.execute({ type: "save_app", command_id: "seed-" + name, name,
-      ui: readFileSync(join(ROOT, "components", name, "ui.html"), "utf-8"), manifest, actor: "seed" });
+      ui: readFileSync(join(dir, "ui.html"), "utf-8"), manifest, actor: "seed" });
   }
   // a NON-local fixture (author not in {agent,human,seed}) — proves /view fails closed for it
   store.execute({ type: "save_app", command_id: "seed-nonlocal", name: "nonlocal-fixture",
@@ -518,21 +520,15 @@ try {
       !shellSrc.includes("startLive") && !shellSrc.includes("liveFollow") && !shellSrc.includes("__OMA_LIVE__"));
   }
 
-  console.log("7. chunked upload lifecycle ACROSS stateless /mcp requests (memoized per-store channel)");
-  // /mcp builds a FRESH engine per request; before the per-store channel memoization the upload
-  // begun in request 1 was invisible to request 2 (empty uploads Map) and chunked upload was
-  // 100% dead on exactly the remote-host transport. Each callTool below is its own HTTP request.
+  console.log("7. a file written in one stateless /mcp request reads back in the next (memoized per-store channel)");
+  // /mcp builds a FRESH engine per request; each callTool below is its own HTTP request.
+  // (This section used to drive the chunked begin/chunk/commit trio across requests — removed in
+  // 0.8.1, zero callers. The single-shot write → read across requests is what is left to pin.)
   {
-    const b = await client.callTool({ name: "file_write_begin", arguments: { app: "httpchunk" } });
-    ok("begin over /mcp returns an upload_id", !b.isError && typeof b.structuredContent?.upload_id === "string");
-    const uid = b.structuredContent.upload_id;
-    const c1 = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: uid, data_base64: Buffer.from("hello ").toString("base64") } });
-    ok("chunk in a SECOND stateless request finds the same upload", !c1.isError && c1.structuredContent?.bytes === 6);
-    await client.callTool({ name: "file_write_chunk", arguments: { upload_id: uid, data_base64: Buffer.from("remote").toString("base64") } });
-    const cm = await client.callTool({ name: "file_write_commit", arguments: { upload_id: uid, path: "over-mcp.txt", mime: "text/plain" } });
-    ok("commit in a THIRD request lands the file", !cm.isError && cm.structuredContent?.size === 12);
+    const w = await client.callTool({ name: "file_write", arguments: { command_id: "http-file-1", app: "httpchunk", path: "over-mcp.txt", mime: "text/plain", data_base64: Buffer.from("hello remote").toString("base64") } });
+    ok("file_write over /mcp lands the file", !w.isError && w.structuredContent?.size === 12);
     const rd = await client.callTool({ name: "file_read", arguments: { app: "httpchunk", path: "over-mcp.txt" } });
-    ok("file reads back intact over /mcp", !rd.isError && Buffer.from(rd.structuredContent.data_base64, "base64").toString() === "hello remote");
+    ok("file reads back intact in a SECOND stateless request", !rd.isError && Buffer.from(rd.structuredContent.data_base64, "base64").toString() === "hello remote");
   }
 
   console.log("8. internal `_` RPC — the Data pane's non-tool verbs (write-set D)");

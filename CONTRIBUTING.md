@@ -25,9 +25,7 @@ of it. The ones you are most likely to run on their own while developing:
 
 - `node test/server-smoke.mjs` — the stdio MCP server over a real transport (incl. runtime app creation)
 - `node test/http-smoke.mjs` — the HTTP transport
-- `node test/seed-smoke.mjs` — the seed / design-kit pipeline
-- `node test/doc-facts.mjs --deep` — the numbers in the docs against the code they describe
-  (`npm test` runs this one without `--deep`, which skips the checks that need a test run)
+- `node test/seed-smoke.mjs` — the seed pipeline
 
 ## Authoring apps
 
@@ -35,9 +33,19 @@ Apps are single-file HTML against the tiny `window.oma` API. The authoritative c
 the engine serves from the **`get_app_guide`** tool (source: `src/guide.mjs`) — read it before
 writing one. Not in a host? Print it yourself:
 `node -e 'import("./src/guide.mjs").then(m => console.log(m.GUIDE))'` — `RUNTIME.md` covers the API
-and inlines the visual rules you cannot skip, but the house style and the worked examples live only
-in the guide. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or
-`window.open()`, no network/fetch. The guide spells out the patterns that work.
+and the visual rules you cannot skip; the worked examples live only in the guide. The host sandbox
+is strict: no `confirm()`/`alert()`/`prompt()`, no `target="_blank"` or `window.open()`, and the
+network only as far as the CDN allowlist and the app's `manifest.csp`. The guide spells out the
+patterns that work.
+
+## App Store apps
+
+The ready-made apps in the App Store are not in this repo: they live in
+[`openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store), published as the
+`@openmcp-app/oma-store` package that the engine depends on. A new store app, or a fix to one, goes
+there. `components/` here holds only the engine's three system apps (settings, dashboard, app-store).
+To try a store app against a local engine before it is published, point `OMA_APP_STORE_DIRS` at your
+checkout's `apps/` folder — it is searched before the installed package.
 
 ## Pull requests
 
@@ -50,12 +58,13 @@ in the guide. The host sandbox is strict: no `confirm()`/`alert()`/`prompt()`, n
 
 open-mcp-apps is the **engine**: the registry, the shell runtime, the data/command layer, the host
 adapters. It stays standard-first (no host-private APIs) so one codebase serves every host that renders
-`ui://`. Bug fixes, new host adapters, guide improvements, and example apps are all welcome.
+`ui://`. Bug fixes, new host adapters, and guide improvements are all welcome; new apps go to
+[`openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store).
 
 ## License
 
-This project is **MIT throughout** — the engine and the official apps in
-`components/` alike. See [LICENSING.md](LICENSING.md) for the map and
+This project is **MIT throughout** — the engine and the system apps in
+`components/` alike (the App Store package is MIT too). See [LICENSING.md](LICENSING.md) for the map and
 [TRADEMARKS.md](TRADEMARKS.md) for the reserved names, which the license does
 not grant.
 

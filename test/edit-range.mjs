@@ -6,14 +6,11 @@
 //   1. a WRONG range never splices silently — the hash turns caller confusion into an error
 //      (the whole reason "range-hash" is one word in the design);
 //   2. offsets address the ORIGINAL document, ranges never shift each other, overlap is refused;
-//   3. the node locator resolves markers at READ time and refuses ambiguity instead of guessing;
-//   4. every editing outcome — success AND failure — lands one telemetry line, because the R1
-//      tripwire divides by failures: an uncounted ambiguity is a tripwire that cannot fire.
+//   3. the node locator resolves markers at READ time and refuses ambiguity instead of guessing.
+//   (A 4th — every edit outcome landing one line in the edit-telemetry sidecar — went with the
+//   sidecar in 0.8.1.)
 // Run: node test/edit-range.mjs
 import { sliceHash, applyRangeEdits, locateNode } from "../src/edit-range.mjs";
-import { editTelemetry, REPORT_EVERY } from "../src/edit-telemetry.mjs";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 let pass = 0, fail = 0;
@@ -74,27 +71,7 @@ console.log("\n3. the node locator — resolves at read time, refuses ambiguity"
   ok("duplicated marker is refused, not first-match-wins", dup.error === "node_ambiguous", JSON.stringify(dup));
 }
 
-console.log("\n4. telemetry — every outcome one line, milestones every " + REPORT_EVERY);
-{
-  const dir = mkdtempSync(join(tmpdir(), "oma-tel-"));
-  const record = editTelemetry(dir);
-  ok("failures record and never milestone", record({ host: "h", mode: "range", outcome: "hash_mismatch" }) === null);
-  ok("rewrites record and never milestone", record({ host: "h", mode: "rewrite", outcome: "ok" }) === null);
-  let milestones = 0, at = null;
-  for (let i = 0; i < REPORT_EVERY + 3; i++) {
-    const m = record({ host: "h", mode: "range", outcome: "ok" });
-    if (m) { milestones++; at = m; }
-  }
-  ok(`exactly one milestone fires in ${REPORT_EVERY + 3} qualified edits, at ${REPORT_EVERY}`,
-    milestones === 1 && at === REPORT_EVERY, `milestones=${milestones} at=${at}`);
-  const lines = readFileSync(join(dir, "edit-telemetry.jsonl"), "utf8").trim().split("\n");
-  ok("one JSONL line per event, failures included", lines.length === REPORT_EVERY + 5, String(lines.length));
-  ok("a fresh reader recounts from the file (process restarts do not reset the cadence)",
-    (() => { const r2 = editTelemetry(dir); return r2({ host: "h", mode: "range", outcome: "ok" }) === null; })());
-  rmSync(dir, { recursive: true, force: true });
-}
-
-console.log("\n5. the real tool face — read a window, echo its stamp, never compute anything");
+console.log("\n4. the real tool face — read a window, echo its stamp, never compute anything");
 {
   const { Client } = await import("@modelcontextprotocol/client");
   const { StdioClientTransport } = await import("@modelcontextprotocol/client/stdio");
@@ -103,12 +80,12 @@ console.log("\n5. the real tool face — read a window, echo its stamp, never co
   const { existsSync, unlinkSync } = await import("node:fs");
   const ROOT = join(dn(fileURLToPath(import.meta.url)), "..");
   const DB = join(ROOT, "test", "edit-range.db");
-  for (const f of [DB, DB + "-wal", DB + "-shm", join(dn(DB), "edit-telemetry.jsonl")]) if (existsSync(f)) unlinkSync(f);
+  for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
   const client = new Client({ name: "edit-range", version: "0" });
   await client.connect(new StdioClientTransport({
     command: "node", args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: DB, OMA_HOST: "edit-range-test", OMA_VIEWER: "0" },
+    env: { ...process.env, OMA_DB: DB, OMA_VIEWER: "0" },
   }));
   const { randomUUID } = await import("node:crypto");
   const call = async (name, args) => {
@@ -147,16 +124,8 @@ console.log("\n5. the real tool face — read a window, echo its stamp, never co
     ] });
   ok("mixed call: range first against the original, string after on the result", !mixed.err && mixed.s.applied === 2, mixed.text);
 
-  const tele = readFileSync(join(dn(DB), "edit-telemetry.jsonl"), "utf8").trim().split("\n").map((l) => JSON.parse(l));
-  // host comes from clientInfo (the wire truth), not OMA_HOST — hostName() prefers what the
-  // connection SAID it is, which is exactly what the per-host tripwire split needs.
-  ok("telemetry recorded ok/ok/hash_mismatch with the wire host name attached",
-    tele.filter((e) => e.outcome === "ok").length === 2 && tele.some((e) => e.outcome === "hash_mismatch")
-      && tele.every((e) => e.host === "edit-range"),
-    JSON.stringify(tele.map((e) => e.host + "/" + e.mode + ":" + e.outcome)));
-
   await client.close();
-  for (const f of [DB, DB + "-wal", DB + "-shm", join(dn(DB), "edit-telemetry.jsonl")]) if (existsSync(f)) unlinkSync(f);
+  for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 }
 
 console.log(`\n${fail === 0 ? "ALL PASS" : "FAILED"}: ${pass} passed, ${fail} failed`);

@@ -132,23 +132,18 @@ console.log("7. E4/E13 — the shape reservations, which must change nothing tod
   const r = s2.execute({ type: "save_app", command_id: "c1", name: "shaped",
     ui: "<!DOCTYPE html><html><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>", actor: "agent" });
   ok("app saves", r.ok === true);
-  const row = s2.listApps().find((c) => c.name === "shaped");
-  ok("visibility defaults to 'listed'", row.visibility === "listed");
   // (kit_version / server_script / principal reservations dropped 2026-08-04, elegance A4 —
   // columns with no writer and no reader; each returns WITH its consumer as a schema bump.)
-
-  // `visibility` is lifecycle state (retired, curated, long-tail) that someone else decides later,
-  // so it is a command field, not part of the author's manifest.
-  const shapedUi = "<!DOCTYPE html><html><head></head><body><div id='x'>shape-reservation fixture with enough body to clear the minimum-size guard</div></body></html>";
-
-  s2.execute({ type: "save_app", command_id: "c2", name: "shaped", actor: "agent",
+  // `visibility` joined them on 2026-10-06 (0.8.1, the archive_app chain): the column stays (the
+  // schema is one-way) but nothing writes or reads it — a save that still passes it is not
+  // refused, and the registry row no longer carries it.
+  const v = s2.execute({ type: "save_app", command_id: "c2", name: "shaped", actor: "agent",
     manifest: { manifest_version: 2 }, visibility: "unlisted" });
-  const v = s2.listApps().find((c) => c.name === "shaped");
-  ok("visibility arrives from the command", v.visibility === "unlisted");
-
-  s2.execute({ type: "save_app", command_id: "c3", name: "shaped", ui: shapedUi, actor: "agent" });
-  const k = s2.listApps().find((c) => c.name === "shaped");
-  ok("a save that omits visibility preserves it (not a reset)", k.visibility === "unlisted", JSON.stringify(k.visibility));
+  const row = s2.listApps().find((c) => c.name === "shaped");
+  ok("a save carrying a stray `visibility` lands, and the row carries no visibility field",
+    v.ok === true && row && !("visibility" in row));
+  ok("…and the column keeps its default — the value was not written",
+    s2.db.prepare("SELECT visibility FROM app WHERE name = 'shaped'").get().visibility === "listed");
 
   // E13b: the closed actor set is what keeps an anonymous write from landing as "human".
   ok("an unknown actor on a DATA write is refused",
@@ -598,14 +593,22 @@ console.log("\n11. the manifest slot's tri-state — omit inherits, null clears,
   ok("a second declarer of the same key hears about the conflict and who wins",
     rB.ok === true && /declared by decl-a and decl-b/.test(rB.note || "") && /title \(redeclared by decl-b\)/.test(rB.note || ""), rB.note);
 
-  console.log("\n14. archive is an event on the one axis — and undo restores the EXACT visibility");
-  st.executePrivileged({ type: "archive_app", command_id: cid(), name: "decl-a", visibility: "featured", actor: "human" });
-  const arch = st.execute({ type: "archive_app", command_id: cid(), name: "decl-a", archived: true, actor: "human" });
-  ok("archive stamps the row's version with its event seq (one axis, no exceptions)",
-    arch.ok === true && st.getApp("decl-a").visibility === "archived" && st.getApp("decl-a").version === arch.seq);
-  st.undoLast("decl-a");
-  ok("undoing the flip restores featured — the pre-image, not merely 'listed'",
-    st.getApp("decl-a").visibility === "featured");
+  console.log("\n14. an old store's archived row — the archive_app chain is gone (0.8.1), the row is not");
+  // A store written before 0.8.1 may hold `visibility = 'archived'` and a `component_archived`
+  // event. Nothing reads the column any more, so the row lists like every other app (it was always
+  // openable by name, and there is no longer a way to unarchive it); an undo aimed at the old
+  // event is refused by name instead of replaying a command that no longer exists.
+  const before14 = st.getApp("decl-a").version;
+  st.db.prepare("UPDATE app SET visibility = 'archived' WHERE name = 'decl-a'").run();
+  st.db.prepare(`INSERT INTO change_event (command_id, aggregate_id, event_type, payload, actor, ts)
+    VALUES (?, 'decl-a', 'component_archived', '{"name":"decl-a","to":"archived","was":"listed"}', 'human', 'ts')`).run(cid());
+  ok("an archived row from an old store still lists", st.listApps().some((c) => c.name === "decl-a"));
+  const u14 = st.undoLast("decl-a");
+  ok("undo of an old component_archived event is refused by name, and changes nothing",
+    u14 && u14.ok === false && u14.error === "not_undoable" && st.getApp("decl-a").version === before14, JSON.stringify(u14));
+  let threw = null, r14 = null;
+  try { r14 = st.execute({ type: "archive_app", command_id: cid(), name: "decl-a", archived: true, actor: "human" }); } catch (e) { threw = e; }
+  ok("the archive_app command itself no longer exists", threw !== null || (r14 && r14.ok === false), JSON.stringify(r14 ?? String(threw)));
   st.close();
 }
 

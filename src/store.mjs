@@ -65,7 +65,7 @@ CREATE TABLE IF NOT EXISTS app (
   scene       TEXT,                         -- projection of manifest.scene (App Store taxonomy) — derived, rebuildable
   manifest    TEXT,                         -- JSON | NULL — the AUTHORITATIVE declaration (v6/W-N: no longer a projection of an in-document block)
   kind        TEXT NOT NULL DEFAULT 'app',  -- unread; leaves with the next schema migration
-  visibility  TEXT NOT NULL DEFAULT 'listed', -- featured | listed | unlisted | archived (archive, curation and the long tail, in one field)
+  visibility  TEXT NOT NULL DEFAULT 'listed', -- unread and unwritten since 0.8.1 (the archive_app chain left); leaves with the next schema migration
   updated_at  TEXT NOT NULL,
   skill       TEXT,                         -- the skill SLOT (v9): SKILL.md text — how an AI uses this app | NULL
   skill_from  TEXT                          -- v9: WHO wrote that skill when it is not the user — the original author's label (a copied app) | NULL = the user's own words
@@ -195,7 +195,6 @@ const AUTHORSHIP_COMMANDS = new Set(["save_app", "delete_app"]);
 
 // How visible an app is. A closed set for the same reason ACTORS is: a typo'd value would be
 // indistinguishable from a real one, and this decides what the model gets to see.
-export const VISIBILITIES = new Set(["featured", "listed", "unlisted", "archived"]);
 
 export const APP_NAME_RE = /^[a-z][a-z0-9-]{0,31}$/;
 // There is no `MAX_APP_HTML` any more. A document had a 200,000-unit write-side ceiling until
@@ -288,15 +287,10 @@ const SHARED_WRITE_WINDOW_MS = 60 * 60 * 1000;
  *  past the line is not refused. */
 export const SHARED_APP_MAX_FILES = 1_000;
 export const SHARED_APP_MAX_FILE_BYTES = 1024 * 1024 * 1024;
-/** Set on a write_file by the sharing facade alone (files.mjs put / a shared upload's commit): the
+/** Set on a write_file by the sharing facade alone (files.mjs put): the
  *  collaborator ceilings above apply, checked inside the write's own transaction. A Symbol, like
  *  CONFIRM_ALWAYS, so nothing a caller sends can carry it in or strip it off. */
 export const SHARED_WRITE = Symbol("oma.sharedWrite");
-/** Staged uploads one account may hold open through shares on one owner's file channel, and all
- *  collaborators together. The channel has MAX_ACTIVE_UPLOADS slots for everyone; without these a
- *  collaborator could hold every one for the upload TTL and the owner could not upload at all. */
-export const SHARED_UPLOADS_PER_ACCOUNT = 4;
-export const SHARED_UPLOADS_TOTAL = 8;
 // A shared app's handle as the recipient's store may record it (the live pointer): `@alias/app`,
 // alias as sharing.mjs ALIAS_RE, app as APP_NAME_RE.
 const SHARED_APP_HANDLE_RE = /^@[a-z0-9][a-z0-9-]{0,23}\/[a-z][a-z0-9-]{0,31}$/;
@@ -344,7 +338,7 @@ export const MAX_BATCH_COMMANDS = 200;
 // business limit; tune freely. `path` is an app-chosen logical name, NEVER a filesystem path.
 export const FILE_PATH_RE = /^[A-Za-z0-9][A-Za-z0-9._/ -]{0,255}$/; // ".."/leading-slash/backslash/NUL/control rejected separately
 export const MAX_FILE_BYTES       = 250 * 1024 * 1024;        // per-file logical cap
-export const MAX_FILE_INLINE_BYTES = 5 * 1024 * 1024;         // single-call/data:-inline ceiling (engine tools); larger files use the chunked/streaming path (F4). ⚠ real host tool-result char limits validated at F3
+export const MAX_FILE_INLINE_BYTES = 5 * 1024 * 1024;         // the per-write ceiling of file_write (engine tools) — the effective per-file cap; the chunked path that went past it was removed in 0.8.1
 export const MAX_APP_FILE_BYTES   = 5 * 1024 * 1024 * 1024;   // per-app (SUM of ref sizes)
 export const MAX_APP_FILE_COUNT   = 10_000;                   // per-app file count
 export const MAX_TOTAL_FILE_BYTES = 50 * 1024 * 1024 * 1024;  // global
@@ -702,7 +696,6 @@ function fieldViolations(spec, fields) {
 const EVENT_TYPES = {
   add_item: "item_added", update_item: "item_updated", move_item: "item_moved",
   delete_item: "item_deleted", save_app: "component_saved", delete_app: "component_deleted",
-  archive_app: "component_archived",
   write_file: "file_written", delete_file: "file_deleted",
 };
 
@@ -1219,19 +1212,17 @@ export function openStore(path, { readOnly = false } = {}) {
     // manifest document into JS to count one key would make the cheapest read in the registry
     // scale with the size of every declaration in it. json_type guards the NULL/absent cases so
     // json_each is only reached for a real object.
-    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, CASE WHEN skill IS NULL THEN 0 ELSE 1 END AS has_skill, CASE WHEN json_type(manifest, '$.functions') = 'object' THEN (SELECT COUNT(*) FROM json_each(app.manifest, '$.functions')) ELSE 0 END AS fn_count, visibility, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
+    allComps: db.prepare("SELECT name, version, description, author, json_extract(scene, '$.category_id') AS category_id, CASE WHEN manifest IS NULL THEN 0 ELSE 1 END AS has_manifest, CASE WHEN skill IS NULL THEN 0 ELSE 1 END AS has_skill, CASE WHEN json_type(manifest, '$.functions') = 'object' THEN (SELECT COUNT(*) FROM json_each(app.manifest, '$.functions')) ELSE 0 END AS fn_count, updated_at, length(ui) AS ui_size FROM app ORDER BY name"),
     // v6: the slots resolve BEFORE this statement runs (save_app's tri-state manifest and slot
     // inheritance live in the command handler), so every column here is written outright — the
     // old scene_set/manifest_set three-state retired with the block:
     // projections are recomputed from the resolved manifest on every save, never carried.
     insComp: db.prepare(
-      `INSERT INTO app (name, version, ui, description, author, scene, manifest, skill, skill_from, visibility, updated_at)
-       VALUES (@name, @version, @ui, @description, @author, @scene, @manifest, @skill, @skill_from,
-               COALESCE(@visibility, 'listed'), @ts)
+      `INSERT INTO app (name, version, ui, description, author, scene, manifest, skill, skill_from, updated_at)
+       VALUES (@name, @version, @ui, @description, @author, @scene, @manifest, @skill, @skill_from, @ts)
        ON CONFLICT(name) DO UPDATE SET version = @version, ui = @ui,
          description = CASE WHEN @description = '' THEN app.description ELSE @description END,
          author = @author, scene = @scene, manifest = @manifest, skill = @skill, skill_from = @skill_from,
-         visibility = COALESCE(@visibility, app.visibility),
          updated_at = @ts`),
     insCompHist: db.prepare("INSERT OR REPLACE INTO app_history (name, version, ui, manifest, skill, skill_from, ts) VALUES (@name, @version, @ui, @manifest, @skill, @skill_from, @ts)"),
     // Human-push retention (HUMAN_HISTORY_KEEP_DAYS). Scoped to ONE app and to revisions strictly
@@ -1244,7 +1235,6 @@ export function openStore(path, { readOnly = false } = {}) {
     // quietly promote it to a second source.
     headRev: db.prepare("SELECT ui, manifest, skill, skill_from FROM app_history WHERE name = ? ORDER BY version DESC LIMIT 1"),
     delComp: db.prepare("DELETE FROM app WHERE name = ?"),
-    setCompVisibility: db.prepare("UPDATE app SET visibility = @visibility, version = @version, updated_at = @ts WHERE name = @name"),
 
     // File plane — ref index only (bytes live on disk, the channel's job). All reads are app-scoped.
     fileByKey: db.prepare("SELECT * FROM file WHERE app = ? AND path = ?"),
@@ -1431,7 +1421,7 @@ export function openStore(path, { readOnly = false } = {}) {
       // command's type and — when the command names a target — its aggregate. A recycled
       // command_id on a DIFFERENT command must not false-succeed ("already deleted" while
       // doing nothing); it errs instead (UNIQUE(command_id) makes proceeding impossible).
-      const APP_CMDS = type === "save_app" || type === "delete_app" || type === "archive_app";
+      const APP_CMDS = type === "save_app" || type === "delete_app";
       const target = APP_CMDS
         ? String(command.name || "").trim()
         : type === "write_file" || type === "delete_file"
@@ -1467,9 +1457,6 @@ export function openStore(path, { readOnly = false } = {}) {
             out.cascaded = payload.cascaded.collections || payload.cascaded;
             if (payload.cascaded.settings_keys !== undefined) out.settings_keys = payload.cascaded.settings_keys;
           }
-          // The ORIGINAL flip's outcome, not the current column — an archive replayed after a later
-          // unarchive must describe what the archive did, or the retry reads current state as its own.
-          if (type === "archive_app" && payload.to) out.visibility = payload.to;
         } else if (type === "write_file" || type === "delete_file") {
           out.app = String(command.app || "");
           out.path = String(command.path || "");
@@ -1800,8 +1787,6 @@ export function openStore(path, { readOnly = false } = {}) {
       if (fnErr) return { ok: false, error: "bad_functions", detail: fnErr };
       const scene = mObj && mObj.scene && typeof mObj.scene === "object" ? JSON.stringify(mObj.scene) : null;
       const existed = existing;
-      const visibility = command.visibility === undefined ? null : String(command.visibility);
-      if (visibility !== null && !VISIBILITIES.has(visibility)) return { ok: false, error: "unknown_visibility" };
       // Append first, then stamp the row with this event's seq — same rule as an item write. It also
       // retires the old "continue from the tombstoned history's MAX(version)" dance: version
       // continuity across delete/recreate is now free, because the ledger never goes backwards.
@@ -1816,7 +1801,7 @@ export function openStore(path, { readOnly = false } = {}) {
       // caller-passed description cannot make the two say different things. Without a skill the
       // column keeps its old rule ('' keeps what was there).
       const description = skillDesc ?? String(command.description || "");
-      q.insComp.run({ name, version, ui, description, author: actor, scene, manifest: manifestJson, skill, skill_from: skillFrom, visibility, ts });
+      q.insComp.run({ name, version, ui, description, author: actor, scene, manifest: manifestJson, skill, skill_from: skillFrom, ts });
       const comp = q.compByName.get(name);
       q.insCompHist.run({ name, version: comp.version, ui, manifest: manifestJson, skill, skill_from: skillFrom, ts });
       // …and then sweep this app's stale revisions — but only when a human push lands on a HUMAN
@@ -1936,25 +1921,6 @@ export function openStore(path, { readOnly = false } = {}) {
       emit(name, "component_deleted", { name, version: existed.version, ...(cascaded ? { cascaded } : {}) });
       return { ok: true, name, version: existed.version,
                ...(cascaded ? { cascaded: cascaded.collections, settings_keys: cascaded.settings_keys } : {}) };
-    }
-
-    if (type === "archive_app") {
-      // A lifecycle FLIP, not a save: no new html, no history row — but it is still a mutation, so
-      // it is still an event, and the row's version still becomes that event's seq (one axis, no
-      // exceptions). The public verb is archived:true|false; `visibility` is the internal override
-      // the undo path uses to restore a value the flip cannot spell (featured, unlisted) — the tool
-      // schema never declares it, so an outside caller cannot reach it.
-      const name = String(command.name || "").trim();
-      const existed = q.compByName.get(name);
-      if (!existed) return { ok: false, error: "not_found" };
-      const to = command.visibility != null ? String(command.visibility)
-        : command.archived ? "archived" : "listed";
-      if (!VISIBILITIES.has(to)) return { ok: false, error: "unknown_visibility" };
-      if (existed.visibility === to)
-        return { ok: true, name, visibility: to, version: existed.version, unchanged: true };
-      const m = emit(name, "component_archived", { name, to, was: existed.visibility });
-      q.setCompVisibility.run({ name, visibility: to, version: m.seq, ts });
-      return { ok: true, name, visibility: to, was: existed.visibility, version: m.seq, seq: m.seq };
     }
 
     // ---- File plane: bytes are handled by the channel BEFORE this tx; here we only
@@ -2352,14 +2318,11 @@ export function openStore(path, { readOnly = false } = {}) {
       const c = String(collection ?? "");
       return q.skillApps.all().filter((r) => appCollectionsOf(r).includes(c)).map((r) => ({ name: r.name, skill_from: r.skill_from ?? null }));
     },
-    // No arguments = every row, exactly as before: the registry's own consumers (the settings
-    // App Store pane, tool re-registration on boot) want the whole truth. Filtering is the CALLER's
-    // choice, and the model-facing tool is the caller that has a default.
-    listApps: ({ visibilities, name } = {}) => {
-      let rows = q.allComps.all();
-      if (name) rows = rows.filter((c) => c.name === name);
-      if (visibilities) rows = rows.filter((c) => visibilities.includes(c.visibility));
-      return rows;
+    // Every row, or the one named. (A `visibilities` filter lived here until 0.8.1; the column
+    // it read is no longer written or read — see the app table's DDL.)
+    listApps: ({ name } = {}) => {
+      const rows = q.allComps.all();
+      return name ? rows.filter((c) => c.name === name) : rows;
     },
     /** Any app whose name is not in `names`. The engine passes its own seeded set and reads
      *  this as "the user has something of their own" — see buildInstructions in engine.mjs. */
@@ -2404,8 +2367,7 @@ export function openStore(path, { readOnly = false } = {}) {
 
     /** The receipt a prior command with this command_id produced, or null — the READ-ONLY twin of
      *  core()'s replay branch, for callers that must answer "did this already happen?" BEFORE
-     *  spending real work (the chunked-upload commit: its upload is consumed on success, so a
-     *  retried commit must be answerable without the upload it no longer has). */
+     *  spending real work (save_app / restore_app / install answer a replay from the ledger). */
     priorReceipt(command_id) {
       const seen = q.eventByCmd.get(String(command_id || ""));
       if (!seen) return null;
@@ -2504,12 +2466,6 @@ export function openStore(path, { readOnly = false } = {}) {
         if (ev.event_type === "item_moved") {
           return { type: "move_item", result: core({ type: "move_item", command_id: cid, id: ev.aggregate_id, group: payload.from, position: payload.from_position, actor: "human" }, true) };
         }
-        if (ev.event_type === "component_archived") {
-          // The flip's pre-image is `was`, and it may be a value the public verb cannot spell
-          // (featured, unlisted) — the privileged visibility override exists for exactly this line.
-          return { type: "archive_app", result: core({ type: "archive_app", command_id: cid, name: ev.aggregate_id,
-            visibility: payload.was, actor: "human" }, true) };
-        }
         if (ev.event_type === "component_saved") {
           // The previous REVISION is the pre-image — EVERY slot, verbatim, because a revision is a
           // coherent (ui, manifest, skill) triple and restoring one without the others would
@@ -2600,7 +2556,7 @@ export function sharedScopeOf(store, app, appBirth) {
   const comp = store.getApp(String(app ?? ""));
   if (!comp || !Number.isInteger(appBirth) || store.appBirth(comp.name) !== appBirth) return null;
   return { app: comp.name, version: comp.version, description: comp.description, author: comp.author,
-    visibility: comp.visibility, ui_size: comp.ui.length, collections: appCollectionsOf(comp),
+    ui_size: comp.ui.length, collections: appCollectionsOf(comp),
     ...(comp.skill != null ? { has_skill: true } : {}), ...(comp.skill != null && comp.skill_from ? { skill_from: comp.skill_from } : {}) };
 }
 
@@ -2729,7 +2685,7 @@ export function scopeStore(store, { grants = [], files = null } = {}) {
   };
 
   return {
-    /** {apps: [{app, role, version, description, author, visibility, ui_size, collections, has_skill?, skill_from?}],
+    /** {apps: [{app, role, version, description, author, ui_size, collections, has_skill?, skill_from?}],
      *   collections: [{collection, role}], ended: [{app, appBirth}]} — `ended` lists the grants
      *   whose app is gone or reborn, for whoever keeps the grant records to close them. */
     scope() {
@@ -2818,8 +2774,7 @@ export function scopeStore(store, { grants = [], files = null } = {}) {
     /** The app's own file plane, app pinned to a granted one. Writes count against the OWNER's
      *  quotas, because they land in the owner's store — and meet a collaborator's limits on top
      *  (S4 round 2): the same hourly budget item writes draw on, checked after the wall and before
-     *  the store; the per-app ceilings (SHARED_WRITE, enforced in the write's transaction); and a
-     *  share of the channel's upload slots. */
+     *  the store; and the per-app ceilings (SHARED_WRITE, enforced in the write's transaction). */
     files: files && {
       version: (app) => (view().apps.has(String(app ?? "")) ? store.appFilesVersion(String(app)) : null),
       list(app, prefix) { const r = fileApp(view(), app, false); return r.refusal ? null : files.list(r.app, prefix); },
@@ -2834,30 +2789,6 @@ export function scopeStore(store, { grants = [], files = null } = {}) {
         const r = fileApp(view(), app, true);
         return r.refusal || takeSharedWrites(store, 1) || files.del(r.app, path, { command_id: opts.command_id, expected_version: opts.expected_version,
           actor: opts.actor, via: opts.via, request_state: opts.request_state, confirmAlways: true });
-      },
-      async beginUpload(app) {
-        const r = fileApp(view(), app, true);
-        return r.refusal || files.beginUpload(r.app, { shared: true });
-      },
-      // An upload id is honoured only for an upload opened on a granted app this recipient may
-      // write — an id minted for any other app of the owner's is answered as no such upload.
-      async appendUpload(id, data, opts = {}) {
-        const r = fileApp(view(), files.uploadApp(id), true);
-        return r.refusal ? { ok: false, error: "upload_not_found" } : files.appendUpload(id, data, { seq: opts.seq });
-      },
-      async commitUpload(id, path, opts = {}) {
-        const v = view();
-        let app = files.uploadApp(id);
-        // A retried commit finds its upload consumed; the receipt it is owed comes off the
-        // ledger, and only for a file of a granted app.
-        if (app == null && opts.command_id) {
-          const prior = store.priorReceipt(opts.command_id);
-          if (prior && prior.event_type === "file_written") app = prior.payload?.app ?? null;
-        }
-        const r = fileApp(v, app, true);
-        // A refused commit leaves the upload staged, so it can be committed once the hour allows.
-        return r.refusal ? { ok: false, error: "upload_not_found" }
-          : takeSharedWrites(store, 1) || files.commitUpload(id, path, { mime: opts.mime, command_id: opts.command_id, expected_version: opts.expected_version, shared: true });
       },
     },
   };

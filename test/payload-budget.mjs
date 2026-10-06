@@ -81,7 +81,7 @@ const client = new Client({ name: "budget", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "budget" },
+  env: { ...process.env, OMA_DB: DB },
 }));
 
 /** Two numbers per call, because they are not the same number:

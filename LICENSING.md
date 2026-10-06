@@ -11,8 +11,8 @@ license from this document.
 ## Everything — MIT
 
 The engine (the registry, the shell runtime, the data/command layer, the host
-adapters, the HTTP/stdio servers, the build) and the `components/` library (the
-single-file HTML apps, their fixtures, and the demo data) are all licensed under
+adapters, the HTTP/stdio servers, the build) and the `components/` system apps (the
+single-file HTML settings, dashboard and App Store) are all licensed under
 the **MIT License** — see the single root [`LICENSE`](LICENSE), which governs the
 whole tree.
 

@@ -60,14 +60,8 @@ console.log("1. the walls no cap combination can open");
     await throws(() => g("callTool", { name: "_undo_last", args: {} }), /not available/));
   ok("apply_data_writes denied even under wildcard (the F2 seam, closed by name)",
     await throws(() => g("callTool", { name: "apply_data_writes", args: {} }), /not available to apps/));
-  // A RETIRED NAME IS THE SAME TOOL. Seven seats still answer to their pre-rename spelling so that
-  // apps saved before the rename keep working, and every wall in this file matches on a name — so
-  // a child typing the old one must land in exactly the same place. Without the canonicalisation
-  // the rename itself would have been the hole.
-  ok("…and its retired spelling lands on the same refusal",
-    await throws(() => g("callTool", { name: "data_batch", args: {} }), /not available to apps/));
-  ok("a retired control-plane spelling is refused too",
-    await throws(() => g("callTool", { name: "app_store_preview", args: {} }), /not available/));
+  // (The retired-spelling cases lived here until 0.8.1 removed the alias bridge: `data_batch` /
+  // `app_store_preview` are no longer tools at all. Padded / re-cased names are pinned above.)
   ok("nothing above ever reached io", io.calls.length === 0);
 }
 
@@ -634,29 +628,14 @@ console.log("9. write-set D adversarial review — the four P0 holes, pinned shu
   await guard(FULL, io2)("callTool", { name: "data_changes", args: { collection: "other", since: 0 } });
   ok("…and still free with cross_collection_read", io2.calls[0].args.collection === "other");
 
-  // P0-4: the chunked family carries no `app` — only an id minted server-side.
-  const uploadIo = (overrides) => makeIo({
-    callTool: async (name, args) => { overrides.calls.push({ name, args }); return { structuredContent: name === "file_write_begin" ? { upload_id: "up-A" } : { ok: true } }; },
-    ...overrides,
-  });
-  const calls = [];
-  const gA = guard(FULL, uploadIo({ calls }));
-  ok("an upload_id this child never opened is refused", await throws(
-    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-VICTIM", data_base64: "QQ==" } }), /not opened by this app/));
-  await gA("callTool", { name: "file_write_begin", args: {} });
-  ok("file_write_begin is still app-bound", calls[0].args.app === "child-app");
-  await gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } });
-  ok("…and its OWN id then works", calls[1].name === "file_write_chunk");
-  await gA("callTool", { name: "file_write_commit", args: { upload_id: "up-A", path: "f.txt" } });
-  ok("commit retires the id — a replay after commit is refused", await throws(
-    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } }), /not opened by this app/));
-  const calls2 = [];
-  const gB = guard(FULL, uploadIo({ calls: calls2 }));
-  await gB("callTool", { name: "file_write_begin", args: {} });
-  ok("a SECOND child holding the same id string is still refused (per-guard set)", await throws(
-    () => gA("callTool", { name: "file_write_chunk", args: { upload_id: "up-A", data_base64: "QQ==" } }), /not opened by this app/));
-  ok("the chunked family still needs the file_write cap at all", await throws(
-    () => guard({ ...FULL, file_write: false }, makeIo())("callTool", { name: "file_write_chunk", args: { upload_id: "x" } }), /file write denied/));
+  // Both file-write tools carry `app`, and the guard forces it to the child's own.
+  {
+    const io3 = makeIo();
+    await guard(FULL, io3)("callTool", { name: "file_write", args: { app: "victim-app", path: "f.txt", data_base64: "QQ==" } });
+    ok("file_write is app-bound to the child (a named victim app is overwritten)", io3.calls[0].args.app === "child-app");
+    ok("…and file_write needs the file_write cap at all", await throws(
+      () => guard({ ...FULL, file_write: false }, makeIo())("callTool", { name: "file_write", args: { path: "x" } }), /file write denied/));
+  }
 
   // P0-2: the child half of the source check. The parent has always had it (shell-runtime's
   // onMessage); without the mirror, a sibling WindowProxy could forge snapshots/results.

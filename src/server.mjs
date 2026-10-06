@@ -20,8 +20,18 @@ import { serveStdio } from "@modelcontextprotocol/server/stdio";
 import { openStore } from "./store.mjs";
 import { createEngine } from "./engine.mjs";
 import { startViewer } from "./http.mjs";
+import { seedAtStart } from "../seed.mjs";
 
 const store = openStore(); // fixed per-user data dir (see store.mjs) — OMA_DB overrides for tests/isolation
+
+// System apps (settings · dashboard · app-store) are seeded HERE, on every start, before anything
+// is served. This file is the package's `bin`, i.e. what `npx -y @2nd1st/open-mcp-apps` runs — and
+// until 0.8.1 only install.mjs seeded, so the README's first install path produced a store with no
+// system apps at all, and no tool could put them back (they are locked, and the App Store excludes
+// them). seedSystemApps is idempotent per content: an unchanged app is a read and a string compare,
+// a changed one (the engine was upgraded) is one versioned save. stderr only — stdout is the MCP
+// channel. See seedAtStart in seed.mjs for the never-throws contract.
+seedAtStart(store);
 
 // The browser viewer is ON by default; OMA_VIEWER=0 turns it off. That switch is documented in
 // README rather than left to be discovered: a port this process binds without being asked is a

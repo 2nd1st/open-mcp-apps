@@ -133,7 +133,15 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //           1,284 are what a model reads to see and use the open app; screen_poll is the widget's
 //           long poll, app-only (hidden from the model where `visibility` is honored), cut to the
 //           bone: 863 -> 721 B. 47,159 -> 49,727 B measured; cap = measured + 48.
-const SURFACE_BYTES_CAP = 49_775;
+//   46,600  2026-10-06 (0.8.1) · the chunked-upload trio file_write_begin/chunk/commit removed —
+//           zero callers (no app, no system app, no install path; a model cannot produce >5 MiB of
+//           base64 anyway). 36 -> 33 seats, 49,727 -> 46,555 B measured (−3,172 B); file_write
+//           stops pointing at the chunked path. cap = measured + 45, so the room cannot be re-spent
+//           without a decision.
+//   46,360  2026-10-06 (0.8.1) · list_apps loses its `visibility` enum (featured/listed/unlisted/
+//           archived/any) with the archive_app chain behind it — nothing had written those values
+//           since the seat left on 2026-08-04. 46,555 -> 46,314 B measured (−241); cap = measured + 46.
+const SURFACE_BYTES_CAP = 46_360;
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
@@ -157,7 +165,7 @@ const canon = (v) =>
 const stdioParams = () => ({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "surface" },
+  env: { ...process.env, OMA_DB: DB },
 });
 const client = new Client({ name: "surface", version: "1.0.0" });
 await client.connect(new StdioClientTransport(stdioParams()));
@@ -222,11 +230,11 @@ console.log("2a. every tool carries annotations.title, and it is the tool's own 
 }
 
 console.log("2b. idempotentHint is a claim about effects, and it has to be true");
-// How file_write_begin/chunk got it wrong: they took the default WRITE preset, which declares
-// idempotentHint: true. That claim is only guaranteed by an idempotency key — cmdArgs' command_id,
-// backed by change_event's UNIQUE(command_id). Without one, replaying file_write_chunk appends the
-// bytes AGAIN, and the MCP docs say a host may retry a timed-out call on the strength of this hint.
-// A wrong hint there is a corrupt upload, not a cosmetic issue.
+// How file_write_begin/chunk got it wrong (both since removed, 0.8.1): they took the default WRITE
+// preset, which declares idempotentHint: true. That claim is only guaranteed by an idempotency key —
+// cmdArgs' command_id, backed by change_event's UNIQUE(command_id). Without one, replaying
+// file_write_chunk appended the bytes AGAIN, and the MCP docs say a host may retry a timed-out call
+// on the strength of this hint. A wrong hint there was a corrupt upload, not a cosmetic issue.
 //
 // Naturally idempotent without a key — each needs a reason, so the exemption cannot grow silently.
 const NATURALLY_IDEMPOTENT = {
@@ -326,7 +334,7 @@ if (!BLESS && !existsSync(GOLDEN)) {
 
 await client.close();
 
-console.log("4. the engine options a deployment sets — unlisted, dynamicTools (pinning), telemetry");
+console.log("4. the engine options a deployment sets — unlisted, dynamicTools (pinning), a retired key");
 // Two claims, and the second is the one that can rot silently. LISTING is easy to see; being
 // still CALLABLE is what a hosted deployment and every app saved before the rename are relying
 // on, and nothing else in the suite exercises a name that is deliberately absent from the list.
@@ -334,7 +342,6 @@ console.log("4. the engine options a deployment sets — unlisted, dynamicTools 
   const { Client: MemClient, InMemoryTransport } = await import("@modelcontextprotocol/client");
   const { createEngine } = await import("../index.mjs");
   const { openStore } = await import("../src/store.mjs");
-  const { TOOL_ALIASES } = await import("../src/tool-policy.mjs");
   const memDb = join(ROOT, "test", "unlisted.db");
   for (const f of [memDb, memDb + "-wal", memDb + "-shm"]) if (existsSync(f)) unlinkSync(f);
   const memStore = openStore(memDb);
@@ -348,15 +355,15 @@ console.log("4. the engine options a deployment sets — unlisted, dynamicTools 
 
   const plain = await open({});
   const plainNames = (await plain.listTools()).tools.map((t) => t.name);
-  const retired = Object.values(TOOL_ALIASES);
-  ok(`${retired.length} retired name(s) registered and none of them listed`,
-    retired.every((n) => !plainNames.includes(n)),
-    `listed anyway: ${retired.filter((n) => plainNames.includes(n)).join(", ")}`);
-  // The bridge itself: an app saved before the rename polls this every few seconds.
-  const viaRetired = await plain.callTool({ name: "data_version", arguments: {} });
-  ok("…and a retired name still answers on tools/call (the bridge apps in the field ride on)",
-    !viaRetired.isError && typeof viaRetired.structuredContent?.seq === "number",
-    JSON.stringify(viaRetired).slice(0, 200));
+  // The retired-spelling bridge (TOOL_ALIASES) was removed in 0.8.1: the seven pre-rename names
+  // are neither listed nor callable any more — an unknown tool, like any other unknown name.
+  const RETIRED = ["app_html", "app_history", "data_batch", "data_version", "data_collections", "ui_prefs_schema", "app_store_preview"];
+  ok("no retired spelling is listed", RETIRED.every((n) => !plainNames.includes(n)),
+    `listed anyway: ${RETIRED.filter((n) => plainNames.includes(n)).join(", ")}`);
+  let viaRetired = null;
+  try { viaRetired = await plain.callTool({ name: "data_version", arguments: {} }); } catch (e) { viaRetired = { isError: true, thrown: String(e && e.message) }; }
+  ok("…and a retired spelling no longer answers on tools/call",
+    viaRetired.isError === true, JSON.stringify(viaRetired).slice(0, 200));
   // Something for the hidden seat to answer ABOUT — a fresh store holds no apps at all.
   await plain.callTool({ name: "save_app", arguments: { name: "unlisted-probe", ui: "<p>probe</p>" } });
   await plain.close();
@@ -392,34 +399,34 @@ console.log("4. the engine options a deployment sets — unlisted, dynamicTools 
   memStore.close();
   for (const f of [memDb, memDb + "-wal", memDb + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
-  // TELEMETRY IS A SEAT TOO, and "off" has to mean the file is never written — not that it is
-  // written and ignored. A deployment declines this because the alternative is disclosing a
-  // collection it has no product reason to keep, and a disclosure is about the bytes on disk.
+  // `telemetry` was an option until 0.8.1 (the edit-tripwire sidecar). A deployment that still
+  // passes `telemetry: false` (the closed SaaS does) must keep working: createEngine ignores keys
+  // it does not know, it never refuses them. And nothing writes the old sidecar any more.
   const { mkdtempSync, rmSync } = await import("node:fs");
   const { tmpdir } = await import("node:os");
   const edit = async (dir, opts) => {
     const s = openStore(join(dir, "t.db"));
     const [ct, st] = InMemoryTransport.createLinkedPair();
     await createEngine(s, opts).connect(st);
-    const c = new MemClient({ name: "telemetry", version: "1.0.0" });
+    const c = new MemClient({ name: "retired-key", version: "1.0.0" });
     await c.connect(ct);
     const saved = await c.callTool({ name: "save_app", arguments: { name: "tel-probe", ui: "<p>alpha</p>" } });
     const r = await c.callTool({ name: "edit_app", arguments: { app: "tel-probe",
       command_id: "tel-edit-1", expected_version: saved.structuredContent.version,
       edits: [{ old_string: "alpha", new_string: "beta" }] } });
+    const listed = (await c.listTools()).tools.map((t) => t.name).join(",");
     await c.close();
     s.close();
-    return { r, file: join(dir, "edit-telemetry.jsonl") };
+    return { r, listed, file: join(dir, "edit-telemetry.jsonl") };
   };
   const onDir = mkdtempSync(join(tmpdir(), "oma-tel-on-"));
   const offDir = mkdtempSync(join(tmpdir(), "oma-tel-off-"));
   const on = await edit(onDir, {});
   const off = await edit(offDir, { telemetry: false });
-  ok("the default records the edit tripwire beside the database", existsSync(on.file));
-  ok("telemetry:false writes no sidecar at all", !existsSync(off.file));
-  ok("…and the edit itself is unaffected either way",
-    !on.r.isError && !off.r.isError && off.r.structuredContent.applied === 1,
+  ok("a retired option key (telemetry: false) is ignored — the engine builds, the edit lands, tools/list is the same",
+    !on.r.isError && !off.r.isError && off.r.structuredContent.applied === 1 && on.listed === off.listed,
     JSON.stringify(off.r).slice(0, 200));
+  ok("…and no edit-telemetry sidecar is written, with or without it", !existsSync(on.file) && !existsSync(off.file));
   rmSync(onDir, { recursive: true, force: true });
   rmSync(offDir, { recursive: true, force: true });
 }

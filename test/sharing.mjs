@@ -74,7 +74,7 @@ const leifGrant = world.grants.find((g) => g.recipient === "u_leif");
 async function connect(store, principal, { clientName = "chatgpt", functions = false, providers = true } = {}) {
   const a = world.accounts.get(principal);
   const server = createEngine(store, {
-    dynamicTools: false, telemetry: false, functions,
+    dynamicTools: false, functions,
     ...(providers ? { caller: { principal, label: a.label }, mounts: world.mountsFor(principal), sharing: world.sharingFor(principal) } : {}),
   });
   const [ct, st] = InMemoryTransport.createLinkedPair();
@@ -92,7 +92,7 @@ let hostedBytes = 0;
 {
   const plain = await connect(leif, "u_leif", { providers: false });
   const plainTools = (await plain.listTools()).tools;
-  const callerOnly = createEngine(leif, { caller: { principal: "u_leif" }, dynamicTools: false, telemetry: false });
+  const callerOnly = createEngine(leif, { caller: { principal: "u_leif" }, dynamicTools: false });
   const [ct, st] = InMemoryTransport.createLinkedPair(); await callerOnly.connect(st);
   const cc = new Client({ name: "x", version: "1" }); await cc.connect(ct);
   const callerTools = (await cc.listTools()).tools;
@@ -163,7 +163,6 @@ const CASES = [
   { tool: "file_read", kind: "read", args: (f) => ({ app: f.app, path: "map.png" }) },
   { tool: "share", kind: "read", note: "participants", args: (f) => ({ action: "list", app: f.app }) },
   { tool: "file_write", kind: "write", args: (f) => ({ command_id: cid(), app: f.app, path: "notes.txt", data_base64: b64("hi") }) },
-  { tool: "file_write_begin", kind: "write", args: (f) => ({ app: f.app }) },
   { tool: "file_delete", kind: "write", args: (f, v) => ({ command_id: cid(), app: f.app, path: v }), victimFile: true },
   { tool: "save_app", kind: "code", args: (f) => ({ name: f.app, ui: "<p>pwn</p>" }) },
   { tool: "edit_app", kind: "code", args: (f) => ({ command_id: cid(), app: f.app, expected_version: 1, edits: [{ old_string: "p", new_string: "q" }] }) },
@@ -304,7 +303,7 @@ console.log("4. attribution — principal (server-stamped) · actor · host, in 
   // the call (a socket to a remote runner): the dispatch then runs in that connection's context,
   // not the call's, and only the engine re-entering the call's context keeps the stamp.
   const socket = new AsyncResource("remote-runner-socket");
-  const remote = createEngine(leo, { dynamicTools: false, telemetry: false, caller: { principal: "u_leo", label: "leo@example.com" },
+  const remote = createEngine(leo, { dynamicTools: false, caller: { principal: "u_leo", label: "leo@example.com" },
     functions: { executor: async ({ dispatch }) => { socket.runInAsyncScope(() => dispatch("add", { row: { fields: { n: 2 } } })); return { kind: "value", json: "2" }; } } });
   const [rct, rst] = InMemoryTransport.createLinkedPair(); await remote.connect(rst);
   const rc = new Client({ name: "claude", version: "1" }); await rc.connect(rct);
@@ -520,24 +519,16 @@ console.log("9. T15 — delete and recreate under the same name does not revive 
 }
 
 // ═════════════════════════════════════════════════════════════════════════════════════════════
-console.log("10. files through a share — chunked upload ids are scoped to the share");
+console.log("10. files through a share — a write lands in the owner's app, named back by the handle");
 {
   const c = await connect(leif, "u_leif");
-  const begin = await call(c, "file_write_begin", { app: "@leo/trip-planner" });
-  const id = begin.structuredContent.upload_id;
-  ok("a share's upload id is named by the share", id.startsWith("@leo/"));
-  await call(c, "file_write_chunk", { upload_id: id, data_base64: b64("gpx-data"), seq: 0 });
-  const commit = await call(c, "file_write_commit", { upload_id: id, path: "route.gpx", command_id: cid() });
-  ok("…chunk + commit land in the owner's app, named back by the handle",
-    !commit.isError && commit.structuredContent.app === "@leo/trip-planner" && openFileChannel(leo).stat("trip-planner", "route.gpx")?.size === 8);
-  const ownersUpload = await openFileChannel(leo).beginUpload("finance-app");
-  const borrowed = await call(c, "file_write_chunk", { upload_id: `@leo/${ownersUpload.upload_id}`, data_base64: b64("x") });
-  const random = await call(c, "file_write_chunk", { upload_id: `@leo/${randomUUID()}`, data_base64: b64("x") });
-  const unprefixed = await call(c, "file_write_chunk", { upload_id: ownersUpload.upload_id, data_base64: b64("x") });
-  ok("an upload id of another of the owner's apps ≡ an unknown id ≡ the bare id (which is looked up in the caller's own store)",
-    borrowed.isError && textOf(borrowed) === textOf(random) && textOf(unprefixed) === textOf(random));
+  // (The chunked-upload half of this section — share-scoped upload ids — went with the
+  // begin/chunk/commit trio in 0.8.1.)
+  const w = await call(c, "file_write", { command_id: cid(), app: "@leo/trip-planner", path: "route.gpx", data_base64: b64("gpx-data") });
+  ok("file_write lands in the owner's app, named back by the handle",
+    !w.isError && w.structuredContent.app === "@leo/trip-planner" && openFileChannel(leo).stat("trip-planner", "route.gpx")?.size === 8);
   const quota = leo.fileUsage("trip-planner").bytes;
-  ok("shared file writes count against the OWNER's quota (they live in the owner's store)", quota >= 18);
+  ok("shared file writes count against the OWNER's quota (they live in the owner's store)", quota >= 8);
   await c.close();
 }
 
@@ -674,21 +665,6 @@ const rateStore = openStore(join(TMP, "rate", "store.db"));
   const retry = await call(c, "data_add_item", { command_id: Ks, collection: "@leo/trips", fields: { city: "retry" } });
   ok("…a real retry (same collection, same account) is still the original receipt, own and shared",
     !again.isError && /Already added/.test(textOf(again)) && !retry.isError && retry.structuredContent.id === first.structuredContent.id && /Already added/.test(textOf(retry)));
-
-  // T7 — an upload id is a bearer token between two editors of one app.
-  world.grant("u_leo", "u_mia", "trip-planner", "editor");
-  const m = await connect(mia, "u_mia");
-  const up = await call(c, "file_write_begin", { app: "@leo/trip-planner" });
-  const uid = up.structuredContent.upload_id;
-  const hijack = await call(m, "file_write_chunk", { upload_id: uid, data_base64: b64("evil") });
-  const hijackCommit = await call(m, "file_write_commit", { upload_id: uid, path: "hijack.txt", command_id: cid() });
-  ok("T7 another editor cannot append to or commit an upload they did not open",
-    hijack.isError && hijackCommit.isError && !openFileChannel(leo).stat("trip-planner", "hijack.txt"), JSON.stringify([hijack, hijackCommit]).slice(0, 300));
-  const ownChunk = await call(c, "file_write_chunk", { upload_id: uid, data_base64: b64("mine"), seq: 0 });
-  const ownCommit = await call(c, "file_write_commit", { upload_id: uid, path: "t7.txt", command_id: cid() });
-  ok("…the editor who opened it still can", !ownChunk.isError && !ownCommit.isError && openFileChannel(leo).stat("trip-planner", "t7.txt")?.size === 4);
-  for (const g of world.grants) if (g.recipient === "u_mia" && g.app === "trip-planner") g.status = "revoked";
-  await m.close();
 
   // T12 — `actor` is the caller's word; a delete through a share must ask whatever it claims.
   const v = add(leo, "trips", { city: "agent-delete-victim" });
@@ -845,29 +821,7 @@ console.log("15A. variants of the round-1 fixes");
   ok("A1 …and its batch id replayed into ANOTHER shared app's collection is refused, nothing added there",
     across.isError && /command_id/.test(textOf(across)) && leo.countItems("two") === 1 && fpAll() === before, JSON.stringify(across).slice(0, 300));
 
-  // X1 on the file plane: a commit, a commit retry, a single-shot write.
-  const ou = await leoFiles.beginUpload("trip-planner");
-  await leoFiles.appendUpload(ou.upload_id, Buffer.from("owner-route"));
-  const Kf = cid();
-  const oc = await leoFiles.commitUpload(ou.upload_id, "owner-route.gpx", { command_id: Kf });
-  const lu = (await call(c, "file_write_begin", { app: "@leo/trip-planner" })).structuredContent.upload_id;
-  await call(c, "file_write_chunk", { upload_id: lu, data_base64: b64("leif-route"), seq: 0 });
-  before = fpAll();
-  const stolen = await call(c, "file_write_commit", { upload_id: lu, path: "owner-route.gpx", command_id: Kf });
-  ok("A2 file_write_commit under the owner's command_id is refused — never answered with the owner's receipt",
-    oc.ok && stolen.isError && /command_id/.test(textOf(stolen)) && !JSON.stringify(stolen).includes(oc.meta.sha256) && fpAll() === before, JSON.stringify(stolen).slice(0, 300));
-  const Kl = cid();
-  const good = await call(c, "file_write_commit", { upload_id: lu, path: "leif-route.gpx", command_id: Kl });
-  const retried = await call(c, "file_write_commit", { upload_id: lu, path: "leif-route.gpx", command_id: Kl });
-  ok("A2 …its own commit, retried after the upload is consumed, is its own original receipt",
-    !good.isError && !retried.isError && /already committed/.test(textOf(retried)) && retried.structuredContent.sha256 === good.structuredContent.sha256,
-    JSON.stringify(retried).slice(0, 300));
-  const Kg = cid();
-  await leoFiles.put("finance-app", "ledger2.csv", "fin-secret-2", { command_id: Kg });
-  const viaUnshared = await call(c, "file_write_commit", { upload_id: `@leo/${randomUUID()}`, path: "ledger2.csv", command_id: Kg });
-  const unknownCommit = await call(c, "file_write_commit", { upload_id: `@leo/${randomUUID()}`, path: "ledger2.csv", command_id: cid() });
-  ok("A2 …a commit 'retry' naming an UNSHARED app's command_id ≡ an unknown upload (no receipt, no app named)",
-    viaUnshared.isError && textOf(viaUnshared) === textOf(unknownCommit) && !JSON.stringify(viaUnshared).includes("finance"), JSON.stringify(viaUnshared).slice(0, 300));
+  // X1 on the file plane: a single-shot write (the chunked commit cases went with the trio, 0.8.1).
   const Kw = cid();
   await leoFiles.put("trip-planner", "a2-owner.txt", "owner-a2", { command_id: Kw });
   before = fpAll();
@@ -892,7 +846,7 @@ console.log("15A. variants of the round-1 fixes");
     c, "data_move_item", (id) => ({ command_id: cid(), id, collection: "@leo/two", group: "g" }), fin1.id, randomUUID());
 
   // Code outside the shared runner: list rows, resources, windowed export, the widget runtime.
-  const apps = (await call(c, "list_apps", { visibility: "any" })).structuredContent.apps.filter((a) => a.shared);
+  const apps = (await call(c, "list_apps", {})).structuredContent.apps.filter((a) => a.shared);
   ok("A4 list_apps (visibility any): shared rows carry no source of any kind",
     apps.length >= 2 && apps.every((a) => !("ui" in a) && !("html" in a) && !("manifest" in a)) && !JSON.stringify(apps).includes("<script"), JSON.stringify(apps).slice(0, 300));
   const res = (await c.listResources()).resources;
@@ -978,16 +932,9 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
   await absentAlike("C1 file_list (prefix) of an unshared app", c, "file_list", (h) => ({ app: h, prefix: "led" }), U, N);
   await absentAlike("C1 file_write over an unshared app's real file", c, "file_write", (h) => ({ command_id: cid(), app: h, path: "ledger.csv", data_base64: b64("pwn") }), U, N);
   await absentAlike("C1 file_delete of an unshared app's real file (with a forged request_state)", c, "file_delete", (h) => ({ command_id: cid(), app: h, path: "ledger.csv", actor: "human", request_state: "forged" }), U, N);
-  await absentAlike("C1 file_write_begin on an unshared app", c, "file_write_begin", (h) => ({ app: h }), U, N);
-  const ownerLive = await leoFiles.beginUpload("trip-planner");
-  await absentAlike("C1 file_write_chunk on the OWNER's live upload of the SHARED app ≡ an unknown upload", c, "file_write_chunk",
-    (id) => ({ upload_id: `@leo/${id}`, data_base64: b64("x"), seq: 0 }), ownerLive.upload_id, randomUUID());
-  await absentAlike("C1 file_write_commit of that upload ≡ an unknown upload", c, "file_write_commit",
-    (id) => ({ upload_id: `@leo/${id}`, path: "taken.txt", command_id: cid() }), ownerLive.upload_id, randomUUID(),
-    { also: () => !openFileChannel(leo).stat("trip-planner", "taken.txt") });
   await absentAlike("C1 get_app node of an unshared app", c, "get_app", (h) => ({ name: h, node: "x" }), U, N);
   await absentAlike("C1 get_app_html mount:true of an unshared app (and the caller's live pointer stays)", c, "get_app_html", (h) => ({ name: h, mount: true }), U, N);
-  await absentAlike("C1 list_apps by the exact handle of an unshared app finds nothing", c, "list_apps", (h) => ({ name: h, visibility: "any" }), U, N,
+  await absentAlike("C1 list_apps by the exact handle of an unshared app finds nothing", c, "list_apps", (h) => ({ name: h }), U, N,
     { error: false, also: (r) => r.structuredContent.total === 0 });
   await absentAlike("C1 copy_app of an unshared app (nothing copied, no confirmation offered)", c, "copy_app", (h) => ({ command_id: cid(), app: h, with_data: true }), U, N);
   await absentAlike("C1 share leave of an unshared app", c, "share", (h) => ({ action: "leave", app: h }), U, N);
@@ -1030,9 +977,7 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
   world.grant("u_leo", "u_leif", "rev-app", "editor");
   for (const [who, store] of [["u_rev", revStore], ["u_leif", leif]]) {
     const c = await connect(store, who);
-    const up = (await call(c, "file_write_begin", { app: "@leo/rev-app" })).structuredContent?.upload_id;
-    await call(c, "file_write_chunk", { upload_id: up, data_base64: b64("pre"), seq: 0 });
-    const okBefore = !(await call(c, "data_list", { collection: "@leo/rev" })).isError && !!up;
+    const okBefore = !(await call(c, "data_list", { collection: "@leo/rev" })).isError;
     for (const g of world.grants) if (g.recipient === who && g.app === "rev-app") g.status = "revoked";
     const H = "@leo/rev-app", HC = "@leo/rev", NA = "@leo/nope", NCo = "@leo/nothing";
     const tag = `C2 revoked (${who === "u_rev" ? "alias gone" : "alias still holds another app"})`;
@@ -1047,32 +992,27 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
     await absentAlike(`${tag}: get_app`, c, "get_app", (h) => ({ name: h }), H, NA);
     await absentAlike(`${tag}: file_read`, c, "file_read", (h) => ({ app: h, path: "r.txt" }), H, NA);
     await absentAlike(`${tag}: file_write`, c, "file_write", (h) => ({ command_id: cid(), app: h, path: "late.txt", data_base64: b64("late") }), H, NA);
-    await absentAlike(`${tag}: file_write_chunk on an upload begun before`, c, "file_write_chunk", (id) => ({ upload_id: id, data_base64: b64("x"), seq: 1 }), up, `@leo/${randomUUID()}`);
-    await absentAlike(`${tag}: file_write_commit of an upload begun before`, c, "file_write_commit", (id) => ({ upload_id: id, path: "late.txt", command_id: cid() }), up, `@leo/${randomUUID()}`,
-      { also: () => !openFileChannel(leo).stat("rev-app", "late.txt") });
     await absentAlike(`${tag}: copy_app`, c, "copy_app",
       (h) => ({ command_id: cid(), app: h, name: `rev-copy-${who.slice(2)}`, with_data: true }), H, NA,
       { also: () => store.getApp(`rev-copy-${who.slice(2)}`) === null });
     await absentAlike(`${tag}: share list`, c, "share", (h) => ({ action: "list", app: h }), H, NA);
     ok(`${tag}: gone from list_apps and list_data_collections`,
-      !textOf(await call(c, "list_apps", { visibility: "any" })).includes("rev-app") && !textOf(await call(c, "list_data_collections", {})).includes("@leo/rev"));
+      !textOf(await call(c, "list_apps", {})).includes("rev-app") && !textOf(await call(c, "list_data_collections", {})).includes("@leo/rev"));
     await c.close();
   }
-  // A demotion takes effect the same way: an upload opened as editor cannot be finished as viewer.
+  // A demotion takes effect the same way: the next write after it is a viewer's.
   const demStore = newAccount("u_dem");
   world.grant("u_leo", "u_dem", "rev-app", "editor");
   const d = await connect(demStore, "u_dem");
-  const dup = (await call(d, "file_write_begin", { app: "@leo/rev-app" })).structuredContent.upload_id;
-  await call(d, "file_write_chunk", { upload_id: dup, data_base64: b64("as-editor"), seq: 0 });
+  const dPre = await call(d, "file_write", { command_id: cid(), app: "@leo/rev-app", path: "as-editor.txt", data_base64: b64("as-editor") });
   world.grants.find((g) => g.recipient === "u_dem").role = "viewer";
   const before = fpAll();
-  const dChunk = await call(d, "file_write_chunk", { upload_id: dup, data_base64: b64("as-viewer"), seq: 1 });
-  const dCommit = await call(d, "file_write_commit", { upload_id: dup, path: "demoted.txt", command_id: cid() });
+  const dWrite = await call(d, "file_write", { command_id: cid(), app: "@leo/rev-app", path: "demoted.txt", data_base64: b64("as-viewer") });
   const dAdd = await call(d, "data_add_item", { command_id: cid(), collection: "@leo/rev", fields: { x: 1 } });
   const dDel = await call(d, "data_delete_item", { command_id: cid(), id: rev1.id, collection: "@leo/rev", actor: "human" });
-  ok("C2 demoted to viewer: an upload opened as editor can neither take a chunk nor commit; writes and deletes are read_only",
-    dChunk.isError && dCommit.isError && reasonOf(dAdd) === "read_only" && reasonOf(dDel) === "read_only" && fpAll() === before && !openFileChannel(leo).stat("rev-app", "demoted.txt"),
-    JSON.stringify([dChunk, dCommit, dDel]).slice(0, 300));
+  ok("C2 demoted to viewer: a file write that worked as editor is now read_only, as are item writes and deletes",
+    !dPre.isError && reasonOf(dWrite) === "read_only" && reasonOf(dAdd) === "read_only" && reasonOf(dDel) === "read_only" && fpAll() === before && !openFileChannel(leo).stat("rev-app", "demoted.txt"),
+    JSON.stringify([dPre, dWrite, dDel]).slice(0, 300));
   await d.close();
 }
 
@@ -1083,7 +1023,6 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
   await leoFiles.put("reborn", "keep.txt", "first-life");
   world.grant("u_leo", "u_leif", "reborn", "editor");
   const c = await connect(leif, "u_leif");
-  const up = (await call(c, "file_write_begin", { app: "@leo/reborn" })).structuredContent.upload_id;
   const o = await connect(leo, "u_leo");
   const del = await call(o, "delete_app", { command_id: cid(), name: "reborn" });
   const orphan = await call(c, "data_list", { collection: "@leo/reborn-c" });
@@ -1105,12 +1044,11 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
   await absentAlike("C3 reborn: get_app", c, "get_app", (h) => ({ name: h }), H, NA, rearm);
   await absentAlike("C3 reborn: file_read of the new life's file", c, "file_read", (h) => ({ app: h, path: "new.txt" }), H, NA, rearm);
   await absentAlike("C3 reborn: file_write", c, "file_write", (h) => ({ command_id: cid(), app: h, path: "x.txt", data_base64: b64("x") }), H, NA, rearm);
-  await absentAlike("C3 reborn: file_write_commit of an upload begun in the first life", c, "file_write_commit", (id) => ({ upload_id: id, path: "x.txt", command_id: cid() }), up, `@leo/${randomUUID()}`, rearm);
   await absentAlike("C3 reborn: copy_app", c, "copy_app", (h) => ({ command_id: cid(), app: h, with_data: true }), H, NA, rearm);
   await absentAlike("C3 reborn: data_changes", c, "data_changes", (h) => ({ collection: h, since: 0 }), HC, NCo, rearm);
   rearm.reset();
   ok("C3 reborn: not listed — and the engine reported the old grant dead to the provider",
-    !textOf(await call(c, "list_apps", { visibility: "any" })).includes("@leo/reborn") && world.ended.length > endedBefore);
+    !textOf(await call(c, "list_apps", {})).includes("@leo/reborn") && world.ended.length > endedBefore);
   // A restore after a delete starts a new life too: the share does not come back with it.
   save(leo, "restorable", { collections: { restorable: {} } });
   add(leo, "restorable", { r: 1 });
@@ -1155,9 +1093,9 @@ console.log("15C. breadth — every tool, named outside the grant, answers like 
   await c.close(); await o.close();
 }
 
-console.log("15B. the file plane through a share — the same hourly budget, a per-app ceiling, upload slots");
+console.log("15B. the file plane through a share — the same hourly budget, a per-app ceiling");
 {
-  // B1 — the hourly budget covers file writes (single-shot and chunked) and is ONE budget with items.
+  // B1 — the hourly budget covers file writes and is ONE budget with items.
   const fStore = newAccount("u_files");
   world.grant("u_leo", "u_files", "trip-planner", "editor");
   const f = await connect(fStore, "u_files");
@@ -1170,10 +1108,6 @@ console.log("15B. the file plane through a share — the same hourly budget, a p
   ok(`B1 after ${LIMIT} file writes through a share in an hour, the next file_write is refused (rate_limited)`,
     stored === LIMIT && over.isError && reasonOf(over) === "rate_limited" && !openFileChannel(leo).stat("trip-planner", "b1/over.txt"),
     `stored=${stored} ${JSON.stringify(over).slice(0, 200)}`);
-  const up = (await call(f, "file_write_begin", { app: "@leo/trip-planner" })).structuredContent?.upload_id;
-  await call(f, "file_write_chunk", { upload_id: up, data_base64: b64("chunked"), seq: 0 });
-  const commit = await call(f, "file_write_commit", { upload_id: up, path: "b1/chunked.txt", command_id: cid() });
-  ok("B1 …and so is a chunked commit", commit.isError && reasonOf(commit) === "rate_limited" && !openFileChannel(leo).stat("trip-planner", "b1/chunked.txt"), JSON.stringify(commit).slice(0, 200));
   const item = await call(f, "data_add_item", { command_id: cid(), collection: "@leo/trips", fields: { b1: 1 } });
   ok("B1 …and an item write: files and rows draw on one budget", item.isError && reasonOf(item) === "rate_limited", JSON.stringify(item).slice(0, 200));
   await f.close();
@@ -1211,34 +1145,11 @@ console.log("15B. the file plane through a share — the same hourly budget, a p
   const fits = await call(k, "file_write", { command_id: cid(), app: "@leo/bytes-app", path: "three.bin", data_base64: b64("abc") });
   ok("B2 the bytes ceiling: a collaborator's write that would pass it is refused, one that fits lands",
     tooBig.isError && reasonOf(tooBig) === "app_files_full" && !fits.isError, JSON.stringify([tooBig, fits]).slice(0, 300));
-  const bu = (await call(k, "file_write_begin", { app: "@leo/bytes-app" })).structuredContent?.upload_id;
-  await call(k, "file_write_chunk", { upload_id: bu, data_base64: b64("0123456789"), seq: 0 });
-  const bc = await call(k, "file_write_commit", { upload_id: bu, path: "chunked-ten.bin", command_id: cid() });
-  ok("B2 …through the chunked path too", bc.isError && reasonOf(bc) === "app_files_full" && !openFileChannel(leo).stat("bytes-app", "chunked-ten.bin"), JSON.stringify(bc).slice(0, 200));
   const ownBig = await call(o, "file_write", { command_id: cid(), app: "bytes-app", path: "owner-ten.bin", data_base64: b64("0123456789") });
   ok("B2 …while the owner may fill their own app", !ownBig.isError);
   await k.close();
 
-  // B3 — staged uploads: the owner's channel has a fixed number of slots, and collaborators must not
-  // be able to take them all.
-  const sStore = newAccount("u_slots");
-  world.grant("u_leo", "u_slots", "trip-planner", "editor");
-  const s = await connect(sStore, "u_slots");
-  const mine = [];
-  for (let i = 0; i < 16; i++) {
-    const r = await call(s, "file_write_begin", { app: "@leo/trip-planner" });
-    if (r.isError) break;
-    mine.push(r.structuredContent.upload_id);
-  }
-  const ownBegin = await call(o, "file_write_begin", { app: "trip-planner" });
-  ok("B3 a collaborator cannot hold every upload slot of the owner's store — the owner can still begin one",
-    !ownBegin.isError && mine.length <= (storeMod.SHARED_UPLOADS_PER_ACCOUNT ?? 4), `collaborator held ${mine.length}; owner: ${JSON.stringify(ownBegin).slice(0, 160)}`);
-  for (const [i, id] of mine.entries()) {
-    await call(s, "file_write_chunk", { upload_id: id, data_base64: b64("b3"), seq: 0 });
-    await call(s, "file_write_commit", { upload_id: id, path: `b3/${i}.txt`, command_id: cid() });
-  }
-  if (!ownBegin.isError) await leoFiles.commitUpload(ownBegin.structuredContent.upload_id, "b3/owner.txt").catch(() => {});
-  await s.close(); await o.close();
+  await o.close();
 }
 
 for (const s of [leo, leif, mia, rateStore, ...extraStores]) s.close();

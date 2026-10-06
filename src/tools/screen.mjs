@@ -53,7 +53,6 @@ export function register(ctx) {
 
   const send = async (app, job) => {
     const s = pick(app);
-    console.error(`[oma] screen ${job.tool ? "tool" : job.action || "act"} ${job.tool || job.ref || job.label || ""} host=${hostName() || "?"} → ${s ? s.id + "@" + (s.host || "?") : "none"} · live ${live().map((x) => x.id + "@" + (x.host || "?")).join(",")}`);
     if (!s) return text(`No app is open on screen${app ? ` as "${app}"` : ""} right now. Open one with open_app first.`, true);
     const id = "j" + ++reg.seq;
     const done = new Promise((resolve) => {
@@ -119,12 +118,7 @@ export function register(ctx) {
     async (a) => {
       if (a.done) { const fin = reg.jobs.get(a.done.id); if (fin) fin(a.done); }
       let s = reg.sessions.get(a.session);
-      if (!s) {
-        reg.sessions.set(a.session, (s = { id: a.session, app: "", host: hostName(), seen: 0, queue: [], waiter: null }));
-        console.error(`[oma] screen widget connected ${a.session} host=${s.host || "?"} app=${a.app || "-"} visible=${a.visible} display=${a.display || "-"}`);
-      }
-      if (a.done) console.error(`[oma] screen ${a.session} finished ${a.done.id}${a.done.isError ? " (error)" : ""}`);
-      if (a.ping) console.error(`[oma] screen ${a.session} ping visible=${a.visible} display=${a.display || "-"}`);
+      if (!s) reg.sessions.set(a.session, (s = { id: a.session, app: "", host: hostName(), seen: 0, queue: [], waiter: null }));
       // "active" moves when the USER moves this widget: rendered, fullscreened, touched.
       const now = Date.now();
       if (!s.active) s.active = a.born || now;

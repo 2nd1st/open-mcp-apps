@@ -24,6 +24,7 @@ import { readFileSync, readdirSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, relative } from "node:path";
 import { CONFIRMATION_CLASSES } from "../src/confirmation.mjs";
+import { shippedApps } from "./rig/shipped-apps.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -50,11 +51,11 @@ const TOOL_REGISTRATION_ALLOWED = [
 //   build        — provenance stamped in by the image build. Not a toggle; never branched on.
 //   platform     — not ours; set by the OS or a host.
 const FLAGS = {
-  OMA_APP_STORE_DIRS: { kind: "product",  why: "extra App Store source folders (the oma-store repo, a team's own store), searched before the built-in components/ — the store's content lives outside the engine and this is how an install points at it" },
+  OMA_APP_STORE_DIRS: { kind: "product",  why: "extra App Store source folders (a team's own store, a local checkout of oma-store), searched before the installed @openmcp-app/oma-store package — first source with a name wins" },
   OMA_BUILD:          { kind: "build",    why: "commit SHA baked in by the image build; reported to the host in the MCP server info so a deployment can be told apart from a checkout" },
   OMA_BUILD_FILE:     { kind: "build",    why: "path to the same SHA, for images that resolve it at build time — discoverable via `docker inspect`, unlike a value injected inline in CMD" },
   OMA_DB:             { kind: "product",  why: "database location override (tests, multi-tenant hosts)" },
-  OMA_HOST:           { kind: "product",  why: "host label when clientInfo.name is unavailable" },
+  // OMA_HOST retired 2026-10-06 (0.8.1): only tests set it; a host is named by its clientInfo.
   // OMA_FILE_BACKEND retired 2026-08-04 (elegance A3): one local backend, one instantiation —
   // the remote seam went with it and returns with its first real caller.
   OMA_FUNCTIONS:      { kind: "product",  why: "kill-switch (OMA_FUNCTIONS=0) for the call_function seat on the LOCAL entrypoints, where it defaults ON. Read only by server.mjs/http.mjs on purpose: createEngine itself defaults the seat OFF, so an embedding/hosted consumer never inherits same-process execution — a multi-tenant plane opts in explicitly or not at all (functions.mjs header, §2.5-D)" },
@@ -157,14 +158,14 @@ console.log("3. one answer to \"what does this app open on\"");
 {
   const { defaultCollectionFor } = await import("../src/contracts.mjs");
   const { childPreviewSnapshot } = await import("../src/runtime-core.mjs");
-  const dir = join(ROOT, "components");
+  // Shipped = the system apps in components/ + the App Store apps in the installed package.
   const disagree = [];
   let checked = 0;
-  for (const name of readdirSync(dir).filter((n) => existsSync(join(dir, n, "ui.html"))).sort()) {
+  for (const { name, dir: appDir } of shippedApps()) {
     // v6 entry layout: the declaration is the entry's manifest.json (the manifest slot), no
     // longer a block inside the document.
     let manifest = null;
-    try { manifest = readFileSync(join(dir, name, "manifest.json"), "utf-8"); } catch { /* none declared */ }
+    try { manifest = readFileSync(join(appDir, "manifest.json"), "utf-8"); } catch { /* none declared */ }
     // Both sides get the SAME app, expressed the way each one receives it: the server reads
     // a stored row, the preview reads the parsed declaration handed back by get_app_html.
     let declaration = null;
@@ -372,7 +373,7 @@ console.log("3. one answer to \"what does this app open on\"");
 //
 // What is left is the part the engine deliberately does NOT confirm: the app-lifecycle verbs.
 // They are exempt in CONFIRMATION_CLASSES because they lose nothing recoverable — delete_app is
-// a tombstone, archive is a visibility flip — so the guard here is against a stray click, not
+// a tombstone — so the guard here is against a stray click, not
 // against data loss, and the app-side arm is the ONLY thing standing there.
 {
   // Item and file deletes are ABSENT on purpose, and the assertion below makes that a fact the
@@ -381,8 +382,8 @@ console.log("3. one answer to \"what does this app open on\"");
   ok("the item/file deletes really did move to the engine's gate (else this detector must return)",
     CONFIRMATION_CLASSES.delete_item?.confirm === true && CONFIRMATION_CLASSES.delete_file?.confirm === true);
   ok("…and the app-lifecycle verbs really are the engine's exemptions (else they belong there, not here)",
-    CONFIRMATION_CLASSES.delete_app?.confirm === false && CONFIRMATION_CLASSES.archive_app?.confirm === false);
-  const DESTRUCTIVE = /["']delete_app["']|["']archive_app["']/;
+    CONFIRMATION_CLASSES.delete_app?.confirm === false);
+  const DESTRUCTIVE = /["']delete_app["']/;
   const GATE = /confirmDeleteOn\s*\(\)|oma\.pref\s*\(\s*["']confirm_delete["']/;
   // The second, STRONGER gate (W1): a call that carries a `request_state` is the second leg of the
   // engine's own two-step — the engine issued that state after showing a disposition plan, binds
@@ -400,8 +401,8 @@ console.log("3. one answer to \"what does this app open on\"");
   const UNGATED_BY_DESIGN = [];
 
   const sites = [];
-  for (const f of readdirSync(join(ROOT, "components")).filter((x) => existsSync(join(ROOT, "components", x, "ui.html")))) {
-    const lines = readFileSync(join(ROOT, "components", f, "ui.html"), "utf-8").split("\n");
+  for (const { name: f, dir } of shippedApps()) {   // system apps + the installed App Store package
+    const lines = readFileSync(join(dir, "ui.html"), "utf-8").split("\n");
     lines.forEach((ln, i) => {
       if (!DESTRUCTIVE.test(ln)) return;
       // Comments STRIPPED first. Found the hard way: the fix for "Reset all" carries a comment

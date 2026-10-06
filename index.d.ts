@@ -7,15 +7,15 @@ export interface EngineOptions {
    *  per-session from `initialize` up to MCP 2026-06-18, per-request from `_meta` on 2026-07-28+. */
   hostLabel?: string;
   /** Replace the MANUAL layer of the instructions (hosted deployments carry their own behaviour
-   *  text). The engine-composed dynamic segments (onboarding vs inventory, proactivity stance,
-   *  later the roster) cannot be removed: a manual carrying the placeholders
-   *  (__ONBOARDING_OR_INVENTORY__, __PROACTIVITY_STANCE__) positions them; one that omits them
-   *  gets them appended. */
+   *  text). The two engine-composed segments (onboarding vs inventory, proactivity stance) appear
+   *  where the manual carries their placeholders (__ONBOARDING_OR_INVENTORY__,
+   *  __PROACTIVITY_STANCE__); a manual that omits a placeholder omits that segment. */
   instructions?: string;
   /** Base URL of a browser viewer for this store (e.g. "http://127.0.0.1:8787"). When present,
    *  list_apps prints a real <viewBase>/view/<name> link per app; absent = no link. */
   viewBase?: string;
-  /** Register the `call_function` seat. `false` (the default) = no seat, and the authoring guide
+  /** Register the `call_function` seat. `false` (the default here; the npx server and viewer pass
+   *  `true` unless OMA_FUNCTIONS=0) = no seat, and the authoring guide
    *  says so rather than teaching a tool this deployment does not have. `true` / `{}` = the seat,
    *  with bodies on a local worker thread and the machine's own network — right for a local
    *  install, wrong for a multi-tenant plane. The object form carries the two seams a host needs:
@@ -46,14 +46,9 @@ export interface EngineOptions {
   csp?: { base?: CspDomains; extensible?: boolean };
   /** Tool names to register but NOT list. They stay callable through `tools/call`; they simply
    *  stop appearing in `tools/list` — for seats whose only real callers are widgets, on a
-   *  deployment whose public tool list is read by people. The engine already hides every retired
-   *  tool name it still answers to; this adds to that set, it does not replace it. Default `[]`,
-   *  and an empty set leaves the wire byte-identical. */
+   *  deployment whose public tool list is read by people. Default `[]`, and an empty set leaves
+   *  the wire byte-identical. */
   unlisted?: string[];
-  /** Record the edit tripwire's JSONL sidecar beside the database. Default `true` — a local
-   *  install measuring its own editing path, in a file the user can read and delete. `false`
-   *  makes the recorder a no-op and the file is never created. */
-  telemetry?: boolean;
   /** Allow PINNED apps their own `open_<name>` tool. Default `true`: an app the user pins in the
    *  settings app (settings key `open_tool`, group = the app's name) gets one, every other app opens
    *  through `open_app`, and `tools/list` moves only when the user pins, unpins or deletes a pinned
@@ -255,7 +250,7 @@ export const BRIDGE: string;
 /** CSP-first sandboxed child document: untrusted markup rides wholesale in OUR body. */
 export function composeChildDoc(html: string, opts?: { tokenCss?: string; baseCss?: string; fallbackCss?: string; bridge?: string }): string;
 /** A complete, self-contained INERT preview document (stub oma seeded with fixture items) —
- *  what a hosted /library preview server serves instead of keeping hand-synced copies. */
+ *  what a hosted App Store preview server serves instead of keeping hand-synced copies. */
 export function composePreviewDoc(html: string, opts?: { name?: string; items?: unknown[]; apps?: unknown[]; prefs?: Record<string, unknown>; tokenCss?: string; baseCss?: string; csp?: CspDomains }): string;
 /** The inert stub window.oma script for a standalone preview document. */
 export function stubOmaScript(name: string, items?: unknown[], apps?: unknown[], prefs?: Record<string, unknown>): string;
@@ -265,7 +260,7 @@ export function makeGuard(cfg: {
   coll: string;
   caps?: Record<string, unknown>;
   tier?: string;
-  preset?: "live" | "readonly" | "inert";
+  preset?: "live" | "inert";
   io: Record<string, unknown>;
 }): (method: string, args: Record<string, unknown>) => Promise<unknown>;
 /** Walk file_read's byte windows; parts decode-and-concatenate byte-wise (never assume 3-alignment). */

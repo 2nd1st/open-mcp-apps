@@ -103,7 +103,7 @@ export function decideAck(state, ack) {
  *  bridge needs to recognise its own echo — was invisible, so an editor-style app wrote the stale
  *  server copy back over what the user was typing, two seconds later, with nothing logged.
  *
- *  Every consumer in `components/` had therefore grown its OWN adapter for this (knowledge-cards
+ *  Every shipped app had therefore grown its OWN adapter for this (knowledge-cards
  *  `requireSuccess`, project-pulse `writeFailed`, wonder-atlas `writeResultFailed`, an inline test
  *  in meeting-actions) and most of them are subtly wrong, because a shim written against two of
  *  the three shapes reads the third as success. A contract every reader must adapt to is not a

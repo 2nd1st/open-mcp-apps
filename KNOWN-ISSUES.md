@@ -129,8 +129,8 @@ check — nothing in the store records that B ever looked.
 
 **What protects you meanwhile.** Cascade is never silent: it is a two-step action, and the first
 step returns a plan naming every collection it would delete, with row counts, before anything
-happens. A collection another app *declares* or *has written to* is always kept. `archive_app`
-keeps everything, and plain `delete_app` (no `data:` argument) still keeps all data.
+happens. A collection another app *declares* or *has written to* is always kept, and plain
+`delete_app` (no `data:` argument) keeps all data.
 
 **Fix direction.** Claim-on-first-write — the first time an app's widget writes to an unclaimed
 collection, record the claim — which grows the missing map going forward without migrating history.
@@ -247,7 +247,7 @@ if the source is re-checked when the fact moves.
 
 The host renders widgets in a sandboxed iframe where these are silently blocked (confirm() returns
 false; `target="_blank"`/`window.open()` don't open). The authoring guide forbids them and shows
-sandbox-safe patterns (inline two-step confirm; render URLs as selectable text). Noted here because
+sandbox-safe patterns (deletes use the engine's own confirmation; URLs render as selectable text). Noted here because
 any app written *before* that guidance may have a non-working delete button or link.
 
 ## Codex: widgets render in a short fixed viewport (internal scroll)
@@ -256,8 +256,7 @@ The same app that auto-fits its height in Claude Desktop shows inside a shorter,
 frame with an internal scrollbar in Codex. The inline widget iframe's height is **host-controlled**
 and the MCP Apps direct-mode API has no "request height" call, so this cannot be fixed from inside
 the app. One app-side case *is* fixable: CSS `height: 100vh` / `min-height: 100vh` /
-fixed pixel heights make the short viewport worse — size to content instead (the authoring guide's
-first-screen rules). Otherwise: host behavior, tracked as a host limitation, not chased here.
+fixed pixel heights make the short viewport worse — size to content instead. Otherwise: host behavior, tracked as a host limitation, not chased here.
 
 ## `readOnlyHint` tools still prompt for approval (Claude Desktop)
 

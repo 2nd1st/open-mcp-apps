@@ -8,11 +8,12 @@ import { Client } from "@modelcontextprotocol/client";
 import { BASICS_GATE } from "./guide-gate.mjs";
 import { StdioClientTransport } from "@modelcontextprotocol/client/stdio";
 import { randomUUID } from "node:crypto";
-import { unlinkSync, existsSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { unlinkSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join, basename } from "node:path";
 import { openStore, SCHEMA_VERSION, PLATFORM_CSP } from "../src/store.mjs";
 import { LOADER_URI_RE } from "../src/tools/apps.mjs";
+import { shippedApps, appDir } from "./rig/shipped-apps.mjs";
 // The loader's URI is named by its own bytes (tools/apps.mjs loaderUriFor), so it is read off
 // open_app — the one tool that points at it — never spelled out here.
 const loaderUriOf = async (c) => (await c.listTools()).tools.find((t) => t.name === "open_app")._meta.ui.resourceUri;
@@ -23,15 +24,16 @@ const DB = join(ROOT, "test", "smoke.db");
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 rmSync(join(ROOT, "test", "files"), { recursive: true, force: true }); // file-plane blobs land beside the test db
 
-// seed directly into the test db — every shipped entry (v6 layout: components/<name>/ with the
-// manifest as its own slot file)
+// seed directly into the test db — every shipped entry: the system apps in components/ and the App
+// Store apps in the installed @openmcp-app/oma-store package (v6 layout: <name>/ with the manifest
+// as its own slot file)
 {
   const store = openStore(DB);
-  for (const name of readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")))) {
+  for (const { name, dir } of shippedApps()) {
     let manifest = null;
-    try { manifest = JSON.parse(readFileSync(join(ROOT, "components", name, "manifest.json"), "utf-8")); } catch { /* none */ }
+    try { manifest = JSON.parse(readFileSync(join(dir, "manifest.json"), "utf-8")); } catch { /* none */ }
     store.execute({ type: "save_app", command_id: "seed-" + name, name,
-      ui: readFileSync(join(ROOT, "components", name, "ui.html"), "utf-8"), manifest, actor: "seed" });
+      ui: readFileSync(join(dir, "ui.html"), "utf-8"), manifest, actor: "seed" });
   }
   store.close();
 }
@@ -89,7 +91,7 @@ await client.connect(new StdioClientTransport({
   args: [join(ROOT, "src", "server.mjs")],
   // This suite pins a few apps (below) to cover the per-app tool path; http-smoke covers the
   // unpinned (open_app-only) behavior.
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke" },
+  env: { ...process.env, OMA_DB: DB },
 }));
 armPoisonScan(client);
 console.log("connected over stdio");
@@ -167,12 +169,12 @@ console.log("2b-lib. every shipped App Store entry can actually be previewed");
   // one description, the skill's), so its round trip is against THAT line.
   const halved = [];
   for (const e of entries) {
-    const skillPath = join(ROOT, "components", e.name, "skill.md");
+    const skillPath = join(appDir(e.name), "skill.md");
     if (existsSync(skillPath)) {
       if (!readFileSync(skillPath, "utf-8").split(/\r?\n/).includes(`description: ${e.description}`)) halved.push(e.name);
       continue;
     }
-    const src = readFileSync(join(ROOT, "components", e.name, "ui.html"), "utf-8");
+    const src = readFileSync(join(appDir(e.name), "ui.html"), "utf-8");
     if (e.description && !src.includes(`content="${e.description}"`) && !src.includes(`content='${e.description}'`))
       halved.push(e.name);
   }
@@ -274,7 +276,7 @@ console.log("2c. cache hints on every cacheable result (SEP-2549, src/cache-hint
   await modern.connect(new StdioClientTransport({
     command: "node",
     args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: DB, OMA_HOST: "smoke" },
+    env: { ...process.env, OMA_DB: DB },
   }));
   const listed = await modern.listResources();
   ok("resources/list carries hints", typeof listed.ttlMs === "number" && listed.ttlMs >= 0);
@@ -420,7 +422,7 @@ const save2 = await client.callTool({ name: "save_app", arguments: { name: "smok
 ok("the second save advanced the version", /updated/.test(save2.content[0].text) && /Saved "smoke-notes" v\d+/.test(save2.content[0].text));
 const notesV2 = await client.readResource({ uri: "ui://open-mcp-apps/smoke-notes.html" });
 ok("resource serves v2 live (no re-register)", notesV2.contents[0].text.includes('class="v2"'));
-const seedCount = readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html"))).length;
+const seedCount = shippedApps().length;
 const listC = await client.callTool({ name: "list_apps", arguments: {} });
 ok(`registry lists ${seedCount} seeds + smoke-notes`, listC.structuredContent.apps.length === seedCount + 1);
 // Found by the live-model eval (test/eval-live.mjs, task "onboarding"): a brand-new user's registry
@@ -823,10 +825,7 @@ const KNOWN_SAFE = new Set([
   // socket primitive reachable from a tool (security-model §1.5). Bytes ride base64 but only ever
   // land under files/<app>/<sha256>.blob.
   "file_list", "file_read", "file_write", "file_delete",   // file_usage RETIRED in write-set C (file_list reports usage)
-  // Chunked large-file write: same channel/backend as file_write — staging lives under the
-  // backend's own .tmp (uuid names, never caller input), commit lands through the identical
-  // write_file store transaction. No new fs surface beyond src/files.mjs (§1.5).
-  "file_write_begin", "file_write_chunk", "file_write_commit",
+  // (file_write_begin/chunk/commit — the chunked large-file write — removed 0.8.1: zero callers.)
   // get_data_version: read-only aggregate over change_event via prepared statements — no primitives.
   "get_data_version",
   // Write-set C additions (§1.5 review): edit_app applies exact-string replacements
@@ -1115,7 +1114,7 @@ const sandboxValues = [
 ok("no sandbox value grants allow-same-origin", sandboxValues.length > 0 && sandboxValues.every((v) => !v.includes("allow-same-origin")));
 ok("tier branch: local (or missing tier) mounts direct", loaderDoc.includes('sc.tier == null || sc.tier === "local"') && loaderDoc.includes("return await mount(sc.html)"));
 ok("non-local tiers route through the runner machine (oma.embed)", loaderDoc.includes("oma.embed(name, {") && loaderDoc.includes("caps: sc.caps || {}"));
-ok("control-plane denylist present with every registry/policy-mutating tool", runnerSrc.includes("isControlPlaneTool(tl)") && ["security_set", "save_app", "edit_app", "archive_app", "delete_app", "restore_app", "install_from_app_store"].every((n) => policySrc.includes('"' + n + '"')));
+ok("control-plane denylist present with every registry/policy-mutating tool", runnerSrc.includes("isControlPlaneTool(tl)") && ["security_set", "save_app", "edit_app", "delete_app", "restore_app", "install_from_app_store"].every((n) => policySrc.includes('"' + n + '"')));
 ok("control-plane deny also covers future app_store_* tools AND internal `_` RPC names", policySrc.includes('indexOf("app_store_") === 0') && policySrc.includes('indexOf("_") === 0'));
 ok("control-plane tools rejected with a clear message", runnerSrc.includes("is not available to apps") && loaderDoc.includes("is not available to apps"));
 // CSP-first: the runner builds our own <head> with the CSP as the FIRST child; it never anchors
@@ -1480,14 +1479,15 @@ const badOp = await client.callTool({ name: "data_list", arguments: { collection
 ok("a typo'd operator is a NAMED error, not a silent empty result",
   badOp.isError === true && /Unknown filter operator/.test(badOp.content[0].text) && /greaterThan/.test(badOp.content[0].text));
 
-console.log("26b6. an exact-name lookup is explicit intent — defaults scope browsing, not existence");
-bStore.execute({ type: "save_app", command_id: randomUUID(), name: "hidden-app", visibility: "unlisted", actor: "human",
+console.log("26b6. an exact-name lookup finds the app — and an old store's archived row is not hidden");
+// A pre-0.8.1 store may hold `visibility = 'archived'`; the column is no longer read, so the row
+// lists like any other (the archive_app chain that could set or clear it is gone).
+bStore.execute({ type: "save_app", command_id: randomUUID(), name: "hidden-app", actor: "human",
   ui: `<p>tucked away</p>` });
+bStore.db.prepare("UPDATE app SET visibility = 'archived' WHERE name = 'hidden-app'").run();
 const hidFound = await client.callTool({ name: "list_apps", arguments: { name: "hidden-app" } });
-ok("list_apps {name} finds an unlisted app instead of reporting it does not exist",
+ok("list_apps {name} finds an app whose old row says archived",
   !hidFound.isError && hidFound.structuredContent.total === 1 && hidFound.structuredContent.apps[0].name === "hidden-app");
-const hidScoped = await client.callTool({ name: "list_apps", arguments: { name: "hidden-app", visibility: "listed" } });
-ok("...while a filter the caller actually passed still applies", hidScoped.structuredContent.total === 0);
 
 console.log("27b. stewardship declarations — `fields` is optional; declaring a collection ≠ validating it");
 const stewSave = await client.callTool({ name: "save_app", arguments: {
@@ -1524,12 +1524,11 @@ const lcMiss = await client.callTool({ name: "list_apps", arguments: { name: "no
 ok("a miss says how to widen instead of looking like an empty registry",
   lcMiss.structuredContent.total === 0 && /No app named/.test(lcMiss.content[0].text));
 const lcDefault = await client.callTool({ name: "list_apps", arguments: {} });
-const lcAny = await client.callTool({ name: "list_apps", arguments: { visibility: "any" } });
-ok("default scope is featured/listed (the openable apps)",
-  lcDefault.structuredContent.apps.every((c) => ["featured", "listed"].includes(c.visibility)));
-ok("visibility any widens to the whole registry", lcAny.structuredContent.total > lcDefault.structuredContent.total);
-ok("the store's own listApps() is unfiltered — the registry's consumers see everything",
-  lcAny.structuredContent.total === lcAny.structuredContent.shown);
+ok("no arguments lists the whole registry — the old archived row included, and every row is shown",
+  lcDefault.structuredContent.total === lcDefault.structuredContent.shown
+    && lcDefault.structuredContent.apps.some((c) => c.name === "hidden-app"));
+ok("…and no row carries a visibility field any more",
+  lcDefault.structuredContent.apps.every((c) => !("visibility" in c)));
 
 console.log("27e. guide chapters — each stands alone; the frozen enum admits what is not built yet");
 const gBasics = (await client.callTool({ name: "get_app_guide", arguments: {} })).content[0].text;
@@ -1803,28 +1802,8 @@ ok("outcome `current` — installed and unchanged, the branch that writes nothin
   stale.close();
 }
 
-console.log("29. chunked file write — begin/chunk/commit lifecycle over MCP");
+// (29. the chunked begin/chunk/commit lifecycle lived here — removed 0.8.1 with the trio.)
 const b64 = (s) => Buffer.from(s).toString("base64");
-const cBeg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
-ok("begin → upload_id + limits", !cBeg.isError && typeof cBeg.structuredContent.upload_id === "string" &&
-  cBeg.structuredContent.chunk_limit_bytes > 0 && cBeg.structuredContent.file_limit_bytes >= cBeg.structuredContent.chunk_limit_bytes);
-const upId = cBeg.structuredContent.upload_id;
-const ck1 = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: upId, data_base64: b64("hello ") } });
-ok("chunk 1 staged (6 bytes)", !ck1.isError && ck1.structuredContent.bytes === 6);
-const ck2 = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: upId, data_base64: b64("world") } });
-ok("chunk 2 staged (11 bytes total)", !ck2.isError && ck2.structuredContent.bytes === 11);
-const cCommit = await client.callTool({ name: "file_write_commit", arguments: { upload_id: upId, path: "big.bin" } });
-ok("commit lands big.bin (size 11, file_write result shape)", !cCommit.isError && cCommit.structuredContent.size === 11 &&
-  cCommit.structuredContent.version > 0 && cCommit.structuredContent.app === "smoke-notes" && typeof cCommit.structuredContent.files_version === "number");
-const cRead = await client.callTool({ name: "file_read", arguments: { app: "smoke-notes", path: "big.bin" } });
-ok("file_read returns the assembled bytes + matching sha", !cRead.isError && cRead.structuredContent.data_base64 === b64("hello world") && cRead.structuredContent.sha256 === cCommit.structuredContent.sha256);
-const ckLate = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: upId, data_base64: b64("more") } });
-ok("chunk after commit → upload gone", ckLate.isError === true && /No such upload/.test(ckLate.content[0].text));
-// file_write_abort retired (elegance A12): an unwanted upload is simply abandoned — the idle
-// TTL owns cleanup, and the seat that raced its own commit is gone.
-const cBeg3 = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
-const cEmpty = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: cBeg3.structuredContent.upload_id, data_base64: "" } });
-ok("empty chunk rejected", cEmpty.isError === true && /Empty chunk/.test(cEmpty.content[0].text));
 
 // ── 29b. receipts that disagree with the facts ────────────────────────────────────────────────
 // Three defects with one shape, all three reproduced on a live server before being fixed: the call
@@ -1842,9 +1821,6 @@ ok("file_write refuses data_base64 that is not base64", b64Bad.isError === true,
   JSON.stringify(b64Bad.structuredContent || b64Bad.content?.[0]?.text));
 const b64Keep = await client.callTool({ name: "file_read", arguments: { app: "smoke-notes", path: "b64.txt" } });
 ok("…and the file that was already at that path is untouched", b64Keep.structuredContent?.data_base64 === b64("hello"));
-const b64Beg = await client.callTool({ name: "file_write_begin", arguments: { app: "smoke-notes" } });
-const b64Chunk = await client.callTool({ name: "file_write_chunk", arguments: { upload_id: b64Beg.structuredContent.upload_id, data_base64: "!!!not-base64!!!" } });
-ok("…and so does file_write_chunk, which had no check of any kind", b64Chunk.isError === true);
 // The guard has to reject the malformed WITHOUT rejecting the merely unusual: base64 wrapped
 // across lines is legal and is what many encoders emit. A guard that fails this is a new bug.
 const b64Wrapped = await client.callTool({ name: "file_write", arguments: { command_id: randomUUID(), app: "smoke-notes", path: "wrap.txt", data_base64: b64("hello world").replace(/(.{4})/g, "$1\n") } });

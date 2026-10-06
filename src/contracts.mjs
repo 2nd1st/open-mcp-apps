@@ -50,9 +50,10 @@ const DESTRUCTIVE = { readOnlyHint: false, destructiveHint: true, idempotentHint
 // has no such key DOES have an additional effect, so those tools need this instead.
 //
 // Not cosmetic. The MCP docs define idempotentHint as "repeated calls with the same arguments have
-// no additional effect", and a host may retry a timed-out call on the strength of it. file_write_chunk
-// appends its bytes again when replayed — a host trusting the old annotation would silently corrupt
-// the uploaded file. Found by a spec-conformance audit, 2026-07-26.
+// no additional effect", and a host may retry a timed-out call on the strength of it. The case that
+// found it (spec-conformance audit, 2026-07-26) was file_write_chunk, since removed (0.8.1): it
+// appended its bytes again when replayed, so a host trusting the old annotation would have
+// silently corrupted the uploaded file.
 const WRITE_NOT_IDEMPOTENT = { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false };
 // The one seat whose effects can leave this machine: call_function runs a body the APP AUTHOR
 // wrote, and that body is handed `fetch` (function-worker.mjs). openWorldHint therefore has to be
@@ -336,7 +337,7 @@ function sharedCaps(role, collections) {
     ...base,
     call_tools: editor
       ? [...base.call_tools, "data_add_item", "data_update_item", "data_move_item", "data_delete_item",
-          "file_write", "file_write_begin", "file_write_chunk", "file_write_commit", "file_delete"]
+          "file_write", "file_delete"]
       : [...base.call_tools],
     delete_items: editor ? "confirm" : "deny",
     file_write: editor,

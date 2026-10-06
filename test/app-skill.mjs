@@ -49,7 +49,7 @@ const SKILL = skillText(DESC);
 
 async function connect(store, opts = {}) {
   const [ct, st] = InMemoryTransport.createLinkedPair();
-  await createEngine(store, { dynamicTools: false, telemetry: false, ...opts }).connect(st);
+  await createEngine(store, { dynamicTools: false, ...opts }).connect(st);
   const c = new Client({ name: "app-skill", version: "1.0.0" });
   await c.connect(ct);
   return c;

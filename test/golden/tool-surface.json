@@ -315,22 +315,11 @@
       "readOnlyHint": true,
       "title": "List apps"
     },
-    "description": "List UI apps in the registry (reusable across all chats). Lists the user's openable apps by default — pass name to look one up, or widen with visibility.",
+    "description": "List UI apps in the registry (reusable across all chats) — pass name to look one up.",
     "inputSchema": {
       "properties": {
         "name": {
           "description": "exact app name — the fastest way to answer \"open my X\"",
-          "type": "string"
-        },
-        "visibility": {
-          "description": "default featured+listed; archived/unlisted are retired or long-tail",
-          "enum": [
-            "featured",
-            "listed",
-            "unlisted",
-            "archived",
-            "any"
-          ],
           "type": "string"
         }
       },
@@ -472,7 +461,7 @@
       "readOnlyHint": false,
       "title": "Save app"
     },
-    "description": "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete self-contained HTML document (contract in get_app_guide; window.oma, no external resources, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
+    "description": "Create or update a UI app in the persistent registry. Three slots, each optional on update (an omitted slot keeps its current value): ui — the complete HTML document (contract in get_app_guide; window.oma, loads only from the guide's CDN allowlist or manifest.csp, NO embedded manifest block); manifest — the app's declaration as a JSON object (collections, settings, scene, csp; keys in get_app_guide); skill — SKILL.md text telling an AI how to USE the app. null clears manifest or skill. Creating needs ui. Every save snapshots all slots as one new version (history kept). After saving, open it IMMEDIATELY with open_app.",
     "inputSchema": {
       "properties": {
         "command_id": {
@@ -590,7 +579,7 @@
       "readOnlyHint": false,
       "title": "Edit app source"
     },
-    "description": "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The #oma-manifest block is re-read on save.",
+    "description": "Surgical edits to an app WITHOUT round-tripping the whole source. Two edit forms, mixable: RANGE {offset, length, expect_hash, new_string} replaces a span you read with get_app (cheapest — echo the window's offset/returned/hash, no anchor text travels); STRING {old_string, new_string} replaces an exact-once match (or set replace_all). Range offsets always address the expected_version document and must not overlap; string edits apply after ranges, in order. All edits apply together, or nothing applies. The manifest and skill slots are kept.",
     "inputSchema": {
       "properties": {
         "actor": {
@@ -2037,7 +2026,7 @@
       "readOnlyHint": false,
       "title": "Store an app file"
     },
-    "description": "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
+    "description": "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. A file is limited to a few MiB. Files persist and are the app's own, reusable across chats.",
     "inputSchema": {
       "properties": {
         "app": {
@@ -2111,179 +2100,6 @@
       "type": "object"
     },
     "title": "Store an app file"
-  },
-  {
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Begin a chunked file write"
-    },
-    "description": "Start a chunked upload for a file too big for file_write's single call. Returns an upload_id; send the bytes in order with file_write_chunk (each chunk up to ~5 MiB of raw bytes), then file_write_commit names the file. Uploads expire after 30 idle minutes; per-file ceiling 250 MiB.",
-    "inputSchema": {
-      "properties": {
-        "app": {
-          "description": "the app this file will belong to",
-          "type": "string"
-        }
-      },
-      "required": [
-        "app"
-      ],
-      "type": "object"
-    },
-    "name": "file_write_begin",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "chunk_limit_bytes": {
-          "type": "number"
-        },
-        "file_limit_bytes": {
-          "type": "number"
-        },
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id",
-        "chunk_limit_bytes",
-        "file_limit_bytes"
-      ],
-      "type": "object"
-    },
-    "title": "Begin a chunked file write"
-  },
-  {
-    "annotations": {
-      "destructiveHint": false,
-      "idempotentHint": false,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Append a chunk to an upload"
-    },
-    "description": "Append the next chunk of bytes (base64) to an upload started with file_write_begin. Send chunks strictly in order, one at a time. Pass `seq` (0-based chunk index) so a resend after a lost response is acknowledged instead of double-appended.",
-    "inputSchema": {
-      "properties": {
-        "data_base64": {
-          "description": "this chunk's bytes, base64-encoded",
-          "type": "string"
-        },
-        "seq": {
-          "description": "0-based index of this chunk — a resend of an already-staged index is a safe no-op",
-          "type": "number"
-        },
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id",
-        "data_base64"
-      ],
-      "type": "object"
-    },
-    "name": "file_write_chunk",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "bytes": {
-          "description": "total bytes staged so far",
-          "type": "number"
-        },
-        "chunks": {
-          "type": "number"
-        },
-        "duplicate": {
-          "type": "boolean"
-        },
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id",
-        "bytes"
-      ],
-      "type": "object"
-    },
-    "title": "Append a chunk to an upload"
-  },
-  {
-    "annotations": {
-      "destructiveHint": true,
-      "idempotentHint": true,
-      "openWorldHint": false,
-      "readOnlyHint": false,
-      "title": "Commit a chunked file write"
-    },
-    "description": "Finalize an upload as an app file (create or overwrite by path) — the chunked equivalent of file_write. The upload is consumed either way; on failure, restart from file_write_begin.",
-    "inputSchema": {
-      "properties": {
-        "command_id": {
-          "description": "idempotency key (uuid); auto-generated if omitted. A retried commit with the same id returns the original receipt instead of demanding a re-upload",
-          "type": "string"
-        },
-        "expected_version": {
-          "type": "number"
-        },
-        "mime": {
-          "type": "string"
-        },
-        "path": {
-          "description": "logical file name, e.g. 'video.mp4' or 'exports/backup.zip'",
-          "type": "string"
-        },
-        "upload_id": {
-          "type": "string"
-        }
-      },
-      "required": [
-        "upload_id",
-        "path"
-      ],
-      "type": "object"
-    },
-    "name": "file_write_commit",
-    "outputSchema": {
-      "additionalProperties": false,
-      "properties": {
-        "app": {
-          "type": "string"
-        },
-        "files_version": {
-          "type": "number"
-        },
-        "mime": {
-          "type": "string"
-        },
-        "path": {
-          "type": "string"
-        },
-        "sha256": {
-          "type": "string"
-        },
-        "size": {
-          "type": "number"
-        },
-        "version": {
-          "type": "number"
-        }
-      },
-      "required": [
-        "app",
-        "path",
-        "size",
-        "mime",
-        "sha256",
-        "version",
-        "files_version"
-      ],
-      "type": "object"
-    },
-    "title": "Commit a chunked file write"
   },
   {
     "annotations": {

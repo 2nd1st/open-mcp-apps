@@ -1,6 +1,6 @@
 {
   "name": "@2nd1st/open-mcp-apps",
-  "version": "0.8.0",
+  "version": "0.9.0",
   "mcpName": "io.github.2nd1st/open-mcp-apps",
   "description": "Persistent, interactive MCP Apps for any MCP host: the AI builds an app once, you both reuse it — data outlives the conversation.",
   "directories": {
@@ -46,8 +46,12 @@
       "types": "./functions.d.ts",
       "default": "./src/functions.mjs"
     },
-    "./types/window-oma": { "types": "./types/window-oma.d.ts" },
-    "./types/oma-function": { "types": "./types/oma-function.d.ts" }
+    "./types/window-oma": {
+      "types": "./types/window-oma.d.ts"
+    },
+    "./types/oma-function": {
+      "types": "./types/oma-function.d.ts"
+    }
   },
   "engines": {
     "node": ">=22"
@@ -74,13 +78,14 @@
   ],
   "dependencies": {
     "@modelcontextprotocol/client": "^2.0.0",
-    "@modelcontextprotocol/ext-apps": "^1.7.4",
     "@modelcontextprotocol/node": "^2.0.0",
     "@modelcontextprotocol/server": "^2.0.0",
+    "@openmcp-app/oma-store": "^0.1.0",
     "better-sqlite3": "^13.0.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@modelcontextprotocol/ext-apps": "^1.7.5",
     "esbuild": "^0.28.1"
   },
   "repository": {

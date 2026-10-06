@@ -36,7 +36,7 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.8.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.9.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
@@ -68,12 +68,10 @@ keep updated. Paste this into your host's MCP server config:
 }
 ```
 
-Two things the installer below does that this path does not: it registers the server into every
-host it finds, and it pre-seeds the built-in system apps (settings, dashboard, App Store) into
-your store — so on the `npx` path your registry starts empty and your AI installs what it needs
-from the App Store on demand, which is fully available either way. Your data lives in the same
-fixed per-user store, so you can move between an `npx` server and a cloned one without migrating
-anything.
+The one thing the installer below adds is registering the server into every host it finds. Either
+way the server seeds the system apps (settings, dashboard, App Store) when it starts, and your data
+lives in the same fixed per-user store, so you can move between an `npx` server and a cloned one
+without migrating anything.
 
 > **A note on npm:** this project publishes under the **scoped** name
 > [`@2nd1st/open-mcp-apps`](https://www.npmjs.com/package/@2nd1st/open-mcp-apps). The *unscoped*
@@ -186,7 +184,8 @@ Every setting is an environment variable, set in the `env` block of your host's 
 | `OMA_VIEWER` | `1` | The browser viewer on loopback. `0` doesn't start it at all. |
 | `PORT` | `8787` | Where the viewer listens. |
 | `OMA_DB` | per-user store | Path to the SQLite store. Set it to isolate a store. |
-| `OMA_APP_STORE_DIRS` | — | Extra App Store sources: folders laid out like `components/` (one folder per app), separated by `:` (`;` on Windows). Searched before the built-in apps; the first source with a name wins. |
+| `OMA_APP_STORE_DIRS` | — | Extra App Store sources: folders laid out like the store package's `apps/` (one folder per app), separated by `:` (`;` on Windows). Searched before the installed [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store) package; the first source with a name wins. |
+| `OMA_FUNCTIONS` | on | `0` turns app functions (`call_function`) off. A function body runs on this machine and can make network requests. |
 
 **An app's own tool.** Every app opens through `open_app`. To give one app its own `open_<name>`
 tool as well, pin it: **Settings → Installed → the app → Own tool**. The tool list changes only
@@ -201,15 +200,9 @@ why every host shares the same apps and data.
 **First-run permissions.** The first few tool calls each show an approval dialog — pick
 **"Always allow"**. The tool set is small and stable on purpose: read-only tools generally
 skip approval, and the single `open_app` tool covers opening *every* app (including ones the AI
-creates later) behind that one grant, so nothing new asks again — on every host the installer
-registers, with no exceptions any more. From 2026-07-28 to 2026-08-16 there were two: **Claude
-Desktop and Claude Code** were registered with `OMA_DYNAMIC_TOOLS=1`, which routed around a
-chat-surface bridge regression by giving every app its own `open_<name>` tool, at one approval
-prompt per app. Re-measured on Desktop 1.30096.5, that symptom is gone, so the installer no longer
-sets the flag for anybody — [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md) carries both readings.
-**If you installed during that window, your entry still has the flag:** `node install.mjs --check`
-reports it as `stale`, and re-running the installer removes that one key while leaving every other
-env value you have set exactly where it is.
+creates later) behind that one grant, so nothing new asks again. An `OMA_DYNAMIC_TOOLS=1` left in
+an older entry does nothing; `node install.mjs --check` reports it as `stale`, and re-running the
+installer removes that one key.
 You can also batch approvals in **Settings → Connectors → open-mcp-apps → Tool permissions**.
 
 ## Usage
@@ -255,8 +248,9 @@ Come back in another chat — or another host — and it's still there, with you
 
 ![Claude — a new chat opens the same reading list, now eight books long](.github/screenshots/host-claude.webp)
 
-The built-in App Store — rebuilt in 0.5.0 as a real storefront — ships 22 ready-made apps, with
-working previews and one-click install:
+The App Store ships ready-made apps, with working previews and one-click install. They live in
+their own package, [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store), which the
+engine installs as a dependency — new store apps are contributed there:
 
 ![The App Store — live previews of ready-made apps](.github/screenshots/app-store.webp)
 
@@ -291,10 +285,8 @@ only thing standing between the internet and your data.
 
 ## Host support
 
-Live-tested 2026-07-22; ChatGPT web row updated 2026-07-28. **Both readings predate 0.5.0** — the
-largest change so far, and later than either date. Apart from the cells that carry their own
-2026-08-16 date, nothing in this table has been re-tested on 0.5.0 or newer; a date says when that
-row was true, not that it was checked again since.
+Live-tested 2026-07-22 (ChatGPT web 2026-07-28), except cells that carry their own date. A date
+says when a cell was true, not that it was checked again since.
 
 | Host | Renders widgets | Human clicks widget | AI operates data | Same store |
 |---|---|---|---|---|
@@ -322,7 +314,7 @@ signed in (we have seen it work under an account sign-in; not yet established un
 
 ### A screen beside the terminal
 
-Those two `—` cells say the **chat** shows text. They do not say there is no UI. Since 0.5.1 the
+Those two `—` cells say the **chat** shows text. They do not say there is no UI. The
 engine remembers which app was opened last and pushes that pointer to the viewer on the `/events`
 frame, and an app can place a region — `oma.embed("@live", {into})` — that mounts whatever the AI
 opened last and swaps itself when the AI opens another. The App Store ships one: install **`live`**,
@@ -363,12 +355,12 @@ node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
 ```
 
 Two shapes are accepted. **One self-contained HTML document** — no size cap (keep it lean: data
-lives in the collection, source is read in windows) — the engine injects the kit CSS, the host's
-design tokens and `window.oma`. Or **a template plus a bundle**: the HTML is a readable mount
+lives in the collection, source is read in windows) — the engine injects a minimal base style, the
+host's design tokens and `window.oma`. Or **a template plus a bundle**: the HTML is a readable mount
 point that references its own build output (`<script type="module" src="oma-asset:app.js">`,
 `<link rel="stylesheet" href="oma-asset:app.css">`), `--asset` pushes those files into the app's
-file plane, and the engine inlines them the moment the document leaves the store — a widget's CSP
-allows no external subresource, and a host iframe could not reach this machine anyway.
+file plane, and the engine inlines them the moment the document leaves the store — a host iframe
+cannot reach this machine.
 
 The trade: the AI can no longer iterate on it — your files are the source of truth, you rebuild
 and re-install. It can still read a single-document app's source; for a template + bundle app it
@@ -389,17 +381,18 @@ drift from them silently.
 
 ## Security model
 
-Trust is tiered by where an app came from. Locally-authored and system apps run in
-**direct mode**. The engine also ships a **runner** — a sandboxed `srcdoc` iframe with a
-CSP-first document and a minimal read-scoped bridge — as the mandatory execution mode for any
-app that isn't locally trusted, plus reserved `security:*` / `policy:*` config keys that
-generic data writes can't touch and an out-of-band privileged writer.
+Trust is tiered by where an app came from — [`SECURITY.md`](SECURITY.md) has the detail.
 
-**Honest status:** everything in the OSS version — your apps, AI-built apps, and the built-in
-App Store apps (all first-party) — runs locally in direct mode with full trust; there is nothing
-third-party to sandbox yet. The runner is *built and tested but dormant*: it is the ready seam
-for shared/published apps later, where review + sandboxing arrive together. See
-[`SECURITY.md`](SECURITY.md) for the full threat model and trust tiers.
+- **Local, full trust**: your apps, AI-built apps, the system apps, and everything installed from the
+  App Store — including `OMA_APP_STORE_DIRS` folders. They run in direct mode with the real `window.oma`.
+- **Sandboxed**: apps installed with `--sandboxed`, and apps opened through a share, run behind the
+  runner — a sandboxed `srcdoc` iframe whose bridge reaches only the app's own collection unless granted more.
+- **App functions run on your machine and can make network requests.** On by default;
+  `OMA_FUNCTIONS=0` turns them off.
+- **The AI can operate the open app** (`screen_read` / `screen_act`) the way you could, but it
+  cannot confirm a deletion for you.
+- Reserved `security:*` / `policy:*` config keys are out of reach of generic data writes; the HTTP
+  transport binds to loopback.
 
 ## Design positions (why it's built this way)
 
@@ -438,15 +431,15 @@ for shared/published apps later, where review + sandboxing arrive together. See
 | `src/shell.mjs` | wraps stored HTML with runtime + design-token fallbacks at serve time |
 | `src/guide.mjs` | the authoring contract the AI reads before generating an app |
 | `install-app.mjs` | install an app you wrote yourself, from a file — the one door into the registry that doesn't go through the AI |
-| `components/` | 3 system apps installed on seed (settings, dashboard, app-store) + 22 App Store apps — not auto-installed; browse the app-store app for live previews with sample data and one-click install |
+| `components/` | the 3 system apps, installed on seed (settings, dashboard, app-store). The App Store's apps are the [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store) dependency — not auto-installed; browse the app-store app for live previews with sample data and one-click install |
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 471 assertions over real stdio — incl. runtime app creation
-node test/http-smoke.mjs     #  87 assertions over the HTTP transport (incl. SSE /events, viewer)
+node test/server-smoke.mjs   # 461 assertions over real stdio — incl. runtime app creation
+node test/http-smoke.mjs     #  85 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
-node test/seed-smoke.mjs     #  26 assertions on the seed / design-kit pipeline
-node test/files-smoke.mjs    #  41 assertions on the per-app file store (chunked uploads, GC races)
+node test/seed-smoke.mjs     #  30 assertions on the seed pipeline
+node test/files-smoke.mjs    #  24 assertions on the per-app file store (dedup, integrity, GC races)
 ```
 
 Contributions need nothing signed — MIT in, MIT out ([`CONTRIBUTING.md`](CONTRIBUTING.md)).
@@ -456,33 +449,12 @@ Contributions need nothing signed — MIT in, MIT out ([`CONTRIBUTING.md`](CONTR
 Early v0 — proven end-to-end on Claude Desktop; cross-vendor render + shared store proven
 on Codex desktop and the browser viewer.
 
-**What 0.5.0 changed** (breaking, and the largest change so far —
-[`CHANGELOG.md`](CHANGELOG.md) has the full account):
-
-- **An app's declaration is a first-class object.** `save_app` takes `ui` and `manifest` as two
-  slots instead of a manifest block buried in the document, and every revision snapshots both, so
-  restoring brings back the pair.
-- **An app can expose a function** — a data→data closure the AI calls with `call_function`, run by
-  the engine against that app's own collections. The seat is opt-in at `createEngine` and absent by
-  default, so a hosted deployment cannot inherit it.
-- **Deleting a row is confirmed by the engine**, inside the store transaction every path passes
-  through. App authors no longer write confirmation UI; the apps that carried their own
-  arm-then-delete had it removed.
-- **`promote_app`** turns a one-off `visual` into a kept app in one atomic step, and **`edit_app`
-  takes a hash-checked `{offset, length}` range**, so a model that has read a window can edit it
-  without sending an anchor back up.
-- **Settings and the App Store were rebuilt** — rail navigation, in-place detail pages, and the
-  storefront pictured above.
-- Underneath: **SDK v1 → v2**, `2026-07-28` in the supported protocol versions, and a tool surface
-  audited down to **33 tools**. Renamed and removed tools mean hosts will ask you to approve the
-  tools once more after upgrading.
-
 Where it stands:
 
 - [x] engine: registry + shell + generic data commands + ledger
-- [x] system apps installed (settings, dashboard, app-store); 22 App Store apps with live previews, one-click install
+- [x] system apps installed (settings, dashboard, app-store); App Store apps (the `@openmcp-app/oma-store` package) with live previews, one-click install
 - [x] AI app creation loop (guide → save → open)
-- [x] in-context onboarding (ask how to use it → the AI reads your history/memory and builds a tailored starter set)
+- [x] in-context onboarding (the `get_started` prompt → the AI builds a first app for how you work)
 - [x] security foundation: trust tiers + sandboxed runner + reserved config keys
 - [x] multi-host discovery installer (Claude Desktop · Claude Code · Codex) + shared per-user store
 - [x] `npx` one-command install (`@2nd1st/open-mcp-apps` on npm)
@@ -496,8 +468,8 @@ Where it stands:
 
 ## License
 
-**MIT**, for the whole repository — the engine and the apps in
-[`components/`](components/) alike ([`LICENSE`](LICENSE) ·
+**MIT**, for the whole repository — the engine and the system apps in
+[`components/`](components/) alike (the App Store package is MIT too) ([`LICENSE`](LICENSE) ·
 [`LICENSING.md`](LICENSING.md)). Use it, fork it, modify it, embed it, run a
 modified version as a hosted service; keep the copyright notice with substantial
 portions you redistribute. That is the whole obligation. Up to v0.5.2 the engine

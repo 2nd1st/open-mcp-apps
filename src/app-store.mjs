@@ -1,23 +1,26 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
-// app-store.mjs — the built-in APP STORE: the high-quality apps shipped in this
-// repo's components/ dir, browsable via the `app-store` system app and installable into the
-// user's registry with install_from_app_store. This module is the ONE place that reads store
-// entries from disk (engine.mjs stays fs-free). Store content is FIRST-PARTY: installs are
-// saved with actor "library" (provenance + update detection — the stamp is a persisted store
-// value and keeps its v0.4 spelling) and run at the local tier, direct, like the user's own
-// apps. A remote hosted store can later replace this dir as the source with the same contract
-// (review + sandboxing arrive with third-party content).
+// app-store.mjs — the APP STORE: ready-made apps, browsable via the `app-store` system app and
+// installable into the user's registry with install_from_app_store. This module is the ONE place
+// that reads store entries from disk (engine.mjs stays fs-free). Store content is FIRST-PARTY:
+// installs are saved with actor "library" (provenance + update detection — the stamp is a
+// persisted store value and keeps its v0.4 spelling) and run at the local tier, direct, like the
+// user's own apps.
 //
-// SOURCES. The store reads from an ordered list of directories, each laid out like components/:
-// every dir named in OMA_APP_STORE_DIRS (path-delimiter separated, read per call so a running
-// engine and the tests see the same thing), then this repo's own components/ last. The first
-// source that has a name wins it, so an outside store (the oma-store repo) can replace a
-// built-in app by shipping the same name. System apps are the engine's own and come only from
-// components/ — an outside dir can neither list nor shadow them.
+// SOURCES. The store apps are NOT in this repo: they live in the `@openmcp-app/oma-store` package
+// (github.com/openmcp-app/oma-store), a dependency of the engine, read from its `apps/` dir. The
+// store reads an ordered list of directories, each laid out like that `apps/` dir: every dir named
+// in OMA_APP_STORE_DIRS (path-delimiter separated, read per call so a running engine and the tests
+// see the same thing), then the package's `apps/` last. The first source that has a name wins it,
+// so an outside dir can replace a package app by shipping the same name. If the package is not
+// installed the store is just the env dirs.
+//
+// SYSTEM APPS (settings · dashboard · app-store) are the engine's own UI and the only apps in this
+// repo's components/. They are seeded (seed.mjs → readSystemApp), never app-store entries: read
+// only from components/, never listed, never installable, and no store source can shadow them.
 //
 // Entry layout (W-N, wn-manifest-commit-2026-08-05.md — the package boundary):
-//   components/<name>/
+//   <source>/<name>/
 //     ui.html        the ui slot — a complete document, NO embedded declaration block
 //     manifest.json  the manifest slot (optional — an app may declare nothing)
 //     skill.md       the skill slot (optional): SKILL.md text — how an AI uses the app. Its
@@ -33,13 +36,18 @@
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, dirname, delimiter, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
 import { APP_NAME_RE } from "./store.mjs";
 import { parseSkill } from "./skill.mjs";
 
-const BUILTIN_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "components");
+const SYSTEM_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "components");
+const PACKAGE_DIR = (() => {
+  try { return join(dirname(createRequire(import.meta.url).resolve("@openmcp-app/oma-store/package.json")), "apps"); }
+  catch { return null; }   // not installed: the store is just the env dirs
+})();
 const storeDirs = () => [
   ...(process.env.OMA_APP_STORE_DIRS || "").split(delimiter).filter(Boolean).map((d) => resolve(d)),
-  BUILTIN_DIR,
+  ...(PACKAGE_DIR ? [PACKAGE_DIR] : []),
 ];
 // System apps are the engine's own UI — they are seeded, not app-store entries.
 const SYSTEM_APPS = new Set(["settings", "dashboard", "app-store"]);
@@ -55,12 +63,12 @@ const categoryOf = (ui) =>
   (ui.match(/<meta\s+name=["']oma-category["']\s+content=(["'])(.*?)\1/i)?.[2] || "Apps").trim();
 
 /** Read one entry directory, or null. `name` is APP_NAME_RE-validated (no dots or slashes), so it
- *  can never traverse out of the app-store dir. Bad JSON in manifest/fixtures → null'd field, never
+ *  can never traverse out of a source dir. Bad JSON in manifest/fixtures → null'd field, never
  *  a throw: a broken optional file must not take the whole entry (or the whole list) down. */
 function readEntry(name, { system = false } = {}) {
   if (!APP_NAME_RE.test(String(name))) return null;
   if (!system && SYSTEM_APPS.has(name)) return null;
-  for (const root of system ? [BUILTIN_DIR] : storeDirs()) {
+  for (const root of system ? [SYSTEM_DIR] : storeDirs()) {
     const e = readEntryAt(join(root, name), name);
     if (e) return e;
   }

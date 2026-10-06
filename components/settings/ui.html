@@ -774,7 +774,7 @@
     };
 
     // ---- shared preference registry — SERVER-OWNED (P4 code/UI split): the engine's
-    // ui_prefs_schema tool is the single source of truth; this UI only renders it. Starts
+    // get_ui_preference_schema tool is the single source of truth; this UI only renders it. Starts
     // empty and fills at boot — stored/stray rows render meanwhile, catalog rows follow.
     let SHARED_PREFS = [];
     let SHARED_KEYS = new Set();
@@ -929,7 +929,7 @@ function coercePref(v, fallback) {
     }
     // permsCache is the detail view's locked-state truth: until it lands, the Danger area renders
     // NO buttons rather than a dead one. A failed refetch keeps the previous cache.
-    // app_permissions retired (2026-08-04): list_apps rows carry `locked`, and app_html — which
+    // app_permissions retired (2026-08-04): list_apps rows carry `locked`, and get_app_html — which
     // this pane already fetches per app for manifests — carries tier + caps (stashed in appMeta).
     let permsCache = null;
     async function fetchPerms() {
@@ -993,11 +993,11 @@ function coercePref(v, fallback) {
     // ---- stored-settings access (the settings collection IS our bound collection) ----
     let compsCache = [];
     let pinning = false;             // list_apps says whether a pin does anything on this engine
-    let collsCache = [];             // data_collections snapshot — About stats + detail Storage line
+    let collsCache = [];             // list_data_collections snapshot — About stats + detail Storage line
     let collsLoaded = false;         // unknown ≠ zero: the detail view omits the item count until this flips
     const manifests = new Map();     // name -> {settings, uses_shared} | null (malformed/absent)
     const openSecs = new Set();      // <details> open state survives re-renders
-    let prefsLoading = true;         // ui_prefs_schema in flight → skeleton rows, never a blank pane
+    let prefsLoading = true;         // get_ui_preference_schema in flight → skeleton rows, never a blank pane
     let bootingManifests = true;     // manifest fan-out in flight → in-flight sections get a skeleton row
 
     const curStored = (group, key) => { let f; for (const it of oma.state.items) if (it.group === group && it.fields && it.fields.key === key) f = it; return f; };  // last in snapshot order wins
@@ -1254,7 +1254,7 @@ function coercePref(v, fallback) {
       if (!SHARED_PREFS.length) {
         more.hidden = true;
         if (prefsLoading) { for (let i = 0; i < 4; i++) box.append(skelRow()); return; }
-        // engine predates ui_prefs_schema — stored globals stay editable as raw rows
+        // engine predates get_ui_preference_schema — stored globals stay editable as raw rows
         box.append(noteRow(t("noCatalog")));
         for (const [, it] of groupItems("")) box.append(rawRow(it));
         return;
@@ -1515,7 +1515,7 @@ function coercePref(v, fallback) {
     // THE INPUTS GATE — wait for the data, do not answer without it.
     //
     // A thumb mounts from an IntersectionObserver the moment its card nears the viewport. The grid
-    // is rendered by loadApps(), and boot only asks data_collections AFTERWARDS — a whole
+    // is rendered by loadApps(), and boot only asks list_data_collections AFTERWARDS — a whole
     // host round trip later. So on first paint the observer normally fires FIRST, and answering it
     // with an empty snapshot is not a rare race, it is the ordinary path.
     //
@@ -1670,7 +1670,7 @@ function coercePref(v, fallback) {
     // read answered from the snapshot the pane hands it. Recursion is bounded by inertness
     // itself: a nested Installed tab has no host to mount anything against.
     //
-    // Still true, and deliberate: app_html is NOT reachable from a preview (an inert child
+    // Still true, and deliberate: get_app_html is NOT reachable from a preview (an inert child
     // calls no host tools at all), so a nested Preferences pane renders WITHOUT declared
     // entries. Widening a preview's reach to "read any app's source" is the wrong trade for a
     // 130px thumbnail.
@@ -1758,7 +1758,7 @@ function coercePref(v, fallback) {
       document.getElementById("d-pin").checked = coercePref(it ? it.fields.value : undefined, false);
     }
     document.getElementById("d-pin").onchange = (e) => { if (drawerComp) setSetting(drawerComp.name, OPEN_TOOL, e.target.checked); };
-    // Storage line: item count from the data_collections cache + lazy file_usage — pure
+    // Storage line: item count from the list_data_collections cache + a lazy file_list usage read — pure
     // counts, never a quota framing. System collections are plumbing, not user data; an
     // unloaded cache is UNKNOWN, not zero, so the line stays a dash until the count is real.
     function loadStorage(c) {
@@ -1797,7 +1797,7 @@ function coercePref(v, fallback) {
       ol.innerHTML = "";
       let hist = null;
       try {
-        const r = await oma.callTool("app_history", { name: c.name });
+        const r = await oma.callTool("list_app_checkpoints", { name: c.name });
         hist = r?.structuredContent?.history || null;
       } catch { hist = null; }
       if (drawerComp !== c) return;   // entry switched while the history was in flight
@@ -2032,7 +2032,7 @@ function coercePref(v, fallback) {
     // manifests from here. The ledger view needs `via` and undo, which live on the /rpc
     // internal path only (no AI face carries them) — so it renders in the browser view alone.
     const declsRaw = new Map();   // name -> raw declaration (loadManifest fills it)
-    const appMeta = new Map();    // name -> {tier, caps} from the same app_html read (perms pane truth)
+    const appMeta = new Map();    // name -> {tier, caps} from the same get_app_html read (perms pane truth)
     // The grammar keys collections by NAME — {"collections":{"trips":{…}}} — and the store
     // REJECTS the array form outright ("manifest.collections must be an object"). This once
     // tested Array.isArray, so the ownership column was empty for every conforming manifest
@@ -2050,14 +2050,14 @@ function coercePref(v, fallback) {
     async function loadData() {
       const box = document.getElementById("data-rows");
       try {
-        const r = await oma.callTool("data_collections", {});
+        const r = await oma.callTool("list_data_collections", {});
         collsCache = r?.structuredContent?.collections || [];
         collsLoaded = true;
       } catch { box.textContent = t("collFailed"); return; }
       // Ownership must see the WHOLE registry: an archived app still stewards its data, and the
       // default list (featured+listed) would silently strip its chip from the Data pane.
       try {
-        const full = await oma.callTool("list_apps", { visibility: "any" });
+        const full = await oma.callTool("list_apps", {});
         dataComps.clear();
         for (const c of full?.structuredContent?.apps || []) dataComps.set(c.name, c);
         await Promise.all([...dataComps.keys()].filter((n) => !declsRaw.has(n)).map((n) => loadManifest(n)));
@@ -2153,7 +2153,7 @@ function coercePref(v, fallback) {
     }
     async function loadManifest(name) {
       try {
-        const sc = (await oma.callTool("app_html", { name }))?.structuredContent || {};
+        const sc = (await oma.callTool("get_app_html", { name }))?.structuredContent || {};
         const d = sc.declaration;
         declsRaw.set(name, d || null);          // the Data pane's ownership source (collections key)
         manifests.set(name, useDeclaration(d)); // the prefs panes' filtered view (settings/uses_shared)
@@ -2176,11 +2176,11 @@ function coercePref(v, fallback) {
     }
     (async () => {
       try {
-        // The shared-pref catalog comes from the ENGINE (ui_prefs_schema) — skeleton rows
+        // The shared-pref catalog comes from the ENGINE (get_ui_preference_schema) — skeleton rows
         // until it lands; an older engine without the tool just leaves the catalog empty
         // (stored rows still render as raw values, with a note).
         try {
-          const ps = await oma.callTool("ui_prefs_schema", {});
+          const ps = await oma.callTool("get_ui_preference_schema", {});
           const shared = ps?.structuredContent?.shared;
           if (Array.isArray(shared) && shared.length) {
             SHARED_PREFS = shared;
@@ -2191,7 +2191,7 @@ function coercePref(v, fallback) {
         renderPrefs();
         document.getElementById("ask-ai").hidden = !!oma.standalone;   // no chat to tell when standalone
         await loadApps();   // grid + stored-key sections appear before manifests finish loading
-        const colls = await oma.callTool("data_collections", {});
+        const colls = await oma.callTool("list_data_collections", {});
         collsCache = colls?.structuredContent?.collections || [];
         collsLoaded = true;
         if (drawerComp) loadStorage(drawerComp);   // a detail view opened before the cache landed gets its count now

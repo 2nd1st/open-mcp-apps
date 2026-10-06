@@ -26,8 +26,8 @@
 #
 # Verified on BOTH architectures, because the first reader of this file is a directory's build
 # sandbox and that is almost certainly linux/amd64 while this was authored on arm64: `docker build`
-# plus a real `initialize` + `tools/list` over stdin returns open-mcp-apps 0.5.7 / 33 tools with an
-# empty stderr on linux/arm64 and on linux/amd64 (`--platform linux/amd64`) alike. Measured 2026-08-16.
+# plus a real `initialize` + `tools/list` over stdin answered with the full tool list and an empty
+# stderr on linux/arm64 and on linux/amd64 (`--platform linux/amd64`) alike (first measured 2026-08-16).
 #
 # The alternative was a build stage with python3/make/g++ compiling the module from source. That
 # was tried and rejected: it is a bigger image, a slower build, and it swaps a binary the vendor

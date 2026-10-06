@@ -17,8 +17,9 @@ const DESCRIPTIONS = {
   "app-store": "App Store — browse the built-in store of ready-made first-party apps (live previews with sample data) and install them into your registry with one click",
 };
 
-// Only SYSTEM apps are installed on seed. The other components/<name>/ entries are the APP STORE —
-// browsable in the `app-store` app and installed on demand (install_from_app_store), NOT auto-
+// Only SYSTEM apps are installed on seed — they are all components/ holds. The APP STORE's apps (the
+// @openmcp-app/oma-store package) are browsable in the `app-store` app and installed on demand
+// (install_from_app_store), NOT auto-
 // installed; a fresh registry stays clean so onboarding builds apps tailored to the user
 // instead of presenting a pre-filled catalog.
 // Defined in contracts.mjs — engine.mjs needs the same set to tell a first-time user apart.
@@ -95,6 +96,25 @@ export function seedSystemApps(store, { log = () => {} } = {}) {
     out.push(r.ok ? { name, action: "seeded", version: r.version } : { name, action: "error", error: r.error });
   }
   return out;
+}
+
+/**
+ * The local entry points' start-up call (src/server.mjs, src/http.mjs standalone): seed, say what
+ * CHANGED on stderr (nothing when every app is unchanged — the normal start), and never throw. A
+ * seeding failure degrades to "that system app is missing or stale"; it must not take the server
+ * down, and it must never write to stdout, which is the MCP stdio channel.
+ */
+export function seedAtStart(store) {
+  try {
+    const out = seedSystemApps(store);
+    const moved = out.filter((r) => r.action !== "unchanged");
+    if (moved.length) console.error(`[oma] system apps: ${moved.map((r) =>
+      `${r.name} ${r.action}${r.version != null ? ` v${r.version}` : ""}${r.error ? ` (${r.error})` : ""}`).join(" · ")}`);
+    return out;
+  } catch (e) {
+    console.error(`[oma] system apps: seeding failed (${e && e.message || e}) — continuing without it`);
+    return [];
+  }
 }
 
 // CLI entry (node seed.mjs): seed the fixed per-user db — OMA_DB overrides (see store.mjs).

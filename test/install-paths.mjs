@@ -22,6 +22,10 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { createHash } from "node:crypto";
 import { openStore, SCHEMA_VERSION } from "../src/store.mjs";
+import { appDir } from "./rig/shipped-apps.mjs";
+
+// Any real app document will do as the thing being installed: one from the installed App Store package.
+const SAMPLE_UI = join(appDir("habit-streaks"), "ui.html");
 
 // Where Claude Desktop's config lives, per platform — the same three-way rule install.mjs uses
 // (`claudeCfgPath()`, install.mjs ~:91). Restated rather than imported because install.mjs is a
@@ -107,7 +111,7 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
   const before = { uv: uv(db), sha: sha(db) };
   let out = "", code = 0;
   try {
-    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html"), "--dry-run"],
+    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), SAMPLE_UI, "--dry-run"],
       { env: { ...process.env, OMA_DB: db }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { code = e.status; out = (e.stdout || "") + (e.stderr || ""); }
 
@@ -117,7 +121,7 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
 
   // The other half of the same bug: with no store at all, a dry run used to CREATE one.
   const fresh = join(TMP, "nowhere", "store.db");
-  const o2 = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html"), "--dry-run"],
+  const o2 = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), SAMPLE_UI, "--dry-run"],
     { env: { ...process.env, OMA_DB: fresh }, encoding: "utf8" });
   ok("with no store at all, a dry run creates none", !existsSync(fresh));
   ok("and says so rather than implying it looked", /nothing written/.test(o2) && /no store exists yet/.test(o2), o2.trim());
@@ -144,7 +148,7 @@ console.log("\n1. W-3 — a command that only LOOKS writes nothing, INCLUDING th
 
   // Regression: the ordinary install must still climb the ladder (v5 → v6 here). A fix
   // that froze the door would pass every assertion above and break the product.
-  execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html")],
+  execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), SAMPLE_UI],
     { env: { ...process.env, OMA_DB: db }, encoding: "utf8" });
   ok("a REAL install still migrates the same store", uv(db) === SCHEMA_VERSION, `user_version is ${uv(db)}`);
 }
@@ -165,7 +169,7 @@ console.log("\n2. anything older than v4 refuses through the INSTALLER too, nami
   const before = sha(oldDb);
   let out = "", code = 0;
   try {
-    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), join(ROOT, "components", "habit-streaks", "ui.html")],
+    out = execFileSync(process.execPath, [join(ROOT, "install-app.mjs"), SAMPLE_UI],
       { env: { ...process.env, OMA_DB: oldDb }, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
   } catch (e) { code = e.status; out = (e.stdout || "") + (e.stderr || ""); }
   ok("a pre-v4 store fails the install with a non-zero exit", code !== 0, `exit ${code}`);

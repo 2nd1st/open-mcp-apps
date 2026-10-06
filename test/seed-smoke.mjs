@@ -7,10 +7,11 @@
 // Uses its OWN temp OMA_DB.
 // Run: node test/seed-smoke.mjs
 import { execFileSync } from "node:child_process";
-import { readFileSync, unlinkSync, existsSync, readdirSync } from "node:fs";
+import { readFileSync, unlinkSync, existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { openStore } from "../src/store.mjs";
+import { shippedApps, STORE_APP_NAMES } from "./rig/shipped-apps.mjs";
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DB = join(ROOT, "test", "seed-smoke.db");
@@ -27,7 +28,8 @@ const versions = () => {
 };
 const { wrapApp, wrapLoader, BASE_CSS } = await import("../src/shell.mjs");
 const baseOf = (doc) => /<style data-oma="base">([\s\S]*?)<\/style>/.exec(doc)?.[1] ?? null;
-const appFiles = readdirSync(join(ROOT, "components")).filter((n) => existsSync(join(ROOT, "components", n, "ui.html")));
+// every shipped app: the system apps in components/ and the store apps in the installed package
+const appFiles = shippedApps();
 rmdb();
 try {
   console.log("1. seed is idempotent across runs (same temp db)");
@@ -41,7 +43,8 @@ try {
   console.log("1b. only SYSTEM apps are installed; App Store entries are NOT");
   const installed = Object.keys(v1);
   ok("settings + dashboard + app-store installed", ["settings", "dashboard", "app-store"].every((n) => installed.includes(n)));
-  ok("App Store entries (habit-streaks/meal-planner/bill-calendar) NOT auto-installed", ["habit-streaks", "meal-planner", "bill-calendar"].every((n) => !installed.includes(n)));
+  ok(`App Store entries (${STORE_APP_NAMES.length} in the package) NOT auto-installed`,
+    STORE_APP_NAMES.length > 0 && STORE_APP_NAMES.every((n) => !installed.includes(n)));
 
   console.log("2. stored bytes are the FILE's bytes — the kit is not baked in");
   const stored = (() => { const s = openStore(DB); const h = s.getApp("settings").ui; s.close(); return h; })();
@@ -50,7 +53,7 @@ try {
   ok("no stored app carries an engine <style> or the retired marker",
     !stored.includes('data-oma="base"') && !stored.includes('data-oma="kit"') && !stored.includes("@OMA_SYSTEM_CSS"));
   ok("the marker is gone from every shipped app file",
-    appFiles.every((n) => !readFileSync(join(ROOT, "components", n, "ui.html"), "utf-8").includes("@OMA_SYSTEM_CSS")));
+    appFiles.every(({ dir }) => !readFileSync(join(dir, "ui.html"), "utf-8").includes("@OMA_SYSTEM_CSS")));
 
   console.log("3. the engine adds the page BASE to every document — and nothing that lays out");
   const appDoc = wrapApp("<p>x</p>");
@@ -87,8 +90,8 @@ try {
   // which is where every one of these apps puts its frame.
   const unstyled = [];
   let classesSeen = 0;
-  for (const n of appFiles) {
-    const ui = readFileSync(join(ROOT, "components", n, "ui.html"), "utf-8");
+  for (const { name: n, dir } of appFiles) {
+    const ui = readFileSync(join(dir, "ui.html"), "utf-8");
     const css = [...ui.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/gi)].map((m) => m[1]).join("\n");
     const markup = ui.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "");
     const used = new Set([...markup.matchAll(/\sclass="([^"]*)"/g)].flatMap((m) => m[1].split(/\s+/)).filter((c) => /^k-[a-z]/.test(c)));
@@ -160,6 +163,39 @@ try {
     ok("a non-seed `library` keeps its bytes and its author",
       row != null && row.ui === "<p>my own library</p>" && row.author === "agent");
     ok("…and the seeder said it left it untouched", /library — not ours \(author=agent\)/.test(log5b));
+  }
+
+  // The npx path. `npx -y @2nd1st/open-mcp-apps` runs src/server.mjs (package.json `bin`) and
+  // nothing else — no install.mjs, no seed.mjs CLI. Before 0.8.1 that left a fresh store with no
+  // system apps and no way to get them (locked + excluded from the App Store). The server seeds
+  // at start now; this drives the real process against a FRESH db, the way a first npx run does.
+  console.log("6. the stdio server seeds the system apps itself — a fresh npx store has them");
+  {
+    rmdb();
+    const { Client } = await import("@modelcontextprotocol/client");
+    const { StdioClientTransport } = await import("@modelcontextprotocol/client/stdio");
+    const start = async () => {
+      const transport = new StdioClientTransport({ command: "node", args: [join(ROOT, "src", "server.mjs")],
+        env: { ...process.env, OMA_DB: DB, OMA_VIEWER: "0" }, stderr: "pipe" });
+      let err = "";
+      transport.stderr?.on("data", (d) => { err += d; });
+      const client = new Client({ name: "seed-smoke", version: "1.0.0" });
+      await client.connect(transport);
+      const r = await client.callTool({ name: "list_apps", arguments: {} });
+      await client.close();
+      const names = (r.structuredContent?.apps ?? []).map((a) => a.name);
+      return { names, err };
+    };
+    const first = await start();
+    ok("a fresh store started through server.mjs lists settings + dashboard + app-store",
+      ["settings", "dashboard", "app-store"].every((n) => first.names.includes(n)));
+    ok("…and the server said so on stderr", /\[oma\] system apps: .*settings seeded/.test(first.err));
+    const v1 = versions();
+    const second = await start();
+    const v2 = versions();
+    ok("a second start bumps no system app's version",
+      ["settings", "dashboard", "app-store"].every((n) => v1[n] != null && v1[n] === v2[n]));
+    ok("…and stays quiet about them (all unchanged)", !/system apps:/.test(second.err));
   }
 } finally {
   rmdb();

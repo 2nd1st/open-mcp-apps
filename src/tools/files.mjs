@@ -1,13 +1,13 @@
 // SPDX-License-Identifier: MIT
 // Copyright (C) 2026 2nd1st
-// tools/files.mjs — the per-app file plane (scope b): list / read / write / chunked upload / delete / usage.
+// tools/files.mjs — the per-app file plane (scope b): list / read / write / delete.
 // Registered by engine.mjs. Moved here verbatim: the tool surface is byte-identical to before
 // the split, which test/tool-surface.mjs proves against its golden file.
 
 import { z } from "zod";
-import { APP_NAME_RE, MAX_FILE_INLINE_BYTES, MAX_FILE_BYTES } from "../store.mjs";
-import { RO, WRITE, WRITE_NOT_IDEMPOTENT, DESTRUCTIVE, fileMetaShape, answer, toMcp, sizeOf, RESULT_BUDGET, readBudget } from "../contracts.mjs";
-import { isHandle, handleOf, notShared, readOnlyNote } from "../sharing.mjs";
+import { APP_NAME_RE, MAX_FILE_INLINE_BYTES } from "../store.mjs";
+import { RO, DESTRUCTIVE, fileMetaShape, answer, toMcp, sizeOf, RESULT_BUDGET, readBudget } from "../contracts.mjs";
+import { isHandle, notShared, readOnlyNote } from "../sharing.mjs";
 
 export function register(ctx) {
   const { server, store, fileChannel, fail, fileFailNote, failNote } = ctx;
@@ -177,7 +177,7 @@ export function register(ctx) {
     {
       title: "Store an app file",
       annotations: DESTRUCTIVE,  // overwriting a path unlinks the old blob — those bytes are unrecoverable
-      description: "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. Single-call writes are limited to a few MiB. Files persist and are the app's own, reusable across chats.",
+      description: "Store a file for an app (create or overwrite by path). `data_base64` carries the file bytes, base64-encoded. Overwriting an existing path bumps its version. A file is limited to a few MiB. Files persist and are the app's own, reusable across chats.",
       inputSchema: {
         command_id: z.string().describe("idempotency key — a fresh uuid per write"),
         app: z.string().describe("the app this file belongs to"),
@@ -191,7 +191,7 @@ export function register(ctx) {
     async (a) => {
       const bytes = decodeBase64(a.data_base64);
       if (bytes === null) return fail("data_base64 is not valid base64 — nothing was written.");
-      if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Single-call write is limited to ${MAX_FILE_INLINE_BYTES} bytes; this file is ${bytes.length}. Use the chunked path: file_write_begin → file_write_chunk (in order) → file_write_commit.`);
+      if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`A file is limited to ${MAX_FILE_INLINE_BYTES} bytes; this one is ${bytes.length}.`);
       const sa = await sharedApp(a.app);
       if (sa === false) return notShared(a.app);
       const r = sa
@@ -203,98 +203,6 @@ export function register(ctx) {
       return { content: [{ type: "text", text: `Stored "${a.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${a.app}".${r.idempotent ? " (already stored)" : ""}` }], structuredContent: { app: a.app, path: a.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: sa ? sa.m.face.files.version(sa.app) ?? 0 : store.filesVersion() } };
     },
   );
-
-  // Chunked write — the large-file path (single-shot file_write caps at MAX_FILE_INLINE_BYTES,
-  // the per-file ceiling is MAX_FILE_BYTES). begin → chunk (in order, one at a time) → commit;
-  // bytes stream to on-disk staging, so nothing big ever sits in RAM, and commit lands through
-  // the exact same ref/quota/idempotency transaction as a single-shot write.
-  server.registerTool(
-    "file_write_begin",
-    {
-      title: "Begin a chunked file write",
-      annotations: WRITE_NOT_IDEMPOTENT,  // no idempotency key: replaying it starts another upload / appends the bytes again
-      description: `Start a chunked upload for a file too big for file_write's single call. Returns an upload_id; send the bytes in order with file_write_chunk (each chunk up to ~${Math.floor(MAX_FILE_INLINE_BYTES / 1024 / 1024)} MiB of raw bytes), then file_write_commit names the file. Uploads expire after 30 idle minutes; per-file ceiling ${Math.floor(MAX_FILE_BYTES / 1024 / 1024)} MiB.`,
-      inputSchema: { app: z.string().describe("the app this file will belong to") },
-      outputSchema: { upload_id: z.string(), chunk_limit_bytes: z.number(), file_limit_bytes: z.number() },
-    },
-    async (a) => {
-      const sa = await sharedApp(a.app);
-      if (sa === false) return notShared(a.app);
-      const r = sa ? await sa.m.face.files.beginUpload(sa.app) : await fileChannel.beginUpload(a.app);
-      if (sa && readOnly(sa, a.app, r)) return readOnly(sa, a.app, r);
-      if (!r.ok) return failWrite(r);
-      // An upload opened through a share is named like the share (`@owner/<id>`), so its chunks
-      // and its commit route back to the same owner — and only through this caller's own grants.
-      const id = sa ? handleOf(sa.m.alias, r.upload_id) : r.upload_id;
-      return {
-        content: [{ type: "text", text: `Upload started (id ${id}). Send chunks in order with file_write_chunk, then file_write_commit.` }],
-        structuredContent: { upload_id: id, chunk_limit_bytes: MAX_FILE_INLINE_BYTES, file_limit_bytes: MAX_FILE_BYTES },
-      };
-    },
-  );
-
-  server.registerTool(
-    "file_write_chunk",
-    {
-      title: "Append a chunk to an upload",
-      annotations: WRITE_NOT_IDEMPOTENT,  // no idempotency key: replaying it starts another upload / appends the bytes again
-      description: "Append the next chunk of bytes (base64) to an upload started with file_write_begin. Send chunks strictly in order, one at a time. Pass `seq` (0-based chunk index) so a resend after a lost response is acknowledged instead of double-appended.",
-      inputSchema: {
-        upload_id: z.string(), data_base64: z.string().describe("this chunk's bytes, base64-encoded"),
-        seq: z.number().optional().describe("0-based index of this chunk — a resend of an already-staged index is a safe no-op"),
-      },
-      outputSchema: { upload_id: z.string(), bytes: z.number().describe("total bytes staged so far"), chunks: z.number().optional(), duplicate: z.boolean().optional() },
-    },
-    async (a) => {
-      const bytes = decodeBase64(a.data_base64);
-      if (bytes === null) return fail("data_base64 is not valid base64 — this chunk was not staged.");
-      if (!bytes.length) return fail("Empty chunk — send actual bytes.");
-      if (bytes.length > MAX_FILE_INLINE_BYTES) return fail(`Chunk too large (${bytes.length} bytes) — keep each chunk at or under ${MAX_FILE_INLINE_BYTES} bytes.`);
-      const su = route && isHandle(a.upload_id) ? await route.session().upload(a.upload_id) : null;
-      const r = su ? await su.m.face.files.appendUpload(su.id, bytes, { seq: a.seq })
-        : route && isHandle(a.upload_id) ? { ok: false, error: "upload_not_found" }
-        : await fileChannel.appendUpload(a.upload_id, bytes, { seq: a.seq });
-      if (!r.ok) return failWrite(r);
-      return { content: [{ type: "text", text: r.duplicate ? `Chunk ${a.seq} was already staged — not appended again (${r.bytes} bytes staged).` : `${r.bytes} bytes staged.` }],
-        structuredContent: { upload_id: a.upload_id, bytes: r.bytes, ...(r.chunks != null ? { chunks: r.chunks } : {}), ...(r.duplicate ? { duplicate: true } : {}) } };
-    },
-  );
-
-  server.registerTool(
-    "file_write_commit",
-    {
-      title: "Commit a chunked file write",
-      annotations: DESTRUCTIVE,  // same: committing over an existing path destroys the previous bytes
-      description: "Finalize an upload as an app file (create or overwrite by path) — the chunked equivalent of file_write. The upload is consumed either way; on failure, restart from file_write_begin.",
-      inputSchema: {
-        upload_id: z.string(),
-        path: z.string().describe("logical file name, e.g. 'video.mp4' or 'exports/backup.zip'"),
-        mime: z.string().optional(),
-        command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted. A retried commit with the same id returns the original receipt instead of demanding a re-upload"),
-        expected_version: z.number().optional(),
-      },
-      outputSchema: { app: z.string(), path: z.string(), size: z.number(), mime: z.string(), sha256: z.string(), version: z.number(), files_version: z.number() },
-    },
-    async (a) => {
-      const su = route && isHandle(a.upload_id) ? await route.session().upload(a.upload_id) : null;
-      const r = su ? await su.m.face.files.commitUpload(su.id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version })
-        : route && isHandle(a.upload_id) ? { ok: false, error: "upload_not_found" }
-        : await fileChannel.commitUpload(a.upload_id, a.path, { mime: a.mime, command_id: a.command_id, expected_version: a.expected_version });
-      if (!r.ok) return failWrite(r);
-      const m = r.meta;
-      // Through a share, the file is named by the handle the caller knows the app by.
-      const app = su ? handleOf(su.m.alias, m.app) : m.app;
-      return {
-        content: [{ type: "text", text: `Stored "${m.path}" (${m.size} bytes, ${m.mime}, v${m.version}) for "${app}".${r.idempotent ? " (already committed by this command_id — nothing re-uploaded)" : ""}` }],
-        structuredContent: { app, path: m.path, size: m.size, mime: m.mime, sha256: m.sha256, version: m.version, files_version: su ? su.m.face.files.version(m.app) ?? 0 : store.filesVersion() },
-      };
-    },
-  );
-
-  // file_write_abort retired 2026-08-04 (elegance A12): abandoned staging expires on its own
-  // (30 idle minutes, the TTL sweep in files.mjs), and the explicit abort was the only thing that
-  // created the abort-vs-commit race its own comment warned about. A caller that wants a staged
-  // upload gone simply stops sending chunks.
 
   server.registerTool(
     "file_delete",

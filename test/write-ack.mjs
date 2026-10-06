@@ -16,7 +16,7 @@
 // editor-style app could not recognise the echo of its own write and wrote the stale server copy
 // back over what the user was typing — two seconds later, with nothing logged.
 //
-// Every app in components/ had grown its own adapter for this (knowledge-cards `requireSuccess`,
+// Every shipped app had grown its own adapter for this (knowledge-cards `requireSuccess`,
 // project-pulse `writeFailed`, wonder-atlas `writeResultFailed`, an inline test in
 // meeting-actions), and most of them were subtly wrong, because a shim written against two of the
 // three shapes reads the third as success. A contract each reader must adapt to is not a contract.
@@ -58,7 +58,7 @@ const client = new Client({ name: "write-ack", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "write-ack" },
+  env: { ...process.env, OMA_DB: DB },
 }));
 const callTool = (name, args) => client.callTool({ name, arguments: args });
 const rows = async () => (await callTool("data_list", { collection: COLL, limit: 100 })).structuredContent;
@@ -90,7 +90,7 @@ console.log("1. the direct runtime (shell-runtime.js) — the surface a /view pa
   ok("…and setPref, which bypasses call() and so bypassed the unwrap living there",
     /\}\)\.then\(ackOf\);\n  \},/.test(src));
   // The escape hatch is DELIBERATELY not wrapped: `callTool` is typed Promise<unknown> and eight
-  // apps in components/ read `.structuredContent` off it. Unwrapping it would break them.
+  // shipped apps read `.structuredContent` off it. Unwrapping it would break them.
   ok("oma.callTool is left alone — the raw tool surface stays raw",
     /return rawCall\(name, a\);/.test(src) && !/return rawCall\(name, a\)\.then\(ackOf\)/.test(src));
 

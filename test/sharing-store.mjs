@@ -6,7 +6,7 @@
 // recipient's reach into an owner's store goes through.
 //
 // The facade section asks ONE question of every method, on purpose: given something OUTSIDE the
-// grant (a collection, a row, an app, a file, an upload), is it refused — and is the refusal the
+// grant (a collection, a row, an app, a file), is it refused — and is the refusal the
 // very same answer as for something that does not exist at all? A refusal that differs from
 // absence is an oracle for what the owner keeps.
 // Run: node test/sharing-store.mjs
@@ -275,21 +275,8 @@ const ghost = randomUUID();
   const dOut = await F.del("finance-app", "ledger.csv"), dAbs = await F.del("nope", "ledger.csv");
   ok("files.del of another app's file ≡ absent → not_found, and the file survives",
     same(dOut, dAbs) && dOut.error === "not_found" && files.stat("finance-app", "ledger.csv") !== null);
-  ok("files.beginUpload for another app ≡ absent", same(await F.beginUpload("finance-app"), await F.beginUpload("nope")));
-  const ownersUpload = await files.beginUpload("finance-app");
-  const aOut = await F.appendUpload(ownersUpload.upload_id, Buffer.from("x")), aAbs = await F.appendUpload(randomUUID(), Buffer.from("x"));
-  ok("files.appendUpload to another app's live upload ≡ an unknown id → upload_not_found", same(aOut, aAbs) && aOut.error === "upload_not_found");
-  const cOut = await F.commitUpload(ownersUpload.upload_id, "y.txt"), cAbs = await F.commitUpload(randomUUID(), "y.txt");
-  ok("files.commitUpload of another app's upload ≡ unknown → upload_not_found, nothing written",
-    same(cOut, cAbs) && cOut.error === "upload_not_found" && files.stat("finance-app", "y.txt") === null);
   ok("viewer: files.put in the granted app → read_only; reads work",
     (await FV.put("trip-planner", "v.txt", "x")).error === "read_only" && FV.list("trip-planner") !== null);
-  const up = await F.beginUpload("trip-planner");
-  await F.appendUpload(up.upload_id, Buffer.from("chunk"));
-  const commit = await F.commitUpload(up.upload_id, "route.gpx", { command_id: "commit-1" });
-  ok("editor: the chunked path works end to end in the granted app", commit.ok && files.stat("trip-planner", "route.gpx")?.size === 5);
-  const replay = await F.commitUpload(up.upload_id, "route.gpx", { command_id: "commit-1" });
-  ok("…and a retried commit gets its receipt", replay.ok && replay.idempotent === true);
 }
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────

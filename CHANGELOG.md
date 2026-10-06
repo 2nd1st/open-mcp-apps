@@ -7,6 +7,42 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.9.0 — 2026-10-06
+
+A cleanup release: less surface. It is breaking for anything that calls the tools or options
+marked **Removed** below, and the App Store apps now come from their own package.
+
+- **System apps on every install.** The server seeds settings, dashboard and the App Store when it
+  starts, so `npx` users get them too (before, only `install.mjs` seeded them).
+- **Removed — `file_write_begin` / `file_write_chunk` / `file_write_commit`.** Nothing called them;
+  `file_write` stays. `tools/list` is 33 tools.
+- **The App Store's apps moved to their own package**, [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store),
+  installed automatically as a dependency; the App Store reads it by default. `components/` keeps
+  only the three system apps. `OMA_APP_STORE_DIRS` still overlays it (searched first, first name
+  wins). New store apps are contributed to that repo.
+- **Removed — the seven pre-rename tool names** (`app_html`, `app_history`, `data_batch`,
+  `data_version`, `data_collections`, `ui_prefs_schema`, `app_store_preview`). An app that still
+  calls one must use the current name; the bundled settings app already does.
+- **Removed — the `archive_app` store command and app `visibility`.** `list_apps` no longer takes
+  `visibility`. `delete_app` (data kept, restorable) is the way to put an app away.
+- **Removed — `createEngine({telemetry})`** and the `edit-telemetry.jsonl` it wrote. The key is
+  ignored if passed.
+- **Removed — `OMA_HOST`.** The host label comes from `hostLabel`, the client's `clientInfo`, or the
+  HTTP request.
+- **The app-size advice says what it costs.** Measured on Claude and ChatGPT with apps from 40K to
+  170K characters: both edit big apps, and a small edit reads only the part it changes. A rework
+  reads the whole app first (about once on Claude, several times over on ChatGPT), so that is what
+  the `save_app` / `edit_app` warning and the guide now say, instead of "an AI is slow to change what
+  it never sees whole". The 30,000-character line and when it warns are unchanged.
+- **Smaller install.** `@modelcontextprotocol/ext-apps` is a build-time dependency only, so
+  installing no longer pulls in express and its tree.
+- **The public test suite runs on a clean checkout** (it was red there since 0.6.0: one test read a
+  file the release does not ship), and a release now runs that suite before it is tagged.
+- **Docs and AI-facing text corrected**: what an app may load (the CDN allowlist plus
+  `manifest.csp`), which apps run sandboxed, and in [`SECURITY.md`](SECURITY.md) what runs on your
+  machine — app functions (on by default, can make network requests, `OMA_FUNCTIONS=0`), App Store
+  folders (full trust) and the screen tools.
+
 ## 0.8.0 — 2026-10-06
 
 Breaking changes in this wave, for anyone embedding the engine or carrying apps across:
@@ -19,8 +55,7 @@ Breaking changes in this wave, for anyone embedding the engine or carrying apps 
 - **Runtime contract 4: data is opt-in.** An app reads its collection only once it subscribes with
   `oma.onChange` (see below). An app that read `state.items` in `ready()` without subscribing now
   gets no rows.
-- **`oma.updateModelContext`, `oma.contract` and `oma.toolInput` are removed.** No app used them;
-  `screen_read` now tells the AI what the user is looking at.
+- **`oma.contract` and `oma.toolInput` are removed.** No app used them.
 - **`promote_app` is removed, and with it the visual/app split.** A manifest's `kind` is no longer
   read (it still saves, ignored like any unknown key), `list_apps` no longer takes `kind`, and
   `save_app` / `edit_app` no longer suggest one. Since data is opt-in, the split meant nothing.
@@ -140,7 +175,7 @@ the app's own tools — and `screen_act` does what the user would do: press a co
 a value, or call one of the app's tools. "Show me Thursday" becomes a tap in the app instead of a
 query beside it. The open widget receives the job over an app-only long poll (`screen_poll`), so it
 works on hosts that never hand a view's own tools to the model (claude.ai and ChatGPT, measured).
-It was an experiment behind `OMA_SCREEN=1`; it is now on for every engine and the flag is gone. The
+It is on for every engine. The
 engine's own controls are out of its reach: the delete confirmation is not listed, cannot be found
 by label, and answers only a click the browser marks as the person's. Before that fix, the relay
 could press "Remove" in an app and then the card's "Delete", confirming a deletion nobody approved.

@@ -210,7 +210,7 @@ const client = new Client({ name: "csp", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node",
   args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "csp-test", OMA_VIEWER: "0" },
+  env: { ...process.env, OMA_DB: DB, OMA_VIEWER: "0" },
 }));
 // A pinned app is what gets a per-app tool pointing at its own resource (§8 reads that door).
 await client.callTool({ name: "data_add_item", arguments: { command_id: "pin-csp-loud", collection: "settings",
@@ -324,7 +324,7 @@ console.log("\n8. the universal loader carries the UNION of every app's declarat
   const c2 = new Client({ name: "csp-quiet-store", version: "1.0.0" });
   await c2.connect(new StdioClientTransport({
     command: "node", args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: quietDb, OMA_HOST: "csp-test", OMA_VIEWER: "0" },
+    env: { ...process.env, OMA_DB: quietDb, OMA_VIEWER: "0" },
   }));
   const quietLoader = (await c2.readResource({ uri: await loaderUriOf(c2) })).contents[0]._meta;
   ok("a store with no declarations anywhere: the loader's _meta is the 0.5.9 floor, byte for byte",

@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.8.0([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.9.0([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -65,10 +65,9 @@ Node 22 —— 不需要 `git`,也不留一个要你自己维护的 checkout。�
 }
 ```
 
-安装器多做两件这条路不做的事:把 server 注册进它找到的每个 host,以及把内置的系统 app
-(settings、dashboard、App Store)预先 seed 进你的 store —— 所以走 `npx` 这条路时你的 registry
-是空的,由 AI 按需从 App Store 装它要的东西,而 App Store 本身两条路都是全的。两条路的数据都落在
-同一个固定的用户级 store,所以你在 `npx` 版和 clone 版之间来回切,不需要迁移任何东西。
+安装器多做的只有一件事:把 server 注册进它找到的每个 host。两条路的 server 启动时都会 seed 系统 app
+(settings、dashboard、App Store),数据也都落在同一个固定的用户级 store,所以你在 `npx` 版和 clone 版
+之间来回切,不需要迁移任何东西。
 
 > **关于 npm**:本项目发布在**带 scope 的**名字
 > [`@2nd1st/open-mcp-apps`](https://www.npmjs.com/package/@2nd1st/open-mcp-apps) 下。npm registry 上
@@ -172,7 +171,8 @@ node uninstall.mjs --check   # 只读:看当前注册在哪、将会改什么
 | `OMA_VIEWER` | `1` | loopback 上的浏览器 viewer。设 `0` 则干脆不起。 |
 | `PORT` | `8787` | viewer 监听在哪。 |
 | `OMA_DB` | 用户级 store | SQLite store 的路径。想隔离一份 store 就设它。 |
-| `OMA_APP_STORE_DIRS` | — | 额外的 App Store 来源:和 `components/` 同样布局的目录(一个 app 一个子目录),用 `:` 分隔(Windows 用 `;`)。先于内置 app 查找,同名时排在前面的来源胜出。 |
+| `OMA_APP_STORE_DIRS` | — | 额外的 App Store 来源:和 store 包的 `apps/` 同样布局的目录(一个 app 一个子目录),用 `:` 分隔(Windows 用 `;`)。先于已安装的 [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store) 包查找,同名时排在前面的来源胜出。 |
+| `OMA_FUNCTIONS` | 开 | `0` 关掉 app function(`call_function`)。function 体在本机运行,能发网络请求。 |
 
 **app 自己的 tool。** 每个 app 都通过 `open_app` 打开。想让某个 app 另有一个自己的 `open_<name>` tool,
 就 pin 它:**Settings → 已安装 → 该 app → 单独的工具**。只有在你 pin、取消 pin 或删除一个已 pin 的
@@ -185,13 +185,8 @@ host 共享同一份 app 和数据的原因。
 
 **首次权限。** 头几个 tool call 各弹一次批准框——选 **"Always allow"**。工具集刻意做得小而稳定:只读
 tool 一般免批准,而默认情况下单个 `open_app` tool 就覆盖打开*每一个* app(包括 AI 之后创建的),
-一次授权全包,之后不会再有新东西来问你——**安装器注册的每个宿主都是如此,现在没有例外了**。
-2026-07-28 到 2026-08-16 之间有两个例外:安装器给 **Claude Desktop 和 Claude Code** 写了
-`OMA_DYNAMIC_TOOLS=1`,靠「每个 app 各有一个自己的 `open_<name>` tool」绕开聊天面的 bridge 回归,
-代价是每个 app 各花一次授权提示。在 Desktop 1.30096.5 上复测,那个症状已经不出现,所以安装器不再
-给任何人写这个开关——两次读数都记在 [`KNOWN-ISSUES.md`](../KNOWN-ISSUES.md) 里。
-**如果你是在那段窗口里装的,你的条目里还留着它**:`node install.mjs --check` 会把它报成 `stale`,
-重跑一次安装器就只删掉这一个键,你自己设的其它 env 值一个不动。你也可以在
+一次授权全包,之后不会再有新东西来问你。旧条目里留下的 `OMA_DYNAMIC_TOOLS=1` 已不起作用:
+`node install.mjs --check` 会把它报成 `stale`,重跑一次安装器就只删掉这一个键。你也可以在
 **Settings → Connectors → open-mcp-apps → Tool permissions** 里批量设。
 
 ## 怎么用
@@ -236,8 +231,9 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ![Claude——新对话里打开同一个 reading list,已经攒到八本](../.github/screenshots/host-claude.webp)
 
-内置 App Store——在 0.5.0 重建成了一个真正的店面——自带 22 个现成 app,带真实可交互的活预览,
-一键安装:
+App Store 带现成的 app,有真实可交互的活预览,一键安装。它们在单独的包
+[`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store) 里,引擎把它作为依赖一起装上——
+新的 store app 也往那里贡献:
 
 ![App Store——现成 app 的活预览](../.github/screenshots/app-store.webp)
 
@@ -268,9 +264,8 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ## Host 支持
 
-2026-07-22 实测;ChatGPT web 行 2026-07-28 更新。**这两个读数都早于 0.5.0** —— 那是迄今最大的一次
-改动,发生在两个日期之后。除了自带 2026-08-16 日期的那几格之外,本表没有任何一格在 0.5.0 或更新的
-版本上复测过;日期说的是那一行「当时是这样」,不是「之后又核过一遍」。
+2026-07-22 实测(ChatGPT web 2026-07-28),自带日期的格子除外。日期说的是那一格「当时是这样」,
+不是「之后又核过一遍」。
 
 | Host | 渲染 widget | 人点击 widget | AI 操作数据 | 同一 store |
 |---|---|---|---|---|
@@ -294,7 +289,7 @@ app 就在你本来那场对话里内联渲染。开口要一个,AI 当场把它
 
 ### 终端旁边的那块屏
 
-上面那两个 `—` 说的是**对话里**只有文本,不是说没有 UI。0.5.1 起,引擎会记住最后被打开的是哪个
+上面那两个 `—` 说的是**对话里**只有文本,不是说没有 UI。引擎会记住最后被打开的是哪个
 app,并把这个指针随 `/events` 那一帧推给 viewer;而任何一个 app 都可以放一块区域——
 `oma.embed("@live", {into})`——它挂载 AI 最后打开的那个 app,AI 再开一个它就自己换过去。
 App Store 里就带了一个:装上 **`live`**,在一个你之后不再去动的窗口里打开
@@ -331,10 +326,10 @@ node install-app.mjs ./ui.html --name my-app --manifest ./manifest.json \
 ```
 
 接受两种形状。**一个自包含的 HTML 文档**,不设大小上限(但别写胖:数据进 collection,源码是
-分窗读的)——引擎会注入 kit CSS、宿主 design token 和 `window.oma`。或者**模板 + bundle**:
+分窗读的)——引擎会注入一份极简基础样式、宿主 design token 和 `window.oma`。或者**模板 + bundle**:
 HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="module" src="oma-asset:app.js">`、
 `<link rel="stylesheet" href="oma-asset:app.css">`),`--asset` 把这些文件推进该 app 的 file plane,
-引擎在文档离开 store 的那一刻内联它们——widget 的 CSP 不许外链子资源,宿主的 iframe 也够不着这台机器。
+引擎在文档离开 store 的那一刻内联它们——宿主的 iframe 够不着这台机器。
 
 交换条件:AI 不再能迭代它——你的文件是唯一真相,改了重装。单文档 app 它仍能读源码;模板 + bundle
 的 app 它只读模板,bundle 是你的(`edit_app` 与 AI 的 `save_app` 都拒,错误码 `built_outside`;
@@ -350,14 +345,15 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 
 ## 安全模型
 
-信任按 app 的来源分层。本地编写的 app 和 system app 跑在 **direct mode**。引擎同时内置一个 **runner**——
-一个沙箱化的 `srcdoc` iframe,CSP-first 文档 + 最小只读 bridge——作为任何非本地可信 app 的强制执行模式;
-另有保留的 `security:*` / `policy:*` 配置 key(通用 data 写入碰不到)和一个 out-of-band 特权写入器。
+信任按 app 的来源分层——细节见 [`SECURITY.md`](../SECURITY.md)。
 
-**诚实的现状:** OSS 版本里的一切——你的 app、AI 建的 app、内置 App Store 的 app(全部第一方出品)——
-都以 direct mode 全信任本地运行;目前还没有任何第三方内容需要沙箱。runner *已建成并测试过,但处于休眠*:
-它是将来共享/发布 app 的现成接缝——到那时审核与沙箱一起上线。完整威胁模型和信任分层见
-[`SECURITY.md`](../SECURITY.md)。
+- **本地,全信任**:你的 app、AI 建的 app、system app,以及从 App Store 装的一切——包括
+  `OMA_APP_STORE_DIRS` 里的目录。它们以 direct mode 运行,拿到真正的 `window.oma`。
+- **沙箱**:用 `--sandboxed` 装的 app、经分享打开的 app,跑在 runner 后面——一个沙箱化的 `srcdoc`
+  iframe,bridge 只够得到 app 自己的 collection,除非另行授权。
+- **app 的 function 在你本机运行,能发网络请求。** 默认开;`OMA_FUNCTIONS=0` 关掉。
+- **AI 能操作打开着的 app**(`screen_read` / `screen_act`),你能做的它都能做,但它替你确认不了删除。
+- 保留的 `security:*` / `policy:*` 配置 key 通用 data 写入碰不到;HTTP transport 只绑 loopback。
 
 ## 设计取向(为什么这么建)
 
@@ -393,15 +389,15 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 | `src/shell.mjs` | 在提供时用 runtime + design-token 兜底包裹存储的 HTML |
 | `src/guide.mjs` | AI 生成 app 前读的 authoring 契约 |
 | `install-app.mjs` | 安装你自己写的 app(从文件)——唯一一扇不经过 AI 的注册表入口 |
-| `components/` | seed 时装 3 个 system app(settings、dashboard、app-store)+ 22 个 App Store app——不自动安装;在 app-store app 里浏览、带示例数据实时预览、一键安装 |
+| `components/` | seed 时装 3 个 system app(settings、dashboard、app-store)。App Store 的 app 是依赖包 [`@openmcp-app/oma-store`](https://github.com/openmcp-app/oma-store)——不自动安装;在 app-store app 里浏览、带示例数据实时预览、一键安装 |
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 471 条断言,走真实 stdio——含运行时 app 创建
-node test/http-smoke.mjs     #  87 条断言,走 HTTP transport(含 SSE /events、viewer)
+node test/server-smoke.mjs   # 461 条断言,走真实 stdio——含运行时 app 创建
+node test/http-smoke.mjs     #  85 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
-node test/seed-smoke.mjs     #  26 条断言,验 seed / design-kit 流水线
-node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上传、GC 竞态)
+node test/seed-smoke.mjs     #  30 条断言,验 seed 流水线
+node test/files-smoke.mjs    #  24 条断言,验 per-app 文件存储(去重、完整性、GC 竞态)
 ```
 
 贡献无需签署任何协议 —— MIT 进,MIT 出([`CONTRIBUTING.md`](../CONTRIBUTING.md))。
@@ -411,28 +407,12 @@ node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上�
 早期 v0——在 Claude Desktop 端到端验证;跨厂商渲染 + 共享 store 在 Codex desktop 和浏览器 viewer 上
 验证。
 
-**0.5.0 改了什么**(breaking,也是迄今最大的一次改动——完整交代见
-[`CHANGELOG.md`](../CHANGELOG.md)):
-
-- **app 的 declaration 成了一等对象。** `save_app` 收 `ui` 和 `manifest` 两个槽,而不再是埋在文档里的
-  一段 manifest 块;每次修订两个槽一起快照,所以 restore 拿回来的是一对,不是单份文档。
-- **app 可以对外暴露 function**——一个 data→data 的闭包,AI 用 `call_function` 调,由引擎在这个 app
-  自己的 collection 上执行。这个席位在 `createEngine` 处 opt-in、缺省不给,所以托管部署没法从构造上
-  继承到它。
-- **删一行由引擎确认**,确认点在每条路径都必经的那个 store 事务里。app 作者不必再自己写确认 UI——
-  原来自带「点一次待命、再点才删」的那些 app,这段都被摘掉了。
-- **`promote_app`** 一步把一次性的 `visual` 原地升成常驻的 app;**`edit_app` 收带哈希校验的
-  `{offset, length}` 区间**,读过一个窗口的模型可以直接改它,不用再把锚点字符串传回来。
-- **Settings 与 App Store 整体重建**——左栏导航、原地详情页,以及上面那张图里的店面。
-- 底下换了地基:**SDK v1 → v2**、支持的协议版本里加进 `2026-07-28`、工具面审计到 **33 个 tool**。
-  改名和删掉的 tool 意味着升级后宿主会再要你批准一次工具。
-
 现状:
 
 - [x] 引擎:registry + shell + 通用 data command + ledger
-- [x] 只装 system app(settings、dashboard、app-store);22 个 App Store app 可在 app-store 里浏览预览、一键安装
+- [x] 只装 system app(settings、dashboard、app-store);App Store 的 app(`@openmcp-app/oma-store` 包)可在 app-store 里浏览预览、一键安装
 - [x] AI 建 app 的循环(guide → save → 打开)
-- [x] in-context onboarding(问怎么用 → AI 看你已经有什么、问你几句,建一组贴合的起手 app)
+- [x] in-context onboarding(`get_started` prompt → AI 按你的做事方式建第一个 app)
 - [x] 安全地基:信任分层 + 沙箱 runner + 保留配置 key
 - [x] 多 host 发现式安装器(Claude Desktop · Claude Code · Codex)+ 共享的用户级 store
 - [x] `npx` 一条命令安装(npm 上的 `@2nd1st/open-mcp-apps`)
@@ -445,7 +425,7 @@ node test/files-smoke.mjs    #  41 条断言,验 per-app 文件存储(分块上�
 
 ## 许可
 
-全仓**统一 MIT** —— 引擎和 [`components/`](../components/) 里的 app 一视同仁
+全仓**统一 MIT** —— 引擎和 [`components/`](../components/) 里的 system app 一视同仁(App Store 包同样是 MIT)
 ([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md))。随便用、fork、改、嵌入、
 把改过的版本作为托管服务跑;再分发实质部分时保留版权声明即可 —— 义务只有这一条。
 v0.5.2 及之前引擎是 AGPL-3.0-only、按目录分成两个许可,改动的来龙去脉见

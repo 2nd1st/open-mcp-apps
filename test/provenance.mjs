@@ -151,7 +151,7 @@ console.log("5. end to end — the refusal reaches the MODEL, in words it can ac
 const client = new Client({ name: "provenance", version: "1.0.0" });
 await client.connect(new StdioClientTransport({
   command: "node", args: [join(ROOT, "src", "server.mjs")],
-  env: { ...process.env, OMA_DB: DB, OMA_HOST: "prov" },
+  env: { ...process.env, OMA_DB: DB },
 }));
 
 const S = openStore(DB);

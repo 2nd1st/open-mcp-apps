@@ -21,7 +21,8 @@ export function register(ctx) {
   const { server, store, hostName, failNote, fail, registerApp } = ctx;
 
   // ------------------------------------------------------------------ app store
-  // The repo's components/ dir is a curated first-party store. Installing FROM it saves the
+  // The store is the curated first-party `@openmcp-app/oma-store` package (+ any OMA_APP_STORE_DIRS
+  // overlay; sources resolve in ../app-store.mjs). Installing FROM it saves the
   // app with actor "library" (provenance + update detection — a persisted store value that keeps
   // its v0.4 spelling; renaming it would need a migration) → tier local → runs DIRECT,
   // exactly like the user's own apps: it's our content, there is nothing to review in OSS.

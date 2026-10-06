@@ -35,14 +35,15 @@ const ok = (name, cond, detail = "") => {
   else { fail++; console.log("  ✗ " + name + (detail ? `\n      ${detail}` : "")); }
 };
 
-// A ui:// URI that exists once the seeds are in — any seeded app will do; habit-streaks ships.
-const URI = "ui://open-mcp-apps/habit-streaks.html";
+// A ui:// URI that exists once the seeds are in — the server seeds only the system apps on start,
+// so it is one of those (an App Store app exists only after an install).
+const URI = "ui://open-mcp-apps/dashboard.html";
 const connect = async (clientOpts = {}) => {
   const client = new Client({ name: "capabilities", version: "1.0.0" }, clientOpts);
   await client.connect(new StdioClientTransport({
     command: "node",
     args: [join(ROOT, "src", "server.mjs")],
-    env: { ...process.env, OMA_DB: DB, OMA_HOST: "capabilities", OMA_VIEWER: "0" },
+    env: { ...process.env, OMA_DB: DB, OMA_VIEWER: "0" },
   }));
   return client;
 };

@@ -35,7 +35,6 @@ export const CONFIRMATION_CLASSES = {
   // (data:"cascade") carries its OWN unconditional two-step inside the store's delete_app
   // handler — every actor, pref ignored — because it destroys whole collections with no undo.
   delete_app:  { confirm: false, why: "keep-data tombstone is recoverable (history survives); cascade demands unconditionally in the command handler" },
-  archive_app: { confirm: false, why: "visibility flip, trivially reversible" },
   // NOT because an overwrite is recoverable — it is not. contracts.mjs classifies it DESTRUCTIVE
   // in as many words: the previous blob is orphaned and the GC sweep unlinks the bytes. What this
   // row records is the SCOPE of the promise: this layer covers the explicit delete verbs, where

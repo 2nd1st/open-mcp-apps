@@ -20,10 +20,7 @@
 import { promises as fsp } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { createHash, randomUUID } from "node:crypto";
-import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES, CONFIRM_ALWAYS, SHARED_WRITE, SHARED_UPLOADS_PER_ACCOUNT, SHARED_UPLOADS_TOTAL, principalScope } from "./store.mjs";
-
-// The account a call runs as (store.mjs principalScope), or null outside any — every local install.
-const principalNow = () => principalScope.getStore()?.principal || null;
+import { APP_NAME_RE, FILE_PATH_RE, MAX_FILE_BYTES, CONFIRM_ALWAYS, SHARED_WRITE } from "./store.mjs";
 
 const SHA_RE = /^[0-9a-f]{64}$/;
 const sha256hex = (buf) => createHash("sha256").update(buf).digest("hex");
@@ -122,64 +119,10 @@ export class LocalFileBackend {
     }
   }
 
-  // ---- staged (chunked) writes — the large-file path. A staging file accumulates appends in .tmp,
-  // then LINKS into the content address (hard-link, copy fallback) so the staging copy SURVIVES until
-  // the channel has committed the ref and re-verified the blob — the same anti-dangling guarantee
-  // put() gets from holding the bytes in memory, without buffering 250 MiB.
-  _stagingPath(id) {
-    if (!/^[0-9a-f-]{36}$/.test(String(id))) throw new Error("bad_staging_id");
-    return join(this.tmpDir, id + ".upload");
-  }
-
-  async openStaging() {
-    await fsp.mkdir(this.tmpDir, { recursive: true });
-    const id = randomUUID();
-    const fh = await fsp.open(this._stagingPath(id), "wx");
-    await fh.close();
-    return id;
-  }
-
-  async appendStaging(id, bytes) {
-    await fsp.appendFile(this._stagingPath(id), bytes);
-  }
-
-  async statStaging(id) {
-    try { const st = await fsp.stat(this._stagingPath(id)); return { size: st.size }; }
-    catch (e) { if (e.code === "ENOENT") return null; throw e; }
-  }
-
-  // Materialize the staged bytes at the content address WITHOUT consuming the staging file.
-  // Content-idempotent: an existing blob wins (identical content by definition of the address).
-  async linkStaging(id, app, sha) {
-    const { dir, p } = this._paths(app, sha);
-    const src = this._stagingPath(id);
-    await fsp.mkdir(dir, { recursive: true });
-    try { await fsp.link(src, p); }
-    catch (e) {
-      if (e.code === "EEXIST") return;                    // dedup — blob already present
-      if (e.code === "EXDEV" || e.code === "EPERM" || e.code === "ENOTSUP") {
-        // Filesystem won't hard-link: fall back to an atomic copy via the normal .tmp→rename dance.
-        const tmp = join(this.tmpDir, randomUUID());
-        try { await fsp.copyFile(src, tmp); await fsp.rename(tmp, p); }
-        catch (e2) { await fsp.unlink(tmp).catch(() => {}); if (e2.code !== "EEXIST") throw e2; }
-        return;
-      }
-      throw e;
-    }
-  }
-
-  async dropStaging(id) {
-    try { await fsp.unlink(this._stagingPath(id)); }
-    catch (e) { if (e.code !== "ENOENT") throw e; }
-  }
-
   // Reclaim staging files left by an interrupted/failed write (enumerate() skips .tmp, so the sweep handles
-  // it here). Only touch files older than the applicable grace so an in-flight write's staging file is never
-  // unlinked. TWO graces: plain UUID temp files (putBlob staging, seconds-lived) use graceMs; "<id>.upload"
-  // chunked-upload staging files are contractually alive for UPLOAD_TTL idle minutes and every process over a
-  // shared store runs sweeps, so they get the LONGER uploadGraceMs — a mid-flight upload must never be swept
-  // out from under its channel within the promised window.
-  async sweepTmp(graceMs, uploadGraceMs = graceMs) {
+  // it here). Only touch files older than the grace so an in-flight write's staging file is never unlinked.
+  // (A "<id>.upload" file left by a pre-0.8.1 chunked upload is just another stale temp file now.)
+  async sweepTmp(graceMs) {
     let entries;
     try { entries = await fsp.readdir(this.tmpDir); }
     catch (e) { if (e.code === "ENOENT") return 0; throw e; }
@@ -187,8 +130,7 @@ export class LocalFileBackend {
     const now = Date.now();
     for (const name of entries) {
       const f = join(this.tmpDir, name);
-      const grace = name.endsWith(".upload") ? uploadGraceMs : graceMs;
-      try { const st = await fsp.stat(f); if (now - st.mtimeMs >= grace) { await fsp.unlink(f); n++; } }
+      try { const st = await fsp.stat(f); if (now - st.mtimeMs >= graceMs) { await fsp.unlink(f); n++; } }
       catch { /* raced away — fine */ }
     }
     return n;
@@ -262,150 +204,7 @@ export function makeFileChannel({ store, backend }) {
     return r;
   }
 
-  // ---- chunked upload: begin → append× → commit. The channel keeps ONLY {staging id, running size,
-  // incremental sha256} in memory — bytes go straight to the backend's staging area, so a 250 MiB file
-  // never lives in RAM. A lost process loses the Map: staging files age out via sweepTmp, and the
-  // append-time size cross-check below turns any swept-underneath staging file into a clean error
-  // instead of silent truncation (appendFile would otherwise happily recreate an unlinked file).
-  const UPLOAD_TTL_MS = 30 * 60 * 1000;   // idle time (since last append) before an upload expires
-  const MAX_ACTIVE_UPLOADS = 16;          // DoS floor — concurrent staged uploads across all apps
   const GC_AGE_GUARD_MS = 60 * 1000;      // never GC-unlink a blob fresher than this (see deleteBlob)
-  const uploads = new Map();              // upload_id → {app, stagingId, bytes, hash, touched, busy}
-
-  function dropUpload(u, id) { uploads.delete(id); backend.dropStaging(u.stagingId).catch(() => {}); }
-  // An upload belongs to the ACCOUNT that began it. The id is a capability only to that account:
-  // two editors of one shared app write into the same owner channel, and without this a disclosed
-  // id let one append to, or commit, the other's staged bytes (S4 audit T7). Another account's id
-  // is answered exactly like an unknown one.
-  function liveUpload(id) {
-    const u = uploads.get(String(id));
-    if (!u || u.principal !== principalNow()) return null;
-    if (Date.now() - u.touched > UPLOAD_TTL_MS) { dropUpload(u, String(id)); return null; }
-    return u;
-  }
-
-  // `shared`: begun through a share (the facade). Collaborators hold at most SHARED_UPLOADS_TOTAL of
-  // the slots between them, SHARED_UPLOADS_PER_ACCOUNT each, so the owner always has slots left; the
-  // mark rides the upload, and its commit meets the per-app ceilings like a shared put.
-  async function beginUpload(app, { shared = false } = {}) {
-    if (!APP_NAME_RE.test(String(app))) return { ok: false, error: "bad_app" };
-    for (const [id, u] of uploads) if (Date.now() - u.touched > UPLOAD_TTL_MS) dropUpload(u, id); // lazy expiry
-    if (uploads.size >= MAX_ACTIVE_UPLOADS) return { ok: false, error: "too_many_uploads" };
-    if (shared) {
-      const held = [...uploads.values()].filter((u) => u.shared);
-      if (held.length >= SHARED_UPLOADS_TOTAL || held.filter((u) => u.principal === principalNow()).length >= SHARED_UPLOADS_PER_ACCOUNT)
-        return { ok: false, error: "too_many_uploads" };
-    }
-    const stagingId = await backend.openStaging();
-    const upload_id = randomUUID();
-    uploads.set(upload_id, { app: String(app), principal: principalNow(), shared: !!shared, stagingId, bytes: 0, chunks: 0, lastChunkSha: null, hash: createHash("sha256"), touched: Date.now(), busy: false });
-    return { ok: true, upload_id, bytes: 0 };
-  }
-
-  async function appendUpload(upload_id, data, { seq } = {}) {
-    const u = liveUpload(upload_id);
-    if (!u) return { ok: false, error: "upload_not_found" };
-    if (u.busy) return { ok: false, error: "upload_busy" };
-    // Optional 0-based chunk index: the resend-after-timeout safety. A chunk the staging file
-    // already holds is ACKNOWLEDGED, not appended twice (double-append corrupts the file with no
-    // error anywhere) — but a duplicate INDEX is only a duplicate if it carries the same BYTES:
-    // acknowledging different bytes would tell the caller its new content was stored when the old
-    // one was. Only the LAST index is verifiable (one hash kept); an older index cannot be, and is
-    // refused rather than guessed at. A chunk from the future names the index expected.
-    const bytes = Buffer.isBuffer(data) ? data : Buffer.from(data);
-    if (seq != null) {
-      const at = Math.floor(Number(seq));
-      if (!Number.isFinite(at) || at < 0) return { ok: false, error: "bad_chunk_seq" };
-      if (at === u.chunks - 1) {
-        const sha = createHash("sha256").update(bytes).digest("hex");
-        if (sha !== u.lastChunkSha) return { ok: false, error: "chunk_mismatch", expected: u.chunks };
-        u.touched = Date.now();
-        return { ok: true, bytes: u.bytes, chunks: u.chunks, duplicate: true };
-      }
-      if (at < u.chunks) return { ok: false, error: "chunk_already_staged", expected: u.chunks };
-      if (at > u.chunks) return { ok: false, error: "chunk_out_of_order", expected: u.chunks, got: at };
-    }
-    if (u.bytes + bytes.length > MAX_FILE_BYTES) { dropUpload(u, String(upload_id)); return { ok: false, error: "file_too_large" }; }
-    u.busy = true;
-    try {
-      // Cross-check the staging file is exactly as long as we think — catches a swept/tampered file
-      // BEFORE appending would silently recreate it and commit a truncated blob.
-      const st = await backend.statStaging(u.stagingId);
-      if (!st || st.size !== u.bytes) { dropUpload(u, String(upload_id)); return { ok: false, error: "upload_expired" }; }
-      await backend.appendStaging(u.stagingId, bytes);
-      u.hash.update(bytes);
-      u.bytes += bytes.length;
-      u.chunks += 1;
-      u.lastChunkSha = createHash("sha256").update(bytes).digest("hex");
-      u.touched = Date.now();
-      return { ok: true, bytes: u.bytes, chunks: u.chunks };
-    } catch (e) {
-      dropUpload(u, String(upload_id));
-      throw e;
-    } finally { u.busy = false; }
-  }
-
-  async function commitUpload(upload_id, path, { mime = "application/octet-stream", command_id, expected_version, shared = false } = {}) {
-    // Idempotency FIRST, before the upload is even looked up. A successful commit CONSUMES its
-    // upload, so the retry that arrives after a lost response finds no upload — and used to be told
-    // "start again with file_write_begin", inducing a full re-upload of a file that was already
-    // committed (the adversarial challenge's find). The ledger knows better: same command_id, same
-    // file → the original receipt, rebuilt from the file table via the event's aggregate.
-    if (command_id) {
-      const prior = store.priorReceipt(command_id);
-      if (prior) {
-        // Another account's commit is not this call's receipt (same rule as store core()'s replay).
-        if (prior.event_type !== "file_written" || prior.principal !== principalNow()) return { ok: false, error: "command_id_reused" };
-        const p = prior.payload || {};
-        if (p.path !== String(path)) return { ok: false, error: "command_id_reused" };
-        // If a LIVE upload is being aimed at this old command_id, its app must match the
-        // original commit's — otherwise this is a reused id, and answering "success" would leave
-        // the new upload silently uncommitted.
-        const uLive = liveUpload(upload_id);
-        if (uLive && uLive.app !== p.app) return { ok: false, error: "command_id_reused" };
-        // The ORIGINAL receipt, from the event that made this command idempotent — never from the
-        // current file row, which a later overwrite (or delete) may have moved on.
-        return { ok: true, idempotent: true,
-          meta: { app: p.app, path: p.path, sha256: p.sha256, size: p.size, mime: p.mime || "application/octet-stream", version: prior.seq } };
-      }
-    }
-    const u = liveUpload(upload_id);
-    if (!u) return { ok: false, error: "upload_not_found" };
-    if (u.busy) return { ok: false, error: "upload_busy" };
-    if (String(path).includes("..") || !FILE_PATH_RE.test(String(path))) return { ok: false, error: "bad_path" };
-    u.busy = true;
-    try {
-      const st = await backend.statStaging(u.stagingId);
-      if (!st || st.size !== u.bytes) { dropUpload(u, String(upload_id)); return { ok: false, error: "upload_expired" }; }
-      const sha = u.hash.digest("hex");
-      const had = await backend.hasBlob(u.app, sha);
-      try { if (!had) await backend.linkStaging(u.stagingId, u.app, sha); }
-      catch (e) { dropUpload(u, String(upload_id)); if (e.code === "ENOENT") return { ok: false, error: "upload_expired" }; throw e; } // staging swept/aborted underneath → clean error, not a crash
-      const r = store.execute({
-        type: "write_file", command_id: command_id || randomUUID(),
-        app: u.app, path, sha256: sha, size: u.bytes, mime, expected_version,
-        ...(shared || u.shared ? { [SHARED_WRITE]: true } : {}),
-      });
-      if (!r.ok) {
-        if (!had && store.blobRefcount(u.app, sha) === 0) await backend.deleteBlob(u.app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
-        dropUpload(u, String(upload_id)); // the store said no — the upload is spent either way (hash is consumed)
-        return r;
-      }
-      // Same TOCTOU close as put(): re-link UNCONDITIONALLY (EEXIST is a cheap no-op; a GC'd blob is
-      // re-materialized from the still-held staging file), then GC the freed sha behind the age guard.
-      try { await backend.linkStaging(u.stagingId, u.app, sha); } catch { /* EEXIST handled inside; anything else → sweep reconciles */ }
-      if (r.freed_sha && store.blobRefcount(u.app, r.freed_sha) === 0) await backend.deleteBlob(u.app, r.freed_sha, { ifOlderThanMs: GC_AGE_GUARD_MS }).catch(() => {});
-      if (!r.meta) r.meta = store.statFile(u.app, path);
-      dropUpload(u, String(upload_id));
-      return r;
-    } catch (e) {
-      dropUpload(u, String(upload_id));
-      throw e;
-    } finally { u.busy = false; }
-  }
-
-  // abortUpload retired with the file_write_abort seat (elegance A12): abandoned staging expires
-  // via the idle TTL and sweepTmp — the sweep below is the one owner of cleanup.
 
   // Unlink any stored blob with no ref row (the harmless orphans blob-first/ref-second can leave, plus any
   // left by an interrupted write). Startup + periodic.
@@ -419,26 +218,18 @@ export function makeFileChannel({ store, backend }) {
         if (store.blobRefcount(app, sha) === 0) { await backend.deleteBlob(app, sha, { ifOlderThanMs: GC_AGE_GUARD_MS }); swept++; }
       }
     }
-    // Plain putBlob temp files: 5-min grace. Chunked ".upload" staging: the contractual idle TTL
-    // plus slack — other processes over the same store run this sweep too and must never destroy a
-    // mid-flight upload inside its promised window.
-    await backend.sweepTmp(5 * 60 * 1000, UPLOAD_TTL_MS + 5 * 60 * 1000).catch(() => {});
+    // putBlob temp files live for seconds; 5 minutes is slack for a slow disk.
+    await backend.sweepTmp(5 * 60 * 1000).catch(() => {});
     return { swept };
   }
 
-  // Which app a live upload was opened for, or null — so a reader allowed only some apps can be
-  // refused an upload id minted for another (store.mjs scopeStore) without guessing.
-  function uploadApp(upload_id) { return liveUpload(upload_id)?.app ?? null; }
-
-  return { put, get, stat, list, usage, del, sweepOrphans, beginUpload, appendUpload, commitUpload, uploadApp };
+  return { put, get, stat, list, usage, del, sweepOrphans };
 }
 
 // Convenience wiring for the engine: pick the backend from the store's own data dir + build the channel.
-// MEMOIZED PER STORE: chunked-upload sessions live in the channel's in-memory Map, and the stateless
-// /mcp transport builds a FRESH engine per request over ONE shared store — without memoization every
-// request got its own empty Map and file_write_begin/chunk could never pair up (reproduced: chunked
-// upload was 100% dead over /mcp). One store → one channel → one upload table; the startup orphan
-// sweep runs once per channel, not once per request.
+// MEMOIZED PER STORE: the stateless /mcp transport builds a FRESH engine per request over ONE shared
+// store, and the startup orphan sweep below should run once per store/process, not once per request.
+// (It used to matter more: the chunked-upload table lived here until 0.8.1 removed that path.)
 const channelByStore = new WeakMap();
 export function openFileChannel(store) {
   let ch = channelByStore.get(store);

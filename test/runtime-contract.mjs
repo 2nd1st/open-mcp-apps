@@ -193,8 +193,12 @@ console.log("\n2b. the app-author types (types/window-oma.d.ts) name the whole s
   const pkg = JSON.parse(readFileSync(join(ROOT, "package.json"), "utf-8"));
   ok("…package.json ships it (a type file outside `files` is a type file nobody receives)",
     pkg.files.includes("types"));
+  // scripts/ is not in the public snapshot, so on the public checkout (where CI runs) this check has
+  // nothing to read: it holds vacuously there and bites in the internal tree, where publish.mjs lives.
+  // Reading it unguarded threw ENOENT and kept public CI red from 2026-09-02 to 2026-10-06.
+  const publishScript = join(ROOT, "scripts", "publish.mjs");
   ok("…the public snapshot carries it (outside the ALLOWLIST it never reaches the repo npm packs from)",
-    /^\s*"types",\s*$/m.test(readFileSync(join(ROOT, "scripts", "publish.mjs"), "utf-8")));
+    !existsSync(publishScript) || /^\s*"types",\s*$/m.test(readFileSync(publishScript, "utf-8")));
   // …and the exports map, which is what bundler/node16 resolution reads INSTEAD of the file tree.
   // Measured 2026-08-16: with only "." and "./package.json" declared, the documented
   // `/// <reference types="@2nd1st/open-mcp-apps/types/window-oma" />` was TS2688 under both, so

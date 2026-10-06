@@ -55,7 +55,7 @@ console.log("1. the mapping — the right invalidation, or none at all");
   ok("a FIRST save invalidates the list (the resource did not exist yet)",
     r2.sent.join() === "resources_list_changed", r2.sent.join());
 
-  for (const [type, label] of [["delete_app", "delete"], ["archive_app", "archive"]]) {
+  for (const [type, label] of [["delete_app", "delete"]]) {
     const r3 = rig({ apps: ["gone"] });
     r3.change(type, "gone");
     await tick();

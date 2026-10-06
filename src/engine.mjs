@@ -19,7 +19,7 @@ import { SETTINGS_COLLECTION, ITEM_WRITE_KEYS, ITEM_WRITE_ENVELOPE, cspPolicy, p
 import { normalizeSharing, makeRouter } from "./sharing.mjs";
 import { CAP_NAMES, TIER_CAPS, coerceCap, SEEDED_APPS, answer, toMcp, EOT } from "./contracts.mjs";
 import { openFileChannel } from "./files.mjs";
-import { isControlPlaneTool, TOOL_ALIASES } from "./tool-policy.mjs";
+import { isControlPlaneTool } from "./tool-policy.mjs";
 import { latestPref } from "./runtime-core.mjs";
 import { bridgeInvalidations } from "./notify.mjs";
 import { ENGINE_VERSION } from "./version.mjs";
@@ -91,7 +91,7 @@ function readPref(store, key) {
 // It states what the engine can do and what the first move looks like; it does not order the model
 // around, and it asks for nothing out of the conversation's history or the model's memory. Those
 // two shapes are what a directory review reads as a server steering its host, so they stay out.
-const ONBOARDING = `GETTING STARTED — this user has no apps of their own yet, so the useful opening move is one app built for them and opened, rather than a feature tour. The shape of it: (1) the subject comes from what the user has already said they do, track, or keep re-explaining — one short question if there is nothing to go on; (2) get_app_guide carries the craft rules that make an app come out right, then save_app and open_app; apply_data_writes fills the collection with the user's own real content, since an app that opens already about them is the point and invented rows are not; (3) once it is on screen, one sentence on what it is, then a couple more you could build, one line each; (4) two things are worth saying at that point — a NEW app costs tokens ONCE and pays off for anything recurring, and the user's proactivity preference (PROACTIVE or ON-REQUEST for future apps) is recorded with data_add into settings (group "", key "proactivity", value "proactive" | "on-request") and honored from then on. Sensitive subjects stay out unless the user agrees to them.`;
+const ONBOARDING = `GETTING STARTED — this user has no apps of their own yet, so the useful opening move is one app built for them and opened, rather than a feature tour. The shape of it: (1) the subject comes from what the user has already said they do, track, or keep re-explaining — one short question if there is nothing to go on; (2) get_app_guide carries the craft rules that make an app come out right, then save_app and open_app; apply_data_writes fills the collection with the user's own real content, since an app that opens already about them is the point and invented rows are not; (3) once it is on screen, one sentence on what it is, then a couple more you could build, one line each; (4) two things are worth saying at that point — a NEW app costs tokens ONCE and pays off for anything recurring, and the user's proactivity preference (PROACTIVE or ON-REQUEST for future apps) is recorded with data_add_item into settings (group "", key "proactivity", value "proactive" | "on-request") and honored from then on. Sensitive subjects stay out unless the user agrees to them.`;
 
 // What replaces it once the user has apps of their own.
 //
@@ -291,23 +291,14 @@ function installUnlistedFilter(server, hidden) {
  *                        options an embedder passes, invisible to every app and every host.
  * @param opts.unlisted   tool names to REGISTER BUT NOT LIST. They are still callable through
  *                        `tools/call` exactly as before; they simply stop appearing in
- *                        `tools/list`. Two callers need this and they need it for opposite
- *                        reasons: a hosted deployment hides the four seats whose only real
+ *                        `tools/list`. A hosted deployment hides the seats whose only real
  *                        callers are widgets (their own descriptions say "internal", and a
  *                        directory reviewer reading a public tool list should not have to
- *                        discount them), and the engine itself hides every retired tool name it
- *                        still answers to (see TOOL_ALIASES in tool-policy.mjs — a name that must
- *                        keep working for already-saved apps, and must not be advertised to
- *                        anyone writing a new one). Default `[]`, and with an empty set the
+ *                        discount them). (Until 0.8.1 the engine also hid its retired tool
+ *                        spellings through this set; that bridge is gone.) Default `[]`, and with an empty set the
  *                        filter is not installed at all: the wire is byte-identical to a build
  *                        that never had this option, which is the property the tool-surface
  *                        golden checks.
- * @param opts.telemetry  record the edit tripwire's JSONL sidecar beside the database. DEFAULT
- *                        true — the local product measures its own editing path, on the user's own
- *                        machine, in a file they can read and delete. `false` makes the recorder a
- *                        no-op and the file is never created, which is what a deployment needs
- *                        when the alternative is disclosing a collection it has no product reason
- *                        to keep.
  * @param opts.dynamicTools  allow PINNED apps their own `open_<name>` tool. DEFAULT true: an app
  *                        the user pins in the settings app (`open_tool`) gets one, every other app
  *                        opens through `open_app`, and `tools/list` moves only when the user pins,
@@ -334,8 +325,10 @@ function installUnlistedFilter(server, hidden) {
  *                        the rest of tools/list is byte-identical to an engine without them. Requires
  *                        `mounts`. All three absent ⇒ the engine is exactly what it was before
  *                        sharing existed, on the wire and in behaviour.
+ * Any other key is ignored, never refused. `telemetry` was an option until 0.8.1 (the edit-tripwire
+ * sidecar it switched is gone); a deployment that still passes `telemetry: false` is unaffected.
  */
-export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false, unlisted = [], telemetry = true, dynamicTools = true, csp, caller, mounts, sharing } = {}) {
+export function createEngine(store, { hostLabel, instructions, viewBase, widgetDomain, functions = false, unlisted = [], dynamicTools = true, csp, caller, mounts, sharing } = {}) {
   // Identity and the two providers, normalised once and THROWING on a malformed shape (sharing.mjs
   // normalizeSharing says why: an identity that silently degrades to none is unattributed writes).
   const shareOpts = normalizeSharing({ caller, mounts, sharing });
@@ -351,10 +344,8 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   const widgetDomains = normalizeWidgetDomain(widgetDomain);
   const cspRule = cspPolicy(csp);
   // Registered but not listed. Fixed at construction: `tools/list` is a cached prefix, so a set
-  // that could move mid-connection would be a cache break with no event to hang it on. The
-  // retired names are in it unconditionally — an embedder does not get to advertise them, and a
-  // caller that omits `unlisted` entirely still gets a list with no dead spellings in it.
-  const unlistedTools = new Set([...Object.values(TOOL_ALIASES), ...unlisted]);
+  // that could move mid-connection would be a cache break with no event to hang it on.
+  const unlistedTools = new Set(unlisted);
   // Whether pinned apps may have their own opener. The prompt-cache tradeoff: with it on,
   // tools/list moves only when the user pins, unpins or deletes a pinned app — never on save_app.
   const pinning = !!dynamicTools;
@@ -496,21 +487,12 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
       if (APP_ONLY.has(name)) meta.ui = { ...(meta.ui || {}), visibility: ["app"] };
       cfg = { ...cfg, _meta: meta };
     }
-    const registered = sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
-    // THE RETIRED SPELLING, registered beside the seat it retired from (tool-policy.mjs
-    // TOOL_ALIASES). Same `cfg` object, so the alias carries the seat's own annotations, schemas
-    // and `_meta` by construction rather than by a second declaration that could drift; same
-    // handler, wrapped the same way, so a call through the old name is the same call. It is
-    // added to `unlistedTools` below the registrations, which is what keeps it a bridge for apps
-    // already in the field instead of a second name anyone can discover.
-    const alias = TOOL_ALIASES[name];
-    if (alias) sdkRegisterTool(alias, cfg, perCallHost(logged(alias, handler)));
-    return registered;
+    return sdkRegisterTool(name, cfg, perCallHost(logged(name, handler)));
   };
 
   // The per-app file channel: opaque user-file storage (bytes in a local content-addressed
   // folder; the store holds the ref index). MEMOIZED per store (files.mjs) so every engine over one store — incl.
-  // the stateless /mcp path's engine-per-request — shares ONE upload table; the startup orphan
+  // the stateless /mcp path's engine-per-request — shares ONE channel; the startup orphan
   // sweep runs inside openFileChannel exactly once per store.
   const fileChannel = openFileChannel(store);
 
@@ -521,7 +503,8 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   //      shape that answered "one claude.ai user presents three clientInfo names");
   //   3. the legacy `initialize` clientInfo the SDK keeps per connection (stdio's 2025-era wire);
   //   4. the HTTP entry's request-scoped fallback (User-Agent/body-derived, set via hostContext);
-  //   5. OMA_HOST, then NOTHING — "" is the answer, not a name.
+  //   5. NOTHING — "" is the answer, not a name. (An OMA_HOST env fallback sat here until 0.8.1;
+  //      only tests set it, and a test names its host the way a real host does: clientInfo.)
   // Provenance annotation for the ledger, not a security property.
   //
   // 🔴 It used to end in the literal "unknown", and that string is a claim: it travels in the
@@ -539,7 +522,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     const scoped = hostContext.getStore();
     if (scoped?.call) return scoped.call;
     const ci = server.server.getClientVersion?.();
-    return (ci && ci.name) || scoped?.fallback || process.env.OMA_HOST || "";
+    return (ci && ci.name) || scoped?.fallback || "";
   };
 
   // ── the model-facing text ────────────────────────────────────────────────────────────────
@@ -643,14 +626,6 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
     bad_sha256: "Internal error: bad content hash.",
     bad_size: "Invalid file size.",
     not_found: "No such file — refresh.",
-    upload_not_found: "No such upload (it may have expired or been committed) — start again with file_write_begin.",
-    upload_expired: "That upload expired or its staging data was lost — start again with file_write_begin.",
-    upload_busy: "That upload is mid-operation — send chunks one at a time, in order.",
-    too_many_uploads: "Too many uploads in flight — commit or abort one first.",
-    bad_chunk_seq: "Invalid chunk seq — a 0-based index of this chunk within the upload.",
-    chunk_out_of_order: "That chunk arrived out of order — send the index the upload expects next (see `expected`).",
-    chunk_already_staged: "That chunk index was already staged and cannot be re-verified — continue with the next index, or abandon this upload and start a fresh one if unsure what was sent.",
-    chunk_mismatch: "That chunk index was already staged with DIFFERENT bytes — the resend does not match what landed. Abandon this upload and start a fresh one.",
   };
   const fileFailNote = (r) =>
     r.conflict ? `Version conflict (expected v${r.expected}) — refresh and retry.`
@@ -711,7 +686,7 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // The shared context every tool module gets.
   // `route` is the handle resolver, and its ABSENCE is what keeps a local install exactly as it was:
   // every tool asks `route && isHandle(x)` before treating a name as anything but its own.
-  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, cspPolicy: cspRule, functions: fnSeat, telemetry, dynamicTools: pinning,
+  const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, cspPolicy: cspRule, functions: fnSeat, dynamicTools: pinning,
     caller: shareOpts.caller, route: shareOpts.mounts ? makeRouter(shareOpts.mounts) : null, sharing: shareOpts.sharing };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.

@@ -135,6 +135,7 @@ const thousands = (n) => String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
  *  that can express arbitrary code is a config nobody can audit. */
 async function compute(c) {
   if (c.kind === "jsonField") return JSON.parse(read(c.file))[c.field];
+  if (c.kind === "jsonLength") { const v = JSON.parse(read(c.file)); return Array.isArray(v) ? v.length : null; }
   if (c.kind === "countMatches") {
     const outer = read(c.file).match(rx(c.outer));
     return outer ? [...outer[1].matchAll(new RegExp(c.each, "g"))].length : null;
@@ -423,18 +424,24 @@ console.log("\n4. MULTI-HOME — one fact, several docs, one reading");
 // which is why the exemption reasons say so instead of quietly covering the whole file.
 console.log("\n5. DEAD-NAME — an active doc must not name an identifier that no longer exists");
 if (CFG.deadNames) {
-  const map = CFG.deadNames.names;
+  // `publicNames` are checked in the public docs (extraDocs) only — see `_publicNames` in the config.
+  const map = { ...CFG.deadNames.names, ...(CFG.deadNames.publicNames || {}) };
   const names = Object.keys(map);
+  const PUBLIC = new Set(CFG.extraDocs || []);
+  const namesFor = (doc) => (PUBLIC.has(doc) ? names : Object.keys(CFG.deadNames.names));
+  // Counted as a whole IDENTIFIER, not a substring: `app_html` is dead, but it sits inside the live
+  // `get_app_html`, and a substring count would flag every correct mention of the current name.
+  const hitsOf = (text, nm) => text.match(new RegExp(`(?<![\\w$])${nm.replace(/[$]/g, "\\$&")}(?![\\w$])`, "g"))?.length || 0;
 
   // Prove the detector works before trusting a zero: an empty result must mean "clean", never
   // "the pattern broke". The archive is full of these names by design, so it is the fixture.
-  const archiveHits = ARCHIVED.reduce((n, d) => n + names.reduce((k, nm) => k + (read(d).split(nm).length - 1), 0), 0);
+  const archiveHits = ARCHIVED.reduce((n, d) => n + names.reduce((k, nm) => k + hitsOf(read(d), nm), 0), 0);
   // Proving the detector works needs a fixture that CONTAINS the names. The archive is that fixture
   // here. A repo whose archive predates the rename has none, and must name its own fixture rather
   // than trust a zero — `deadNames.selfTestFile`, a path known to contain at least one.
   const fixture = CFG.deadNames.selfTestFile;
   const fixtureHits = fixture && has(fixture)
-    ? names.reduce((k, nm) => k + (read(fixture).split(nm).length - 1), 0) : 0;
+    ? names.reduce((k, nm) => k + hitsOf(read(fixture), nm), 0) : 0;
   ok(`detector is non-vacuous: ${names.length} dead name(s), ${archiveHits} in archive` + (fixture ? `, ${fixtureHits} in ${fixture}` : ""),
     names.length > 0 && (archiveHits > 0 || fixtureHits > 0),
     "found none anywhere — the detector is broken, so a clean active scan would prove nothing. Point deadNames.selfTestFile at a file that really contains one.");
@@ -446,7 +453,7 @@ if (CFG.deadNames) {
   const offenders = [], exemptHits = [];
   for (const doc of ACTIVE) {
     const text = read(doc);
-    const hits = names.map((nm) => [nm, text.split(nm).length - 1]).filter(([, n]) => n > 0);
+    const hits = namesFor(doc).map((nm) => [nm, hitsOf(text, nm)]).filter(([, n]) => n > 0);
     if (!hits.length) continue;
     const line = `${doc}: ${hits.map(([nm, n]) => `${nm}×${n} → ${map[nm]}`).join(", ")}`;
     (doc in EXEMPT ? exemptHits : offenders).push(line);

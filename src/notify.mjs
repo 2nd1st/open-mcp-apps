@@ -22,7 +22,7 @@
 // a burst that moved the settings sub-version (or touched the app plane) runs `syncTools`.
 
 /** Ledger commands that change what the host is holding. Everything else is data-plane. */
-const APP_PLANE = new Set(["save_app", "delete_app", "archive_app"]);
+const APP_PLANE = new Set(["save_app", "delete_app"]);
 
 /**
  * Bridge one store's change stream onto one server's notifications.

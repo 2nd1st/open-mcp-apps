@@ -226,13 +226,6 @@ function routerSession(mounts) {
       }
       return hits.length === 1 ? hits[0] : null;
     },
-    /** An upload id minted through a share (`@alias/<id>`) → {m, id} or null. */
-    async upload(uploadId) {
-      const p = parseHandle(uploadId);
-      if (!p) return null;
-      const m = await mount(p.alias);
-      return m ? { m, id: p.name } : null;
-    },
   };
 }
 

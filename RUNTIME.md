@@ -8,7 +8,7 @@ changed surfaces runs unchanged.)
 
 This is the contract for writing an app **outside** this repo — in your own editor, with your own
 bundler — and installing it with `install-app.mjs`. If an AI is writing your app it doesn't need
-this file: it calls `get_app_guide`, which teaches the same API plus the house style, and it
+this file: it calls `get_app_guide`, which teaches the same API plus the design direction, and it
 is writing against the engine it is already running on. You are not. That asymmetry is what this
 document is for.
 
@@ -17,11 +17,11 @@ Everything below was measured against a real engine in a real browser, not read 
 > ### 🔴 This file is the API surface. It is not the whole contract.
 >
 > The complete authoring contract — the API **plus** the two ways to write an app, the design
-> direction and the worked examples — is the `GUIDE` the engine hands its AI, **24,413 bytes** of it.
+> direction and the worked examples — is the `GUIDE` the engine hands its AI, **24,454 bytes** of it.
 > This file used to be a third of that, and the argument for reading the GUIDE was simply that it
-> was the bigger document. It isn't much bigger any more — but the gap closed from **this** side,
-> when §8 and §9 were added, and neither of them is the house style or the examples. Size was never
-> the reason; scope was. Until this file existed the only human-readable pointer to the GUIDE was a
+> was the bigger document. It isn't much bigger any more — the gap closed from **this** side, when
+> §8 and §9 were added — but neither of them is the worked examples. Size was never the reason;
+> scope was. Until this file existed the only human-readable pointer to the GUIDE was a
 > comment in `install-app.mjs`. Print it:
 >
 > ```bash
@@ -90,9 +90,9 @@ An app runs in one of two modes, decided by its **provenance**, not by anything 
 where it lands decides what it is allowed to do, not what it is allowed to say.
 
 What a sandboxed app can still do, with *no* capabilities granted: read and write its own bound
-collection (the typed verbs go through the bridge and are always available), read and write its own
-files, read preferences. What it cannot: `callTool` (rejects with `tool "…" not allowed`), reads or
-writes to any other collection, `sendMessage`, `setPref`, deleting items.
+collection (the typed verbs go through the bridge and are always available) and read preferences.
+What it cannot: `callTool` (rejects with `tool "…" not allowed`), reads or writes to any other
+collection, its files (`oma.files` rejects), `sendMessage`, `setPref`, deleting items.
 
 ## 4. The API
 
@@ -128,7 +128,7 @@ oma.pref(key, fallback)             // merged: your override ▸ global ▸ fall
 oma.onPrefChange(cb)                // cb({key, value, oldValue, scope})
 oma.setPref(key, value)             // your own settings only; scalars only — resolves the same ack
 
-oma.files.list()                    // → [{path, size, mime, …}]
+oma.files.list()                    // → {files:[{path, size, mime, version}], total, next_cursor, …} — the first page
 oma.files.read(path)                // → Uint8Array
 oma.files.url(path)                 // → object URL (cached), for <img src>
 
@@ -136,21 +136,9 @@ oma.sendMessage(text)               // PROPOSES text into the chat — only on a
                                     // The host may run it, ask the user to confirm it, or refuse
                                     // it (ChatGPT declines app-authored text as untrusted tool
                                     // content). It does NOT carry the user's authority.
-oma.openLink(url) -> {ok}           // DIRECT MODE ONLY. Ask the host to open a URL
-                                    // (ui/open-link) — the direct counterpart to sendMessage:
-                                    // no model, no trust decision. Standalone opens a tab; a
-                                    // host that will not open links resolves {ok:false} rather
-                                    // than throwing. Sandboxed (embedded/previewed) apps
-                                    // do NOT get this: a URL carries data, so a link opener is
-                                    // an outbound channel, and the sandbox closes those.
 
 oma.standalone                      // true in a plain browser page (no chat attached)
 ```
-
-Retired from this surface 2026-08-04 (each returns WITH its real consumer, never ahead of it):
-`updateContext` (ships with the view-context bridge), `host` and `isControlPlaneTool` (zero
-consumers), `bind` (was loader-only — now the internal `__OMA_BIND__` hook, not author API).
-`callFunction` returned 2026-08-05 exactly on that condition — W3 shipped the server seat.
 
 ### What a write resolves to
 
@@ -176,8 +164,8 @@ over what the user is typing.
 
 Do NOT expect `{content, structuredContent}` here. That is the raw MCP envelope, and it is what
 `oma.callTool` — the escape hatch to the raw tool surface — still resolves, deliberately. The
-typed verbs hand you the ack out of it. (Before 2026-08-23 they did not, and every app in
-`components/` carried its own adapter for the difference; most of those adapters were wrong.)
+typed verbs hand you the ack out of it. (Before 2026-08-23 they did not, and every shipped app carried its own adapter for the
+difference; most of those adapters were wrong.)
 
 ### The two numbers on an item
 
@@ -196,9 +184,14 @@ consecutive rows of your own collection read `version` 1 and 4 when other writes
 subtract two of them. It is the same number a conditional update compares against; one number, two
 uses, not two numbers.
 
-### Direct mode only (3)
+### Direct mode only (8)
 
 ```js
+oma.openLink(url) -> {ok}           // ask the host to open a URL (ui/open-link) — the direct
+                                    // counterpart to sendMessage: no model, no trust decision.
+                                    // Standalone opens a tab; a host that will not open links
+                                    // resolves {ok:false}. A URL carries data, so a sandboxed
+                                    // app does not get a link opener.
 oma.embed(name, opts)               // mount another app inside this one (depth 1 — a child cannot embed)
 oma.embed("@live", opts)            // ONE reserved name: a region showing the app the AI opened
                                     // LAST, swapping itself as it opens others. Extra opt:
@@ -250,10 +243,11 @@ declares the `tools` capability and answers it), and otherwise through the scree
 The same document is shown on a phone and on a desktop, as a card and (where the host offers it)
 fullscreen. **Width decides layout** — `@media` or container queries on width; a phone's fullscreen
 is as narrow as its card, a desktop's is several times wider. The mode is yours to use or ignore: a
-card can be a glance and fullscreen the whole app, or the page can simply respond to its width. The
-engine draws no frame and fixes no height; in a chat the host sizes the card to your content.
+card can be a glance and fullscreen the whole app, or the page can simply respond to its width. In
+a chat the engine draws no frame and fixes no height; the host sizes the card to your content.
 
-The browser viewer is always `"fullscreen"`.
+The browser viewer is always `"fullscreen"`, and frames the page: a top bar, and `body` on a padded
+card. `?chrome=0` — or `"live_frame": true` in the manifest — serves it bare.
 
 Reading one of these in a sandboxed app gives `undefined`. If your app needs them, it needs to be
 installed as local — which means the person installing it has decided to trust it.
@@ -438,7 +432,7 @@ warning, because nothing is broken.
 
 The engine injects the host's design tokens (§8.2) and a minimal base: `*{box-sizing:border-box}`,
 `body{margin:0}` in the host font and text colour, `[hidden]{display:none!important}`, and
-`--oma-safe-*` defaults. That is all — no classes, no page frame, no fixed heights. A bare
+`--oma-safe-*` defaults. That is all — no classes, no fixed heights. A bare
 `<button>` gets the browser's default look, so style it: your own CSS, Tailwind's play script
 (`<script src="https://cdn.tailwindcss.com"></script>`, tokens as arbitrary values like
 `bg-[var(--color-background-secondary)]`), or a component library loaded from the platform CDNs.
@@ -457,7 +451,7 @@ ChatGPT and Claude publish the same rule for apps shown in their chats, and thei
 holds apps to it: the **structure** — backgrounds, text, borders, dividers, icons — takes the host's
 tokens, so the app follows the user's theme; the **identity** — one accent — is the app's own. For
 your own apps this is the recommended default, not a requirement: a person who asks for a look of
-their own should get it. Apps shipped in this repo's App Store follow it strictly.
+their own should get it. Apps in the App Store (`@openmcp-app/oma-store`) follow it strictly.
 
 Written out rather than as `--color-text-primary|secondary|…`, so that searching this file for the
 token you are about to type actually finds it:
@@ -525,8 +519,8 @@ yours at all — the engine enforces `confirm_delete` and the shell renders the 
 simply not open. Show the URL as selectable text; an `<a target="_blank" rel="noopener">` is fine
 as an addition, never as the only way to reach it.
 
-There is no network: `fetch`/XHR/WebSocket and external `<script>`/`<img>`/`<link>`/`@import` are
-all denied by CSP. Inline everything; all data moves through `window.oma`.
+Any origin that is neither a platform CDN nor in your `csp` declaration (§5.1) is denied by CSP, with
+no error you can catch. Your data moves through `window.oma`.
 
 ### 9.2 The host sizes you by your content
 
