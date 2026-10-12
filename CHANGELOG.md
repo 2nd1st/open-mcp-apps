@@ -7,6 +7,20 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.9.1 — 2026-10-12
+
+A small release: the `share` reply can say whom the invite was emailed to, and a checkout
+installs cleanly with pnpm 11 and later again. Nothing is removed or renamed.
+
+- **Sharing: the deployment can email the invite.** A `SharingProvider` may return
+  `link.emailed` (the accounts it emailed the link to); the `share` reply then says who was
+  emailed and names anyone still waiting for the link. Without it nothing changes: the reply says
+  nothing was emailed. The engine never sends mail itself.
+- **`pnpm install` in a checkout exits 0 again on pnpm 11 and later.** pnpm 11 made an
+  undecided dependency build script an error (`ERR_PNPM_IGNORED_BUILDS`), which broke Glama's
+  build of this repo. `pnpm-workspace.yaml` now records the decision: esbuild and
+  better-sqlite3 run no build scripts, as before. Nothing gets compiled; npm is unaffected.
+
 ## 0.9.0 — 2026-10-06
 
 A cleanup release: less surface. It is breaking for anything that calls the tools or options

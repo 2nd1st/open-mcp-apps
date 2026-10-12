@@ -115,6 +115,8 @@ export interface ShareLink {
   url?: string;
   expires_at?: string;
   revoked?: boolean;
+  /** On invite: the accounts the deployment emailed the link to. Absent = nothing was emailed. */
+  emailed?: string[];
 }
 export interface GrantInfo {
   app: string;

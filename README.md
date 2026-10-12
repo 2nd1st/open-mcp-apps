@@ -36,7 +36,7 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.9.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.9.1 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
@@ -418,7 +418,6 @@ Trust is tiered by where an app came from — [`SECURITY.md`](SECURITY.md) has t
 | A widget loses its data after a page refresh (ChatGPT web) | Known, mitigation shipped, live re-test pending — [`KNOWN-ISSUES.md`](KNOWN-ISSUES.md). |
 | Widget clicks can update but not add (Codex desktop) | Blocked host-side. The umbrella request [openai/codex#28912](https://github.com/openai/codex/issues/28912) closed as completed on 2026-08-05, but that one is an `enhancement`, not this defect: the matching `bug`, [#30092](https://github.com/openai/codex/issues/30092), was still open on 2026-08-16. Update Codex and try, but expect it to still bite. |
 | You want to start completely clean | Fully quit your host(s), delete `open-mcp-apps.db` (plus its `-wal`/`-shm` siblings) from the store directory under [Configuration](#configuration). All apps and data gone, irreversibly, while staying installed. |
-| `pnpm install` exits 1 with `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 refuses third-party build scripts until you decide about them, and calls that an error. Nothing here needs building — `better-sqlite3` loads a prebuilt binary it ships, and esbuild's binary comes from its platform package — so the tree it leaves behind is complete and working. Answer `pnpm approve-builds` however you like, or use npm. We do not declare those scripts as allowed, because that would make pnpm compile `better-sqlite3` on machines with no toolchain (a container, most CI) and fail there for nothing. |
 
 ## Development
 

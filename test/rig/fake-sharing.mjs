@@ -34,6 +34,8 @@ export function makeShareWorld() {
 
   const world = {
     accounts, links, grants, ended, copies,
+    /** Addresses the deployment can email (null = it emails nobody, the engine-only default). */
+    mailable: null,
     addAccount(principal, label, store) { accounts.set(principal, { label, store, tenant: `t_${principal}` }); },
     /** A person pressing Accept on a link — the step no engine call can take. */
     claim(linkId, principal) {
@@ -80,7 +82,8 @@ export function makeShareWorld() {
           const id = `ln_${++seq}`;
           const link = { id, owner: principal, app, appBirth, role, access, accounts: [...who], url: `https://share.example/invite/${id}`, revoked: false };
           links.push(link);
-          return { ok: true, link: { id, app, role, access, accounts: [...who], url: link.url, expires_at: "2026-10-09T00:00:00.000Z" } };
+          const emailed = world.mailable ? who.filter((x) => world.mailable.includes(x)) : null;
+          return { ok: true, link: { id, app, role, access, accounts: [...who], url: link.url, expires_at: "2026-10-09T00:00:00.000Z", ...(emailed ? { emailed } : {}) } };
         },
         async list(req) {
           if (req && req.alias) {

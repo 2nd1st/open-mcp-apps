@@ -1,0 +1,10 @@
+# Only for pnpm users of this checkout (npm ignores this file). Since pnpm 11, a dependency
+# build script nobody has decided about makes `pnpm install` exit 1 (ERR_PNPM_IGNORED_BUILDS),
+# though the tree it leaves is complete. Our decision is "don't run them": better-sqlite3 loads
+# the prebuilt binary it ships, and esbuild's comes from its platform package. Allowing them
+# instead would compile better-sqlite3 on machines with no toolchain and fail there.
+# Measured 2026-10-12 in a Glama-shaped image: pnpm 10, 11 and 12 all exit 0 with this file,
+# and better-sqlite3 opens a database.
+allowBuilds:
+  esbuild: false
+  better-sqlite3: false

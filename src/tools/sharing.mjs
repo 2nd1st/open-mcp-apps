@@ -38,7 +38,7 @@ export function register(ctx) {
       // No idempotency key: two invites are two links. Not destructive: every revoke or role change
       // is undone by the same tool (invite again, set_role back).
       annotations: WRITE_NOT_IDEMPOTENT,
-      description: "Share one of the user's apps with other accounts — the app, the collections it binds (now and later) and its files — or manage shares. invite: a claim link; role REQUIRED, ask the user (viewer = read-only, editor = may change data, never code); access restricted (default: only `accounts` may claim) or anyone (anyone with the link — tell the user). Claimants sign in; nothing is emailed, hand the link to the user. list: links and people (for an @owner/app: its participants). revoke: a link (stops new claims) or accounts. set_role: accounts' role. leave: give up an @owner/app shared with the user.",
+      description: "Share one of the user's apps with other accounts — the app, the collections it binds (now and later) and its files — or manage shares. invite: a claim link; role REQUIRED, ask the user (viewer = read-only, editor = may change data, never code); access restricted (default: only `accounts` may claim) or anyone (anyone with the link — tell the user). Claimants sign in; the user sends the link unless the reply says it was emailed. list: links and people (for an @owner/app: its participants). revoke: a link (stops new claims) or accounts. set_role: accounts' role. leave: give up an @owner/app shared with the user.",
       inputSchema: {
         action: z.enum(["invite", "list", "revoke", "set_role", "leave"]),
         app: z.string().optional().describe("the user's app, or an @owner/app (list, leave)"),
@@ -101,9 +101,15 @@ export function register(ctx) {
         const who = access === "anyone"
           ? "ANYONE who has this link can claim it (after signing in) and then " + (a.role === "editor" ? "read AND change" : "read") + " this data — revoke the link to stop new claims."
           : `Only ${accounts.join(", ")} can claim it, after signing in.`;
+        // Emailing is the deployment's (the provider reports whom it reached); the engine only says so.
+        const emailed = accounts.filter((x) => (r.link.emailed || []).includes(x));
+        const rest = accounts.filter((x) => !emailed.includes(x));
+        const mail = !emailed.length ? "Nothing was emailed: give the link to the user to send."
+          : !rest.length ? `The link was emailed to ${emailed.join(", ")}.`
+          : `The link was emailed to ${emailed.join(", ")} but NOT to ${rest.join(", ")}: give the link to the user to send them.`;
         return toMcp(answer.ack({ ok: true, app: a.app, link: r.link },
           `Share link for "${a.app}" (${a.role === "editor" ? "can edit data" : "read-only"}): ${r.link.url ?? "(see list)"}${r.link.expires_at ? ` — expires ${r.link.expires_at}` : ""}\n` +
-          `${who} Nothing was emailed: give the link to the user to send.\n` +
+          `${who} ${mail}\n` +
           `It shares the app, ${rows} and ${files} file(s). It follows the app: a collection the app binds later is shared too. ` +
           `They run it sandboxed and can never change its code (they can copy it).`));
       }

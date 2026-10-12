@@ -93,6 +93,7 @@ import { answer, toMcp } from "./contracts.mjs";
  * @property {string} [url]       the claim URL — present on invite; present on list while the link is live
  * @property {string} [expires_at]
  * @property {boolean} [revoked]
+ * @property {string[]} [emailed] on invite: the accounts the deployment emailed the link to (absent = none)
  * @typedef {Object} GrantInfo
  * @property {string} app
  * @property {string} account     the grantee's label

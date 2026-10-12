@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.9.0([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.9.1([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -370,7 +370,6 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 | 症状 | 是什么 |
 |---|---|
 | 更新了,但宿主行为还是旧的 | 宿主不**彻底退出**(Cmd-Q,不是关窗)就会一直挂着连旧数据的旧 server 进程。 |
-| `pnpm install` 以 1 退出，报 `ERR_PNPM_IGNORED_BUILDS` | pnpm 11 在你表态之前不跑第三方构建脚本，并把这件事算作错误。这里没有东西需要构建 —— `better-sqlite3` 加载它自带的预编译产物，esbuild 的二进制来自它的平台包 —— 所以它留下的这棵树是完整可用的。`pnpm approve-builds` 随你怎么答，或者用 npm。我们不去声明「允许这些脚本」：那会让 pnpm 在没有工具链的机器上（容器、多数 CI）真的去编译 `better-sqlite3`，白白失败。 |
 | Claude Desktop 自动更新后又开始弹批准框 | Desktop 自动更新偶尔会重置这些决定(上游 [#56954](https://github.com/anthropics/claude-code/issues/56954),已于 2026-06-23 以 *not planned* 关闭)——那条 issue 不会带来修复,重新允许即可。 |
 | 每个 app 各弹一次授权 | 每个你 pin 过的 app(**Settings → 已安装 → 该 app → 单独的工具**)都有自己的 `open_<name>` tool,宿主对每个 tool 各问一次。用不着的就取消 pin。2026-07-28 到 2026-08-16 之间留在宿主条目里的 `OMA_DYNAMIC_TOOLS=1` 现在已经不起作用;`node install.mjs --check` 会把它报成 `stale`,重跑安装器只删这一个键。见[配置](#配置)。 |
 | 没有 viewer 链接,或 viewer 是别人的 | 端口被一个非 open-mcp-apps 的进程占了。把 `PORT` 换成空闲的。 |

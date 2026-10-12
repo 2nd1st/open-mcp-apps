@@ -466,6 +466,15 @@ console.log("8. share — invite (restricted / anyone), claim, list, set_role, r
     !inv.isError && link.accounts.join() === "mia@example.com" && /Only mia@example\.com can claim/.test(textOf(inv))
     && /"recipes" \(1 rows\)/.test(textOf(inv)) && /Nothing was emailed/.test(textOf(inv)));
   ok("…with the app's birth recorded for the grant", world.links.at(-1).appBirth === leo.appBirth("recipes"));
+  world.mailable = ["mia@example.com", "zoe@example.com"];
+  const mailedAll = await call(o, "share", { action: "invite", app: "recipes", role: "viewer", accounts: ["mia@example.com", "zoe@example.com"] });
+  ok("a deployment that emailed everyone: the receipt says so instead of 'hand the link over'",
+    !mailedAll.isError && /The link was emailed to mia@example\.com, zoe@example\.com\./.test(textOf(mailedAll)) && !/Nothing was emailed/.test(textOf(mailedAll))
+    && mailedAll.structuredContent.link.emailed.join() === "mia@example.com,zoe@example.com");
+  const mailedSome = await call(o, "share", { action: "invite", app: "recipes", role: "viewer", accounts: ["mia@example.com", "kai@example.com"] });
+  ok("…emailed only some: the receipt names who still needs the link",
+    /emailed to mia@example\.com but NOT to kai@example\.com: give the link/.test(textOf(mailedSome)));
+  world.mailable = null;
   ok("a claim by someone not on the list is refused (the deployment's rule)", world.claim(link.id, "u_leif").ok === false);
   ok("…and by the listed account succeeds", world.claim(link.id, "u_mia").ok === true);
   const m = await connect(mia, "u_mia");
