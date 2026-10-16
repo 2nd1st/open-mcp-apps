@@ -96,6 +96,7 @@ export function register(ctx) {
       const r = store.execute({
         type: "save_app", command_id: a.command_id || randomUUID(),
         name: a.name, ui: old.ui, manifest: old.manifest ? JSON.parse(old.manifest) : null, skill: old.skill ?? null, skill_from: old.skill_from ?? null,
+        restored_from: target.version,
         description: "", actor: "agent", host: hostName(),
         ...(cur ? { expected_version: cur.version } : {}),
       });

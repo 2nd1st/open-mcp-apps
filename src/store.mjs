@@ -1201,6 +1201,15 @@ export function openStore(path, { readOnly = false } = {}) {
           AND EXISTS (SELECT 1 FROM change_event s
                        WHERE s.aggregate_id = d.aggregate_id
                          AND s.event_type = 'component_saved' AND s.seq > d.seq)`),
+    // lifeStart, asked about the time before `seq`: where the life that ended at `seq` began.
+    lifeStartBefore: db.prepare(
+      `SELECT COALESCE(MAX(d.seq), 0) AS v
+         FROM change_event d
+        WHERE d.aggregate_id = ? AND d.event_type = 'component_deleted' AND d.seq < ?
+          AND EXISTS (SELECT 1 FROM change_event s
+                       WHERE s.aggregate_id = d.aggregate_id
+                         AND s.event_type = 'component_saved' AND s.seq > d.seq AND s.seq < ?)`),
+    restoredFromAt: db.prepare("SELECT json_extract(payload,'$.restored_from') AS v FROM change_event WHERE seq = ?"),
     histSince: db.prepare("SELECT version, ts, length(ui) AS ui_size FROM app_history WHERE name = ? AND version > ? ORDER BY version DESC"),
     // "Is there an app outside this set?" — EXISTS stops at the first row instead of scanning
     // the registry, and json_each keeps ONE prepared statement for any set, so the store never has
@@ -1794,7 +1803,11 @@ export function openStore(path, { readOnly = false } = {}) {
       // the audit answer to "where did this come from", and the record a retried copy reads its
       // collection mapping back from. Only the engine's copy path sets it — no tool passes it on.
       const copied = command.copied_from && typeof command.copied_from === "object" && !Array.isArray(command.copied_from) ? command.copied_from : null;
-      const m = emit(name, "component_saved", { name, size: ui.length, created: !existed, manifest_action: manifestAction, ...(copied ? { copied_from: copied } : {}) });
+      // `restored_from` is the checkpoint (its version) a restore_app re-saved. computeDisposition
+      // reads it: an app deleted and then restored is the same app back, so its old collections are
+      // still provably its own. Only restore_app sets it, and only to a version of this app.
+      const restored = Number.isInteger(command.restored_from) && q.compVersion.get(name, command.restored_from) ? command.restored_from : null;
+      const m = emit(name, "component_saved", { name, size: ui.length, created: !existed, manifest_action: manifestAction, ...(copied ? { copied_from: copied } : {}), ...(restored ? { restored_from: restored } : {}) });
       const version = m.seq;
       // ONE description: an app with a skill is described by its skill's frontmatter wherever it is
       // listed (list_apps, the App Store, a share), so the column follows the slot on every save and a
@@ -2193,8 +2206,20 @@ export function openStore(path, { readOnly = false } = {}) {
     // because the two are spelled alike. The ledger answers what actually matters: a collection
     // whose first event predates THIS APP'S first save (this life — a name can be reused, and
     // the tombstone keeps the previous holder's events) was not created for it.
-    const life = q.lifeStart.get(comp).v;
-    const compBorn = q.firstCompEvent.get(comp, life).v;
+    // A life that opened by restoring a checkpoint of the life before it (delete, then
+    // restore_app) is the same app brought back, so the collections it made then are still its
+    // own. Walk back through such restores to the birth they continue. A reused name opens with a
+    // plain save and stops the walk, as before.
+    let life = q.lifeStart.get(comp).v;
+    let compBorn = q.firstCompEvent.get(comp, life).v;
+    while (life > 0 && compBorn > 0) {
+      const from = q.restoredFromAt.get(compBorn)?.v;
+      if (!Number.isInteger(from) || from >= life) break;
+      const prev = q.lifeStartBefore.get(comp, life, life).v;
+      if (from <= prev) break;
+      life = prev;
+      compBorn = q.firstCompEvent.get(comp, life).v;
+    }
     const bornAfterTheApp = (c) => {
       const collBorn = q.firstCollEvent.get(c).v;
       return compBorn > 0 && collBorn > 0 && collBorn > compBorn;

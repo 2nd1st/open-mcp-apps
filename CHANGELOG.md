@@ -7,6 +7,19 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.10.1 — 2026-10-17
+
+Two fixes found testing 0.10.0 on a real host. Nothing is removed or renamed.
+
+- **Purging an app you deleted and restored takes its data again.** `restore_app` after a
+  `delete_app` brings the same app back, but the purge plan judged the app's own collection
+  "unknown" and kept it, because the collection predated the restore. A restore's save now records
+  which checkpoint it came from (`restored_from`), and the plan walks back through such restores to
+  the app's original birth. A name reused by a fresh save after a delete still inherits nothing.
+  Shares are unaffected: a delete still ends them, restored or not.
+- **With `proactivity: false` the settings app no longer offers "AI proactivity".** Nothing reads
+  that preference when proactivity is off, so `get_ui_preference_schema` leaves it out there.
+
 ## 0.10.0 — 2026-10-16
 
 Changes from the Claude directory review: the model can no longer erase data for good or touch

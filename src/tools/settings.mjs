@@ -14,6 +14,9 @@ import { latestPref } from "../runtime-core.mjs";
 
 export function register(ctx) {
   const { server, store, hostName, failNote, fail, toAck } = ctx;
+  // With proactivity off the instructions never read the `proactivity` pref, so the settings app
+  // must not offer it: a control that changes nothing is worse than no control.
+  const prefs = ctx.proactivity === false ? SHARED_PREFS.filter((p) => p.key !== "proactivity") : SHARED_PREFS;
 
   // ------------------------------------------------------ prefs schema (settings pane, P4)
   server.registerTool(
@@ -34,8 +37,8 @@ export function register(ctx) {
       },
     },
     async () => ({
-      content: [{ type: "text", text: `Shared preference catalog: ${SHARED_PREFS.map((p) => p.key).join(", ")}.` }],
-      structuredContent: { shared: SHARED_PREFS },
+      content: [{ type: "text", text: `Shared preference catalog: ${prefs.map((p) => p.key).join(", ")}.` }],
+      structuredContent: { shared: prefs },
     }),
   );
 

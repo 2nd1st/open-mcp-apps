@@ -34,7 +34,7 @@ host 碰不到你笔记本上的 loopback server,所以 **claude.ai 和 ChatGPT 
 
 | | |
 |---|---|
-| **版本** | 0.10.0([`CHANGELOG.md`](../CHANGELOG.md)) |
+| **版本** | 0.10.1([`CHANGELOG.md`](../CHANGELOG.md)) |
 | **许可** | 全仓 MIT([`LICENSE`](../LICENSE) · [`LICENSING.md`](../LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` —— **带 scope**;不带 scope 的同名包与本项目无关 |
 | **命令** | `npx -y @2nd1st/open-mcp-apps` —— 写进 host 的 MCP 配置、由 host 拉起的那一行;是 stdio server,不是给人在终端手敲的(手敲它只会停在那儿等,并且会说明自己在等) |
@@ -392,7 +392,7 @@ HTML 是一个可读的挂载点,引用自己的构建产物(`<script type="modu
 
 ```bash
 npm test                     # 下面每个 suite,外加静态不变量与预算检查
-node test/server-smoke.mjs   # 468 条断言,走真实 stdio——含运行时 app 创建
+node test/server-smoke.mjs   # 471 条断言,走真实 stdio——含运行时 app 创建
 node test/http-smoke.mjs     #  85 条断言,走 HTTP transport(含 SSE /events、viewer)
 node test/provenance.mjs     #  39 条断言,验 app 的 author(信任层)不可被覆写
 node test/seed-smoke.mjs     #  30 条断言,验 seed 流水线

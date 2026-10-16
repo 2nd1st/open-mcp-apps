@@ -713,7 +713,8 @@ export function createEngine(store, { hostLabel, instructions, viewBase, widgetD
   // `route` is the handle resolver, and its ABSENCE is what keeps a local install exactly as it was:
   // every tool asks `route && isHandle(x)` before treating a name as anything but its own.
   const ctx = { server, store, fileChannel, hostName, run, toAck, toConflict, toFail, renderItems, failNote, fail, fileFailNote, computeCaps, viewBase, widgetDomain: widgetDomains, cspPolicy: cspRule, functions: fnSeat, dynamicTools: pinning,
-    caller: shareOpts.caller, route: shareOpts.mounts ? makeRouter(shareOpts.mounts) : null, sharing: shareOpts.sharing };
+    caller: shareOpts.caller, route: shareOpts.mounts ? makeRouter(shareOpts.mounts) : null, sharing: shareOpts.sharing,
+    proactivity: proactivity !== false };
 
   // Order is the tool-surface order, and the surface is a golden file — do not reshuffle.
   // apps goes first because it hands back registerApp, which app-store and registry

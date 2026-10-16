@@ -995,6 +995,24 @@ console.log("15b. purge_app — two-step demand, then the data goes too; delete_
     old.structuredContent.reason === undefined, JSON.stringify(old.structuredContent));
   ok("…and the data is still there",
     (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe2" } })).structuredContent.items.length === 1);
+
+  // Deleted, then brought back with restore_app: the same app, so its collection is still provably
+  // its own and a purge takes it (stg 2026-10-16: it was judged unknown and kept). A reused name,
+  // saved fresh after a delete, still is not.
+  const cpOf = async (n) => (await client.callTool({ name: "list_app_checkpoints", arguments: { name: n } })).structuredContent;
+  await client.callTool({ name: "restore_app", arguments: { name: "cascade-probe2", checkpoint: 1, command_id: randomUUID() } });
+  const back = await client.callTool({ name: "purge_app", arguments: { name: "cascade-probe2", command_id: randomUUID() } });
+  ok("delete → restore_app → purge: the collection is still the app's own (exclusive)",
+    (back.structuredContent.plan || []).some((c) => c.collection === "cascade-probe2" && c.verdict === "exclusive"),
+    JSON.stringify(back.structuredContent.plan));
+  await client.callTool({ name: "save_app", arguments: { name: "cascade-probe3", ui: noteHtml, description: "x" } });
+  await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "cascade-probe3", fields: { t: 1 } } });
+  await client.callTool({ name: "delete_app", arguments: { name: "cascade-probe3", command_id: randomUUID() } });
+  await client.callTool({ name: "save_app", arguments: { name: "cascade-probe3", ui: noteHtml, description: "a different app, same name" } });
+  const reused = await client.callTool({ name: "purge_app", arguments: { name: "cascade-probe3", command_id: randomUUID() } });
+  ok("…while a name reused by a fresh save after the delete still does not inherit it (unknown, kept)",
+    (reused.structuredContent.plan || []).some((c) => c.collection === "cascade-probe3" && c.verdict === "unknown"),
+    JSON.stringify(reused.structuredContent.plan) + JSON.stringify(await cpOf("cascade-probe3")));
 }
 
 console.log("15c. checkpoints — the number a person reads is not the ledger's");
@@ -2217,6 +2235,18 @@ ok("🔴 an override WITHOUT the placeholders gets neither dynamic segment appen
   ok("…while the default still carries both (local installs are unchanged)",
     /PROACTIVITY —/.test(defaultEmpty) && /key "proactivity"/.test(defaultEmpty));
   ok("…and no emptied segment leaves a blank-line hole", !/\n{3,}/.test(plainSettled) && !/\n{3,}/.test(plainEmpty));
+  // …and the settings app stops offering a preference nothing reads any more.
+  const prefKeys = async (opts) => {
+    const e = barrel.createEngine(emptyStore, { hostLabel: "plain-test", ...opts });
+    const [ct, stt] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: "plain", version: "1.0.0" });
+    await e.connect(stt); await c.connect(ct);
+    const r = await c.callTool({ name: "get_ui_preference_schema", arguments: {} }); await c.close();
+    return r.structuredContent.shared.map((p) => p.key);
+  };
+  const plainKeys = await prefKeys({ proactivity: false }), defaultKeys = await prefKeys({});
+  ok("proactivity:false — the preference catalog drops `proactivity`, and only that",
+    !plainKeys.includes("proactivity") && defaultKeys.includes("proactivity") && plainKeys.length === defaultKeys.length - 1, plainKeys.join(","));
   ok("the skill line is reference, not an order to read first",
     /get_app_skill returns them as reference, with the author named/.test(plainSettled) && !/Before first working with an app's data/.test(plainSettled));
 }
