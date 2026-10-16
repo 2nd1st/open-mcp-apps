@@ -545,8 +545,12 @@ export function register(ctx) {
     {
       title: "Delete item",
       annotations: DESTRUCTIVE,
-      description: "Delete an item permanently. May return reason:\"confirmation_required\" with a request_state — show the user what is named in `note`, then re-send the same call with request_state attached.",
-      inputSchema: z.object({ ...cmdArgs, id: z.string(), collection: inCollection, expected_version: z.number().optional(), request_state: z.string().optional(), require_confirmation: z.boolean().optional() }).passthrough(),
+      description: "Delete an item. The ledger keeps its last contents. May return reason:\"confirmation_required\" with a request_state — show the user what is named in `note`, then re-send the same call with request_state attached.",
+      // No `require_confirmation` here since 0.10: a flag the model supplies is a confirmation the
+      // model can switch off (Claude directory review, 2026-10-16). The store still reads it —
+      // `.passthrough()` carries the one caller that raises it on purpose, the runner's
+      // delete_items:"confirm" tier for an embedded child (runner.mjs deleteGate).
+      inputSchema: z.object({ ...cmdArgs, id: z.string(), collection: inCollection, expected_version: z.number().optional(), request_state: z.string().optional() }).passthrough(),
       outputSchema: { ...ackSchema, request_state: z.string().optional(), expires_at: z.string().optional(), preview: z.string().optional() },
     },
     async (a) => {

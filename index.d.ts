@@ -55,6 +55,10 @@ export interface EngineOptions {
    *  app. `false` = never any per-app tool and a constant `tools/list` — pass it on any deployment
    *  that has to be able to state what its tool list is. */
   dynamicTools?: boolean;
+  /** Default `true`. `false` drops the PROACTIVITY segment, the everyday-phrase vocabulary and the
+   *  onboarding step that records the preference, so the instructions only describe what the tools
+   *  do — for a deployment whose directory reads anything more as steering. */
+  proactivity?: boolean;
   /** WHO is calling — an identity the deployment authenticated. Every write made on this engine
    *  (its own store, or another account's through a share) carries `principal` in the ledger,
    *  stamped server-side; no argument can set it. Absent ⇒ nothing is stamped. */

@@ -9,7 +9,7 @@ import { z } from "zod";
 import { randomUUID } from "node:crypto";
 import { SETTINGS_COLLECTION, RESERVED_KEY_RE, SECRET_KEY_RE, cspShapeError, CSP_DOMAIN_KEYS } from "../store.mjs";
 import { SECRETS_RESERVED_NOTE } from "../functions.mjs";
-import { RO, WRITE, ackSchema, SHARED_PREFS, CAP_NAMES, coerceCap, capValueHelp } from "../contracts.mjs";
+import { RO, DESTRUCTIVE, ackSchema, SHARED_PREFS, CAP_NAMES, coerceCap, capValueHelp } from "../contracts.mjs";
 import { latestPref } from "../runtime-core.mjs";
 
 export function register(ctx) {
@@ -54,11 +54,15 @@ export function register(ctx) {
     "security_set",
     {
       title: "Set a security policy key",
-      annotations: WRITE,
-      description: "Privileged writer for reserved settings keys (security:* / policy:*) — the ONLY tool that can write them; the generic data_* tools refuse reserved keys. Upserts one key/value in the settings collection.",
+      // Destructive: it can widen what an app may reach (a CSP origin, call_tools "*"). App-only
+      // (engine.mjs APP_ONLY): the settings app's toggles are its one caller, and the person's.
+      annotations: DESTRUCTIVE,
+      description: "Settings app only: writes one reserved settings key (security:* / policy:*), the person's security policy. The generic data_* tools refuse reserved keys.",
       inputSchema: {
         key: z.string().describe("a reserved key, e.g. security:kanban:send_message (cap suffixes are snake_case — the caps field names)"),
-        value: z.string().describe("the policy value: allow | deny (true/false too); delete_items also takes confirm; call_tools takes \"*\", a JSON array or a comma-separated tool list; policy:csp:<app> (or policy:csp:*) takes a JSON object of origin arrays, e.g. {\"connectDomains\":[\"https://api.example.com\"]}. An unknown value is REFUSED, never stored"),
+        // The full grammar is coerceCap's (contracts.mjs) and cspShapeError's (store.mjs); the one
+        // caller is the settings app, so the wire carries the shape, not a manual.
+        value: z.string().describe("allow | deny | confirm, a tool list for call_tools, or a CSP origins object for policy:csp:*. An unknown value is refused"),
         command_id: z.string().optional().describe("idempotency key (uuid); auto-generated if omitted"),
       },
       outputSchema: ackSchema,

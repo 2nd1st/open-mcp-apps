@@ -116,60 +116,77 @@ export function register(ctx) {
   // mount now surfaces as a user-facing notice in the runtime naming the explicit recovery path
   // (list_app_checkpoints → restore_app). Deliberate rollback was always restore_app and still is.
 
+  // Deleting an app, split in two by WHO may do it (Claude directory review, 2026-10-16).
+  //   · delete_app — the model's: a tombstone. Data, files and history stay, restore_app brings
+  //     the app back, so nothing it does is permanent and nothing needs confirming.
+  //   · purge_app — the person's: the app AND the data only it used, for good. App-only, reached
+  //     from the settings app's Delete with "Delete its data too" ticked. Its two-step plan +
+  //     request_state is the settings pane showing the person what goes and what stays.
+  // Until 0.10 both were delete_app, with data:"cascade" — and the plan's request_state went to
+  // whoever called, so a model could read the plan and confirm it itself.
+  const deleteApp = async (a, cascade) => {
+    const shared = await lockedOrNot(a.name);
+    if (shared) return shared;
+    if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — its UI ships with the engine and can't be deleted here.`);
+    // Who this app is shared with, asked BEFORE it goes: a delete ends every share of it (the
+    // grants name this app's life — store.mjs sharedScopeOf — and a new app under the same
+    // name is a new life), and the receipt says so while the owner can still tell people.
+    let sharedWith = 0;
+    if (ctx.sharing && store.getApp(a.name)) {
+      try {
+        const l = await ctx.sharing.list({ app: a.name });
+        if (l && l.ok) sharedWith = (l.grants || []).filter((g) => g.role !== "owner").length;
+      } catch { /* the receipt simply does not mention it */ }
+    }
+    // The store's delete_app reads `data`; neither tool lets a caller choose it.
+    const { data: _ignored, ...args } = a;
+    const r = run({ ...args, data: cascade ? "cascade" : "keep" }, "delete_app");
+    // Not isError, same doctrine as delete_item: the demand IS the useful payload — a host
+    // that discards errored results would strand the confirmation flow on its first leg.
+    if (r.confirmation_required) {
+      const kept = (r.plan || []).filter((c) => c.verdict !== "exclusive");
+      const note = `Confirmation required — deleting ${r.preview}. This is permanent (no undo). ` +
+        (kept.length ? `KEPT: ${kept.map((c) => `${c.collection} (${c.why})`).join("; ")}. ` : "") +
+        `Show the plan, then re-send the same call with request_state (expires ${r.expires_at}).`;
+      return toMcp(answer.ack({ ok: false, reason: "confirmation_required", name: a.name,
+        request_state: r.request_state, expires_at: r.expires_at, preview: r.preview,
+        plan: r.plan, settings_keys: r.settings_keys, note }, note));
+    }
+    if (!r.ok) return fail(r.error === "not_found" ? `No app "${a.name}" in the registry. list_apps shows what exists.`
+      : r.error === "confirmation_invalid" ? `The confirmation no longer matches the world it was issued for (something wrote in between, or the state is stale). Re-send WITHOUT request_state to get a fresh plan.`
+      : r.error === "confirmation_expired" ? "The confirmation expired. Re-send WITHOUT request_state to get a fresh plan."
+      : failNote(r));
+    const took = r.cascaded
+      ? ` Removed ${r.cascaded.map((c) => `${c.collection} (${c.rows} rows)`).join(", ") || "no collections"} and ${r.settings_keys} setting(s); anything shared or unprovable was kept.`
+      : " Its data, files and history were KEPT; restore_app brings it back.";
+    const ended = sharedWith && !r.idempotent
+      ? ` It was shared with ${sharedWith} account(s): those shares ended with it, and an app created later under this name is NOT shared.` : "";
+    return toMcp(answer.ack({ ok: true, name: a.name, deleted: true,
+      ...(r.cascaded ? { cascaded: r.cascaded, settings_keys: r.settings_keys } : {}), ...(ended ? { note: ended.trim() } : {}) },
+      `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}.` + took + ended));
+  };
+
   server.registerTool(
     "delete_app",
     {
       title: "Delete app",
       annotations: DESTRUCTIVE,
-      description: "Delete an app from the registry. Default data:\"keep\" is a tombstone: its data, files and history are KEPT and restore_app can bring the app back. data:\"cascade\" ALSO permanently deletes the data provably only this app used (plus its settings) — it always returns a disposition plan first: read the plan to the user (what will be deleted AND what will be kept and why), then re-send the same call with request_state. Cascade is NOT undoable. Shared or unprovable collections are always kept.",
+      description: "Delete an app from the registry. Its data, files and history are KEPT, and restore_app brings it back. Erasing an app's data for good is the user's, in the settings app.",
+      inputSchema: { ...cmdArgs, name: z.string() },
+    },
+    (a) => deleteApp(a, false),
+  );
+
+  server.registerTool(
+    "purge_app",
+    {
+      title: "Delete app and its data",
+      annotations: DESTRUCTIVE,
+      description: "Settings app only: deletes an app AND the data only it used, permanently. Returns a plan first; the same call re-sent with request_state carries it out. Shared or unprovable collections are kept.",
       inputSchema: { ...cmdArgs, name: z.string(),
-        data: z.enum(["keep", "cascade"]).optional().describe("\"keep\" (default): tombstone, data survives. \"cascade\": delete the app AND the data only it used — two-step confirmed, permanent"),
-        request_state: z.string().optional().describe("the state from a prior confirmation_required answer — re-send the identical call with it attached") },
+        request_state: z.string().optional().describe("the state from the plan answer") },
     },
-    // Cascade returned in W1 (it retired 2026-08-04, elegance B1 — the bespoke plan_token
-    // protocol went with it, permanently). The confirmation now rides the W-S request_state
-    // two-step: the store recomputes the disposition in its own transaction, binds the demand to
-    // the world the user was shown (any interleaved write invalidates the answer), and the
-    // server never guesses which user data to erase — shared/unknown collections are kept.
-    async (a) => {
-      const shared = await lockedOrNot(a.name);
-      if (shared) return shared;
-      if (LOCKED_APPS.has(a.name)) return fail(`"${a.name}" is a locked system app — its UI ships with the engine and can't be deleted here.`);
-      // Who this app is shared with, asked BEFORE it goes: a delete ends every share of it (the
-      // grants name this app's life — store.mjs sharedScopeOf — and a new app under the same
-      // name is a new life), and the receipt says so while the owner can still tell people.
-      let sharedWith = 0;
-      if (ctx.sharing && store.getApp(a.name)) {
-        try {
-          const l = await ctx.sharing.list({ app: a.name });
-          if (l && l.ok) sharedWith = (l.grants || []).filter((g) => g.role !== "owner").length;
-        } catch { /* the receipt simply does not mention it */ }
-      }
-      const r = run(a, "delete_app");
-      // Not isError, same doctrine as delete_item: the demand IS the useful payload — a host
-      // that discards errored results would strand the confirmation flow on its first leg.
-      if (r.confirmation_required) {
-        const kept = (r.plan || []).filter((c) => c.verdict !== "exclusive");
-        const note = `Confirmation required — deleting ${r.preview}. This is permanent (no undo). ` +
-          (kept.length ? `KEPT: ${kept.map((c) => `${c.collection} (${c.why})`).join("; ")}. ` : "") +
-          `Read the plan to the user, then re-send the same call with request_state (expires ${r.expires_at}).`;
-        return toMcp(answer.ack({ ok: false, reason: "confirmation_required", name: a.name,
-          request_state: r.request_state, expires_at: r.expires_at, preview: r.preview,
-          plan: r.plan, settings_keys: r.settings_keys, note }, note));
-      }
-      if (!r.ok) return fail(r.error === "not_found" ? `No app "${a.name}" in the registry. list_apps shows what exists.`
-        : r.error === "confirmation_invalid" ? `The confirmation no longer matches the world it was issued for (something wrote in between, or the state is stale). Re-send WITHOUT request_state to get a fresh plan.`
-        : r.error === "confirmation_expired" ? "The confirmation expired. Re-send WITHOUT request_state to get a fresh plan."
-        : failNote(r));
-      const took = r.cascaded
-        ? ` Cascade removed ${r.cascaded.map((c) => `${c.collection} (${c.rows} rows)`).join(", ") || "no collections"} and ${r.settings_keys} setting(s); anything shared or unprovable was kept.`
-        : " Its data and settings were KEPT — remove rows directly with the data_* tools if they should go too.";
-      const ended = sharedWith && !r.idempotent
-        ? ` It was shared with ${sharedWith} account(s): those shares ended with it, and an app created later under this name is NOT shared.` : "";
-      return toMcp(answer.ack({ ok: true, name: a.name, deleted: true,
-        ...(r.cascaded ? { cascaded: r.cascaded, settings_keys: r.settings_keys } : {}), ...(ended ? { note: ended.trim() } : {}) },
-        `Deleted "${a.name}"${r.idempotent ? " (already deleted)" : ""}.` + took + ended));
-    },
+    (a) => deleteApp(a, true),
   );
 
 }

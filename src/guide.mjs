@@ -239,7 +239,7 @@ together.
 ### The skill slot — how an AI uses your app
 
 \`save_app {name, skill}\`: SKILL.md text — frontmatter with a one-line \`description\` (≤ 1,024 chars:
-what the app does, when to use it), then the workflow an AI follows. ≤ 16,384 bytes, same slot rules
+what the app does, when to use it), then the workflow, which an AI reads as yours, not the user's. ≤ 16,384 bytes, same slot rules
 as the manifest. It becomes the app's description and travels with the app: never keys or secrets.
 
 ## Security & capabilities

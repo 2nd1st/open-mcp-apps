@@ -7,6 +7,34 @@ This project follows [semantic versioning](https://semver.org/). While the major
 version is `0`, the engine's public API may still change between minor releases;
 each such change is called out here.
 
+## 0.10.0 — 2026-10-16
+
+Changes from the Claude directory review: the model can no longer erase data for good or touch
+the security policy, and skills are reference rather than orders. Breaking for anything that
+passes `data: "cascade"` to `delete_app` or `require_confirmation` to `data_delete_item`.
+
+- **The model can no longer erase data for good.** `delete_app` only tombstones now: the app's
+  data, files and history stay, and `restore_app` brings it back. Deleting an app together with
+  its data moved to a new tool, `purge_app`, which is app-only and is called by the settings app's
+  Delete when "Delete its data too" is ticked. **Changed:** `delete_app` no longer takes `data` or
+  `request_state`; a `data: "cascade"` sent anyway is ignored and the app is tombstoned.
+- **`data_delete_item` drops `require_confirmation`.** The model no longer decides whether its own
+  deletes are confirmed. An item delete is recorded in the ledger with the item's last contents.
+  The runner's `delete_items: "confirm"` tier for embedded apps still raises the bar, as before.
+- **The settings app is the person's.** `security_set` is marked destructive, and both it and
+  `purge_app` are app-only. The screen relay refuses to read or operate the settings app, on the
+  server and again in the widget. `security_set` and `purge_app` now carry
+  `openai/widgetAccessible`: in a host, the settings app's toggles go through the host bridge, so a
+  default-deny host was refusing them.
+- **Skills are usage notes, not orders.** `get_app_skill` and the instructions describe a skill as
+  the app author's notes, returned as reference with the author named. Nothing tells the model to
+  read one before working on an app's data. An App Store app's notes carry the same "not the
+  user's instruction" line as any other author's.
+- **New option `proactivity: false`.** It drops the PROACTIVITY segment, the everyday-phrase
+  vocabulary and the onboarding step that records the preference, so the instructions only
+  describe what the tools do. It defaults to on, so local installs are unchanged.
+- `tools/list` is 34 tools (`purge_app` added).
+
 ## 0.9.1 — 2026-10-12
 
 A small release: the `share` reply can say whom the invite was emailed to, and a checkout

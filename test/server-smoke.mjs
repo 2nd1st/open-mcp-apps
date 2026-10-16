@@ -874,6 +874,11 @@ const KNOWN_SAFE = new Set([
   // minus the engine's chrome (the delete confirmation answers only an isTrusted click; reproduced
   // and fixed before this entry). screen_poll is that widget's app-only long poll.
   "screen_read", "screen_act", "screen_poll",
+  // purge_app (§1.5 review, 2026-10-16): NOT new reach — it is delete_app's data:"cascade", split
+  // out under its own name so the model can no longer reach it (app-only; the settings app's). The
+  // same store delete_app command, the same disposition plan and request_state two-step, through
+  // core() like every write. No file system beyond the app's own file rows, no network, no execution.
+  "purge_app",
 ]);
 const DYNAMIC_OPEN_RE = /^open_[a-z0-9_]+$/; // per-app open_<name> (dynamic tools)
 ({ tools } = await client.listTools());
@@ -958,25 +963,38 @@ ok("deleting an unknown app fails cleanly", delMissing.isError === true && /No a
 
 // 15b. cascade returned in W1 (elegance B1's promised comeback) — no bespoke plan_token this
 // time: the demand rides the W-S request_state two-step, and the first call NEVER deletes.
-console.log("15b. delete_app data:\"cascade\" — two-step demand, then the data goes too");
+// Since 0.10 it is its own tool, purge_app, app-only (the settings app's): delete_app is the
+// model's and can only tombstone (Claude directory review, 2026-10-16).
+console.log("15b. purge_app — two-step demand, then the data goes too; delete_app cannot cascade");
 {
   await client.callTool({ name: "save_app", arguments: { name: "cascade-probe", ui: noteHtml, description: "x" } });
   await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "cascade-probe", fields: { t: 1 } } });
-  const demand = await client.callTool({ name: "delete_app", arguments: { name: "cascade-probe", data: "cascade", command_id: randomUUID() } });
+  const demand = await client.callTool({ name: "purge_app", arguments: { name: "cascade-probe", command_id: randomUUID() } });
   const dsc = demand.structuredContent;
-  ok("the first cascade call is a DEMAND, not a delete (and not isError — the demand is the payload)",
+  ok("the first purge call is a DEMAND, not a delete (and not isError — the demand is the payload)",
     !demand.isError && dsc.reason === "confirmation_required" && typeof dsc.request_state === "string");
   ok("…carrying the disposition plan with per-collection verdicts",
     Array.isArray(dsc.plan) && dsc.plan.some((c) => c.collection === "cascade-probe" && c.verdict === "exclusive"));
   ok("…and nothing was deleted yet",
     (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe" } })).structuredContent.items.length === 1);
-  const confirmed = await client.callTool({ name: "delete_app",
-    arguments: { name: "cascade-probe", data: "cascade", command_id: randomUUID(), request_state: dsc.request_state } });
-  ok("re-sent with request_state, the cascade executes and says what it took",
+  const confirmed = await client.callTool({ name: "purge_app",
+    arguments: { name: "cascade-probe", command_id: randomUUID(), request_state: dsc.request_state } });
+  ok("re-sent with request_state, the purge executes and says what it took",
     !confirmed.isError && confirmed.structuredContent.deleted === true &&
     (confirmed.structuredContent.cascaded || []).some((c) => c.collection === "cascade-probe" && c.rows === 1));
   ok("…and the exclusive collection's rows are gone",
     (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe" } })).structuredContent.items.length === 0);
+
+  // The model's door: an old-style data:"cascade" on delete_app is NOT a way back in. The schema no
+  // longer declares it, and the handler sets the disposition itself — so it tombstones, at once.
+  await client.callTool({ name: "save_app", arguments: { name: "cascade-probe2", ui: noteHtml, description: "x" } });
+  await client.callTool({ name: "data_add_item", arguments: { command_id: randomUUID(), collection: "cascade-probe2", fields: { t: 1 } } });
+  const old = await client.callTool({ name: "delete_app", arguments: { name: "cascade-probe2", data: "cascade", command_id: randomUUID() } });
+  ok("delete_app with data:\"cascade\" tombstones instead — no demand, no erase",
+    !old.isError && old.structuredContent.deleted === true && !old.structuredContent.cascaded &&
+    old.structuredContent.reason === undefined, JSON.stringify(old.structuredContent));
+  ok("…and the data is still there",
+    (await client.callTool({ name: "data_list", arguments: { collection: "cascade-probe2" } })).structuredContent.items.length === 1);
 }
 
 console.log("15c. checkpoints — the number a person reads is not the ledger's");
@@ -2172,6 +2190,35 @@ ok("🔴 an override WITHOUT the placeholders gets neither dynamic segment appen
     && (/GETTING STARTED/.test(inst32b) || /ALREADY HAS APPS/.test(inst32b))
     && !inst32b.includes("__ONBOARDING_OR_INVENTORY__") && !inst32b.includes("__PROACTIVITY_STANCE__"));
   await c32b.close();
+}
+// proactivity:false (Claude directory review, 2026-10-16): the hosted plane's instructions only
+// describe what the tools do — no PROACTIVITY segment, no everyday-phrase vocabulary, no onboarding
+// step that records the preference — on a store with apps AND on an empty one.
+{
+  const { mkdtempSync } = await import("node:fs");
+  const { tmpdir } = await import("node:os");
+  const emptyStore = barrel.openStore(join(mkdtempSync(join(tmpdir(), "oma-plain-")), "s.db"));
+  const instrOf = async (st, opts) => {
+    const e = barrel.createEngine(st, { hostLabel: "plain-test", ...opts });
+    const [ct, stt] = InMemoryTransport.createLinkedPair();
+    const c = new Client({ name: "plain", version: "1.0.0" });
+    await e.connect(stt); await c.connect(ct);
+    const t = c.getInstructions?.() ?? ""; await c.close(); return t;
+  };
+  const STEER = /PROACTIVITY|my expenses|the reading list|that board|what am I tracking|proactivity preference|key "proactivity"/;
+  const plainSettled = await instrOf(store32, { proactivity: false });
+  const plainEmpty = await instrOf(emptyStore, { proactivity: false });
+  const defaultEmpty = await instrOf(emptyStore, {});
+  ok("proactivity:false — no stance, no vocabulary, no preference step (store with apps)",
+    !STEER.test(plainSettled) && /ALREADY HAS APPS/.test(plainSettled) && /ROUTING:/.test(plainSettled), plainSettled.match(STEER)?.[0]);
+  ok("…and on an empty store: onboarding stays, minus the preference half",
+    !STEER.test(plainEmpty) && /GETTING STARTED/.test(plainEmpty) && /a NEW app costs tokens ONCE/.test(plainEmpty)
+      && /When they ask what this does or want an app/.test(plainEmpty) && !/useful opening move/.test(plainEmpty), plainEmpty.match(STEER)?.[0]);
+  ok("…while the default still carries both (local installs are unchanged)",
+    /PROACTIVITY —/.test(defaultEmpty) && /key "proactivity"/.test(defaultEmpty));
+  ok("…and no emptied segment leaves a blank-line hole", !/\n{3,}/.test(plainSettled) && !/\n{3,}/.test(plainEmpty));
+  ok("the skill line is reference, not an order to read first",
+    /get_app_skill returns them as reference, with the author named/.test(plainSettled) && !/Before first working with an app's data/.test(plainSettled));
 }
 const loader32 = await c32.readResource({ uri: await loaderUriOf(c32) });
 ok("served loader carries no brand layer", !loader32.contents[0].text.includes('data-oma="brand"'));

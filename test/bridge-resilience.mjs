@@ -1169,7 +1169,8 @@ console.log("\n12. scale-to-thumbnail lives in the ONE machine (W4) — no per-a
 
 console.log("\n13. 'Delete its data too' — settings runs the ENGINE's two-step, never its own (D-13 ③)");
 {
-  // The cascade confirmation is not a second arm-to-confirm: delete_app data:"cascade" answers
+  // The cascade confirmation is not a second arm-to-confirm: purge_app (delete_app data:"cascade"
+  // until 0.10 — app-only now, so the plan's request_state never reaches the model) answers
   // the FIRST call with a disposition plan plus a request_state bound to the world that plan
   // describes (server-smoke §15b pins the engine half). This section runs settings' real delete
   // card against a scripted engine and holds the two properties that matter: the first call never
@@ -1229,7 +1230,7 @@ console.log("\n13. 'Delete its data too' — settings runs the ENGINE's two-step
     ok("the first click only ARMS — nothing is sent", t.rig.calls.length === 0);
     await t.del();
     ok("unticked, delete_app is sent WITHOUT a disposition (the tombstone default)",
-      t.rig.calls.length === 1 && t.rig.calls[0].args.data === undefined &&
+      t.rig.calls.length === 1 && t.rig.calls[0].name === "delete_app" && t.rig.calls[0].args.data === undefined &&
       t.rig.calls[0].args.actor === "human", JSON.stringify(t.rig.calls[0]));
     ok("…and a keep-mode delete does not disturb the Data pane's cache",
       t.rig.closed === 1 && t.rig.apps === 1 && t.rig.data === 0);
@@ -1242,8 +1243,8 @@ console.log("\n13. 'Delete its data too' — settings runs the ENGINE's two-step
     await t.del();
     ok("the arm label says what the tick changed", t.node("d-del-lbl").textContent === "Really delete + data?");
     await t.del();
-    ok("🔴 ticked, the first call carries data:\"cascade\" and NO request_state",
-      t.rig.calls.length === 1 && t.rig.calls[0].args.data === "cascade" &&
+    ok("🔴 ticked, the first call is purge_app and carries NO request_state",
+      t.rig.calls.length === 1 && t.rig.calls[0].name === "purge_app" && t.rig.calls[0].args.data === undefined &&
       t.rig.calls[0].args.request_state === undefined);
     ok("…and nothing was deleted: the drawer stays open, the plan is on screen",
       t.rig.closed === 0 && t.rig.apps === 0 && t.node("d-plan").hidden === false);
@@ -1254,7 +1255,7 @@ console.log("\n13. 'Delete its data too' — settings runs the ENGINE's two-step
       lines.some((l) => /^Kept: shared-notes \(also declared by journal\)/.test(l)), JSON.stringify(lines));
     await t.yes();
     ok("the second leg is the IDENTICAL call with the state attached",
-      t.rig.calls.length === 2 && t.rig.calls[1].args.data === "cascade" &&
+      t.rig.calls.length === 2 && t.rig.calls[1].name === "purge_app" &&
       t.rig.calls[1].args.name === t.rig.calls[0].args.name &&
       t.rig.calls[1].args.request_state === "STATE-1", JSON.stringify(t.rig.calls[1].args));
     ok("…and only THEN is it gone — grid and Data pane both refreshed",

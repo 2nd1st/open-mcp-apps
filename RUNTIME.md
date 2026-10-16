@@ -17,7 +17,7 @@ Everything below was measured against a real engine in a real browser, not read 
 > ### 🔴 This file is the API surface. It is not the whole contract.
 >
 > The complete authoring contract — the API **plus** the two ways to write an app, the design
-> direction and the worked examples — is the `GUIDE` the engine hands its AI, **24,454 bytes** of it.
+> direction and the worked examples — is the `GUIDE` the engine hands its AI, **24,484 bytes** of it.
 > This file used to be a third of that, and the argument for reading the GUIDE was simply that it
 > was the bigger document. It isn't much bigger any more — the gap closed from **this** side, when
 > §8 and §9 were added — but neither of them is the worked examples. Size was never the reason;
@@ -331,7 +331,8 @@ Add one `trips` row per stop: `place` required, `days` as a number. …
   optionally quoted) and stores everything verbatim. The whole skill is at most 16,384 bytes.
 - The description becomes the app's description everywhere it is listed. `open_app` and
   `install_from_app_store` add one line naming it, `data_list` over one of the app's collections
-  points at it, and `get_app_skill` returns the whole text.
+  points at it, and `get_app_skill` returns the whole text — to the AI as reference with the author
+  named, never as the user's instruction.
 - Same slot rules as the manifest: omitted keeps it, `null` clears it, a string replaces it whole;
   every save snapshots it with the other two, so restore/undo bring it back with them.
 - It travels with the app — installed from the App Store, shared, copied. Never put keys or secrets

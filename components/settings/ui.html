@@ -534,7 +534,7 @@
           </div>
 
           <!-- Cascade opt-in (D-13 ③). Unchecked = the default tombstone: the app goes, its data
-               stays and restore_app can bring it back. Checked = delete_app data:"cascade", which
+               stays and restore_app can bring it back. Checked = purge_app, which
                the engine answers with a PLAN before it removes anything. -->
           <div class="group" id="d-cascade-row" hidden>
             <label class="row">
@@ -1894,7 +1894,8 @@ function coercePref(v, fallback) {
     // Delete — honors the confirm_delete shared pref with an in-widget two-click confirm
     // (window.confirm is unreliable in sandboxed widget iframes), then delete_app.
     //
-    // WITH "Delete its data too" ticked it is delete_app data:"cascade", whose confirmation is
+    // WITH "Delete its data too" ticked it is purge_app (app-only: the model never sees it, and
+    // until 0.10 it was delete_app data:"cascade"), whose confirmation is
     // the ENGINE's, not ours (W1): the first call never deletes — it answers with the disposition
     // plan it recomputed in its own transaction, plus a request_state bound to the world that
     // plan describes. We render the plan (taken, and kept, with the engine's own reason) and
@@ -1981,8 +1982,7 @@ function coercePref(v, fallback) {
       }
       disarmDelete();
       try {
-        const r = await oma.callTool("delete_app", { command_id: crypto.randomUUID(), name: c.name, actor: "human",
-          ...(cascadeWanted() ? { data: "cascade" } : {}) });
+        const r = await oma.callTool(cascadeWanted() ? "purge_app" : "delete_app", { command_id: crypto.randomUUID(), name: c.name, actor: "human" });
         const sc = (r && r.structuredContent) || {};
         // The demand is NOT an error (the engine says so on purpose) — it is the plan.
         if (sc.reason === "confirmation_required") { showPlan(c, sc); return; }
@@ -2001,10 +2001,10 @@ function coercePref(v, fallback) {
       const btn = document.getElementById("d-plan-yes");
       btn.disabled = true;
       try {
-        // The identical call, plus the state. `data:"cascade"` is restated rather than re-read
-        // from the checkbox: the state is bound to the plan the user was shown, and a tick that
-        // changed between the two legs must not be able to send a different call with it.
-        const r = await oma.callTool("delete_app", { name: c.name, data: "cascade", request_state: delPlan.state,
+        // The identical call, plus the state. purge_app is restated rather than re-read from the
+        // checkbox: the state is bound to the plan the user was shown, and a tick that changed
+        // between the two legs must not be able to send a different call with it.
+        const r = await oma.callTool("purge_app", { name: c.name, request_state: delPlan.state,
           command_id: crypto.randomUUID(), actor: "human" });
         const sc = (r && r.structuredContent) || {};
         // The engine reissues rather than guessing when the world moved under the plan; so do we.

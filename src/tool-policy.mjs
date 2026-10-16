@@ -44,6 +44,7 @@ export const CONTROL_PLANE_TOOLS = [
   "save_app",
   "edit_app",      // same wall as save: a child that can edit source can rewrite any app
   "delete_app",
+  "purge_app",     // erases an app's data for good — the settings app's, never a child's
   "restore_app",
   // Also on the HOST gate (engine.mjs WIDGET_CALLABLE), and that is the intended reading of the
   // two lists together: the App Store app's Add button is a top-level widget the user clicks, so

@@ -25,6 +25,8 @@ const POLL_HOLD_MS = 20_000;      // how long a widget's poll waits for a job
 const LIVE_MS = POLL_HOLD_MS + 15_000;   // a widget that has not polled in this long is gone
 const JOB_WAIT_MS = 15_000;       // how long the model's call waits for the widget to finish
 
+const SETTINGS_APP = "settings";
+
 const registries = new WeakMap();
 function registryFor(store) {
   let r = registries.get(store);
@@ -54,6 +56,12 @@ export function register(ctx) {
   const send = async (app, job) => {
     const s = pick(app);
     if (!s) return text(`No app is open on screen${app ? ` as "${app}"` : ""} right now. Open one with open_app first.`, true);
+    // The settings app is the person's own: its toggles write the security policy and its Delete
+    // can erase an app's data for good, the two things the model is kept away from (security_set
+    // and purge_app are app-only). Driving its controls from here would be the same door by another
+    // way, so the relay refuses it — and the widget's runtime refuses it again (shell-runtime.js),
+    // since the app name a session reports is the widget's own word.
+    if (s.app === SETTINGS_APP) return text(`The settings app is the user's own: it can't be read or operated from the conversation. Tell the user what to change there.`, true);
     const id = "j" + ++reg.seq;
     const done = new Promise((resolve) => {
       const timer = setTimeout(() => { reg.jobs.delete(id); resolve(null); }, JOB_WAIT_MS);

@@ -377,6 +377,20 @@ console.log("\n4. app tools over the screen relay — listed by screen_read, cal
   ok("…and screen_act cannot reach chrome by label either: every candidate passes screenOff",
     /const all = \[\.\.\.document\.querySelectorAll\(ACTIONABLE\)\]\.filter\(\(e\) => screenVisible\(e\) && !screenOff\(e\)\);/.test(runtimeSrc)
     && /if \(el && el\.isConnected && !screenOff\(el\)\) return el;/.test(runtimeSrc));
+
+  // The settings app is never driven from the conversation (Claude directory review, 2026-10-16):
+  // its toggles are the security policy and its Delete can purge, the two writes kept off the
+  // model (security_set / purge_app are app-only). The user now on settings — the relay refuses,
+  // and no job ever reaches that widget.
+  await handlers.screen_poll.fn({ session: "w-set", app: "settings", visible: true, born: Date.now(), touched: Date.now() + 1000, ping: true });
+  const viaLatest = await handlers.screen_act.fn({ label: "Send messages", action: "press" });
+  const byName = await handlers.screen_read.fn({ app: "settings" });
+  ok("the settings app on screen: screen_act and screen_read are refused, by default pick and by name",
+    viaLatest.isError === true && /settings app is the user's own/.test(viaLatest.content[0].text)
+      && byName.isError === true && /settings app is the user's own/.test(byName.content[0].text),
+    JSON.stringify([viaLatest, byName]));
+  ok("…and the widget's runtime refuses a settings job again, at the moment of running",
+    /if \(compName\(\) === "settings"\) \{\s*\n\s*done = \{ id: job\.id, text: "The settings app is the user's own/.test(runtimeSrc));
 }
 
 console.log(`\n${fail ? "FAILED" : "ALL PASS"}: ${pass} passed, ${fail} failed`);

@@ -36,12 +36,12 @@ runs this same engine for you. Running that remote shape *yourself* is on the ro
 
 | | |
 |---|---|
-| **Version** | 0.9.1 ([`CHANGELOG.md`](CHANGELOG.md)) |
+| **Version** | 0.10.0 ([`CHANGELOG.md`](CHANGELOG.md)) |
 | **License** | MIT, whole repository ([`LICENSE`](LICENSE) · [`LICENSING.md`](LICENSING.md)) |
 | **npm** | `@2nd1st/open-mcp-apps` — **scoped**; the unscoped name is an unrelated package |
 | **Command** | `npx -y @2nd1st/open-mcp-apps` — the line your host's MCP config runs; a stdio server, not something to run by hand (typed into a terminal it just waits, and says so) |
 | **Requires** | Node 22 or newer. `git` too, on the installer path |
-| **Surface** | 33 tools · a built-in App Store · 3 system apps seeded |
+| **Surface** | 34 tools · a built-in App Store · 3 system apps seeded |
 | **Platforms** | macOS · Windows · Linux |
 | **Hosts** | Claude Desktop · Claude Code · Codex · ChatGPT web — see [Host support](#host-support) |
 | **Hosted** | [openmcp.app](https://openmcp.app) — the remote shape, and the way to reach browser hosts (claude.ai, ChatGPT) |
@@ -434,7 +434,7 @@ Trust is tiered by where an app came from — [`SECURITY.md`](SECURITY.md) has t
 
 ```bash
 npm test                     # every suite below, plus the static invariants and budget checks
-node test/server-smoke.mjs   # 461 assertions over real stdio — incl. runtime app creation
+node test/server-smoke.mjs   # 468 assertions over real stdio — incl. runtime app creation
 node test/http-smoke.mjs     #  85 assertions over the HTTP transport (incl. SSE /events, viewer)
 node test/provenance.mjs     #  39 assertions that an app's author — its trust tier — is not overwritable
 node test/seed-smoke.mjs     #  30 assertions on the seed pipeline

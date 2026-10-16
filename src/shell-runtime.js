@@ -1982,6 +1982,12 @@ if (SA) {
       fails = 0;
       const job = r.structuredContent && r.structuredContent.job;
       if (!job) continue;
+      // The settings app is never driven from the conversation (tools/screen.mjs says why). Checked
+      // HERE too, at the moment of running: the server only knows the name this widget reported.
+      if (compName() === "settings") {
+        done = { id: job.id, text: "The settings app is the user's own: it can't be read or operated from the conversation.", isError: true };
+        continue;
+      }
       try {
         const out = job.tool ? await appTools.call(job.tool, job.input)
           : job.action === "read" ? { content: [{ type: "text", text: screenRead() }] } : await screenAct({ ...job, action: job.action });

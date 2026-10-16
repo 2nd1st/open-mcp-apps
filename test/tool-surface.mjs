@@ -141,7 +141,11 @@ const BLESS = process.env.UPDATE_GOLDEN === "1";
 //   46,360  2026-10-06 (0.8.1) · list_apps loses its `visibility` enum (featured/listed/unlisted/
 //           archived/any) with the archive_app chain behind it — nothing had written those values
 //           since the seat left on 2026-08-04. 46,555 -> 46,314 B measured (−241); cap = measured + 46.
-const SURFACE_BYTES_CAP = 46_360;
+//   46,350  2026-10-16 (0.10) · Claude directory review: delete_app's cascade leaves for an app-only
+//           purge_app (the settings app's), data_delete_item drops require_confirmation, skill text
+//           becomes "usage notes", security_set's value manual shrinks to its shape (app-only, one
+//           caller). 33 -> 34 seats, 46,314 -> 46,304 B measured (−10); cap = measured + 46.
+const SURFACE_BYTES_CAP = 46_350;
 
 for (const f of [DB, DB + "-wal", DB + "-shm"]) if (existsSync(f)) unlinkSync(f);
 
@@ -266,9 +270,9 @@ console.log("2c. the two gates overlap by name, and only where we said they woul
 // (tool-policy.mjs) is the NESTING gate: "an app embedded inside another app may never reach
 // this". A name on both is a real, deliberate shape — the system app we ship may do it at the top
 // level, a nested child may not — so the check here is NOT disjointness. It is that the overlap is
-// exactly the three names below and never grows by accident.
+// exactly the five names below and never grows by accident.
 //
-// THE THREE, and why each is safe to hand a top-level widget:
+// THE FIVE, and why each is safe to hand a top-level widget:
 //   • `app_store_list` / `preview_app_store_entry` — App Store READS. They are control-plane only
 //     because the `app_store_*` PREFIX reserves that namespace for a publishing surface that does
 //     not exist yet: a forward reservation written for writes, catching two reads on its way past.
@@ -282,23 +286,32 @@ console.log("2c. the two gates overlap by name, and only where we said they woul
 //     "library" is rejected outright (src/tools/app-store.mjs:123) — the app it installs is
 //     removable with `delete_app`, and every byte it writes goes through the ledgered store
 //     command, so nothing lands anywhere a normal undo/delete cannot reach.
-// `security_set` is NOT exempt and stays off the host gate, and the difference is in kind: it
-// rewrites the POLICY the other walls are made of, and it has no widget caller at all (the
-// settings pane drives it through the direct runtime's passthrough, never through this flag).
+//   • `security_set` / `purge_app` — the settings app's two writes: the security policy, and
+//     erasing an app's data for good. Both belong to the PERSON, and the settings app is where the
+//     person does them. In a host the pane's oma.callTool goes through the host bridge
+//     (shell-runtime.js rawCall → callServerTool), so without this flag a default-deny host refused
+//     the pane's own toggles. (Until 2026-10-16 this file asserted the opposite, on the belief that
+//     the pane reached security_set only through the direct runtime — true standalone, not in a host.)
+//     What keeps the MODEL off both is app-only visibility, asserted below, plus the screen relay
+//     refusing to drive the settings app (test/screen-relay or tools/screen.mjs).
 {
   const { isControlPlaneTool } = await import("../src/tool-policy.mjs");
-  const SYSTEM_APP_SEATS = new Set(["app_store_list", "preview_app_store_entry", "install_from_app_store"]);
+  const SYSTEM_APP_SEATS = new Set(["app_store_list", "preview_app_store_entry", "install_from_app_store", "security_set", "purge_app"]);
   const advertised = tools.filter((t) => t._meta?.["openai/widgetAccessible"] === true).map((t) => t.name);
   const both = advertised.filter((n) => isControlPlaneTool(n) && !SYSTEM_APP_SEATS.has(n));
-  ok(`${advertised.length} widget-accessible tool(s), and the only control-plane ones are the named three`,
+  ok(`${advertised.length} widget-accessible tool(s), and the only control-plane ones are the named five`,
     both.length === 0,
     `on the host gate AND the nesting gate without being named above: ${both.join(", ")}`);
   const staleExemption = [...SYSTEM_APP_SEATS].filter((n) => !advertised.includes(n) || !isControlPlaneTool(n));
-  ok("…and all three named seats are still on both gates", staleExemption.length === 0,
+  ok("…and all five named seats are still on both gates", staleExemption.length === 0,
     `no longer both widget-accessible and control-plane: ${staleExemption.join(", ")} — drop the exemption`);
-  ok("security_set is on the nesting gate and off the host gate",
-    isControlPlaneTool("security_set") && !advertised.includes("security_set"),
-    "security_set rewrites policy and has no widget caller — it must not be advertised to a host");
+  // The model-facing half of the settings app's privilege: neither write is ever shown to the model.
+  const notApp = ["security_set", "purge_app"].filter((n) => {
+    const v = tools.find((t) => t.name === n)?._meta?.ui?.visibility;
+    return !(Array.isArray(v) && v.length === 1 && v[0] === "app");
+  });
+  ok("security_set and purge_app are app-only (visibility [\"app\"])", notApp.length === 0,
+    `visible to the model: ${notApp.join(", ")} — the policy and permanent erase belong to the person`);
 }
 
 console.log("3. golden file");

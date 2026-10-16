@@ -116,21 +116,22 @@ the codex widget sandbox's CSP blocks ALL `connect-src` (measured in-widget 2026
 loopback and external fetches alike are refused, origin `codex-sandbox://…`), so every write
 must ride the host's proxy. The fix has to come from the host.
 
-## Deleting an app with `data: "cascade"` can remove a collection another app READS
+## Purging an app can remove a collection another app READS
 
 **Symptom.** App A owns collection `A` and app B renders the same collection — but B declares
-nothing in its manifest and has never written to it (it only reads). Deleting A with
-`data: "cascade"` classifies `A` as exclusively A's and deletes the rows, so B renders empty.
+nothing in its manifest and has never written to it (it only reads). Deleting A together with its
+data (settings app → Delete → "Delete its data too", the `purge_app` tool) classifies `A` as
+exclusively A's and deletes the rows, so B renders empty.
 
 **Why.** Ownership is established from three signals: a manifest declaration, a widget write
 recorded in the ledger, and the collection's name. **Reads leave no trace at all**, so a
 read-only dependency is invisible to the engine. This is a limit of the evidence, not a missing
 check — nothing in the store records that B ever looked.
 
-**What protects you meanwhile.** Cascade is never silent: it is a two-step action, and the first
-step returns a plan naming every collection it would delete, with row counts, before anything
-happens. A collection another app *declares* or *has written to* is always kept, and plain
-`delete_app` (no `data:` argument) keeps all data.
+**What protects you meanwhile.** A purge is never silent and never the AI's: only the settings app
+can start one, and it first shows a plan naming every collection it would delete, with row counts,
+before anything happens. A collection another app *declares* or *has written to* is always kept,
+and `delete_app` — the only delete the AI has — keeps all data.
 
 **Fix direction.** Claim-on-first-write — the first time an app's widget writes to an unclaimed
 collection, record the claim — which grows the missing map going forward without migrating history.
